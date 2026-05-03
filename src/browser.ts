@@ -1,23 +1,31 @@
 import { chromium, Browser, BrowserContext, Page } from "playwright";
-import { existsSync, mkdirSync } from "fs";
+import { existsSync, mkdirSync, chmodSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
+import { invalidateSessionCache } from "./session-fetch.js";
 
 export const SESSION_DIR = join(homedir(), ".config", "ddb-mcp");
 export const SESSION_PATH = join(SESSION_DIR, "session.json");
 
 let browserInstance: Browser | null = null;
+let browserHeadless: boolean | null = null;
 let contextInstance: BrowserContext | null = null;
 
-export async function getBrowser(): Promise<Browser> {
+export async function getBrowser(headless = true): Promise<Browser> {
+  // If a browser is already running with a different headless setting, close it
+  // first so ddb_login always gets a visible window even if headless tools ran before.
+  if (browserInstance && browserHeadless !== headless) {
+    await closeBrowser();
+  }
   if (browserInstance) return browserInstance;
   browserInstance = await chromium.launch({
-    headless: false,
+    headless,
     args: [
       "--no-sandbox",
       "--disable-blink-features=AutomationControlled",
     ],
   });
+  browserHeadless = headless;
   return browserInstance;
 }
 
@@ -28,20 +36,14 @@ export async function getContext(browser: Browser): Promise<BrowserContext> {
     mkdirSync(SESSION_DIR, { recursive: true });
   }
 
-  if (existsSync(SESSION_PATH)) {
-    contextInstance = await browser.newContext({
-      storageState: SESSION_PATH,
-      userAgent:
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-      viewport: { width: 1280, height: 800 },
-    });
-  } else {
-    contextInstance = await browser.newContext({
-      userAgent:
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-      viewport: { width: 1280, height: 800 },
-    });
-  }
+  const contextOptions = {
+    userAgent:
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    viewport: { width: 1280, height: 800 },
+  };
+  contextInstance = await browser.newContext(
+    existsSync(SESSION_PATH) ? { ...contextOptions, storageState: SESSION_PATH } : contextOptions
+  );
 
   return contextInstance;
 }
@@ -51,31 +53,10 @@ export async function saveSession(context: BrowserContext): Promise<void> {
     mkdirSync(SESSION_DIR, { recursive: true });
   }
   await context.storageState({ path: SESSION_PATH });
-}
-
-export async function isLoggedIn(page: Page): Promise<boolean> {
-  try {
-    await page.goto("https://www.dndbeyond.com", { waitUntil: "domcontentloaded", timeout: 15000 });
-    await page.waitForTimeout(2000);
-
-    // If we got redirected off dndbeyond.com (e.g. to Wizards login), we're not logged in
-    const currentUrl = page.url();
-    if (!currentUrl.includes("dndbeyond.com") || currentUrl.includes("/login") || currentUrl.includes("/sign-in")) {
-      return false;
-    }
-
-    // Check for visible "Sign In" / "Log In" text — these only appear when NOT logged in
-    return await page.evaluate(() => {
-      const allElements = Array.from(document.querySelectorAll("a, button"));
-      const signInEl = allElements.find((el) => {
-        const text = (el.textContent || "").trim().toLowerCase();
-        return text === "sign in" || text === "log in";
-      });
-      return !signInEl;
-    });
-  } catch {
-    return false;
-  }
+  // Restrict session file to owner-only access — it contains sensitive auth cookies.
+  chmodSync(SESSION_PATH, 0o600);
+  // Invalidate the in-memory cookie/token cache so the next request reads the new session.
+  invalidateSessionCache();
 }
 
 export async function getPage(context: BrowserContext): Promise<Page> {
@@ -93,4 +74,5 @@ export async function closeBrowser(): Promise<void> {
     await browserInstance.close();
     browserInstance = null;
   }
+  browserHeadless = null;
 }

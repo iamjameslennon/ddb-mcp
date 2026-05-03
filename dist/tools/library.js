@@ -1,14 +1,15 @@
-import { getPage, isLoggedIn } from "../browser.js";
+import { getPage } from "../browser.js";
+import { hasValidSession } from "../session-fetch.js";
 export async function listLibrary(context) {
     const page = await getPage(context);
-    if (!(await isLoggedIn(page))) {
+    if (!hasValidSession()) {
         throw new Error("Not logged in. Please run ddb_login first.");
     }
     await page.goto("https://www.dndbeyond.com/en/library?type=sourcebooks&ownership=owned-shared", {
-        waitUntil: "networkidle",
+        waitUntil: "domcontentloaded",
         timeout: 30000,
     });
-    await page.waitForTimeout(2000);
+    await page.waitForSelector("div[data-testid='sourceCard'], .library-empty", { timeout: 15000 }).catch(() => { });
     const books = await page.evaluate(() => {
         const items = [];
         document.querySelectorAll("div[data-testid='sourceCard']").forEach((card) => {
@@ -19,22 +20,21 @@ export async function listLibrary(context) {
             const slug = slugMatch?.[1] ?? "";
             const ownership = card.querySelector("p[class*='SourceCard_sourceSubtitle']")?.textContent?.trim() ?? "";
             if (title)
-                items.push({ title, slug, ownership, url: href });
+                items.push({ title, slug, ownership });
         });
         return items;
     });
-    return JSON.stringify({ count: books.length, books }, null, 2);
+    return JSON.stringify({ count: books.length, books });
 }
 export async function readBook(context, bookSlug, chapterSlug) {
     const page = await getPage(context);
-    if (!(await isLoggedIn(page))) {
+    if (!hasValidSession()) {
         throw new Error("Not logged in. Please run ddb_login first.");
     }
     let url = `https://www.dndbeyond.com/sources/${bookSlug}`;
     if (chapterSlug)
         url += `/${chapterSlug}`;
-    await page.goto(url, { waitUntil: "networkidle", timeout: 45000 });
-    await page.waitForTimeout(3000);
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
     // Wait for content to render (DDB uses heavy JS rendering)
     await page.waitForSelector("article, .content-container, .p-content-title", { timeout: 15000 }).catch(() => { });
     const content = await page.evaluate(() => {
@@ -88,8 +88,8 @@ export async function readBook(context, bookSlug, chapterSlug) {
         return processNode(article);
     });
     const trimmed = content.trim();
-    const truncated = trimmed.length > 12000
-        ? trimmed.slice(0, 12000) + "\n\n[Content truncated. Specify a chapter_slug to read a specific section.]"
+    const truncated = trimmed.length > 8000
+        ? trimmed.slice(0, 8000) + "\n\n[Content truncated. Specify a chapter_slug to read a specific section.]"
         : trimmed;
     return `# ${bookSlug}${chapterSlug ? ` / ${chapterSlug}` : ""}\nURL: ${url}\n\n${truncated}`;
 }

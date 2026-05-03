@@ -30,8 +30,8 @@ export async function search(
     searchUrl = `https://www.dndbeyond.com/${path}?filter-search=${encodedQuery}`;
   }
 
-  await page.goto(searchUrl, { waitUntil: "networkidle", timeout: 30000 });
-  await page.waitForTimeout(1500);
+  await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+  await page.waitForSelector(".listing-body, .search-result, .results-item", { timeout: 15000 }).catch(() => {});
 
   const results = await page.evaluate((cat: SearchCategory) => {
     const items: Array<{ name: string; type: string; url: string }> = [];
@@ -43,7 +43,8 @@ export async function search(
         const name = nameLink?.textContent?.trim() ?? el.querySelector("h2, h3")?.textContent?.trim() ?? "";
         const type = el.querySelector(".result-category, .result-type, .listing-tag")?.textContent?.trim() ?? "";
         const link = (nameLink ?? (el.querySelector("a") as HTMLAnchorElement | null))?.href ?? "";
-        if (name) items.push({ name, type, url: link });
+        const path = link ? new URL(link).pathname : "";
+        if (name) items.push({ name, type, url: path });
       });
     } else {
       // Category listing page — items are in div.info[data-slug] containers
@@ -52,6 +53,7 @@ export async function search(
         const nameLink = el.querySelector("a.link") as HTMLAnchorElement | null;
         const name = nameLink?.textContent?.trim() ?? "";
         const url = nameLink?.href ?? "";
+        const path = url ? new URL(url).pathname : "";
         // Pull level/CR/rarity from typed rows (avoids the noisy name row)
         const levelEl = el.querySelector(
           ".row.spell-level span, .row.monster-challenge span, .row.item-rarity span, .row.class-level span, .row.feat-prerequisite span"
@@ -61,7 +63,7 @@ export async function search(
           ? (schoolEl.className.replace("school", "").trim() || "")
           : "";
         const extras = [levelEl?.textContent?.trim(), schoolName].filter(Boolean).join(" | ");
-        if (name) items.push({ name, type: extras, url });
+        if (name) items.push({ name, type: extras, url: path });
       });
     }
 
@@ -72,5 +74,5 @@ export async function search(
     return `No results found for "${query}" in category "${category}". The page URL was: ${searchUrl}`;
   }
 
-  return JSON.stringify({ query, category, url: searchUrl, count: results.length, results }, null, 2);
+  return JSON.stringify({ query, category, count: results.length, results });
 }

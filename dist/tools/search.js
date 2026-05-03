@@ -19,8 +19,8 @@ export async function search(context, query, category = "all") {
     else {
         searchUrl = `https://www.dndbeyond.com/${path}?filter-search=${encodedQuery}`;
     }
-    await page.goto(searchUrl, { waitUntil: "networkidle", timeout: 30000 });
-    await page.waitForTimeout(1500);
+    await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForSelector(".listing-body, .search-result, .results-item", { timeout: 15000 }).catch(() => { });
     const results = await page.evaluate((cat) => {
         const items = [];
         if (cat === "all") {
@@ -30,8 +30,9 @@ export async function search(context, query, category = "all") {
                 const name = nameLink?.textContent?.trim() ?? el.querySelector("h2, h3")?.textContent?.trim() ?? "";
                 const type = el.querySelector(".result-category, .result-type, .listing-tag")?.textContent?.trim() ?? "";
                 const link = (nameLink ?? el.querySelector("a"))?.href ?? "";
+                const path = link ? new URL(link).pathname : "";
                 if (name)
-                    items.push({ name, type, url: link });
+                    items.push({ name, type, url: path });
             });
         }
         else {
@@ -41,6 +42,7 @@ export async function search(context, query, category = "all") {
                 const nameLink = el.querySelector("a.link");
                 const name = nameLink?.textContent?.trim() ?? "";
                 const url = nameLink?.href ?? "";
+                const path = url ? new URL(url).pathname : "";
                 // Pull level/CR/rarity from typed rows (avoids the noisy name row)
                 const levelEl = el.querySelector(".row.spell-level span, .row.monster-challenge span, .row.item-rarity span, .row.class-level span, .row.feat-prerequisite span");
                 const schoolEl = el.querySelector(".row.spell-school .school");
@@ -49,7 +51,7 @@ export async function search(context, query, category = "all") {
                     : "";
                 const extras = [levelEl?.textContent?.trim(), schoolName].filter(Boolean).join(" | ");
                 if (name)
-                    items.push({ name, type: extras, url });
+                    items.push({ name, type: extras, url: path });
             });
         }
         return items;
@@ -57,6 +59,6 @@ export async function search(context, query, category = "all") {
     if (results.length === 0) {
         return `No results found for "${query}" in category "${category}". The page URL was: ${searchUrl}`;
     }
-    return JSON.stringify({ query, category, url: searchUrl, count: results.length, results }, null, 2);
+    return JSON.stringify({ query, category, count: results.length, results });
 }
 //# sourceMappingURL=search.js.map

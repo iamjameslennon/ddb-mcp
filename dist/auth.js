@@ -1,10 +1,12 @@
-import { saveSession, isLoggedIn, getPage } from "./browser.js";
+import { saveSession, getPage } from "./browser.js";
 export async function login(context) {
     const page = await getPage(context);
     // Navigate to D&D Beyond and check if already logged in
     await page.goto("https://www.dndbeyond.com", { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForTimeout(1500);
-    if (await isLoggedIn(page)) {
+    await page.waitForSelector(".c-site-header, .top-header-bar, .ddb-site-header", { timeout: 5000 }).catch(() => { });
+    const landedUrl = page.url();
+    const onDdb = landedUrl.includes("dndbeyond.com") && !landedUrl.includes("/login") && !landedUrl.includes("/sign-in");
+    if (onDdb && await checkLoggedInOnCurrentPage(page)) {
         // Save session to disk even when already logged in, so it persists across restarts
         await saveSession(context);
         return "Already logged in. Session is active.";

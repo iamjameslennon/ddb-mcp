@@ -4,13 +4,18 @@ import { getPage } from "../browser.js";
 export async function navigate(context: BrowserContext, url: string): Promise<string> {
   const page = await getPage(context);
 
-  // Only allow D&D Beyond URLs
-  if (!url.startsWith("https://www.dndbeyond.com") && !url.startsWith("https://dndbeyond.com")) {
+  // Only allow D&D Beyond URLs — validate the actual hostname to prevent subdomain spoofing.
+  let validatedUrl: URL;
+  try {
+    validatedUrl = new URL(url);
+  } catch {
+    throw new Error("Invalid URL.");
+  }
+  if (validatedUrl.protocol !== "https:" || !validatedUrl.hostname.endsWith("dndbeyond.com")) {
     throw new Error("Only D&D Beyond URLs (https://www.dndbeyond.com/...) are supported.");
   }
 
   await page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
-  await page.waitForTimeout(1500);
 
   // Extract page text content and convert to readable markdown-ish format
   const content = await page.evaluate(() => {
@@ -50,7 +55,7 @@ export async function interact(
       if (value === undefined) throw new Error("'value' is required for fill action.");
       await page.locator(selector).first().fill(value);
       await page.waitForTimeout(500);
-      return `Filled '${selector}' with: ${value}`;
+      return `Filled '${selector}'.`;
     }
 
     case "screenshot": {

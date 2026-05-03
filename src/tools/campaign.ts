@@ -1,18 +1,19 @@
 import { BrowserContext } from "playwright";
-import { getPage, isLoggedIn } from "../browser.js";
+import { getPage } from "../browser.js";
+import { hasValidSession } from "../session-fetch.js";
 
 export async function getCampaign(context: BrowserContext, campaignId: string): Promise<string> {
   const page = await getPage(context);
 
-  if (!(await isLoggedIn(page))) {
+  if (!hasValidSession()) {
     throw new Error("Not logged in. Please run ddb_login first.");
   }
 
   await page.goto(`https://www.dndbeyond.com/campaigns/${campaignId}`, {
-    waitUntil: "networkidle",
+    waitUntil: "domcontentloaded",
     timeout: 30000,
   });
-  await page.waitForTimeout(2000);
+  await page.waitForSelector("h1.page-title, .ddb-campaigns-detail", { timeout: 15000 }).catch(() => {});
 
   const campaign = await page.evaluate(() => {
     const data: Record<string, unknown> = {};
@@ -46,21 +47,21 @@ export async function getCampaign(context: BrowserContext, campaignId: string): 
     return data;
   });
 
-  return JSON.stringify(campaign, null, 2);
+  return JSON.stringify(campaign);
 }
 
 export async function listMyCampaigns(context: BrowserContext): Promise<string> {
   const page = await getPage(context);
 
-  if (!(await isLoggedIn(page))) {
+  if (!hasValidSession()) {
     throw new Error("Not logged in. Please run ddb_login first.");
   }
 
   await page.goto("https://www.dndbeyond.com/my-campaigns", {
-    waitUntil: "networkidle",
+    waitUntil: "domcontentloaded",
     timeout: 30000,
   });
-  await page.waitForTimeout(2000);
+  await page.waitForSelector("li.ddb-campaigns-list-item-wrapper, .ddb-campaigns-list-content", { timeout: 15000 }).catch(() => {});
 
   const campaigns = await page.evaluate(() => {
     const list: Array<{ name: string; id: string; role: string; url: string }> = [];
@@ -76,5 +77,5 @@ export async function listMyCampaigns(context: BrowserContext): Promise<string> 
     return list;
   });
 
-  return JSON.stringify(campaigns, null, 2);
+  return JSON.stringify(campaigns);
 }
