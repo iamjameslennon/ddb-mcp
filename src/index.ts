@@ -313,7 +313,7 @@ server.tool(
     book_slug: z
       .string()
       .min(1)
-      .regex(/^[a-z0-9][a-z0-9\-]*$/, "book_slug may only contain lowercase letters, digits, and hyphens")
+      .regex(/^[a-z0-9][a-z0-9\-\/]*$/, "book_slug may only contain lowercase letters, digits, hyphens, and forward slashes")
       .describe("The book slug from the D&D Beyond URL (e.g. 'players-handbook', 'dungeon-masters-guide')"),
     chapter_slug: z
       .string()
