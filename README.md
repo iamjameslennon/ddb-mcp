@@ -230,7 +230,7 @@ npm install -g "https://github.com/iamjameslennon/ddb-mcp/archive/refs/heads/mai
 To install a specific tagged version:
 
 ```bash
-npm install -g "https://github.com/iamjameslennon/ddb-mcp/archive/refs/tags/v1.0.2.tar.gz"
+npm install -g "https://github.com/iamjameslennon/ddb-mcp/archive/refs/tags/v2.0.0.tar.gz"
 ```
 
 Then restart Claude Code and run `/mcp` to reconnect the server.
