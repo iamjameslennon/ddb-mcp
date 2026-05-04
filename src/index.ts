@@ -4,11 +4,13 @@ import { z } from "zod";
 
 import { getBrowser, getContext, closeBrowser } from "./browser.js";
 import { login } from "./auth.js";
-import { getCharacter, downloadCharacter, listCharacters, parseCharacter } from "./tools/character.js";
+import { getCharacter, downloadCharacter, listCharacters, parseCharacter, findCharacterByName, getDefinition } from "./tools/character.js";
 import { getCampaign, listMyCampaigns } from "./tools/campaign.js";
 import { navigate, interact, getCurrentPageContent } from "./tools/navigate.js";
 import { search } from "./tools/search.js";
 import { listLibrary, readBook } from "./tools/library.js";
+import { searchMonsters, getMonster } from "./tools/monster.js";
+import { getCondition, searchSpells, getSpell, searchItems, getItem } from "./tools/reference.js";
 
 const server = new McpServer({
   name: "dndbeyond",
@@ -91,11 +93,23 @@ server.tool(
   "ddb_get_character",
   "Fetch raw character JSON from the D&D Beyond API. WARNING: the response is 300–500 KB of unprocessed data and will consume a large number of tokens. Prefer ddb_parse_character for any play-related question — only use this tool when you explicitly need the raw JSON (e.g. before ddb_download_character, or to inspect fields not surfaced by ddb_parse_character).",
   {
-    character_id: z.string().min(1).describe("The D&D Beyond character ID (e.g. '12345678')"),
+    character_id: z.string().min(1).optional().describe("The D&D Beyond character ID (e.g. '12345678')"),
+    character_name: z.string().min(1).optional().describe("Character name to look up (fuzzy matched against your account)"),
   },
-  async ({ character_id }) => {
+  async ({ character_id, character_name }) => {
     try {
-      const data = await getCharacter(character_id);
+      let resolvedId = character_id;
+      if (!resolvedId) {
+        if (!character_name) {
+          return { content: [{ type: "text", text: "Either character_id or character_name must be provided." }], isError: true };
+        }
+        const found = await findCharacterByName(character_name);
+        if (!found) {
+          return { content: [{ type: "text", text: `No character found matching "${character_name}". Try ddb_list_characters to see your characters.` }], isError: true };
+        }
+        resolvedId = found.id;
+      }
+      const data = await getCharacter(resolvedId);
       return { content: [{ type: "text", text: data }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -132,19 +146,103 @@ server.tool(
 // ─── ddb_parse_character ─────────────────────────────────────────────────────
 server.tool(
   "ddb_parse_character",
-  "Return a concise human-readable summary of a D&D Beyond character — far more token-efficient than ddb_get_character. Includes HP, ability scores, saving throws, skills, AC, initiative, speed, feats (correctly filtered to player-chosen only), class features, racial traits, actions, spell slots, spells, inventory, and currency. Works for any public character without login.",
+  "Return a concise human-readable summary of a D&D Beyond character — far more token-efficient than ddb_get_character. Includes HP, ability scores, saving throws, skills, AC, initiative, speed, feats (correctly filtered to player-chosen only), class features, racial traits, actions, spell slots, spells, inventory, and currency. Works for any public character without login. Accepts either a numeric character_id or a character_name (fuzzy matched against your account).",
   {
-    character_id: z.string().min(1).describe("The D&D Beyond character ID (e.g. '12345678')"),
+    character_id: z.string().min(1).optional().describe("The D&D Beyond character ID (e.g. '12345678')"),
+    character_name: z.string().min(1).optional().describe("Character name to look up (fuzzy matched — e.g. 'Throin' finds 'Thorin Ironforge')"),
   },
-  async ({ character_id }) => {
+  async ({ character_id, character_name }) => {
     try {
-      // No browser needed — uses saved session cookies directly
-      const summary = await parseCharacter(character_id);
+      let resolvedId = character_id;
+      if (!resolvedId) {
+        if (!character_name) {
+          return { content: [{ type: "text", text: "Either character_id or character_name must be provided." }], isError: true };
+        }
+        const found = await findCharacterByName(character_name);
+        if (!found) {
+          return { content: [{ type: "text", text: `No character found matching "${character_name}". Try ddb_list_characters to see your characters.` }], isError: true };
+        }
+        resolvedId = found.id;
+      }
+      const summary = await parseCharacter(resolvedId);
       return { content: [{ type: "text", text: summary }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       process.stderr.write(`[ddb-mcp] ddb_parse_character error: ${msg}\n`);
       return { content: [{ type: "text", text: `Failed to parse character: ${msg}` }], isError: true };
+    }
+  }
+);
+
+// ─── ddb_get_definition ───────────────────────────────────────────────────────
+server.tool(
+  "ddb_get_definition",
+  "Look up the full description of a spell, feat, class feature, subclass feature, racial trait, background feature, or equipped item by name. Supports partial and fuzzy name matching (e.g. 'cutting' finds Cutting Words, 'sheild' finds Shield). Accepts either a numeric character_id or a character_name.",
+  {
+    character_id: z.string().min(1).optional().describe("The D&D Beyond character ID"),
+    character_name: z.string().min(1).optional().describe("Character name (fuzzy matched against your account)"),
+    name: z.string().min(1).describe("Name to search for — partial match, e.g. 'hunter' finds Hunter's Mark"),
+  },
+  async ({ character_id, character_name, name }) => {
+    try {
+      let resolvedId = character_id;
+      if (!resolvedId) {
+        if (!character_name) {
+          return { content: [{ type: "text", text: "Either character_id or character_name must be provided." }], isError: true };
+        }
+        const found = await findCharacterByName(character_name);
+        if (!found) {
+          return { content: [{ type: "text", text: `No character found matching "${character_name}". Try ddb_list_characters to see your characters.` }], isError: true };
+        }
+        resolvedId = found.id;
+      }
+      const result = await getDefinition(resolvedId, name);
+      return { content: [{ type: "text", text: result }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[ddb-mcp] ddb_get_definition error: ${msg}\n`);
+      return { content: [{ type: "text", text: `Definition lookup failed: ${msg}` }], isError: true };
+    }
+  }
+);
+
+// ─── ddb_search_monsters ──────────────────────────────────────────────────────
+server.tool(
+  "ddb_search_monsters",
+  "Search the D&D Beyond monster compendium by name, CR, type, or size. Returns a summary list. Use ddb_get_monster for the full stat block. Requires login.",
+  {
+    name: z.string().optional().describe("Partial name to search for (e.g. 'goblin', 'dragon')"),
+    cr: z.number().optional().describe("Challenge Rating filter (e.g. 0.25, 1, 5, 20)"),
+    type: z.string().optional().describe("Monster type filter (e.g. 'undead', 'fiend', 'beast')"),
+    size: z.string().optional().describe("Size filter (e.g. 'large', 'tiny')"),
+  },
+  async ({ name, cr, type, size }) => {
+    try {
+      const result = await searchMonsters({ name, cr, type, size });
+      return { content: [{ type: "text", text: result }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[ddb-mcp] ddb_search_monsters error: ${msg}\n`);
+      return { content: [{ type: "text", text: `Monster search failed: ${msg}` }], isError: true };
+    }
+  }
+);
+
+// ─── ddb_get_monster ──────────────────────────────────────────────────────────
+server.tool(
+  "ddb_get_monster",
+  "Get the full stat block for a specific monster from the D&D Beyond compendium. Searches by name (partial match). Requires login.",
+  {
+    name: z.string().min(1).describe("Monster name (e.g. 'Beholder', 'Adult Red Dragon')"),
+  },
+  async ({ name }) => {
+    try {
+      const result = await getMonster(name);
+      return { content: [{ type: "text", text: result }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[ddb-mcp] ddb_get_monster error: ${msg}\n`);
+      return { content: [{ type: "text", text: `Monster lookup failed: ${msg}` }], isError: true };
     }
   }
 );
@@ -334,6 +432,98 @@ server.tool(
       const msg = err instanceof Error ? err.message : String(err);
       process.stderr.write(`[ddb-mcp] ddb_read_book error: ${msg}\n`);
       return { content: [{ type: "text", text: `Failed to read book: ${msg}` }], isError: true };
+    }
+  }
+);
+
+// ─── Reference Tools ──────────────────────────────────────────────────────────
+
+server.tool(
+  "ddb_get_condition",
+  "Look up the rules text for a D&D condition (Blinded, Charmed, Frightened, Grappled, etc.). No login required.",
+  {
+    name: z.string().min(1).describe("Condition name (e.g. 'frightened', 'grappled')"),
+  },
+  async ({ name }) => {
+    const result = getCondition(name);
+    return { content: [{ type: "text", text: result }] };
+  }
+);
+
+server.tool(
+  "ddb_search_spells",
+  "Search the full D&D Beyond spell compendium by name, level, school, concentration, or ritual. First call builds the compendium (slow); subsequent calls are instant. Requires login.",
+  {
+    name: z.string().optional().describe("Partial spell name (e.g. 'fire' finds Fireball, Fire Storm, etc.)"),
+    level: z.number().int().min(0).max(9).optional().describe("Spell level (0 = cantrip)"),
+    school: z.string().optional().describe("School of magic (e.g. 'evocation', 'illusion')"),
+    concentration: z.boolean().optional().describe("Filter by concentration requirement"),
+    ritual: z.boolean().optional().describe("Filter by ritual tag"),
+  },
+  async ({ name, level, school, concentration, ritual }) => {
+    try {
+      const result = await searchSpells({ name, level, school, concentration, ritual });
+      return { content: [{ type: "text", text: result }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[ddb-mcp] ddb_search_spells error: ${msg}\n`);
+      return { content: [{ type: "text", text: `Spell search failed: ${msg}` }], isError: true };
+    }
+  }
+);
+
+server.tool(
+  "ddb_get_spell",
+  "Get the full description of any spell in the D&D Beyond compendium by name. Not limited to a character's known spells. Requires login.",
+  {
+    name: z.string().min(1).describe("Spell name (e.g. 'Fireball', 'Hunter\\'s Mark')"),
+  },
+  async ({ name }) => {
+    try {
+      const result = await getSpell(name);
+      return { content: [{ type: "text", text: result }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[ddb-mcp] ddb_get_spell error: ${msg}\n`);
+      return { content: [{ type: "text", text: `Spell lookup failed: ${msg}` }], isError: true };
+    }
+  }
+);
+
+server.tool(
+  "ddb_search_items",
+  "Search the D&D Beyond magic item compendium by name, rarity, or type. Requires login.",
+  {
+    name: z.string().optional().describe("Partial item name (e.g. 'sword', 'cloak')"),
+    rarity: z.string().optional().describe("Rarity filter (e.g. 'rare', 'legendary', 'uncommon')"),
+    type: z.string().optional().describe("Item type filter (e.g. 'weapon', 'armor', 'wondrous')"),
+  },
+  async ({ name, rarity, type }) => {
+    try {
+      const result = await searchItems({ name, rarity, type });
+      return { content: [{ type: "text", text: result }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[ddb-mcp] ddb_search_items error: ${msg}\n`);
+      return { content: [{ type: "text", text: `Item search failed: ${msg}` }], isError: true };
+    }
+  }
+);
+
+server.tool(
+  "ddb_get_item",
+  "Get the full description of any magic item in the D&D Beyond compendium by name. Requires login.",
+  {
+    name: z.string().min(1).describe("Item name (e.g. 'Bag of Holding', 'Flame Tongue')"),
+  },
+  async ({ name }) => {
+    try {
+      const result = await getItem(name);
+      return { content: [{ type: "text", text: result }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[ddb-mcp] ddb_get_item error: ${msg}\n`);
+      return { content: [{ type: "text", text: `Item lookup failed: ${msg}` }], isError: true };
     }
   }
 );

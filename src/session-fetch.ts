@@ -124,6 +124,35 @@ export async function getCobaltToken(): Promise<{ token: string; userId: string 
   return { token, userId };
 }
 
+const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503]);
+const NON_RETRYABLE_STATUS_CODES = new Set([401, 403, 404]);
+
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  maxRetries = 3,
+  baseDelayMs = 1000
+): Promise<Response> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const resp = await fetch(url, options);
+
+    if (resp.ok || NON_RETRYABLE_STATUS_CODES.has(resp.status)) {
+      return resp;
+    }
+
+    if (RETRYABLE_STATUS_CODES.has(resp.status)) {
+      if (attempt === maxRetries) return resp;
+      const delay = baseDelayMs * Math.pow(2, attempt);
+      process.stderr.write(`[ddb-mcp] ${resp.status} from ${url} — retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})\n`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      continue;
+    }
+
+    return resp;
+  }
+  throw new Error("Unreachable");
+}
+
 /**
  * Make an authenticated fetch request to the DnD Beyond API using cookies
  * from the saved Playwright session — no browser required.
@@ -131,7 +160,7 @@ export async function getCobaltToken(): Promise<{ token: string; userId: string 
 export async function sessionFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const cookieHeader = getCookieHeader(url);
 
-  const resp = await fetch(url, {
+  return fetchWithRetry(url, {
     ...options,
     headers: {
       Accept: "application/json",
@@ -142,6 +171,4 @@ export async function sessionFetch(url: string, options: RequestInit = {}): Prom
       Cookie: cookieHeader,
     },
   });
-
-  return resp;
 }

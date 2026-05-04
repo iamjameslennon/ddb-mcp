@@ -1,7 +1,66 @@
 import { sessionFetch, hasValidSession, getCobaltToken } from "../session-fetch.js";
+import { TtlCache } from "../cache.js";
 import { writeFileSync } from "fs";
 import { join, resolve } from "path";
 import { homedir } from "os";
+
+// Cache character JSON for 60 s to avoid redundant API calls within a session.
+const characterCache = new TtlCache<string>(60_000, 50);
+
+// ── Character name resolution ─────────────────────────────────────────────────
+
+function levenshteinDistance(a: string, b: string): number {
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  const matrix: number[][] = Array.from({ length: a.length + 1 }, (_, i) =>
+    Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  );
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(matrix[i - 1][j] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j - 1] + cost);
+    }
+  }
+  return matrix[a.length][b.length];
+}
+
+/**
+ * Resolve a character name to a numeric ID using the character list API.
+ * Resolution order: exact match → substring match → Levenshtein ≤3 on full
+ * name and individual words (e.g. "Throin" matches "Thorin Ironforge").
+ * Returns null if no match or multiple ambiguous fuzzy matches are found.
+ */
+export async function findCharacterByName(name: string): Promise<{ id: string; name: string } | null> {
+  if (!hasValidSession()) return null;
+  const { token, userId } = await getCobaltToken();
+  const resp = await sessionFetch(
+    `https://character-service.dndbeyond.com/character/v5/characters/list?userId=${userId}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!resp.ok) return null;
+  const result = await resp.json() as {
+    data?: { characters?: Array<{ id: number; name: string }> };
+  };
+  const chars = (result.data?.characters ?? []).map(c => ({ id: String(c.id), name: c.name }));
+  const lower = name.toLowerCase();
+
+  // 1. Exact match
+  const exact = chars.find(c => c.name.toLowerCase() === lower);
+  if (exact) return exact;
+
+  // 2. Substring match (only if unambiguous)
+  const sub = chars.filter(c => c.name.toLowerCase().includes(lower));
+  if (sub.length === 1) return sub[0];
+
+  // 3. Levenshtein fuzzy match on full name and individual words
+  const fuzzy = chars.filter(c => {
+    if (levenshteinDistance(lower, c.name.toLowerCase()) <= 3) return true;
+    return c.name.split(/\s+/).some(w => levenshteinDistance(lower, w.toLowerCase()) <= 3);
+  });
+  if (fuzzy.length === 1) return fuzzy[0];
+
+  return null;
+}
 
 export function parseCharacterData(raw: Record<string, unknown>): string {
   const char = (raw?.data ?? raw) as Record<string, unknown>;
@@ -690,7 +749,11 @@ export async function parseCharacter(
 export async function getCharacter(
   characterId: string
 ): Promise<string> {
-  const url = `https://character-service.dndbeyond.com/character/v5/character/${characterId}`;
+  const cacheKey = `character:${characterId}`;
+  const cached = characterCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
+  const url = `https://character-service.dndbeyond.com/character/v5/character/${characterId}?includeCustomItems=true`;
 
   // Public characters work without auth. Use session cookies if available so
   // private/campaign-only characters owned by the logged-in user also work.
@@ -700,7 +763,9 @@ export async function getCharacter(
 
   if (resp.ok) {
     const result = await resp.json();
-    return JSON.stringify(result);
+    const json = JSON.stringify(result);
+    characterCache.set(cacheKey, json);
+    return json;
   }
 
   // 404 = character doesn't exist; 403 = private
@@ -771,3 +836,238 @@ export async function listCharacters(): Promise<string> {
 
   return JSON.stringify(characters);
 }
+
+// ── Definition Lookup ─────────────────────────────────────────────────────────
+
+function stripHtmlFull(s: string | null | undefined): string {
+  if (!s) return "";
+  return s
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&ndash;/g, "–")
+    .replace(/&mdash;/g, "—")
+    .replace(/&#\d+;/g, (m) => String.fromCharCode(parseInt(m.slice(2, -1))))
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function matchesDefinitionQuery(name: string, query: string): boolean {
+  const n = name.toLowerCase();
+  const q = query.toLowerCase();
+  if (n.includes(q)) return true;
+  return name.split(/\s+/).some(w => levenshteinDistance(q, w.toLowerCase()) <= 2);
+}
+
+function formatSpellResult(spell: Record<string, unknown>): string {
+  const d = (spell.definition ?? spell) as Record<string, unknown>;
+  const name = String(d.name ?? "Unknown");
+  const level = Number(d.level ?? 0);
+  const school = String(d.school ?? "");
+  const levelLabel = level === 0 ? "Cantrip" : `Level ${level}`;
+
+  const ACTIVATION_TYPES: Record<number, string> = { 1: "Action", 3: "Bonus Action", 6: "Reaction" };
+  const act = d.activation as Record<string, unknown> | undefined;
+  const castingTime = act
+    ? `${act.activationTime} ${ACTIVATION_TYPES[Number(act.activationType)] ?? "Action"}`
+    : "1 Action";
+
+  const rng = d.range as Record<string, unknown> | undefined;
+  let range = "Self";
+  if (rng) {
+    if (rng.rangeValue && rng.origin !== "Self") range = `${rng.rangeValue} ft`;
+    else range = String(rng.origin ?? "Self");
+    if (rng.aoeType && rng.aoeValue) range += ` (${rng.aoeValue}-ft ${rng.aoeType})`;
+  }
+
+  const dur = d.duration as Record<string, unknown> | undefined;
+  let duration = "Instantaneous";
+  if (dur) {
+    const isConc = dur.durationType === "Concentration";
+    if (dur.durationInterval && dur.durationUnit) {
+      duration = `${isConc ? "Concentration, up to " : ""}${dur.durationInterval} ${dur.durationUnit}${Number(dur.durationInterval) > 1 ? "s" : ""}`;
+    } else if (isConc) {
+      duration = "Concentration";
+    }
+  }
+
+  const components = (Array.isArray(d.components) ? d.components : [])
+    .map((c: number) => ({ 1: "V", 2: "S", 3: "M" })[c])
+    .filter(Boolean)
+    .join(", ");
+  const matNote = d.componentsDescription ? ` (${d.componentsDescription})` : "";
+
+  const lines = [
+    `${name} (${levelLabel} ${school})`,
+    `Casting Time: ${castingTime}`,
+    `Range: ${range}`,
+    `Components: ${components || "None"}${matNote}`,
+    `Duration: ${duration}`,
+  ];
+  if (d.ritual) lines.push("Ritual: Yes");
+  lines.push("", stripHtmlFull(String(d.description ?? "")));
+  return lines.join("\n");
+}
+
+function formatFeatResult(feat: Record<string, unknown>): string {
+  const d = (feat.definition ?? feat) as Record<string, unknown>;
+  const lines = [String(d.name ?? "Unknown")];
+  if (d.prerequisite) lines.push(`Prerequisite: ${d.prerequisite}`);
+  lines.push("", stripHtmlFull(String(d.description ?? d.snippet ?? "")));
+  return lines.join("\n");
+}
+
+function formatClassFeatureResult(
+  feature: Record<string, unknown>,
+  className: string,
+  level: number
+): string {
+  const d = (feature.definition ?? feature) as Record<string, unknown>;
+  const name = String(d.name ?? feature.name ?? "Unknown");
+  const desc = stripHtmlFull(String(d.description ?? d.snippet ?? ""));
+  return `${name} (${className}, Level ${level})\n\n${desc}`;
+}
+
+function formatRacialTraitResult(trait: Record<string, unknown>, raceName: string): string {
+  const d = (trait.definition ?? trait) as Record<string, unknown>;
+  const name = String(d.name ?? "Unknown");
+  const desc = stripHtmlFull(String(d.description ?? d.snippet ?? ""));
+  return `${name} (${raceName})\n\n${desc}`;
+}
+
+function formatItemResult(item: Record<string, unknown>): string {
+  const d = (item.definition ?? item) as Record<string, unknown>;
+  const name = String(d.name ?? "Unknown");
+  const type = String(d.type ?? "Item");
+  const rarity = String(d.rarity ?? "Common");
+  const weight = d.weight != null ? `Weight: ${d.weight} lb\n` : "";
+  const desc = stripHtmlFull(String(d.description ?? ""));
+  return `${name} (${type}, ${rarity})\n${weight}\n${desc}`;
+}
+
+interface DefinitionHit {
+  type: string;
+  text: string;
+}
+
+function searchDefinitions(char: Record<string, unknown>, query: string): DefinitionHit[] {
+  const results: DefinitionHit[] = [];
+
+  const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+  const obj = (v: unknown): Record<string, unknown> =>
+    v != null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  const num = (v: unknown) => (typeof v === "number" ? v : 0);
+
+  // ── Spells ────────────────────────────────────────────────────────────────
+  const allSpells: Record<string, unknown>[] = [
+    ...arr<Record<string, unknown>>(char.classSpells).flatMap(cs =>
+      arr<Record<string, unknown>>(cs.spells)
+    ),
+    ...Object.values(obj(char.spells)).flatMap(v => arr<Record<string, unknown>>(v)),
+  ];
+  for (const spell of allSpells) {
+    const name = str(obj(spell.definition).name || spell.name);
+    if (name && matchesDefinitionQuery(name, query)) {
+      results.push({ type: "Spell", text: formatSpellResult(spell) });
+    }
+  }
+
+  // ── Feats ─────────────────────────────────────────────────────────────────
+  for (const feat of arr<Record<string, unknown>>(char.feats)) {
+    const name = str(obj(feat.definition).name);
+    if (name && matchesDefinitionQuery(name, query)) {
+      results.push({ type: "Feat", text: formatFeatResult(feat) });
+    }
+  }
+
+  // ── Class & Subclass Features ─────────────────────────────────────────────
+  const seen = new Set<string>();
+  for (const cls of arr<Record<string, unknown>>(char.classes)) {
+    const charLevel = num(cls.level);
+    const className = str(obj(cls.definition).name);
+
+    for (const cf of arr<Record<string, unknown>>(cls.classFeatures)) {
+      const d = obj(cf.definition);
+      const name = str(d.name);
+      const requiredLevel = num(d.requiredLevel || 1);
+      if (requiredLevel <= charLevel && name && matchesDefinitionQuery(name, query) && !seen.has(name)) {
+        seen.add(name);
+        results.push({
+          type: "Class Feature",
+          text: formatClassFeatureResult(cf, className, requiredLevel),
+        });
+      }
+    }
+
+    const subDef = obj(cls.subclassDefinition);
+    const subName = str(subDef.name);
+    for (const cf of arr<Record<string, unknown>>(subDef.classFeatures)) {
+      const d = obj(cf.definition);
+      const name = str(d.name);
+      const requiredLevel = num(d.requiredLevel || 1);
+      const label = subName ? `${className} / ${subName}` : className;
+      if (requiredLevel <= charLevel && name && matchesDefinitionQuery(name, query) && !seen.has(name)) {
+        seen.add(name);
+        results.push({
+          type: "Subclass Feature",
+          text: formatClassFeatureResult(cf, label, requiredLevel),
+        });
+      }
+    }
+  }
+
+  // ── Racial Traits ─────────────────────────────────────────────────────────
+  const raceName = str(obj(char.race).fullName || obj(char.race).baseName);
+  for (const trait of arr<Record<string, unknown>>(obj(char.race).racialTraits)) {
+    const name = str(obj(trait.definition).name);
+    if (name && matchesDefinitionQuery(name, query)) {
+      results.push({ type: "Racial Trait", text: formatRacialTraitResult(trait, raceName) });
+    }
+  }
+
+  // ── Background Feature ────────────────────────────────────────────────────
+  const bgDef = obj(obj(char.background).definition);
+  const bgFeatureName = str(bgDef.featureName);
+  if (bgFeatureName && matchesDefinitionQuery(bgFeatureName, query)) {
+    const bgName = str(bgDef.name);
+    const bgDesc = stripHtmlFull(str(bgDef.featureDescription));
+    results.push({
+      type: "Background Feature",
+      text: `${bgFeatureName} (${bgName})\n\n${bgDesc}`,
+    });
+  }
+
+  // ── Equipped Items ────────────────────────────────────────────────────────
+  for (const item of arr<Record<string, unknown>>(char.inventory)) {
+    if (!item.equipped) continue;
+    const name = str(obj(item.definition).name);
+    if (name && matchesDefinitionQuery(name, query)) {
+      results.push({ type: "Item", text: formatItemResult(item) });
+    }
+  }
+
+  return results;
+}
+
+export async function getDefinition(
+  characterId: string,
+  query: string
+): Promise<string> {
+  const jsonData = await getCharacter(characterId);
+  const raw = JSON.parse(jsonData) as Record<string, unknown>;
+  const char = (raw?.data ?? raw) as Record<string, unknown>;
+
+  const hits = searchDefinitions(char, query);
+
+  if (hits.length === 0) {
+    return `No definition found matching "${query}" on this character. Try a partial name like "hunter" for Hunter's Mark.`;
+  }
+
+  return hits.map(h => `[${h.type}]\n${h.text}`).join("\n\n===\n\n");
+}
+
