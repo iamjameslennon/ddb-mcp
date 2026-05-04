@@ -8,14 +8,22 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that gi
 |------|-------------|
 | `ddb_login` | Authenticate with D&D Beyond (Wizards ID). Run once to save your session to disk. |
 | `ddb_list_characters` | List all characters in your account with ID, level, race, and class. |
-| `ddb_parse_character` | Parse a character into a compact, readable summary. Covers all stats, skills, spells, actions, and inventory. Much more token-efficient than `ddb_get_character`. |
+| `ddb_parse_character` | Parse a character into a compact, readable summary. Covers all stats, skills, spells, actions, and inventory. Accepts character name (fuzzy matched) or numeric ID. |
 | `ddb_get_character` | Fetch raw character JSON from the D&D Beyond API. Use `ddb_parse_character` unless you need the raw data. |
 | `ddb_download_character` | Save a character's full JSON data to a local file. |
+| `ddb_get_definition` | Look up the full description of a spell, feat, class feature, racial trait, or item on a character sheet. Supports partial and fuzzy name matching. |
 | `ddb_list_campaigns` | List all campaigns you're part of (as DM or player). |
 | `ddb_get_campaign` | Fetch campaign details — DM, description, and active characters. |
+| `ddb_search_monsters` | Search the D&D Beyond monster compendium by name, CR, type, or size. |
+| `ddb_get_monster` | Get the full formatted stat block for a monster by name. |
+| `ddb_search_spells` | Search the D&D Beyond spell compendium by name, level, school, or class. |
+| `ddb_get_spell` | Get the full description of a spell by name. |
+| `ddb_search_items` | Search the D&D Beyond magic item compendium by name or rarity. |
+| `ddb_get_item` | Get the full description of a magic item by name. |
+| `ddb_get_condition` | Look up the rules text for a condition (Poisoned, Stunned, etc.). |
 | `ddb_list_library` | List all sourcebooks you own, purchased, or have shared with you. |
 | `ddb_read_book` | Read content from an owned sourcebook, optionally by chapter slug. |
-| `ddb_search` | Search for spells, monsters, magic items, races, classes, or feats. |
+| `ddb_search` | Search for spells, monsters, magic items, races, classes, or feats (browser-based). |
 | `ddb_navigate` | Navigate to any D&D Beyond URL and return its text content. Keeps the browser open for follow-up calls. |
 | `ddb_interact` | Click, fill, or screenshot the currently loaded browser page. |
 | `ddb_current_page` | Return the text content of whatever page is currently loaded. |
@@ -343,7 +351,7 @@ npm test
 
 ## Credits
 
-Forked from [ddb-mcp/ddb-mcp](https://github.com/ddb-mcp/ddb-mcp). This fork significantly expands `ddb_parse_character` and adds session-based API fetching so most operations don't require a browser after initial login.
+Forked from [ddb-mcp/ddb-mcp](https://github.com/ddb-mcp/ddb-mcp). The monster, reference, and session-workflow tooling was inspired by [dndbeyond-mcp](https://www.npmjs.com/package/dndbeyond-mcp). This fork significantly expands `ddb_parse_character`, adds session-based API fetching, and introduces compendium and reference tools.
 
 **Character parsing improvements:**
 
