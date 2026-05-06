@@ -11,6 +11,7 @@
 
 import { sessionFetch, getCobaltToken, hasValidSession } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
+import { o5SearchMonsters, o5GetMonster } from "../open5e.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -258,36 +259,52 @@ export async function searchMonsters(params: {
   size?: string;
 }): Promise<string> {
   if (!hasValidSession()) {
-    return "Monster search requires login. Run ddb_login first.";
+    return await o5SearchMonsters(params).catch(
+      () => "Monster search requires login. Run ddb_login first."
+    );
   }
 
-  const searchTerm = params.name ?? "";
-  const url = `${MONSTER_SERVICE}/v1/Monster?search=${encodeURIComponent(searchTerm)}&skip=0&take=20`;
+  try {
+  const config = await getGameConfig();
+  const crMap = new Map(config?.challengeRatings.map(cr => [cr.id, cr]) ?? []);
+  const typeMap = new Map(config?.monsterTypes.map(t => [t.id, t.name]) ?? []);
 
-  const cacheKey = `monsters:search:${searchTerm.toLowerCase()}`;
+  const searchTerm = params.name ?? "";
+
+  // Resolve filter IDs up front so we can pass them to the API.
+  const targetCrId = params.cr !== undefined
+    ? config?.challengeRatings.find(cr => cr.value === params.cr)?.id
+    : undefined;
+  const targetTypeId = params.type
+    ? config?.monsterTypes.find(t => t.name.toLowerCase().includes(params.type!.toLowerCase()))?.id
+    : undefined;
+  const targetSizeId = params.size
+    ? Object.entries(SIZE_MAP).find(([, name]) => name.toLowerCase().includes(params.size!.toLowerCase()))?.[0]
+    : undefined;
+
+  // When filtering without a name term, fetch more results since the API
+  // only sorts/filters by name — CR/type/size filtering is client-side.
+  const hasFiltersOnly = !params.name && (params.cr !== undefined || params.type || params.size);
+  const take = hasFiltersOnly ? 100 : 20;
+
+  const cacheKey = `monsters:search:${searchTerm.toLowerCase()}:cr${targetCrId ?? ""}:type${targetTypeId ?? ""}:size${targetSizeId ?? ""}:take${take}`;
   const cached = monsterCache.get(cacheKey);
   let response: MonsterListResponse;
 
   if (cached !== undefined) {
     response = JSON.parse(cached) as MonsterListResponse;
   } else {
+    const url = `${MONSTER_SERVICE}/v1/Monster?search=${encodeURIComponent(searchTerm)}&skip=0&take=${take}`;
     const resp = await monsterFetch(url);
     if (!resp.ok) throw new Error(`Monster search failed: ${resp.status} ${resp.statusText}`);
     response = await resp.json() as MonsterListResponse;
     monsterCache.set(cacheKey, JSON.stringify(response));
   }
 
-  const config = await getGameConfig();
-  const crMap = new Map(config?.challengeRatings.map(cr => [cr.id, cr]) ?? []);
-  const typeMap = new Map(config?.monsterTypes.map(t => [t.id, t.name]) ?? []);
-
   let monsters = response.data ?? [];
 
-  if (params.cr !== undefined) {
-    const targetCrId = config?.challengeRatings.find(cr => cr.value === params.cr)?.id;
-    if (targetCrId !== undefined) {
-      monsters = monsters.filter(m => m.challengeRatingId === targetCrId);
-    }
+  if (targetCrId !== undefined) {
+    monsters = monsters.filter(m => m.challengeRatingId === targetCrId);
   }
   if (params.type) {
     const searchType = params.type.toLowerCase();
@@ -299,10 +316,10 @@ export async function searchMonsters(params: {
   }
 
   if (monsters.length === 0) {
-    return "No monsters found matching the search criteria.";
+    return await o5SearchMonsters(params).catch(() => "No monsters found matching the search criteria.");
   }
 
-  const lines = [`**Monster Search** (${monsters.length} of ${response.pagination.total} total)\n`];
+  const lines = [`**Monster Search** (${monsters.length} shown, ${response.pagination.total} total matched by name)\n`];
   for (const m of monsters) {
     const cr = crMap.get(m.challengeRatingId);
     const crStr = cr ? crDisplay(cr.value) : "?";
@@ -316,54 +333,78 @@ export async function searchMonsters(params: {
     lines.push(`- **${m.name}**${tagStr} — CR ${crStr}, ${sizeName} ${typeName}, AC ${m.armorClass}, ${m.averageHitPoints} HP`);
   }
 
-  if (response.pagination.total > 20) {
-    lines.push(`\n*Showing first 20 of ${response.pagination.total}. Refine your search for more specific results.*`);
+  if (response.pagination.total > take) {
+    lines.push(`\n*Refine your search with a name term for more specific results.*`);
   }
 
   return lines.join("\n");
+  } catch {
+    return await o5SearchMonsters(params).catch(
+      () => "Monster search unavailable — DnD Beyond and Open5e both failed."
+    );
+  }
 }
+
 
 export async function getMonster(monsterName: string): Promise<string> {
   if (!hasValidSession()) {
+    const o5Result = await o5GetMonster(monsterName).catch(() => null);
+    if (o5Result) return o5Result;
     return "Monster lookup requires login. Run ddb_login first.";
   }
 
-  const searchUrl = `${MONSTER_SERVICE}/v1/Monster?search=${encodeURIComponent(monsterName)}&skip=0&take=5`;
-  const searchCacheKey = `monsters:search:${monsterName.toLowerCase()}:5`;
-  const cachedSearch = monsterCache.get(searchCacheKey);
+  try {
+    const searchUrl = `${MONSTER_SERVICE}/v1/Monster?search=${encodeURIComponent(monsterName)}&skip=0&take=5`;
+    const searchCacheKey = `monsters:search:${monsterName.toLowerCase()}:5`;
+    const cachedSearch = monsterCache.get(searchCacheKey);
 
-  let searchResp: MonsterListResponse;
-  if (cachedSearch !== undefined) {
-    searchResp = JSON.parse(cachedSearch) as MonsterListResponse;
-  } else {
-    const resp = await monsterFetch(searchUrl);
-    if (!resp.ok) throw new Error(`Monster search failed: ${resp.status} ${resp.statusText}`);
-    searchResp = await resp.json() as MonsterListResponse;
-    monsterCache.set(searchCacheKey, JSON.stringify(searchResp));
+    let searchResp: MonsterListResponse;
+    if (cachedSearch !== undefined) {
+      searchResp = JSON.parse(cachedSearch) as MonsterListResponse;
+    } else {
+      const resp = await monsterFetch(searchUrl);
+      if (!resp.ok) throw new Error(`Monster search failed: ${resp.status} ${resp.statusText}`);
+      searchResp = await resp.json() as MonsterListResponse;
+      monsterCache.set(searchCacheKey, JSON.stringify(searchResp));
+    }
+
+    if (!searchResp.data?.length) {
+      const o5Result = await o5GetMonster(monsterName).catch(() => null);
+      if (o5Result) return o5Result;
+      return `Monster "${monsterName}" not found. Try ddb_search_monsters with a partial name.`;
+    }
+
+    const nameLower = monsterName.toLowerCase();
+    const best = searchResp.data.find(m => m.name.toLowerCase() === nameLower)
+      ?? searchResp.data[0];
+
+    const detailUrl = `${MONSTER_SERVICE}/v1/Monster/${best.id}`;
+    const detailCacheKey = `monster:${best.id}`;
+    const cachedDetail = monsterCache.get(detailCacheKey);
+
+    let detail: MonsterSingleResponse;
+    if (cachedDetail !== undefined) {
+      detail = JSON.parse(cachedDetail) as MonsterSingleResponse;
+    } else {
+      const resp = await monsterFetch(detailUrl);
+      if (!resp.ok) throw new Error(`Monster fetch failed: ${resp.status} ${resp.statusText}`);
+      detail = await resp.json() as MonsterSingleResponse;
+      monsterCache.set(detailCacheKey, JSON.stringify(detail));
+    }
+
+    const config = await getGameConfig();
+    const statBlock = formatStatBlock(detail.data, detail.accessType, config);
+
+    // If DDB returned an empty stat block (unowned content), fall back to Open5e
+    if (detail.accessType === 4 && !detail.data.stats?.length) {
+      const o5Result = await o5GetMonster(monsterName).catch(() => null);
+      if (o5Result) return o5Result;
+    }
+
+    return statBlock;
+  } catch {
+    const o5Result = await o5GetMonster(monsterName).catch(() => null);
+    if (o5Result) return o5Result;
+    return `Monster "${monsterName}" not found. DnD Beyond is unavailable and "${monsterName}" is not in the SRD.`;
   }
-
-  if (!searchResp.data?.length) {
-    return `Monster "${monsterName}" not found. Try ddb_search_monsters with a partial name.`;
-  }
-
-  const nameLower = monsterName.toLowerCase();
-  const best = searchResp.data.find(m => m.name.toLowerCase() === nameLower)
-    ?? searchResp.data[0];
-
-  const detailUrl = `${MONSTER_SERVICE}/v1/Monster/${best.id}`;
-  const detailCacheKey = `monster:${best.id}`;
-  const cachedDetail = monsterCache.get(detailCacheKey);
-
-  let detail: MonsterSingleResponse;
-  if (cachedDetail !== undefined) {
-    detail = JSON.parse(cachedDetail) as MonsterSingleResponse;
-  } else {
-    const resp = await monsterFetch(detailUrl);
-    if (!resp.ok) throw new Error(`Monster fetch failed: ${resp.status} ${resp.statusText}`);
-    detail = await resp.json() as MonsterSingleResponse;
-    monsterCache.set(detailCacheKey, JSON.stringify(detail));
-  }
-
-  const config = await getGameConfig();
-  return formatStatBlock(detail.data, detail.accessType, config);
 }

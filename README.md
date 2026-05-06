@@ -8,26 +8,34 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that gi
 |------|-------------|
 | `ddb_login` | Authenticate with D&D Beyond (Wizards ID). Run once to save your session to disk. |
 | `ddb_list_characters` | List all characters in your account with ID, level, race, and class. |
-| `ddb_parse_character` | Parse a character into a compact, readable summary. Covers all stats, skills, spells, actions, and inventory. Accepts character name (fuzzy matched) or numeric ID. |
-| `ddb_get_character` | Fetch raw character JSON from the D&D Beyond API. Use `ddb_parse_character` unless you need the raw data. |
+| `ddb_get_character` | Parse a character into a compact, readable summary. Covers all stats, skills, spells, actions, and inventory. Accepts character name (fuzzy matched) or numeric ID. |
+| `ddb_get_character_raw` | Fetch raw character JSON from the D&D Beyond API. Use `ddb_get_character` unless you need the raw data. |
 | `ddb_download_character` | Save a character's full JSON data to a local file. |
-| `ddb_get_definition` | Look up the full description of a spell, feat, class feature, racial trait, or item on a character sheet. Supports partial and fuzzy name matching. |
+| `ddb_character_lookup` | Look up the full description of a spell, feat, class feature, racial trait, or item on a character sheet. Supports partial and fuzzy name matching. |
 | `ddb_list_campaigns` | List all campaigns you're part of (as DM or player). |
 | `ddb_get_campaign` | Fetch campaign details — DM, description, and active characters. |
 | `ddb_search_monsters` | Search the D&D Beyond monster compendium by name, CR, type, or size. |
 | `ddb_get_monster` | Get the full formatted stat block for a monster by name. |
 | `ddb_search_spells` | Search the D&D Beyond spell compendium by name, level, school, or class. |
 | `ddb_get_spell` | Get the full description of a spell by name. |
-| `ddb_search_items` | Search the D&D Beyond magic item compendium by name or rarity. |
-| `ddb_get_item` | Get the full description of a magic item by name. |
-| `ddb_get_condition` | Look up the rules text for a condition (Poisoned, Stunned, etc.). |
+| `ddb_search_equipment` | Search the item/equipment compendium by name, rarity, or type. Covers mundane weapons, armour, adventuring gear, and magic items. |
+| `ddb_get_equipment` | Get the full stats and description of any item or equipment — mundane weapons, armour, or magic items. Shows damage type, versatile damage, range, STR requirement, and stealth penalty where applicable. |
+| `ddb_get_condition` | Look up the rules text for a condition (Poisoned, Stunned, etc.). No login required. |
+| `ddb_search_rules` | Search all 45 SRD rules sections by keyword — searches section names and full content. No login required. |
+| `ddb_get_rules` | Read the full text of any SRD rules section (Spellcasting, Attacking, Combat, Multiclassing, Rest, Environment, etc.). Supports `query` to jump to a keyword within long sections. No login required. |
+| `ddb_search_races` | Search all races and subraces in the D&D Beyond compendium. |
+| `ddb_search_classes` | Search all classes with hit die, spellcasting, and subclasses. |
+| `ddb_search_backgrounds` | Search all backgrounds. |
+| `ddb_search_feats` | Search feats by name or prerequisite. |
+| `ddb_search_class_features` | Search class features by name, class, or level. Supports pagination. |
+| `ddb_search_racial_traits` | Search racial traits by name or race. Supports pagination. |
 | `ddb_list_library` | List all sourcebooks you own, purchased, or have shared with you. |
 | `ddb_read_book` | Read content from an owned sourcebook, optionally by chapter slug. |
-| `ddb_search` | Search for spells, monsters, magic items, races, classes, or feats (browser-based). |
+| `ddb_search_site` | Search D&D Beyond by keyword across spells, monsters, items, races, classes, and feats (browser-based). |
 | `ddb_navigate` | Navigate to any D&D Beyond URL and return its text content. Keeps the browser open for follow-up calls. |
 | `ddb_interact` | Click, fill, or screenshot the currently loaded browser page. |
-| `ddb_current_page` | Return the text content of whatever page is currently loaded. |
-| `ddb_close_browser` | Close the background browser window. Call this when finished with `ddb_navigate`, `ddb_interact`, or `ddb_current_page`. |
+| `ddb_get_page` | Return the text content of whatever page is currently loaded. |
+| `ddb_close_browser` | Close the background browser window. Call this when finished with `ddb_navigate`, `ddb_interact`, or `ddb_get_page`. |
 
 ## Prerequisites
 
@@ -173,7 +181,7 @@ To read a specific chapter, pass the chapter path after the book slug:
 ddb_read_book("dnd/phb-2024", "character-classes/barbarian")
 ```
 
-### Sample `ddb_parse_character` output
+### Sample `ddb_get_character` output
 
 The output below is real — truncated slightly for length. It shows a Tiefling Wizard 2 with a mix of prepared spells, unprepared rituals, and spells from racial traits and feats.
 
@@ -275,7 +283,7 @@ ATTUNEMENT: 0/3 slots used
 CURRENCY: 34gp, 7sp
 ```
 
-Key things `ddb_parse_character` handles correctly:
+Key things `ddb_get_character` handles correctly:
 
 - **Wizards**: only shows prepared spells and unprepared rituals (castable from spellbook without a slot) — not the full spellbook
 - **Spell sources**: racial traits, class features, feats, and magic items are all labelled separately

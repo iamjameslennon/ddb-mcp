@@ -35,7 +35,9 @@ export async function listLibrary(context: BrowserContext): Promise<string> {
 export async function readBook(
   context: BrowserContext,
   bookSlug: string,
-  chapterSlug?: string
+  chapterSlug?: string,
+  maxChars = 3000,
+  query?: string
 ): Promise<string> {
   const page = await getPage(context);
 
@@ -100,10 +102,26 @@ export async function readBook(
   });
 
   const trimmed = content.trim();
-  const truncated =
-    trimmed.length > 8000
-      ? trimmed.slice(0, 8000) + "\n\n[Content truncated. Specify a chapter_slug to read a specific section.]"
-      : trimmed;
+  let contentToReturn = trimmed;
+
+  if (query) {
+    const q = query.toLowerCase();
+    const headingRegex = /^#{1,4}\s.+$/gm;
+    let bestPos = -1;
+    let match;
+    while ((match = headingRegex.exec(trimmed)) !== null) {
+      if (match[0].toLowerCase().includes(q)) {
+        bestPos = match.index;
+        break;
+      }
+    }
+    if (bestPos >= 0) contentToReturn = trimmed.slice(bestPos);
+  }
+
+  const truncated = contentToReturn.length > maxChars
+    ? contentToReturn.slice(0, maxChars) +
+      `\n\n[Truncated at ${maxChars} chars. Use a larger max_chars or specify query/chapter_slug to narrow scope.]`
+    : contentToReturn;
 
   return `# ${bookSlug}${chapterSlug ? ` / ${chapterSlug}` : ""}\nURL: ${url}\n\n${truncated}`;
 }

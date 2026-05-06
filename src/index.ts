@@ -10,7 +10,7 @@ import { navigate, interact, getCurrentPageContent } from "./tools/navigate.js";
 import { search } from "./tools/search.js";
 import { listLibrary, readBook } from "./tools/library.js";
 import { searchMonsters, getMonster } from "./tools/monster.js";
-import { getCondition, searchSpells, getSpell, searchItems, getItem } from "./tools/reference.js";
+import { getCondition, searchSpells, getSpell, searchItems, getItem, searchRaces, searchClasses, searchBackgrounds, searchFeats, searchClassFeatures, searchRacialTraits, searchRules, getRule } from "./tools/reference.js";
 
 const server = new McpServer({
   name: "dndbeyond",
@@ -57,7 +57,7 @@ server.tool(
 // ─── ddb_close_browser ───────────────────────────────────────────────────────
 server.tool(
   "ddb_close_browser",
-  "Close the background browser window if one is open. Useful after running ddb_navigate, ddb_interact, or ddb_current_page.",
+  "Close the background browser window if one is open. Useful after running ddb_navigate, ddb_interact, or ddb_get_page.",
   {},
   async () => {
     try {
@@ -88,13 +88,14 @@ server.tool(
   }
 );
 
-// ─── ddb_get_character ────────────────────────────────────────────────────────
+// ─── ddb_get_character_raw ────────────────────────────────────────────────────
 server.tool(
-  "ddb_get_character",
-  "Fetch raw character JSON from the D&D Beyond API. WARNING: the response is 300–500 KB of unprocessed data and will consume a large number of tokens. Prefer ddb_parse_character for any play-related question — only use this tool when you explicitly need the raw JSON (e.g. before ddb_download_character, or to inspect fields not surfaced by ddb_parse_character).",
+  "ddb_get_character_raw",
+  "Returns raw 300–500 KB character JSON. Requires confirm_large_response: true. Use ddb_get_character instead for all normal use.",
   {
     character_id: z.string().min(1).optional().describe("The D&D Beyond character ID (e.g. '12345678')"),
     character_name: z.string().min(1).optional().describe("Character name to look up (fuzzy matched against your account)"),
+    confirm_large_response: z.literal(true).describe("Must be true to proceed — acknowledges this call returns 300–500 KB."),
   },
   async ({ character_id, character_name }) => {
     try {
@@ -113,7 +114,7 @@ server.tool(
       return { content: [{ type: "text", text: data }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      process.stderr.write(`[ddb-mcp] ddb_get_character error: ${msg}\n`);
+      process.stderr.write(`[ddb-mcp] ddb_get_character_raw error: ${msg}\n`);
       return { content: [{ type: "text", text: `Failed to get character: ${msg}` }], isError: true };
     }
   }
@@ -143,15 +144,18 @@ server.tool(
   }
 );
 
-// ─── ddb_parse_character ─────────────────────────────────────────────────────
+// ─── ddb_get_character ───────────────────────────────────────────────────────
 server.tool(
-  "ddb_parse_character",
-  "Return a concise human-readable summary of a D&D Beyond character — far more token-efficient than ddb_get_character. Includes HP, ability scores, saving throws, skills, AC, initiative, speed, feats (correctly filtered to player-chosen only), class features, racial traits, actions, spell slots, spells, inventory, and currency. Works for any public character without login. Accepts either a numeric character_id or a character_name (fuzzy matched against your account).",
+  "ddb_get_character",
+  "Parse and display a character sheet. Use sections to reduce output: summary (vitals+stats), combat (adds actions/weapons), spells (spellcasting only), inventory, features, or full (default).",
   {
     character_id: z.string().min(1).optional().describe("The D&D Beyond character ID (e.g. '12345678')"),
     character_name: z.string().min(1).optional().describe("Character name to look up (fuzzy matched — e.g. 'Throin' finds 'Thorin Ironforge')"),
+    sections: z.enum(["summary", "combat", "spells", "inventory", "features", "full"])
+      .default("full")
+      .describe("Which sections to return. Default: full. Use summary for a quick overview."),
   },
-  async ({ character_id, character_name }) => {
+  async ({ character_id, character_name, sections }) => {
     try {
       let resolvedId = character_id;
       if (!resolvedId) {
@@ -164,19 +168,19 @@ server.tool(
         }
         resolvedId = found.id;
       }
-      const summary = await parseCharacter(resolvedId);
+      const summary = await parseCharacter(resolvedId, sections);
       return { content: [{ type: "text", text: summary }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      process.stderr.write(`[ddb-mcp] ddb_parse_character error: ${msg}\n`);
+      process.stderr.write(`[ddb-mcp] ddb_get_character error: ${msg}\n`);
       return { content: [{ type: "text", text: `Failed to parse character: ${msg}` }], isError: true };
     }
   }
 );
 
-// ─── ddb_get_definition ───────────────────────────────────────────────────────
+// ─── ddb_character_lookup ────────────────────────────────────────────────────
 server.tool(
-  "ddb_get_definition",
+  "ddb_character_lookup",
   "Look up the full description of a spell, feat, class feature, subclass feature, racial trait, background feature, or equipped item by name. Supports partial and fuzzy name matching (e.g. 'cutting' finds Cutting Words, 'sheild' finds Shield). Accepts either a numeric character_id or a character_name.",
   {
     character_id: z.string().min(1).optional().describe("The D&D Beyond character ID"),
@@ -200,7 +204,7 @@ server.tool(
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      process.stderr.write(`[ddb-mcp] ddb_get_definition error: ${msg}\n`);
+      process.stderr.write(`[ddb-mcp] ddb_character_lookup error: ${msg}\n`);
       return { content: [{ type: "text", text: `Definition lookup failed: ${msg}` }], isError: true };
     }
   }
@@ -292,7 +296,7 @@ server.tool(
 // ─── ddb_navigate ─────────────────────────────────────────────────────────────
 server.tool(
   "ddb_navigate",
-  "Navigate to any D&D Beyond URL and return the page's text content. Only dndbeyond.com URLs are allowed. The browser stays open after this call for follow-up ddb_interact or ddb_current_page calls. Call ddb_close_browser when finished.",
+  "Navigate to any D&D Beyond URL and return the page's text content. Only dndbeyond.com URLs are allowed. The browser stays open after this call for follow-up ddb_interact or ddb_get_page calls. Call ddb_close_browser when finished.",
   {
     url: z
       .string()
@@ -320,7 +324,7 @@ server.tool(
     action: z
       .enum(["click", "fill", "screenshot"])
       .describe("The action to perform: click an element, fill a text field, or take a screenshot"),
-    selector: z.string().min(1).describe("CSS selector or text selector for the target element"),
+    selector: z.string().min(1).describe("CSS or text selector for the target element. Prefer specific selectors to avoid matching hidden elements — e.g. 'button:visible:has-text(\"Spells\")' or '[role=\"tab\"]:has-text(\"Spells\")' rather than 'text=Spells', which may match hidden nav dropdowns on DnD Beyond pages. Hardcoded DnD Beyond class names are unreliable (CSS module hashes change)."),
     value: z
       .string()
       .optional()
@@ -339,9 +343,9 @@ server.tool(
   }
 );
 
-// ─── ddb_current_page ─────────────────────────────────────────────────────────
+// ─── ddb_get_page ─────────────────────────────────────────────────────────────
 server.tool(
-  "ddb_current_page",
+  "ddb_get_page",
   "Return the text content of the currently loaded page in the browser. The browser stays open — call ddb_close_browser when finished.",
   {},
   async () => {
@@ -351,15 +355,15 @@ server.tool(
       return { content: [{ type: "text", text: content }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      process.stderr.write(`[ddb-mcp] ddb_current_page error: ${msg}\n`);
+      process.stderr.write(`[ddb-mcp] ddb_get_page error: ${msg}\n`);
       return { content: [{ type: "text", text: `Failed to get page content: ${msg}` }], isError: true };
     }
   }
 );
 
-// ─── ddb_search ───────────────────────────────────────────────────────────────
+// ─── ddb_search_site ──────────────────────────────────────────────────────────
 server.tool(
-  "ddb_search",
+  "ddb_search_site",
   "Search D&D Beyond for spells, monsters, magic items, races, classes, or feats.",
   {
     query: z.string().min(1).describe("The search query (e.g. 'Fireball', 'Beholder', 'Vorpal Sword')"),
@@ -377,7 +381,7 @@ server.tool(
     } catch (err) {
       await closeBrowser().catch(() => {});
       const msg = err instanceof Error ? err.message : String(err);
-      process.stderr.write(`[ddb-mcp] ddb_search error: ${msg}\n`);
+      process.stderr.write(`[ddb-mcp] ddb_search_site error: ${msg}\n`);
       return { content: [{ type: "text", text: `Search failed: ${msg}` }], isError: true };
     }
   }
@@ -406,7 +410,7 @@ server.tool(
 // ─── ddb_read_book ────────────────────────────────────────────────────────────
 server.tool(
   "ddb_read_book",
-  "Read content from an owned D&D Beyond sourcebook. Provide the book slug (e.g. 'players-handbook') and optionally a chapter slug.",
+  "Read a D&D Beyond book. Specify chapter_slug for a chapter, query to jump to a heading, and max_chars to control response size.",
   {
     book_slug: z
       .string()
@@ -417,14 +421,16 @@ server.tool(
       .string()
       .regex(/^[a-z0-9][a-z0-9\-\/]*$/, "chapter_slug may only contain lowercase letters, digits, hyphens, and forward slashes")
       .optional()
-      .describe(
-        "Optional chapter or section slug (e.g. 'classes/ranger'). If omitted, returns the book's table of contents."
-      ),
+      .describe("Optional chapter or section slug (e.g. 'classes/ranger'). If omitted, returns the book's table of contents."),
+    max_chars: z.number().int().min(500).max(8000).default(3000)
+      .describe("Max characters to return (default 3000). Increase for deeper reading."),
+    query: z.string().optional()
+      .describe("Jump to the first heading containing this text (e.g. 'spell slots', 'wild shape')."),
   },
-  async ({ book_slug, chapter_slug }) => {
+  async ({ book_slug, chapter_slug, max_chars, query }) => {
     try {
       const context = await getSharedContext();
-      const content = await readBook(context, book_slug, chapter_slug);
+      const content = await readBook(context, book_slug, chapter_slug, max_chars, query);
       await closeBrowser();
       return { content: [{ type: "text", text: content }] };
     } catch (err) {
@@ -459,10 +465,12 @@ server.tool(
     school: z.string().optional().describe("School of magic (e.g. 'evocation', 'illusion')"),
     concentration: z.boolean().optional().describe("Filter by concentration requirement"),
     ritual: z.boolean().optional().describe("Filter by ritual tag"),
+    limit: z.number().int().min(1).max(100).default(20).describe("Max results to return (default 20)"),
+    offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
   },
-  async ({ name, level, school, concentration, ritual }) => {
+  async ({ name, level, school, concentration, ritual, limit, offset }) => {
     try {
-      const result = await searchSpells({ name, level, school, concentration, ritual });
+      const result = await searchSpells({ name, level, school, concentration, ritual, limit, offset });
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -490,9 +498,10 @@ server.tool(
   }
 );
 
+// ─── ddb_search_equipment ────────────────────────────────────────────────────
 server.tool(
-  "ddb_search_items",
-  "Search the D&D Beyond magic item compendium by name, rarity, or type. Requires login.",
+  "ddb_search_equipment",
+  "Search the D&D Beyond item/equipment compendium by name, rarity, or type. Covers mundane weapons (Longsword, Shortbow), armour (Plate, Chain Mail), adventuring gear, and magic items. Filter by rarity='common' to see only mundane equipment. Requires login.",
   {
     name: z.string().optional().describe("Partial item name (e.g. 'sword', 'cloak')"),
     rarity: z.string().optional().describe("Rarity filter (e.g. 'rare', 'legendary', 'uncommon')"),
@@ -504,15 +513,16 @@ server.tool(
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      process.stderr.write(`[ddb-mcp] ddb_search_items error: ${msg}\n`);
+      process.stderr.write(`[ddb-mcp] ddb_search_equipment error: ${msg}\n`);
       return { content: [{ type: "text", text: `Item search failed: ${msg}` }], isError: true };
     }
   }
 );
 
+// ─── ddb_get_equipment ───────────────────────────────────────────────────────
 server.tool(
-  "ddb_get_item",
-  "Get the full description of any magic item in the D&D Beyond compendium by name. Requires login.",
+  "ddb_get_equipment",
+  "Get the full stats and description of any item or equipment in the D&D Beyond compendium by name. Works for mundane weapons (e.g. 'Longbow'), armour (e.g. 'Plate'), adventuring gear, and magic items. Requires login.",
   {
     name: z.string().min(1).describe("Item name (e.g. 'Bag of Holding', 'Flame Tongue')"),
   },
@@ -522,8 +532,180 @@ server.tool(
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      process.stderr.write(`[ddb-mcp] ddb_get_item error: ${msg}\n`);
+      process.stderr.write(`[ddb-mcp] ddb_get_equipment error: ${msg}\n`);
       return { content: [{ type: "text", text: `Item lookup failed: ${msg}` }], isError: true };
+    }
+  }
+);
+
+server.tool(
+  "ddb_search_races",
+  "Search all D&D Beyond races and subraces (including homebrew). Not character-specific.",
+  {
+    name: z.string().optional().describe("Partial race name (e.g. 'elf', 'tiefling')"),
+    limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
+    offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
+  },
+  async ({ name, limit, offset }) => {
+    try {
+      const result = await searchRaces(name, limit, offset);
+      return { content: [{ type: "text", text: result }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[ddb-mcp] ddb_search_races error: ${msg}\n`);
+      return { content: [{ type: "text", text: `Race search failed: ${msg}` }], isError: true };
+    }
+  }
+);
+
+server.tool(
+  "ddb_search_classes",
+  "Search all D&D Beyond classes with hit die, spellcasting, and subclasses.",
+  {
+    name: z.string().optional().describe("Partial class name (e.g. 'fighter', 'wizard')"),
+    limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
+    offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
+  },
+  async ({ name, limit, offset }) => {
+    try {
+      const result = await searchClasses(name, limit, offset);
+      return { content: [{ type: "text", text: result }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[ddb-mcp] ddb_search_classes error: ${msg}\n`);
+      return { content: [{ type: "text", text: `Class search failed: ${msg}` }], isError: true };
+    }
+  }
+);
+
+server.tool(
+  "ddb_search_backgrounds",
+  "Search all D&D Beyond backgrounds (including homebrew).",
+  {
+    name: z.string().optional().describe("Partial background name (e.g. 'sage', 'criminal')"),
+    limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
+    offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
+  },
+  async ({ name, limit, offset }) => {
+    try {
+      const result = await searchBackgrounds(name, limit, offset);
+      return { content: [{ type: "text", text: result }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[ddb-mcp] ddb_search_backgrounds error: ${msg}\n`);
+      return { content: [{ type: "text", text: `Background search failed: ${msg}` }], isError: true };
+    }
+  }
+);
+
+server.tool(
+  "ddb_search_feats",
+  "Search feats by name or prerequisite text.",
+  {
+    name: z.string().optional().describe("Partial feat name (e.g. 'sharpshooter', 'magic')"),
+    prerequisite: z.string().optional().describe("Filter by prerequisite text (e.g. 'spellcaster', 'level 4')"),
+    limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
+    offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
+  },
+  async ({ name, prerequisite, limit, offset }) => {
+    try {
+      const result = await searchFeats({ name, prerequisite, limit, offset });
+      return { content: [{ type: "text", text: result }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[ddb-mcp] ddb_search_feats error: ${msg}\n`);
+      return { content: [{ type: "text", text: `Feat search failed: ${msg}` }], isError: true };
+    }
+  }
+);
+
+server.tool(
+  "ddb_search_class_features",
+  "Search class features by name, class, or level gained.",
+  {
+    name: z.string().optional().describe("Partial feature name (e.g. 'action surge', 'sneak attack')"),
+    class_name: z.string().optional().describe("Class name filter (e.g. 'fighter', 'rogue')"),
+    level: z.number().int().min(1).max(20).optional().describe("Level at which the feature is gained"),
+    limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
+    offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
+  },
+  async ({ name, class_name, level, limit, offset }) => {
+    try {
+      const result = await searchClassFeatures({ name, className: class_name, level, limit, offset });
+      return { content: [{ type: "text", text: result }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[ddb-mcp] ddb_search_class_features error: ${msg}\n`);
+      return { content: [{ type: "text", text: `Class feature search failed: ${msg}` }], isError: true };
+    }
+  }
+);
+
+server.tool(
+  "ddb_search_racial_traits",
+  "Search racial traits by name or race.",
+  {
+    name: z.string().optional().describe("Partial trait name (e.g. 'darkvision', 'breath weapon')"),
+    race_name: z.string().optional().describe("Race name filter (e.g. 'elf', 'dragonborn')"),
+    limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
+    offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
+  },
+  async ({ name, race_name, limit, offset }) => {
+    try {
+      const result = await searchRacialTraits({ name, raceName: race_name, limit, offset });
+      return { content: [{ type: "text", text: result }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[ddb-mcp] ddb_search_racial_traits error: ${msg}\n`);
+      return { content: [{ type: "text", text: `Racial trait search failed: ${msg}` }], isError: true };
+    }
+  }
+);
+
+// ─── ddb_search_rules ─────────────────────────────────────────────────────────
+server.tool(
+  "ddb_search_rules",
+  "Search the SRD rules sections by keyword. Searches across section names and full content — e.g. 'grapple' finds the Attacking section (which covers grapple rules) and the Conditions section (which has the Grappled condition). Returns a list of matching sections with their slugs. Use ddb_get_rules to read the full text of a section. No login required.",
+  {
+    query: z.string().optional().describe(
+      "Keyword to search for (e.g. 'grapple', 'concentration', 'death saving throw'). Omit to list all 45 available sections."
+    ),
+  },
+  async ({ query }) => {
+    try {
+      const result = await searchRules(query);
+      return { content: [{ type: "text", text: result }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[ddb-mcp] ddb_search_rules error: ${msg}\n`);
+      return { content: [{ type: "text", text: `Rules search failed: ${msg}` }], isError: true };
+    }
+  }
+);
+
+// ─── ddb_get_rules ────────────────────────────────────────────────────────────
+server.tool(
+  "ddb_get_rules",
+  "Get the full SRD rules text for a topic by section name or slug. Covers all core 5e rules: Spellcasting, Abilities, Attacking, Combat Sequence, Actions in Combat, Damage and Healing, Conditions, Movement, Multiclassing, Rest, Saving Throws, Environment, Traps, Diseases, Madness, Poisons, Weapons, Armor, and more. Use query to jump to a specific topic within a long section. For non-SRD rules or more detail, use ddb_read_book. No login required.",
+  {
+    name: z.string().min(1).describe(
+      "Section name or slug (e.g. 'Spellcasting', 'attacking', 'Damage and Healing', 'multiclassing')"
+    ),
+    max_chars: z.number().int().min(500).max(30000).default(4000).describe(
+      "Max characters to return (default 4000). Some sections are 20,000+ chars — increase if you need the full text."
+    ),
+    query: z.string().optional().describe(
+      "Jump to the first occurrence of this keyword within the section (e.g. 'concentration', 'death saving throw')."
+    ),
+  },
+  async ({ name, max_chars, query }) => {
+    try {
+      const result = await getRule(name, max_chars, query);
+      return { content: [{ type: "text", text: result }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[ddb-mcp] ddb_get_rules error: ${msg}\n`);
+      return { content: [{ type: "text", text: `Rules lookup failed: ${msg}` }], isError: true };
     }
   }
 );

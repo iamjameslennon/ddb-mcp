@@ -18,13 +18,11 @@ export async function getBrowser(headless = true): Promise<Browser> {
     await closeBrowser();
   }
   if (browserInstance) return browserInstance;
-  browserInstance = await chromium.launch({
-    headless,
-    args: [
-      "--no-sandbox",
-      "--disable-blink-features=AutomationControlled",
-    ],
-  });
+  const args = ["--disable-blink-features=AutomationControlled"];
+  // Sandbox should stay enabled. Only disable it in constrained container
+  // environments (e.g. CI/Docker) where the kernel doesn't support it.
+  if (process.env["DDB_NO_SANDBOX"] === "1") args.push("--no-sandbox");
+  browserInstance = await chromium.launch({ headless, args });
   browserHeadless = headless;
   return browserInstance;
 }
@@ -33,7 +31,7 @@ export async function getContext(browser: Browser): Promise<BrowserContext> {
   if (contextInstance) return contextInstance;
 
   if (!existsSync(SESSION_DIR)) {
-    mkdirSync(SESSION_DIR, { recursive: true });
+    mkdirSync(SESSION_DIR, { recursive: true, mode: 0o700 });
   }
 
   const contextOptions = {
@@ -50,7 +48,7 @@ export async function getContext(browser: Browser): Promise<BrowserContext> {
 
 export async function saveSession(context: BrowserContext): Promise<void> {
   if (!existsSync(SESSION_DIR)) {
-    mkdirSync(SESSION_DIR, { recursive: true });
+    mkdirSync(SESSION_DIR, { recursive: true, mode: 0o700 });
   }
   await context.storageState({ path: SESSION_PATH });
   // Restrict session file to owner-only access — it contains sensitive auth cookies.

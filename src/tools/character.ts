@@ -1,7 +1,8 @@
 import { sessionFetch, hasValidSession, getCobaltToken } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
+import { addCharacterSpellsToCompendium } from "./reference.js";
 import { writeFileSync } from "fs";
-import { join, resolve } from "path";
+import { join, resolve, relative, basename } from "path";
 import { homedir } from "os";
 
 // Cache character JSON for 60 s to avoid redundant API calls within a session.
@@ -62,8 +63,14 @@ export async function findCharacterByName(name: string): Promise<{ id: string; n
   return null;
 }
 
-export function parseCharacterData(raw: Record<string, unknown>): string {
+export function parseCharacterData(
+  raw: Record<string, unknown>,
+  sections: "summary" | "combat" | "spells" | "inventory" | "features" | "full" = "full"
+): string {
   const char = (raw?.data ?? raw) as Record<string, unknown>;
+
+  // Supplement spell compendium with this character's chosen spells (cantrips etc.)
+  addCharacterSpellsToCompendium(char);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const str = (v: unknown) => (v != null ? String(v) : "");
@@ -363,8 +370,17 @@ export function parseCharacterData(raw: Record<string, unknown>): string {
   );
 
   // ── Background Feature ────────────────────────────────────────────────────
-  const bgDef = obj(obj(char.background).definition);
+  // For custom backgrounds, featureName may reflect a feat name rather than
+  // the actual background feature. Check customBackground first if present.
+  const bgObj = obj(char.background);
+  const customBg = obj(bgObj.customBackground);
+  const featuresBackgroundDef = obj(obj(customBg.featuresBackground).definition);
+  const customBgDef = Object.keys(featuresBackgroundDef).length > 0
+    ? featuresBackgroundDef
+    : obj(customBg.definition);
+  const bgDef = Object.keys(customBgDef).length > 0 ? customBgDef : obj(bgObj.definition);
   const bgFeatureName = str(bgDef.featureName);
+  const bgFeatureIsFeat = bgDef.featureIsFeat === true;
   const bgFeatureDesc = bgDef.featureDescription
     ? resolveTemplates(stripHtml(str(bgDef.featureDescription))).slice(0, 300)
     : "";
@@ -545,10 +561,18 @@ export function parseCharacterData(raw: Record<string, unknown>): string {
   const spellSections: string[] = [];
   const classSpells = arr<Record<string, unknown>>(char.classSpells);
   for (const cs of classSpells) {
-    const classEntry = classes.find(c => c.id === cs.characterClassId);
+    // Try characterClassId first; fall back to id/classId for 2024-rules format
+    const classEntry = classes.find(c =>
+      c.id === cs.characterClassId ||
+      c.id === cs.id ||
+      c.id === cs.classId
+    );
     const className = str(obj(classEntry?.definition ?? {}).name);
     const isSpellbook = className === "Wizard";
-    const allSpells = arr<Record<string, unknown>>(cs.spells);
+    // spells may be under cs.spells or cs.classSpells (2024 format variation)
+    const allSpells = arr<Record<string, unknown>>(cs.spells).length > 0
+      ? arr<Record<string, unknown>>(cs.spells)
+      : arr<Record<string, unknown>>(cs.classSpells);
     const cantrips = allSpells
       .filter(s => num(obj(s.definition).level) === 0)
       .map(s => str(obj(s.definition).name));
@@ -573,13 +597,15 @@ export function parseCharacterData(raw: Record<string, unknown>): string {
   for (const [key, label] of Object.entries(sourceLabels)) {
     const spellList = arr<Record<string, unknown>>(spellsObj[key]);
     if (!spellList.length) continue;
-    const names = spellList
-      .map(s => {
-        const def = obj(s.definition);
-        const n = str(def.name);
-        return n ? (num(def.level) === 0 ? n : `${n} (L${num(def.level)})`) : "";
-      })
-      .filter(n => n.length > 0);
+    const names = [...new Set(
+      spellList
+        .map(s => {
+          const def = obj(s.definition);
+          const n = str(def.name);
+          return n ? (num(def.level) === 0 ? n : `${n} (L${num(def.level)})`) : "";
+        })
+        .filter(n => n.length > 0)
+    )];
     if (names.length) spellSections.push(`  From ${label}: ${names.join(", ")}`);
   }
 
@@ -616,8 +642,8 @@ export function parseCharacterData(raw: Record<string, unknown>): string {
   const dsSucc = num(deathSaves.successCount);
   const dsFail = num(deathSaves.failCount);
 
-  // ── Build output ──────────────────────────────────────────────────────────
-  const lines: string[] = [
+  // ── Assemble named blocks ─────────────────────────────────────────────────
+  const headerBlock: string[] = [
     `═══════════════════════════════════════`,
     `  ${charName}`,
     `  ${race} | ${classLine} | Level ${totalLevel}`,
@@ -625,11 +651,17 @@ export function parseCharacterData(raw: Record<string, unknown>): string {
     `  Inspiration: ${char.inspiration ? "Yes" : "No"}`,
     `═══════════════════════════════════════`,
     ``,
+  ];
+
+  const vitalsBlock: string[] = [
     `HP: ${currentHp}/${maxHp}   Temp HP: ${tempHp || "—"}   Prof Bonus: ${signed(profBonus)}`,
     `Hit Dice: ${hitDiceLines.join(" / ")}`,
     `AC: ${ac}   Initiative: ${signed(initiative)}   Speed: ${speedParts.join(", ")}`,
     `Death Saves: Successes ${dsSucc}/3   Failures ${dsFail}/3`,
     ``,
+  ];
+
+  const statsBlock: string[] = [
     `ABILITY SCORES`,
     `  ${abilityScoreDisplay.join("  ")}`,
     ``,
@@ -651,45 +683,44 @@ export function parseCharacterData(raw: Record<string, unknown>): string {
     `  Tools: ${toolProfs.length ? [...new Set(toolProfs)].join(", ") : "None"}`,
     `  Languages: ${languages.length ? [...new Set(languages)].join(", ") : "None"}`,
     ``,
+  ];
+
+  const defensesBlock: string[] = [
     `DEFENSES`,
     `  Resistances: ${resistances.length ? resistances.join(", ") : "(none)"}`,
     `  Immunities: ${immunities.length ? immunities.join(", ") : "(none)"}`,
     `  Vulnerabilities: ${vulnerabilities.length ? vulnerabilities.join(", ") : "(none)"}`,
     `CONDITIONS: ${conditions.length ? conditions.join(", ") : "(none)"}`,
     ``,
+  ];
+
+  const featuresBlock: string[] = [
     `FEATS (${realFeats.length})`,
     ...(featLines.length ? featLines : ["  (none)"]),
     ``,
-  ];
-
-  if (disguisedFeats.length) {
-    lines.push(
+    ...(disguisedFeats.length ? [
       `OTHER FEATURES (stored as feats in API but NOT player-chosen feats)`,
       ...disguisedFeats.map(f => `• ${str(obj(f.definition).name)}`),
-      ``
-    );
-  }
-
-  lines.push(
+      ``,
+    ] : []),
     `CLASS FEATURES`,
     ...classFeatureLines,
     ``,
     `RACIAL TRAITS`,
     ...racialTraitLines,
     ``,
-  );
+    ...(!bgFeatureName || bgFeatureIsFeat ? [] : (() => {
+      const descSnippet = bgFeatureDesc
+        ? `${bgFeatureDesc}${bgFeatureDesc.length >= 300 ? "…" : ""}` : "";
+      return [
+        `BACKGROUND FEATURE`,
+        `  ${bgFeatureName}${descSnippet ? `: ${descSnippet}` : ""}`,
+        ``,
+      ];
+    })()),
+  ];
 
-  if (bgFeatureName) {
-    const descSnippet = bgFeatureDesc
-      ? `${bgFeatureDesc}${bgFeatureDesc.length >= 300 ? "…" : ""}` : "";
-    lines.push(
-      `BACKGROUND FEATURE`,
-      `  ${bgFeatureName}${descSnippet ? `: ${descSnippet}` : ""}`,
-      ``
-    );
-  }
-
-  lines.push(
+  const combatBlock: string[] = [
     `ACTIONS`,
     ...(weaponAttacks.length ? weaponAttacks : ["  (none)"]),
     ``,
@@ -699,47 +730,62 @@ export function parseCharacterData(raw: Record<string, unknown>): string {
     `REACTIONS`,
     ...(reactions.length ? reactions : ["  (none)"]),
     ``,
-  );
+    ...(limitedUseFeatures.length ? [`LIMITED USE`, ...limitedUseFeatures, ``] : []),
+  ];
 
-  if (limitedUseFeatures.length) {
-    lines.push(`LIMITED USE`, ...limitedUseFeatures, ``);
-  }
+  const spellsBlock: string[] = [
+    ...(spellcastingLines.length ? [`SPELLCASTING`, ...spellcastingLines, ``] : []),
+    ...(slotLines.length ? [`SPELL SLOTS`, ...slotLines, ``] : []),
+    ...(spellSections.length ? [`SPELLS`, ...spellSections, ``] : []),
+  ];
 
-  if (spellcastingLines.length) {
-    lines.push(`SPELLCASTING`, ...spellcastingLines, ``);
-  }
-
-  if (slotLines.length) {
-    lines.push(`SPELL SLOTS`, ...slotLines, ``);
-  }
-
-  if (spellSections.length) {
-    lines.push(`SPELLS`, ...spellSections, ``);
-  }
-
-  if (equippedNonWeapons.length) {
-    lines.push(`EQUIPPED`, ...equippedNonWeapons.map(e => `  ${e}`), ``);
-  }
-
-  if (inventoryLine) {
-    lines.push(`INVENTORY`, `  ${inventoryLine}`, ``);
-  }
-
-  lines.push(
+  const inventoryBlock: string[] = [
+    ...(equippedNonWeapons.length ? [`EQUIPPED`, ...equippedNonWeapons.map(e => `  ${e}`), ``] : []),
+    ...(inventoryLine ? [`INVENTORY`, `  ${inventoryLine}`, ``] : []),
     `ATTUNEMENT: ${attuned}/3 slots used`,
     ``,
     `CURRENCY: ${currencyLine}`,
-  );
+  ];
 
-  return lines.join("\n");
+  // ── Select blocks by section ──────────────────────────────────────────────
+  const out: string[] = [...headerBlock];
+
+  switch (sections) {
+    case "summary":
+      out.push(...vitalsBlock, ...statsBlock);
+      break;
+    case "combat":
+      out.push(...vitalsBlock, ...statsBlock, ...defensesBlock, ...combatBlock);
+      break;
+    case "spells":
+      out.push(...(spellsBlock.length ? spellsBlock : ["No spellcasting on this character."]));
+      break;
+    case "inventory":
+      out.push(...inventoryBlock);
+      break;
+    case "features":
+      out.push(...featuresBlock);
+      break;
+    case "full":
+    default:
+      out.push(
+        ...vitalsBlock, ...statsBlock, ...defensesBlock,
+        ...featuresBlock, ...combatBlock, ...spellsBlock, ...inventoryBlock,
+      );
+      break;
+  }
+
+  return out.join("\n");
 }
 
 export async function parseCharacter(
-  characterId: string
+  characterId: string,
+  sections: "summary" | "combat" | "spells" | "inventory" | "features" | "full" = "full"
 ): Promise<string> {
   const jsonData = await getCharacter(characterId);
   const raw = JSON.parse(jsonData) as Record<string, unknown>;
-  return parseCharacterData(raw);
+  addCharacterSpellsToCompendium((raw?.data ?? raw) as Record<string, unknown>);
+  return parseCharacterData(raw, sections);
 }
 
 /**
@@ -782,15 +828,26 @@ export async function downloadCharacter(
   const jsonData = await getCharacter(characterId);
   const parsed = JSON.parse(jsonData);
   const charName: string = parsed?.data?.name ?? `character-${characterId}`;
-  const filename = `${charName.replace(/\s+/g, "-").toLowerCase()}-${characterId}.json`;
-  const defaultPath = join(homedir(), "Downloads", filename);
+
+  // Sanitize the character name: keep only alphanumeric, spaces, hyphens, apostrophes.
+  // basename ensures no path separators survive; the allowlist strips anything else.
+  const safeName = basename(charName)
+    .replace(/[^a-zA-Z0-9 '\-]/g, "")
+    .replace(/\s+/g, "-")
+    .toLowerCase()
+    .slice(0, 64) || `character-${characterId}`;
+  const filename = `${safeName}-${characterId}.json`;
+  const downloadsDir = join(homedir(), "Downloads");
+  const defaultPath = join(downloadsDir, filename);
 
   let savePath: string;
   if (outputPath) {
-    // Resolve to an absolute path and ensure it stays within the user's home directory.
-    const resolved = join(resolve(outputPath));
-    if (!resolved.startsWith(homedir())) {
-      throw new Error(`Output path must be within your home directory (${homedir()}).`);
+    const resolved = resolve(outputPath);
+    const home = homedir();
+    // Use path.relative to detect traversal — a safe path will not start with "..".
+    const rel = relative(home, resolved);
+    if (rel.startsWith("..") || resolve(resolved) !== resolved) {
+      throw new Error(`Output path must be within your home directory (${home}).`);
     }
     savePath = resolved;
   } else {
@@ -1066,6 +1123,11 @@ export async function getDefinition(
 
   if (hits.length === 0) {
     return `No definition found matching "${query}" on this character. Try a partial name like "hunter" for Hunter's Mark.`;
+  }
+
+  if (hits.length > 3) {
+    const list = hits.map((h, i) => `${i + 1}. [${h.type}] ${h.text.split("\n")[0]}`).join("\n");
+    return `Found ${hits.length} matches for "${query}". Be more specific, or here are the matches:\n\n${list}`;
   }
 
   return hits.map(h => `[${h.type}]\n${h.text}`).join("\n\n===\n\n");

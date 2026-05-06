@@ -11,7 +11,8 @@ export async function navigate(context: BrowserContext, url: string): Promise<st
   } catch {
     throw new Error("Invalid URL.");
   }
-  if (validatedUrl.protocol !== "https:" || !validatedUrl.hostname.endsWith("dndbeyond.com")) {
+  const h = validatedUrl.hostname;
+  if (validatedUrl.protocol !== "https:" || !(h === "dndbeyond.com" || h.endsWith(".dndbeyond.com"))) {
     throw new Error("Only D&D Beyond URLs (https://www.dndbeyond.com/...) are supported.");
   }
 
@@ -46,7 +47,11 @@ export async function interact(
 
   switch (action) {
     case "click": {
-      await page.locator(selector).first().click();
+      // Filter to visible elements before .first() — prevents matching hidden
+      // nav dropdown links that appear earlier in the DOM than the intended target.
+      const locator = page.locator(selector).filter({ visible: true }).first();
+      await locator.waitFor({ state: "visible", timeout: 10000 });
+      await locator.click();
       await page.waitForTimeout(1000);
       return `Clicked element: ${selector}`;
     }
@@ -59,7 +64,7 @@ export async function interact(
     }
 
     case "screenshot": {
-      const screenshotPath = `/tmp/ddb-screenshot-${Date.now()}.png`;
+      const screenshotPath = `${process.env.HOME}/Downloads/ddb-screenshot-${Date.now()}.png`;
       await page.screenshot({ path: screenshotPath, fullPage: false });
       return `Screenshot saved to: ${screenshotPath}`;
     }
