@@ -29,7 +29,7 @@ The central architectural split is between tools that need a Playwright browser 
 - `sessionFetch()` injects the cookie header into native Node `fetch`
 
 **Browser-based (Playwright)** — `src/browser.ts`
-- Required for: `ddb_login` (OAuth flow, visible window), `ddb_navigate`, `ddb_interact`, `ddb_current_page`, `ddb_search`, `ddb_list_campaigns`, `ddb_get_campaign`, `ddb_list_library`, `ddb_read_book`
+- Required for: `ddb_login` (OAuth flow, visible window), `ddb_navigate`, `ddb_interact`, `ddb_get_page`, `ddb_search_site`, `ddb_list_campaigns`, `ddb_get_campaign`, `ddb_list_library`, `ddb_read_book`
 - Singleton browser/context (`getBrowser` / `getContext`) — lazy-initialized, shared across calls
 - `ddb_login` forces `headless: false`; all other browser tools use `headless: true`
 - Tools that auto-close the browser call `closeBrowser()` at the end; navigate/interact tools leave it open intentionally
@@ -51,6 +51,8 @@ The central architectural split is between tools that need a Playwright browser 
 | `src/tools/library.ts` | Library listing and book reading via browser. `readBook` accepts `maxChars` (default 3000) and `query` (jump to heading). |
 | `src/tools/navigate.ts` | Generic browser navigation, interaction, and screenshot |
 | `src/tools/search.ts` | Browser-based DDB search |
+| `src/tools/encounter.ts` | Encounter difficulty rater. Supports 2024 XDMG (XP budget, Low/Moderate/High) and 2014 DMG (XP thresholds, Easy/Medium/Hard/Deadly). Exports `rateEncounter()` and `targetEncounterCr()`. |
+| `src/tools/treasure.ts` | Treasure generation per XDMG tables. Exports `generateTreasure()` — individual or hoard, with magic item rolls keyed to character level. |
 
 ### Caching layers
 
@@ -62,11 +64,14 @@ The central architectural split is between tools that need a Playwright browser 
 
 ### Tool notes
 
-- `ddb_parse_character` accepts a `sections` param — prefer `summary` or `combat` over `full` to save tokens
-- `ddb_search_spells` / races / classes / backgrounds / feats all accept `limit` and `offset` for pagination
-- `ddb_get_character` was renamed to `ddb_get_character_raw` and requires `confirm_large_response: true`
+- `ddb_get_character` accepts a `sections` param — prefer `summary` or `combat` over `full` to save tokens
+- `ddb_get_character_raw` returns raw 300–500 KB JSON and requires `confirm_large_response: true`
+- `ddb_character_lookup` returns a summary list when >3 matches — refine the query to get full text
+- `ddb_search_spells` / races / classes / backgrounds / feats / class_features / racial_traits all accept `limit` and `offset` for pagination
+- `ddb_search_rules` / `ddb_get_rules` — SRD rules search and retrieval, no login required
 - `ddb_read_book` defaults to 3000 chars; use `query` to jump to a specific heading
-- `ddb_get_definition` returns a summary list when >3 matches — refine the query to get full text
+- `ddb_rate_encounter` accepts `edition: "2024" | "2014"` (default `"2024"`) for XDMG vs. classic DMG rules
+- `ddb_roll_treasure` accepts `type: "individual" | "hoard"` and `cr` of the monster(s)
 
 ### Ongoing work: removing browser dependencies
 
