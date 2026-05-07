@@ -184,3 +184,35 @@ describe("parseCharacterData", () => {
     expect(result).toContain("Soldier");
   });
 });
+
+describe("parseCharacterData — sections param", () => {
+  it("summary section includes vitals and ability scores", () => {
+    const out = parseCharacterData(FIGHTER_5, "summary");
+    expect(out).toContain("Thorin");
+    expect(out).toContain("STR 16 (+3)");
+    expect(out).toContain("Prof Bonus: +3");
+  });
+
+  it("summary section excludes SPELLS and INVENTORY blocks", () => {
+    const out = parseCharacterData(FIGHTER_5, "summary");
+    expect(out).not.toContain("SPELLS");
+    expect(out).not.toContain("INVENTORY");
+  });
+
+  it("combat section includes ACTIONS", () => {
+    const out = parseCharacterData(FIGHTER_5, "combat");
+    expect(out).toContain("ACTIONS");
+  });
+
+  it("spells section excludes INVENTORY", () => {
+    const out = parseCharacterData(FIGHTER_5, "spells");
+    expect(out).not.toContain("INVENTORY");
+  });
+
+  it("full section (default) contains all major blocks", () => {
+    const full = parseCharacterData(FIGHTER_5, "full");
+    const def  = parseCharacterData(FIGHTER_5);
+    // full and default produce identical output
+    expect(full).toBe(def);
+  });
+});

@@ -1,0 +1,73 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Commands
+
+```bash
+npm run dev          # Run in development mode (no build step, uses tsx)
+npm run build        # Compile TypeScript to dist/
+npm run build:watch  # Watch mode
+npm run lint         # ESLint on src/
+npm run typecheck    # Type-check without emitting
+npm test             # Run all tests (vitest)
+npx vitest run tests/character-parser.test.ts  # Run a single test file
+```
+
+## Architecture
+
+This is a [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that exposes D&D Beyond data to Claude via stdio transport. Entry point: `src/index.ts`. All MCP tools are registered there and delegate to modules in `src/tools/`.
+
+### Two execution paths: browser vs. browserless
+
+The central architectural split is between tools that need a Playwright browser and tools that work entirely through the saved session cookies:
+
+**Browserless (preferred)** — `src/session-fetch.ts`
+- Reads cookies from `~/.config/ddb-mcp/session.json` (written by `ddb_login`)
+- Exchanges cookies for a short-lived cobalt JWT via `getCobaltToken()`
+- All character, monster, spell, item, and condition tools use this path
+- `sessionFetch()` injects the cookie header into native Node `fetch`
+
+**Browser-based (Playwright)** — `src/browser.ts`
+- Required for: `ddb_login` (OAuth flow, visible window), `ddb_navigate`, `ddb_interact`, `ddb_current_page`, `ddb_search`, `ddb_list_campaigns`, `ddb_get_campaign`, `ddb_list_library`, `ddb_read_book`
+- Singleton browser/context (`getBrowser` / `getContext`) — lazy-initialized, shared across calls
+- `ddb_login` forces `headless: false`; all other browser tools use `headless: true`
+- Tools that auto-close the browser call `closeBrowser()` at the end; navigate/interact tools leave it open intentionally
+
+### Key modules
+
+| File | Role |
+|------|------|
+| `src/index.ts` | MCP server setup, all tool registrations |
+| `src/session-fetch.ts` | Cookie loading, cobalt JWT exchange, `sessionFetch()`, retry logic |
+| `src/browser.ts` | Playwright browser/context lifecycle, `saveSession()`. Sandbox enabled by default; set `DDB_NO_SANDBOX=1` for containers. |
+| `src/auth.ts` | Login flow — navigates to DDB login, polls until redirect, saves session |
+| `src/cache.ts` | Generic in-memory TTL cache (`TtlCache<T>`) with LRU eviction |
+| `src/open5e.ts` | Open5e SRD fallback — no auth required. Used when DDB is down or returns empty results. 1 h TTL cache. |
+| `src/tools/character.ts` | Character fetch, `parseCharacterData(raw, sections)` (sections: summary/combat/spells/inventory/features/full), definition lookup, fuzzy name resolution |
+| `src/tools/reference.ts` | Conditions (hardcoded), spells/items/races/classes/backgrounds/feats (DDB character-service, 24 h cache, Open5e fallback). Exports `addCharacterSpellsToCompendium()` to seed cantrips from character JSON. |
+| `src/tools/monster.ts` | Monster search and stat block via DDB monster-service, Open5e fallback |
+| `src/tools/campaign.ts` | Campaign and character list via browser scraping |
+| `src/tools/library.ts` | Library listing and book reading via browser. `readBook` accepts `maxChars` (default 3000) and `query` (jump to heading). |
+| `src/tools/navigate.ts` | Generic browser navigation, interaction, and screenshot |
+| `src/tools/search.ts` | Browser-based DDB search |
+
+### Caching layers
+
+- **Character JSON**: 60 s TTL in `character.ts`
+- **Spells/items/compendium**: 24 h TTL in `reference.ts` (first spell call builds the full compendium — slow)
+- **Open5e responses**: 1 h TTL in `open5e.ts`
+- **Cobalt JWT**: cached in-memory until 60 s before expiry (`session-fetch.ts`)
+- **Session cookies**: in-memory after first disk read; invalidated by `invalidateSessionCache()` when a new session is saved
+
+### Tool notes
+
+- `ddb_parse_character` accepts a `sections` param — prefer `summary` or `combat` over `full` to save tokens
+- `ddb_search_spells` / races / classes / backgrounds / feats all accept `limit` and `offset` for pagination
+- `ddb_get_character` was renamed to `ddb_get_character_raw` and requires `confirm_large_response: true`
+- `ddb_read_book` defaults to 3000 chars; use `query` to jump to a specific heading
+- `ddb_get_definition` returns a summary list when >3 matches — refine the query to get full text
+
+### Ongoing work: removing browser dependencies
+
+Several tools still use Playwright for scraping pages that should use REST APIs instead. The remaining tools to convert are: `list_campaigns`, `get_campaign`, `search`, `list_library`. See `scripts/` for API discovery scripts used during this migration.

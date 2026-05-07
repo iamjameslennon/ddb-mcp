@@ -408,3 +408,75 @@ export async function getMonster(monsterName: string): Promise<string> {
     return `Monster "${monsterName}" not found. DnD Beyond is unavailable and "${monsterName}" is not in the SRD.`;
   }
 }
+
+const CR_XP_O5: Record<string, number> = {
+  "0": 10, "1/8": 25, "1/4": 50, "1/2": 100,
+  "1": 200, "2": 450, "3": 700, "4": 1100, "5": 1800,
+  "6": 2300, "7": 2900, "8": 3900, "9": 5000, "10": 5900,
+  "11": 7200, "12": 8400, "13": 10000, "14": 11500, "15": 13000,
+  "16": 15000, "17": 18000, "18": 20000, "19": 22000, "20": 25000,
+  "21": 33000, "22": 41000, "23": 50000, "24": 62000, "25": 75000,
+  "26": 90000, "27": 105000, "28": 120000, "29": 135000, "30": 155000,
+};
+
+const CR_VALUE_O5: Record<string, number> = {
+  "0": 0, "1/8": 0.125, "1/4": 0.25, "1/2": 0.5,
+};
+
+/**
+ * Returns CR and XP for a named monster. Used by the encounter difficulty rater.
+ * Tries the DDB monster service first, then falls back to Open5e.
+ */
+export async function getMonsterStats(name: string): Promise<{
+  name: string;
+  crValue: number;
+  xp: number;
+} | null> {
+  // DDB path
+  if (hasValidSession()) {
+    try {
+      const config = await getGameConfig();
+      const resp = await monsterFetch(
+        `${MONSTER_SERVICE}/v1/Monster?search=${encodeURIComponent(name)}&skip=0&take=5`
+      );
+      if (resp.ok) {
+        const json = await resp.json() as MonsterListResponse;
+        const match =
+          json.data.find(m => m.name.toLowerCase() === name.toLowerCase()) ??
+          json.data.find(m => m.name.toLowerCase().includes(name.toLowerCase()));
+        if (match && config) {
+          const crEntry = config.challengeRatings.find(cr => cr.id === match.challengeRatingId);
+          if (crEntry) {
+            return { name: match.name, crValue: crEntry.value, xp: crEntry.xp };
+          }
+        }
+      }
+    } catch {
+      // fall through to Open5e
+    }
+  }
+
+  // Open5e fallback
+  try {
+    const resp = await fetch(
+      `https://api.open5e.com/v1/monsters/?name=${encodeURIComponent(name)}&limit=5`,
+      { headers: { Accept: "application/json" } }
+    );
+    if (resp.ok) {
+      const data = await resp.json() as { results: Array<{ name: string; challenge_rating: string }> };
+      const match =
+        data.results.find(m => m.name.toLowerCase() === name.toLowerCase()) ??
+        data.results[0];
+      if (match) {
+        const crStr = match.challenge_rating;
+        const xp = CR_XP_O5[crStr];
+        const crValue = CR_VALUE_O5[crStr] ?? parseFloat(crStr);
+        if (xp !== undefined) return { name: match.name, crValue, xp };
+      }
+    }
+  } catch {
+    // both sources failed
+  }
+
+  return null;
+}

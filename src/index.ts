@@ -10,6 +10,9 @@ import { navigate, interact, getCurrentPageContent } from "./tools/navigate.js";
 import { search } from "./tools/search.js";
 import { listLibrary, readBook } from "./tools/library.js";
 import { searchMonsters, getMonster } from "./tools/monster.js";
+import { rateEncounter, targetEncounterCr } from "./tools/encounter.js";
+import type { Difficulty } from "./tools/encounter.js";
+import { generateTreasure } from "./tools/treasure.js";
 import { getCondition, searchSpells, getSpell, searchItems, getItem, searchRaces, searchClasses, searchBackgrounds, searchFeats, searchClassFeatures, searchRacialTraits, searchRules, getRule } from "./tools/reference.js";
 
 const server = new McpServer({
@@ -706,6 +709,101 @@ server.tool(
       const msg = err instanceof Error ? err.message : String(err);
       process.stderr.write(`[ddb-mcp] ddb_get_rules error: ${msg}\n`);
       return { content: [{ type: "text", text: `Rules lookup failed: ${msg}` }], isError: true };
+    }
+  }
+);
+
+// ─── ddb_rate_encounter ───────────────────────────────────────────────────────
+server.tool(
+  "ddb_rate_encounter",
+  "Rate the difficulty of a D&D encounter. Defaults to 2024 XDMG rules (Low/Moderate/High, no multiplier). Set rules_edition to '2014' for the classic DMG XP threshold method (Easy/Medium/Hard/Deadly with encounter multiplier). Monsters are looked up in the compendium automatically — supply 'cr' directly for homebrew.",
+  {
+    party: z.array(z.object({
+      count: z.number().int().min(1).max(20)
+        .describe("Number of characters at this level"),
+      level: z.number().int().min(1).max(20)
+        .describe("Character level"),
+    })).min(1).describe(
+      "Party composition. Use multiple entries for mixed-level parties — e.g. [{count:3,level:5},{count:1,level:3}]"
+    ),
+    monsters: z.array(z.object({
+      name: z.string().optional()
+        .describe("Monster name — looked up in the compendium (DDB with Open5e fallback)"),
+      cr: z.number().optional()
+        .describe("CR as a decimal — 0.125, 0.25, 0.5, or 1–30. Use for homebrew or instead of name"),
+      count: z.number().int().min(1).default(1)
+        .describe("Number of this monster (default 1)"),
+    })).min(1).describe(
+      "Monsters in the encounter. Each entry needs at least a name or cr."
+    ),
+    rules_edition: z.enum(["2024", "2014"]).default("2024")
+      .describe("Rules edition. '2024' (default) uses XDMG XP budgets with Low/Moderate/High difficulty — no encounter multiplier. '2014' uses DMG XP thresholds with Easy/Medium/Hard/Deadly and a monster count multiplier."),
+  },
+  async ({ party, monsters, rules_edition }) => {
+    try {
+      const result = await rateEncounter(party, monsters, rules_edition);
+      return { content: [{ type: "text", text: result }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[ddb-mcp] ddb_rate_encounter error: ${msg}\n`);
+      return { content: [{ type: "text", text: `Encounter rating failed: ${msg}` }], isError: true };
+    }
+  }
+);
+
+// ─── ddb_encounter_cr ─────────────────────────────────────────────────────────
+server.tool(
+  "ddb_encounter_cr",
+  "Given a party and a target difficulty, returns the CR to aim for — broken down by encounter shape (solo boss, duo, squad, horde). Defaults to 2024 XDMG rules; set rules_edition to '2014' for classic DMG. No monster lookup required. Use with ddb_rate_encounter to verify a specific monster list.",
+  {
+    party: z.array(z.object({
+      count: z.number().int().min(1).max(20).describe("Number of characters at this level"),
+      level: z.number().int().min(1).max(20).describe("Character level"),
+    })).min(1).describe("Party composition — same format as ddb_rate_encounter"),
+    difficulty: z.enum(["low", "moderate", "high", "easy", "medium", "hard", "deadly"])
+      .describe("Target difficulty. Use 'low', 'moderate', 'high' for 2024 rules; 'easy', 'medium', 'hard', 'deadly' for 2014 rules."),
+    monster_count: z.number().int().min(1).optional()
+      .describe("If provided, shows only this count instead of all four archetypes"),
+    rules_edition: z.enum(["2024", "2014"]).default("2024")
+      .describe("Rules edition. '2024' (default) uses XDMG XP budgets, no multiplier. '2014' uses DMG XP thresholds with encounter multiplier."),
+  },
+  async ({ party, difficulty, monster_count, rules_edition }) => {
+    try {
+      const result = await targetEncounterCr(party, difficulty as Difficulty, monster_count, rules_edition);
+      return { content: [{ type: "text", text: result }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[ddb-mcp] ddb_encounter_cr error: ${msg}\n`);
+      return { content: [{ type: "text", text: `Encounter CR lookup failed: ${msg}` }], isError: true };
+    }
+  }
+);
+
+// ─── ddb_roll_treasure ───────────────────────────────────────────────────────
+server.tool(
+  "ddb_roll_treasure",
+  "Generate a treasure reward using the 2024 XDMG treasure tables (default). Provide either a CR directly or a list of monster names — CR is resolved automatically via fuzzy name matching. treasure_type 'hoard' makes one roll using the highest CR and includes magic items (requires character_level); 'individual' rolls once per monster and sums the results.",
+  {
+    cr: z.number().min(0).max(30).optional()
+      .describe("Challenge rating (0–30). Use instead of monsters for a direct CR lookup."),
+    monsters: z.array(z.object({
+      name: z.string().describe("Monster name — fuzzy matched, DDB with Open5e fallback"),
+      count: z.number().int().min(1).default(1).describe("Number of this monster (default 1)"),
+    })).optional()
+      .describe("Monsters from the encounter. Highest CR determines the treasure tier for hoards."),
+    treasure_type: z.enum(["individual", "hoard"]).default("hoard")
+      .describe("individual = one roll per monster. hoard = one roll using the highest CR."),
+    character_level: z.number().int().min(1).max(20).optional()
+      .describe("Character level (1–20). Required for hoard treasure to determine which magic item table to use. If omitted, magic items are skipped."),
+  },
+  async ({ cr, monsters, treasure_type, character_level }) => {
+    try {
+      const result = await generateTreasure({ cr, monsters, treasureType: treasure_type, characterLevel: character_level });
+      return { content: [{ type: "text", text: result }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[ddb-mcp] ddb_roll_treasure error: ${msg}\n`);
+      return { content: [{ type: "text", text: `Treasure generation failed: ${msg}` }], isError: true };
     }
   }
 );
