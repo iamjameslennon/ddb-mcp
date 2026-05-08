@@ -207,27 +207,20 @@ Can a character use the Help action to assist with a skill check?
 
 ## Installation
 
-### Option A — Install directly from GitHub (recommended)
+### Option A — Install from npm (recommended)
 
 ```bash
-npm install -g "https://github.com/iamjameslennon/ddb-mcp/archive/refs/heads/main.tar.gz"
+npm install -g @iamjameslennon/ddb-mcp
 ```
 
-Then install the browser:
-
-```bash
-npx playwright install chromium
-```
-
-Find the install path and register with Claude Code:
+Then:
 
 ```bash
 npm root -g
-# outputs something like /usr/local/lib/node_modules
 ```
 
 ```bash
-claude mcp add dndbeyond node /usr/local/lib/node_modules/ddb-mcp/dist/index.js
+claude mcp add dndbeyond node /usr/local/lib/node_modules/@iamjameslennon/ddb-mcp/dist/index.js
 ```
 
 ---
