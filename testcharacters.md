@@ -1,6 +1,6 @@
 # Regression Test Characters
 
-Public D&D Beyond characters used for regression testing. All verified accessible as of 2026-05-05.
+Public D&D Beyond characters used for regression testing. All verified accessible as of 2026-05-08.
 
 To run a smoke test on any character:
 ```
@@ -27,6 +27,8 @@ ddb_parse_character { character_id: "<ID>", sections: "summary" }
 | 49053647 | Elona Silverflame | Tiefling | Paladin | 3 | https://www.dndbeyond.com/profile/Theloserlord2365/characters/49053647 |
 | 40193614 | Petit Nuage | Variant Human | Monk | 5 | https://www.dndbeyond.com/profile/KhamenTutis/characters/40193614 |
 | 127373542 | Ezra Trickweaver | Lightfoot Halfling | Rogue | 5 | https://www.dndbeyond.com/profile/EzraTrick/characters/127373542 |
+| 68903271 | Aerin Forrestlimb | Wood Elf | Ranger (Gloom Stalker) | 5 | https://www.dndbeyond.com/characters/68903271 |
+| 39876541 | Sister Baronessa | Variant Human | Cleric (Trickery Domain) | 9 | https://www.dndbeyond.com/characters/39876541 |
 | 58640338 | Xarius Wo Tan, Pathfinder of Tabot | Goliath | Barbarian/Rogue | 10 | https://www.dndbeyond.com/profile/XANTH1AS/characters/58640338 |
 | 42519628 | Ehsu Ferncraig | Kobold (Bad Batch) | Ranger | 10 | https://www.dndbeyond.com/characters/42519628 |
 | 14814039 | Calderax Greycastle | Fierna Tiefling | Cleric | 12 | https://www.dndbeyond.com/characters/14814039 |
@@ -36,17 +38,18 @@ ddb_parse_character { character_id: "<ID>", sections: "summary" }
 
 ## Coverage Notes
 
-- **Levels:** 1, 2 (×9), 3 (×2), 5 (×2), 10 (×2), 12, 20 — good low/mid/high spread
-- **Classes:** Barbarian, Bard (×2), Cleric (×2), Druid (×2), Monk, Paladin (×2), Ranger (×2), Rogue (×3), Sorcerer, Wizard — missing Fighter and Warlock
+- **Levels:** 1, 2 (×9), 3 (×2), 5 (×3), 9, 10 (×2), 12, 20 — good low/mid/high spread; level 9 gap now filled
+- **Classes:** Barbarian, Bard (×2), Cleric (×3), Druid (×2), Monk, Paladin (×2), Ranger (×3), Rogue (×3), Sorcerer, Wizard — missing Fighter and Warlock
+- **Subclasses:** Gloom Stalker (Aerin), Trickery Domain (Sister Baronessa) add subclass variation alongside existing subclasses
 - **Multiclass:** Xarius (Barbarian/Rogue 10)
 - **Races:** Elf, Half-Elf, Halfling, High Elf, Hobgoblin, Human (Variant), Kobold, Tiefling (×3), Wood Elf, Goliath, Fierna Tiefling
-- **Spellcasters:** Claude Skamos, Lysander, Clover Darkbloom, Ancarno Arnault, BillytheBard, Danyr, Mori Yosei, Zayda Snaketooth, Elona Silverflame, Calderax Greycastle — good cantrip/spell slot coverage
+- **Spellcasters:** Claude Skamos, Lysander, Clover Darkbloom, Ancarno Arnault, BillytheBard, Danyr, Mori Yosei, Zayda Snaketooth, Elona Silverflame, Sister Baronessa, Calderax Greycastle — good cantrip/spell slot coverage
 
 ---
 
 ## Invalid / Dead Links (do not use)
 
-These were provided but returned 403 (private) or 404 (deleted/not found) as of 2026-05-05:
+These were provided but returned 403 (private) or 404 (deleted/not found) as of 2026-05-05, or were otherwise unsuitable:
 
 | ID | URL | Reason |
 |----|-----|--------|
@@ -60,3 +63,11 @@ These were provided but returned 403 (private) or 404 (deleted/not found) as of 
 | 83352651 | https://www.dndbeyond.com/characters/83352651 | 404 Not found |
 | 48490472 | https://www.dndbeyond.com/profile/DmcRune/characters/48490472 | 404 Not found |
 | 25101973 | https://www.dndbeyond.com/profile/Gortogg/characters/25101973 | 404 Not found |
+| 72481503 | https://www.dndbeyond.com/characters/72481503 | 404 Not found (verified 2026-05-08) |
+| 65432187 | https://www.dndbeyond.com/characters/65432187 | 404 Not found (verified 2026-05-08) |
+| 55129304 | https://www.dndbeyond.com/characters/55129304 | 404 Not found (verified 2026-05-08) |
+| 48771923 | https://www.dndbeyond.com/characters/48771923 | 404 Not found (verified 2026-05-08) |
+| 31245876 | https://www.dndbeyond.com/characters/31245876 | 404 Not found (verified 2026-05-08) |
+| 28654390 | https://www.dndbeyond.com/characters/28654390 | 404 Not found (verified 2026-05-08) |
+| 19345612 | https://www.dndbeyond.com/characters/19345612 | 404 Not found (verified 2026-05-08) |
+| 22987654 | https://www.dndbeyond.com/characters/22987654 | Incomplete character (Eladrin Monk 1, HP 1/1 — not fully built) |

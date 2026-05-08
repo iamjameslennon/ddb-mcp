@@ -121,6 +121,17 @@ export function parseCharacterData(
     }
   }
 
+  const scoreSetValues: Record<number, number> = {};
+  for (const m of allMods) {
+    if (m.type === "set" && typeof m.subType === "string" && m.subType.endsWith("-score")) {
+      const idx = statKeys.indexOf(m.subType.replace("-score", ""));
+      if (idx >= 0) {
+        const setVal = num(m.fixedValue ?? m.value);
+        if (setVal > 0) scoreSetValues[idx + 1] = Math.max(scoreSetValues[idx + 1] ?? 0, setVal);
+      }
+    }
+  }
+
   const statTotals = statNames.map((_, i) => {
     const id = i + 1;
     const base = baseStats.find(s => num(s.id) === id);
@@ -129,7 +140,8 @@ export function parseCharacterData(
     const baseVal = num(base?.value ?? 0);
     const bonusVal = num(bonus?.value ?? 0);
     const overrideVal = override?.value != null ? num(override.value) : null;
-    return overrideVal != null ? overrideVal : baseVal + bonusVal + (scoreBonuses[id] ?? 0);
+    const calculated = overrideVal != null ? overrideVal : baseVal + bonusVal + (scoreBonuses[id] ?? 0);
+    return scoreSetValues[id] != null ? Math.max(calculated, scoreSetValues[id]) : calculated;
   });
   const statMods = statTotals.map(modOf);
   const abilityScoreDisplay = statNames.map((n, i) => `${n} ${statTotals[i]} (${signed(statMods[i])})`);
@@ -138,12 +150,36 @@ export function parseCharacterData(
   const profBonus = Math.floor((totalLevel - 1) / 4) + 2;
 
   // ── Template resolver ─────────────────────────────────────────────────────
-  const resolveTemplates = (text: string): string =>
-    text
-      .replace(/\{\{proficiency#signed\}\}/g, signed(profBonus))
-      .replace(/\{\{proficiency\}\}/g, String(profBonus))
-      .replace(/\{\{level\}\}/g, String(totalLevel))
-      .replace(/\{\{[^}]+\}\}/g, "?");
+  const resolveTemplates = (text: string, classLevel?: number): string => {
+    const vars: Record<string, number> = {
+      proficiency: profBonus,
+      level: totalLevel,
+      characterlevel: totalLevel,
+      classlevel: classLevel ?? totalLevel,
+    };
+    return text.replace(/\{\{([^}]+)\}\}/g, (_match, expr: string) => {
+      const [rawExpr, modifier] = expr.split("#") as [string, string | undefined];
+      const opMatch = rawExpr.match(/^(\w+)\s*([*+\-/])\s*(\d+(?:\.\d+)?)$/);
+      let value: number | null = null;
+      if (opMatch) {
+        const [, varName, op, numStr] = opMatch;
+        const base = vars[varName] ?? null;
+        const n = parseFloat(numStr);
+        if (base !== null) {
+          if (op === "*") value = base * n;
+          else if (op === "+") value = base + n;
+          else if (op === "-") value = base - n;
+          else if (op === "/") value = Math.floor(base / n);
+        }
+      } else if (vars[rawExpr] !== undefined) {
+        value = vars[rawExpr];
+      }
+      if (value === null) return "?";
+      const rounded = Math.floor(value);
+      if (modifier === "signed") return rounded >= 0 ? `+${rounded}` : `${rounded}`;
+      return String(rounded);
+    });
+  };
 
   // ── Hit Points ────────────────────────────────────────────────────────────
   // baseHitPoints does NOT include the CON modifier — must add conMod × level.
@@ -176,9 +212,13 @@ export function parseCharacterData(
 
   // ── Initiative ────────────────────────────────────────────────────────────
   const dexMod = statMods[1];
-  // Jack of All Trades (2014 rules) explicitly grants half-proficiency to initiative.
-  // The 2014 API stores a separate "initiative" half-proficiency modifier; 2024 only has "ability-checks".
-  const joatInitiative = allMods.some(m => m.type === "half-proficiency" && m.subType === "initiative");
+  // Jack of All Trades grants half-proficiency to initiative (an ability check).
+  // 2014 API emits both a specific "initiative" modifier AND a general "ability-checks" modifier.
+  // 2024 API only emits "ability-checks". Check both so either API version works.
+  const joatInitiative = allMods.some(
+    m => m.type === "half-proficiency" &&
+         (m.subType === "initiative" || m.subType === "ability-checks")
+  );
   const initiativeBonus = allMods
     .filter(m => m.subType === "initiative" && m.type === "bonus")
     .reduce((s, m) => {
@@ -288,9 +328,36 @@ export function parseCharacterData(
   const passivePerception = 10 + skillBonuses[perceptionIdx].bonus;
   const passiveInvestigation = 10 + skillBonuses[investigationIdx].bonus;
   const passiveInsight = 10 + skillBonuses[insightIdx].bonus;
-  const specialSenses = allMods
-    .filter(m => m.type === "sense")
-    .map(m => `${capitalize(str(m.subType))} ${num(m.value)} ft.`);
+  // Collect senses from all sources; keep highest value per sense name.
+  const SENSE_ID_NAMES: Record<number, string> = {
+    1: "Blindsight", 2: "Darkvision", 3: "Tremorsense", 4: "Truesight",
+  };
+  const SENSE_SLUGS = new Set(["darkvision", "blindsight", "tremorsense", "truesight"]);
+  const senseMap = new Map<string, number>();
+  const mergeSense = (name: string, val: number) => {
+    if (val > 0) senseMap.set(name, Math.max(senseMap.get(name) ?? 0, val));
+  };
+  // 2024: type:"sense" modifiers
+  for (const m of allMods)
+    if (m.type === "sense") mergeSense(capitalize(str(m.subType)), num(m.value));
+  // 2014: type:"set" / type:"set-base" modifiers with sense subType slugs
+  for (const m of allMods)
+    if ((m.type === "set" || m.type === "set-base") && SENSE_SLUGS.has(str(m.subType)))
+      mergeSense(capitalize(str(m.subType)), num(m.value));
+  // 2014: customSenses array (explicit overrides / grants)
+  for (const cs of arr<Record<string, unknown>>(char.customSenses)) {
+    const name = SENSE_ID_NAMES[num(cs.senseId)];
+    if (name) mergeSense(name, num(cs.value));
+  }
+  // 2014: racial trait senses (range parsed from notes, e.g. "60 feet")
+  for (const trait of arr<Record<string, unknown>>(obj(char.race).racialTraits)) {
+    for (const sense of arr<Record<string, unknown>>(obj(trait.definition).senses)) {
+      const name = SENSE_ID_NAMES[num(sense.senseId)];
+      const match = str(sense.notes).match(/\d+/);
+      if (name && match) mergeSense(name, parseInt(match[0], 10));
+    }
+  }
+  const specialSenses = Array.from(senseMap.entries()).map(([n, v]) => `${n} ${v} ft.`);
 
   // ── Proficiencies ─────────────────────────────────────────────────────────
   const armorProfMap: Record<string, string> = {
@@ -339,9 +406,13 @@ export function parseCharacterData(
   const conditions = arr<Record<string, unknown>>(char.conditions).map(c => str(c.id));
 
   // ── Feats ─────────────────────────────────────────────────────────────────
-  // DDB stores some non-feat features in the feats array tagged __DISGUISE_FEAT.
+  // DDB stores some non-feat entries in the feats array.
+  // __DISGUISE_FEAT = class features surfaced as feats (shown in OTHER FEATURES).
+  // __INITIAL_ASI   = 2024 background Ability Score Improvements (already in ABILITY SCORES; drop entirely).
   const allFeats = arr<Record<string, unknown>>(char.feats);
-  const realFeats = allFeats.filter(f => !hasTag(f, "__DISGUISE_FEAT"));
+  const realFeats = allFeats.filter(
+    f => !hasTag(f, "__DISGUISE_FEAT") && !hasTag(f, "__INITIAL_ASI")
+  );
   const disguisedFeats = allFeats.filter(f => hasTag(f, "__DISGUISE_FEAT"));
   const featLines = realFeats.map(f => {
     const def = obj(f.definition);
@@ -386,7 +457,7 @@ export function parseCharacterData(
     : "";
 
   // ── Actions / Bonus Actions / Reactions / Limited Use ─────────────────────
-  // activation.activationType: 1=action, 2=bonus action, 3=reaction, 8=special (skip)
+  // activation.activationType: 1=action, 3=bonus action, 4=reaction, 8=special (skip)
   // Filter Circle Spell entries — these leak from the Dark Bargain campaign feature
   // and don't represent real character abilities on the website.
   const allActions = Object.values(obj(char.actions))
@@ -419,15 +490,19 @@ export function parseCharacterData(
   const bonusActionSpells = allCharSpells.filter(s => spellActivationType(s) === 3).map(formatSpell);
   const reactionSpells = allCharSpells.filter(s => spellActivationType(s) === 4).map(formatSpell);
 
-  // activationType 3 = bonus action in class actions (not a reaction — reactions aren't in the array)
+  // activationType 3 = bonus action in class actions, 4 = reaction
   // activationType 1 = action (weapon masteries — skip, shown in ACTIONS already)
   // activationType 8 = special/passive — skip
   const bonusActions = [
     ...allActions.filter(a => activationType(a) === 3).map(a => `• ${str(a.name)}`),
     ...bonusActionSpells,
   ];
-  // Reactions: Opportunity Attack is universal, plus any reaction-cast spells
-  const reactions: string[] = ["• Opportunity Attack", ...reactionSpells];
+  // Reactions: Opportunity Attack is universal, then class reactions, then reaction spells
+  const reactions: string[] = [
+    "• Opportunity Attack",
+    ...allActions.filter(a => activationType(a) === 4).map(a => `• ${str(a.name)}`),
+    ...reactionSpells,
+  ];
   const limitedUseFeatures = allActions
     .filter(a => {
       const lu = obj(a.limitedUse);
@@ -459,6 +534,16 @@ export function parseCharacterData(
            weaponProfSlugs.has(typeName);
   };
 
+  // Martial Arts: allows DEX for monk weapons (simple melee + shortsword, no Two-Handed/Heavy)
+  const hasMartialArts =
+    allMods.some(m => str(m.subType) === "martial-arts") ||
+    classes.some(c =>
+      arr<Record<string, unknown>>(c.classFeatures).some(cf =>
+        str(obj(cf.definition).name) === "Martial Arts" &&
+        num(obj(cf.definition).requiredLevel || 1) <= num(c.level)
+      )
+    );
+
   const weaponAttacks: string[] = [];
   const weaponInventoryMap = new Map<string, { lines: string[]; qty: number }>();
   for (const i of inventory) {
@@ -483,8 +568,13 @@ export function parseCharacterData(
       .filter(gm => gm.type === "bonus" && gm.subType === "magic")
       .reduce((s, gm) => s + num(gm.value ?? gm.fixedValue), 0);
 
+    // Monk weapons: simple melee or shortsword, no Two-Handed/Heavy
+    const isMonkWeapon = hasMartialArts &&
+      !props.includes("Two-Handed") && !props.includes("Heavy") &&
+      ((num(def.categoryId) === 1 && attackType === 1) || str(def.name) === "Shortsword");
+
     // Ability modifier for attack/damage
-    const usesDex = isRanged || (isFinesse && dexMod > statMods[0]);
+    const usesDex = isRanged || ((isFinesse || isMonkWeapon) && dexMod > statMods[0]);
     const abilityMod = usesDex ? dexMod : statMods[0];
     const profMod = isWeaponProficient(def) ? profBonus : 0;
     const hitBonus = abilityMod + profMod + magicBonus;
@@ -513,14 +603,18 @@ export function parseCharacterData(
   const spellcastingLines: string[] = [];
   for (const c of classes) {
     const def = obj(c.definition);
-    if (!def.canCastSpells) continue;
-    const abilityId = num(def.spellCastingAbilityId);
+    const subDef = obj(c.subclassDefinition);
+    const classCasts = def.canCastSpells === true;
+    const subclassCasts = subDef.canCastSpells === true;
+    if (!classCasts && !subclassCasts) continue;
+    const abilityId = num(classCasts ? def.spellCastingAbilityId : subDef.spellCastingAbilityId);
     if (!abilityId) continue;
+    const className = classCasts ? str(def.name) : `${str(def.name)} (${str(subDef.name)})`;
     const abilityMod = statMods[abilityId - 1];
     const spellAttack = abilityMod + profBonus;
     const saveDc = 8 + abilityMod + profBonus;
     spellcastingLines.push(
-      `  ${str(def.name)}: ${statNames[abilityId - 1]}  Spell Attack: ${signed(spellAttack)}  Save DC: ${saveDc}`
+      `  ${className}: ${statNames[abilityId - 1]}  Spell Attack: ${signed(spellAttack)}  Save DC: ${saveDc}`
     );
   }
 
@@ -594,11 +688,42 @@ export function parseCharacterData(
   const sourceLabels: Record<string, string> = {
     race: "Racial Trait", class: "Class Feature", background: "Background", feat: "Feat", item: "Item",
   };
+  // Pre-seed with every spell the player already has prepared/known, so that
+  // class-feature auto-grants of the same spell are flagged as redundant.
+  const seenSpellIds = new Map<number, string>(); // spellId → first source label
+  for (const cs of classSpells) {
+    const allSpells = arr<Record<string, unknown>>(cs.spells).length > 0
+      ? arr<Record<string, unknown>>(cs.spells)
+      : arr<Record<string, unknown>>(cs.classSpells);
+    for (const s of allSpells) {
+      const spellId = num(obj(s.definition).id);
+      if (spellId && !seenSpellIds.has(spellId)) {
+        seenSpellIds.set(spellId, "Spells");
+      }
+    }
+  }
+  const duplicateWarnings: string[] = [];
+
   for (const [key, label] of Object.entries(sourceLabels)) {
     const spellList = arr<Record<string, unknown>>(spellsObj[key]);
     if (!spellList.length) continue;
     const names = [...new Set(
       spellList
+        .filter(s => {
+          const def = obj(s.definition);
+          const spellId = num(def.id);
+          if (!spellId) return true;
+          if (seenSpellIds.has(spellId)) {
+            const firstLabel = seenSpellIds.get(spellId)!;
+            const spellName = str(def.name);
+            const lvl = num(def.level);
+            const spellStr = lvl === 0 ? spellName : `${spellName} (L${lvl})`;
+            duplicateWarnings.push(`  • ${spellStr} — already granted by ${firstLabel}, also in ${label}`);
+            return false;
+          }
+          seenSpellIds.set(spellId, label);
+          return true;
+        })
         .map(s => {
           const def = obj(s.definition);
           const n = str(def.name);
@@ -607,6 +732,14 @@ export function parseCharacterData(
         .filter(n => n.length > 0)
     )];
     if (names.length) spellSections.push(`  From ${label}: ${names.join(", ")}`);
+  }
+
+  if (duplicateWarnings.length) {
+    spellSections.push(
+      `  ⚠ Duplicate spell grants detected — the following spells are already`,
+      `  provided by an earlier source; the extra grant may be a wasted choice:`,
+      ...duplicateWarnings
+    );
   }
 
   // ── Full Inventory ────────────────────────────────────────────────────────
