@@ -729,6 +729,11 @@ describe("parseCharacterData — resolveTemplates expression evaluation", () => 
   it("resolves {{unknown}} to ?", () => {
     expect(withFeatSnippet("Value is {{unknown}}.")).toContain("Value is ?.");
   });
+
+  it("#unsigned clamps negative results to 0", () => {
+    // level(5) - 10 = -5; #unsigned must not render "-5"
+    expect(withFeatSnippet("Min {{level-10#unsigned}} ft.")).toContain("Min 0 ft.");
+  });
 });
 
 // ── char.spells cross-source deduplication and duplicate warnings ─────────────

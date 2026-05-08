@@ -61,7 +61,16 @@ export async function login(context: BrowserContext): Promise<string> {
 async function checkLoggedInOnCurrentPage(page: Page): Promise<boolean> {
   try {
     return await page.evaluate(() => {
-      // If there's a visible "Sign In" / "Log In" button, we're not logged in
+      // Positive signal: selectors verified against live DDB DOM on 2026-05-08.
+      // [data-testid="signedInUserButton"] is the user button in the top nav.
+      // [class*="UserNavigation"] matches the UserNavigation component family.
+      const loggedInSelectors = [
+        '[data-testid="signedInUserButton"]',
+        '[class*="UserNavigation"]',
+      ];
+      if (loggedInSelectors.some(sel => document.querySelector(sel))) return true;
+
+      // Fallback: no visible "Sign In" / "Log In" button
       const allElements = Array.from(document.querySelectorAll("a, button"));
       const signInEl = allElements.find((el) => {
         const text = (el.textContent || "").trim().toLowerCase();

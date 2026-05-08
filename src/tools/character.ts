@@ -1,6 +1,7 @@
 import { sessionFetch, hasValidSession, getCobaltToken } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
 import { addCharacterSpellsToCompendium } from "./reference.js";
+import { stripHtml as stripHtmlFull } from "../utils.js";
 import { writeFileSync } from "fs";
 import { join, resolve, relative, basename } from "path";
 import { homedir } from "os";
@@ -177,6 +178,7 @@ export function parseCharacterData(
       if (value === null) return "?";
       const rounded = Math.floor(value);
       if (modifier === "signed") return rounded >= 0 ? `+${rounded}` : `${rounded}`;
+      if (modifier === "unsigned") return String(Math.max(0, rounded));
       return String(rounded);
     });
   };
@@ -198,17 +200,27 @@ export function parseCharacterData(
 
   // ── Speed ─────────────────────────────────────────────────────────────────
   const weightSpeeds = obj(obj(obj(char.race).weightSpeeds).normal);
-  // "set" modifiers on innate-speed-walking override the base race speed (e.g. Wood Elf +5)
-  const walkOverride = allMods
-    .filter(m => m.type === "set" && m.subType === "innate-speed-walking" && num(m.value ?? m.fixedValue) > 0)
-    .reduce((max, m) => Math.max(max, num(m.value ?? m.fixedValue)), 0);
-  const walkSpeed = walkOverride || num(weightSpeeds.walk) || 30;
+  // "set" modifiers override the base race speed; "bonus" modifiers add to it (e.g. Longstrider)
+  const speedCalc = (subType: string, base: number, fallback = 0): number => {
+    const override = allMods
+      .filter(m => m.type === "set" && m.subType === subType && num(m.value ?? m.fixedValue) > 0)
+      .reduce((max, m) => Math.max(max, num(m.value ?? m.fixedValue)), 0);
+    const bonus = allMods
+      .filter(m => m.type === "bonus" && m.subType === subType)
+      .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
+    return (override || base || fallback) + bonus;
+  };
+  const walkSpeed = speedCalc("innate-speed-walking", num(weightSpeeds.walk), 30);
+  const flySpeed  = speedCalc("innate-speed-flying",  num(weightSpeeds.fly));
+  const swimSpeed = speedCalc("innate-speed-swimming", num(weightSpeeds.swim));
+  const climbSpeed = speedCalc("innate-speed-climbing", num(weightSpeeds.climb));
+  const burrowSpeed = speedCalc("innate-speed-burrowing", num(weightSpeeds.burrow));
   const speedParts: string[] = [];
   speedParts.push(`${walkSpeed} ft.`);
-  if (num(weightSpeeds.fly) > 0) speedParts.push(`fly ${num(weightSpeeds.fly)} ft.`);
-  if (num(weightSpeeds.swim) > 0) speedParts.push(`swim ${num(weightSpeeds.swim)} ft.`);
-  if (num(weightSpeeds.climb) > 0) speedParts.push(`climb ${num(weightSpeeds.climb)} ft.`);
-  if (num(weightSpeeds.burrow) > 0) speedParts.push(`burrow ${num(weightSpeeds.burrow)} ft.`);
+  if (flySpeed   > 0) speedParts.push(`fly ${flySpeed} ft.`);
+  if (swimSpeed  > 0) speedParts.push(`swim ${swimSpeed} ft.`);
+  if (climbSpeed > 0) speedParts.push(`climb ${climbSpeed} ft.`);
+  if (burrowSpeed > 0) speedParts.push(`burrow ${burrowSpeed} ft.`);
 
   // ── Initiative ────────────────────────────────────────────────────────────
   const dexMod = statMods[1];
@@ -654,6 +666,9 @@ export function parseCharacterData(
   // ── Spells ────────────────────────────────────────────────────────────────
   const spellSections: string[] = [];
   const classSpells = arr<Record<string, unknown>>(char.classSpells);
+  // seenSpellIds is pre-seeded here so cross-source duplicate detection also
+  // catches class-feature auto-grants of spells the player already has prepared.
+  const seenSpellIds = new Map<number, string>(); // spellId → first source label
   for (const cs of classSpells) {
     // Try characterClassId first; fall back to id/classId for 2024-rules format
     const classEntry = classes.find(c =>
@@ -683,25 +698,16 @@ export function parseCharacterData(
       });
     if (cantrips.length) spellSections.push(`  Cantrips: ${cantrips.join(", ")}`);
     if (leveled.length) spellSections.push(`  Spells: ${leveled.join(", ")}`);
+    // Pre-seed duplicate detection in the same pass
+    for (const s of allSpells) {
+      const spellId = num(obj(s.definition).id);
+      if (spellId && !seenSpellIds.has(spellId)) seenSpellIds.set(spellId, "Spells");
+    }
   }
   const spellsObj = obj(char.spells);
   const sourceLabels: Record<string, string> = {
     race: "Racial Trait", class: "Class Feature", background: "Background", feat: "Feat", item: "Item",
   };
-  // Pre-seed with every spell the player already has prepared/known, so that
-  // class-feature auto-grants of the same spell are flagged as redundant.
-  const seenSpellIds = new Map<number, string>(); // spellId → first source label
-  for (const cs of classSpells) {
-    const allSpells = arr<Record<string, unknown>>(cs.spells).length > 0
-      ? arr<Record<string, unknown>>(cs.spells)
-      : arr<Record<string, unknown>>(cs.classSpells);
-    for (const s of allSpells) {
-      const spellId = num(obj(s.definition).id);
-      if (spellId && !seenSpellIds.has(spellId)) {
-        seenSpellIds.set(spellId, "Spells");
-      }
-    }
-  }
   const duplicateWarnings: string[] = [];
 
   for (const [key, label] of Object.entries(sourceLabels)) {
@@ -917,7 +923,6 @@ export async function parseCharacter(
 ): Promise<string> {
   const jsonData = await getCharacter(characterId);
   const raw = JSON.parse(jsonData) as Record<string, unknown>;
-  addCharacterSpellsToCompendium((raw?.data ?? raw) as Record<string, unknown>);
   return parseCharacterData(raw, sections);
 }
 
@@ -976,11 +981,14 @@ export async function downloadCharacter(
   let savePath: string;
   if (outputPath) {
     const resolved = resolve(outputPath);
-    const home = homedir();
-    // Use path.relative to detect traversal — a safe path will not start with "..".
-    const rel = relative(home, resolved);
-    if (rel.startsWith("..") || resolve(resolved) !== resolved) {
-      throw new Error(`Output path must be within your home directory (${home}).`);
+    if (resolved.includes("\0")) throw new Error("Output path contains invalid characters.");
+    const allowedDirs = [
+      join(homedir(), "Downloads"),
+      join(homedir(), "Documents"),
+    ];
+    const isAllowed = allowedDirs.some(dir => !relative(dir, resolved).startsWith(".."));
+    if (!isAllowed) {
+      throw new Error("Output path must be under ~/Downloads or ~/Documents.");
     }
     savePath = resolved;
   } else {
@@ -1029,22 +1037,6 @@ export async function listCharacters(): Promise<string> {
 
 // ── Definition Lookup ─────────────────────────────────────────────────────────
 
-function stripHtmlFull(s: string | null | undefined): string {
-  if (!s) return "";
-  return s
-    .replace(/<[^>]*>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&ndash;/g, "–")
-    .replace(/&mdash;/g, "—")
-    .replace(/&#\d+;/g, (m) => String.fromCharCode(parseInt(m.slice(2, -1))))
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
 
 function matchesDefinitionQuery(name: string, query: string): boolean {
   const n = name.toLowerCase();

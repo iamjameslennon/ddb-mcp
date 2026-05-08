@@ -132,7 +132,7 @@ server.tool(
     output_path: z
       .string()
       .optional()
-      .describe("Full file path to save to (defaults to ~/Downloads/{name}-{id}.json)"),
+      .describe("Full file path to save to (defaults to ~/Downloads/{name}-{id}.json). Must be a path under ~/Downloads or ~/Documents."),
   },
   async ({ character_id, output_path }) => {
     try {
@@ -322,7 +322,7 @@ server.tool(
 // ─── ddb_interact ─────────────────────────────────────────────────────────────
 server.tool(
   "ddb_interact",
-  "Interact with the currently loaded D&D Beyond page by clicking, filling a form field, or taking a screenshot.",
+  "Interact with the currently loaded D&D Beyond page by clicking, filling a form field, or taking a screenshot. The 'fill' action requires confirm_fill: true — this is a safety gate to prevent prompt injection on rendered DDB pages from triggering unintended form submissions.",
   {
     action: z
       .enum(["click", "fill", "screenshot"])
@@ -332,8 +332,18 @@ server.tool(
       .string()
       .optional()
       .describe("Value to type into the field (required for 'fill' action)"),
+    confirm_fill: z
+      .literal(true)
+      .optional()
+      .describe("Must be true when action is 'fill'. Verify the selector and value are correct before setting this."),
   },
-  async ({ action, selector, value }) => {
+  async ({ action, selector, value, confirm_fill }) => {
+    if (action === "fill" && confirm_fill !== true) {
+      return {
+        content: [{ type: "text", text: "confirm_fill: true is required for fill actions — verify the selector and value are correct before proceeding." }],
+        isError: true,
+      };
+    }
     try {
       const context = await getSharedContext();
       const result = await interact(context, action, selector, value);

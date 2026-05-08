@@ -11,6 +11,7 @@
 
 import { sessionFetch, getCobaltToken } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
+import { stripHtml } from "../utils.js";
 import {
   fetchO5Cantrips, o5SearchSpells, o5GetSpell,
   o5SearchItems, o5GetItem,
@@ -32,24 +33,7 @@ async function refFetch(url: string): Promise<Response> {
   return sessionFetch(url, { headers: { Authorization: `Bearer ${token}` } });
 }
 
-// ── HTML strip ────────────────────────────────────────────────────────────────
-
-function stripHtml(s: string | null | undefined): string {
-  if (!s) return "";
-  return s
-    .replace(/<[^>]*>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&ndash;/g, "–")
-    .replace(/&mdash;/g, "—")
-    .replace(/&#\d+;/g, (m) => String.fromCharCode(parseInt(m.slice(2, -1))))
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
+// ── HTML strip — imported from src/utils.ts ───────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONDITIONS

@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
+npm ci               # Install dependencies (npm install is blocked — use npm ci)
 npm run dev          # Run in development mode (no build step, uses tsx)
 npm run build        # Compile TypeScript to dist/
 npm run build:watch  # Watch mode
@@ -39,11 +40,12 @@ The central architectural split is between tools that need a Playwright browser 
 | File | Role |
 |------|------|
 | `src/index.ts` | MCP server setup, all tool registrations |
-| `src/session-fetch.ts` | Cookie loading, cobalt JWT exchange, `sessionFetch()`, retry logic |
+| `src/session-fetch.ts` | Cookie loading, cobalt JWT exchange, `sessionFetch()`, retry logic. Module-level singleton state — intentional for single-user MCP server. |
 | `src/browser.ts` | Playwright browser/context lifecycle, `saveSession()`. Sandbox enabled by default; set `DDB_NO_SANDBOX=1` for containers. |
 | `src/auth.ts` | Login flow — navigates to DDB login, polls until redirect, saves session |
-| `src/cache.ts` | Generic in-memory TTL cache (`TtlCache<T>`) with LRU eviction |
-| `src/open5e.ts` | Open5e SRD fallback — no auth required. Used when DDB is down or returns empty results. 1 h TTL cache. |
+| `src/cache.ts` | Generic in-memory TTL cache (`TtlCache<T>`) with FIFO eviction |
+| `src/open5e.ts` | Open5e SRD fallback — no auth required. Used when DDB is down or returns empty results. 1 h TTL cache. Stores parsed objects (not JSON strings). |
+| `src/utils.ts` | Shared `stripHtml()` utility — strips tags and decodes HTML entities. Imported by `character.ts` and `reference.ts`. |
 | `src/tools/character.ts` | Character fetch, `parseCharacterData(raw, sections)` (sections: summary/combat/spells/inventory/features/full), definition lookup, fuzzy name resolution |
 | `src/tools/reference.ts` | Conditions (hardcoded), spells/items/races/classes/backgrounds/feats (DDB character-service, 24 h cache, Open5e fallback). Exports `addCharacterSpellsToCompendium()` to seed cantrips from character JSON. |
 | `src/tools/monster.ts` | Monster search and stat block via DDB monster-service, Open5e fallback |
@@ -72,6 +74,18 @@ The central architectural split is between tools that need a Playwright browser 
 - `ddb_read_book` defaults to 3000 chars; use `query` to jump to a specific heading
 - `ddb_rate_encounter` accepts `edition: "2024" | "2014"` (default `"2024"`) for XDMG vs. classic DMG rules
 - `ddb_roll_treasure` accepts `type: "individual" | "hoard"` and `cr` of the monster(s)
+- `ddb_interact` requires `confirm_fill: true` when `action` is `"fill"` — safety gate against prompt-injection-triggered form submissions
+- `ddb_download_character` `output_path` must be under `~/Downloads` or `~/Documents`
+
+### parseCharacterData notes
+
+- **Senses**: collected from four sources — `type:"sense"` mods (2024), `type:"set"`/`type:"set-base"` mods (2014), `char.customSenses`, and `race.racialTraits[].definition.senses`. Deduplication keeps the highest value per sense.
+- **Ability scores**: `type:"set"` item modifiers (e.g. Amulet of Health) floor the calculated score; `type:"bonus"` modifiers (e.g. Ioun Stone) add to it.
+- **Speed**: `type:"set"` overrides the base race speed; `type:"bonus"` modifiers (e.g. Longstrider, Boots of Speed) stack on top. Applies to walk/fly/swim/climb/burrow.
+- **Spells**: cross-source duplicate detection flags spells granted by both `classSpells` (prepared/known) and `char.spells.*` (auto-granted). Warning line included in output.
+- **Reactions**: `char.actions.*` entries with `activationType: 4` are shown in REACTIONS (e.g. Uncanny Dodge, Deflect Missiles).
+- **Feats**: `__DISGUISE_FEAT` entries appear in OTHER FEATURES; `__INITIAL_ASI` entries (2024 background ASIs) are dropped entirely.
+- **Templates**: `resolveTemplates()` supports `{{variable}}`, `{{variable*n}}`, `{{variable+n}}`, `{{variable-n}}`, `{{variable/n}}` with optional `#signed`/`#unsigned` suffix. Variables: `proficiency`, `level`, `characterlevel`, `classlevel`.
 
 ### Ongoing work: removing browser dependencies
 

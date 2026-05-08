@@ -30,7 +30,7 @@ export class TtlCache<T> {
   }
 
   set(key: string, value: T, ttlMs?: number): void {
-    // Evict oldest entry when at capacity
+    // Evict first-inserted entry when at capacity (FIFO — not true LRU)
     if (this.entries.size >= this.maxSize) {
       const firstKey = this.entries.keys().next().value;
       if (firstKey !== undefined) this.entries.delete(firstKey);

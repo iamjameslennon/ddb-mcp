@@ -26,6 +26,8 @@ interface PlaywrightCookie {
 }
 
 // ── In-memory caches ──────────────────────────────────────────────────────────
+// Module-level singleton state — intentional for a single-user MCP server.
+// A new process gets a fresh cache; invalidateSessionCache() resets between logins.
 // Session cookies are loaded once from disk and cached for the process lifetime.
 // The cache is invalidated by invalidateSessionCache() which is called by
 // saveSession() in browser.ts whenever a new session file is written.
@@ -53,8 +55,9 @@ function loadSessionCookies(): PlaywrightCookie[] {
     throw new Error("No session found. Please run ddb_login first to authenticate.");
   }
   const session = JSON.parse(readFileSync(SESSION_PATH, "utf8"));
-  cookieCache = session.cookies ?? [];
-  return cookieCache!;
+  const loaded = session.cookies ?? [];
+  cookieCache = loaded;
+  return loaded;
 }
 
 /**
@@ -115,7 +118,15 @@ export async function getCobaltToken(): Promise<{ token: string; userId: string 
   if (!resp.ok) throw new Error(`cobalt-token request failed: ${resp.status}`);
   const { token } = await resp.json() as { token: string };
   // JWT payload is base64url-encoded — decode it to extract the userId claim
-  const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8"));
+  const parts = token.split(".");
+  if (parts.length < 3) throw new Error("cobalt-token response is not a valid JWT");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let payload: any;
+  try {
+    payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+  } catch (e) {
+    throw new Error("Failed to decode cobalt token payload: " + (e instanceof Error ? e.message : String(e)));
+  }
   const userId: string =
     payload["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"] ?? "";
   if (!userId) throw new Error("Could not extract userId from cobalt token");

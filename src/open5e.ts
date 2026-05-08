@@ -17,18 +17,18 @@ const OPEN5E = "https://api.open5e.com/v1";
 const SRD = "wotc-srd";
 
 // 1-hour cache — Open5e data doesn't change often
-const open5eCache = new TtlCache<string>(60 * 60_000, 100);
+const open5eCache = new TtlCache<unknown>(60 * 60_000, 100);
 
 async function o5fetch(path: string): Promise<unknown> {
   const cached = open5eCache.get(path);
-  if (cached) return JSON.parse(cached);
+  if (cached !== undefined) return cached;
 
   const resp = await fetch(`${OPEN5E}${path}`, {
     headers: { Accept: "application/json" },
   });
   if (!resp.ok) throw new Error(`Open5e ${resp.status}: ${path}`);
   const data = await resp.json();
-  open5eCache.set(path, JSON.stringify(data));
+  open5eCache.set(path, data);
   return data;
 }
 
