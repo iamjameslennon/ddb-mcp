@@ -1,5 +1,7 @@
 node_modules/
 dist/
-scripts/
 *.js.map
 .claude/
+.DS_Store
+.env
+npm-debug.log*
