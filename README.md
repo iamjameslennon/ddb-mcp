@@ -16,6 +16,15 @@ Give me a full summary of my character Torvin
 What spells do I have prepared right now?
 ```
 ```
+What concentration spells do I have prepared as Torvin?
+```
+```
+Tell me about Torvin's backstory and personality
+```
+```
+What organisations is Kestrel affiliated with?
+```
+```
 Which of my spells can I cast as rituals without using a slot?
 ```
 ```
@@ -71,6 +80,11 @@ Read the Ranger class section from the 2024 Player's Handbook
 ## For Dungeon Masters & Game Masters
 
 Use Claude to plan sessions, build encounters, and run the table faster.
+
+**Get party stats**
+```
+Show me the full party stats for campaign 6709239
+```
 
 **Plan and rate encounters**
 ```
@@ -144,7 +158,7 @@ Can a character use the Help action to assist with a skill check?
 |------|-------------|
 | `ddb_login` | Authenticate with D&D Beyond (Wizards ID). Run once — session is saved to disk and reused. |
 | `ddb_list_characters` | List all characters in your account with ID, level, race, and class. |
-| `ddb_get_character` | Parse a character into a compact, readable sheet. Covers all stats, skills, spells, actions, and inventory. Use `sections` to get just `summary`, `combat`, `spells`, `inventory`, `features`, or `full`. Accepts name (fuzzy matched) or numeric ID. |
+| `ddb_get_character` | Parse a character into a compact, readable sheet. Covers all stats, skills, spells, actions, and inventory. Use `sections` to get just `summary`, `combat`, `spells`, `inventory`, `features`, `concentration`, `notes`, or `full`. Accepts name (fuzzy matched) or numeric ID. |
 | `ddb_get_character_raw` | Fetch raw character JSON from the D&D Beyond API. Use `ddb_get_character` for all normal use. |
 | `ddb_download_character` | Save a character's full JSON to a local file (must be under ~/Downloads or ~/Documents). |
 | `ddb_character_lookup` | Look up the full description of a spell, feat, class feature, racial trait, or item on a character sheet. Supports partial and fuzzy name matching. |
@@ -155,6 +169,7 @@ Can a character use the Help action to assist with a skill check?
 |------|-------------|
 | `ddb_list_campaigns` | List all campaigns you're part of (as DM or player). |
 | `ddb_get_campaign` | Fetch campaign details — DM, description, and active characters with their levels. |
+| `ddb_get_party` | Fetch a compact summary of every character in a campaign — HP, AC, initiative, passive scores, ability scores, and skills for the whole party in one call. |
 
 ### Monster & Encounter Tools
 
@@ -213,15 +228,7 @@ Can a character use the Help action to assist with a skill check?
 npm install -g @iamjameslennon/ddb-mcp
 ```
 
-Then:
-
-```bash
-npm root -g
-```
-
-```bash
-claude mcp add dndbeyond node /usr/local/lib/node_modules/@iamjameslennon/ddb-mcp/dist/index.js
-```
+Playwright Chromium is installed automatically as part of the global install.
 
 ---
 
@@ -234,24 +241,81 @@ npm ci
 npx playwright install chromium
 ```
 
-Register with Claude Code:
+---
+
+## Connecting to your MCP client
+
+This server was built and tested with Claude — it will work with any MCP-compatible client, but response quality for D&D-specific reasoning will vary depending on the model used.
+
+First, find your global npm path:
 
 ```bash
-claude mcp add dndbeyond node /absolute/path/to/ddb-mcp/dist/index.js
+npm root -g
+# e.g. /usr/local/lib/node_modules
 ```
 
-Or edit `~/.claude/settings.json` manually:
+> In all config examples below, replace `/usr/local/lib/node_modules` with the output of `npm root -g` on your system.
+
+### Claude Desktop (recommended)
+
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
   "mcpServers": {
     "dndbeyond": {
       "command": "node",
-      "args": ["/absolute/path/to/ddb-mcp/dist/index.js"]
+      "args": ["/usr/local/lib/node_modules/@iamjameslennon/ddb-mcp/dist/index.js"]
     }
   }
 }
 ```
+
+### Claude Code
+
+```bash
+claude mcp add dndbeyond node $(npm root -g)/@iamjameslennon/ddb-mcp/dist/index.js
+```
+
+### Cursor
+
+Edit `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "dndbeyond": {
+      "command": "node",
+      "args": ["/usr/local/lib/node_modules/@iamjameslennon/ddb-mcp/dist/index.js"]
+    }
+  }
+}
+```
+
+### Windsurf
+
+Edit `~/.codeium/windsurf/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "dndbeyond": {
+      "command": "node",
+      "args": ["/usr/local/lib/node_modules/@iamjameslennon/ddb-mcp/dist/index.js"]
+    }
+  }
+}
+```
+
+### LM Studio
+
+MCP support was added in LM Studio 0.3.x. Configure through the UI under **Settings → MCP Servers** using the same JSON shape as Claude Desktop above. Steps may vary between versions — see [lmstudio.ai/docs](https://lmstudio.ai/docs) for current instructions.
+
+### Open WebUI
+
+MCP servers are configured through the admin panel under **Settings → Tools**. See [docs.openwebui.com](https://docs.openwebui.com) for current instructions — the UI changes frequently between releases.
+
+> LM Studio and Open WebUI use the same underlying `node` command and path as the other clients above.
 
 ---
 
@@ -411,19 +475,11 @@ Key things `ddb_get_character` handles correctly:
 
 ## Upgrading
 
-To upgrade to the latest release, run the install command again:
-
 ```bash
-npm install -g "https://github.com/iamjameslennon/ddb-mcp/archive/refs/heads/main.tar.gz"
+npm update -g @iamjameslennon/ddb-mcp
 ```
 
-To install a specific tagged version:
-
-```bash
-npm install -g "https://github.com/iamjameslennon/ddb-mcp/archive/refs/tags/v2.0.0.tar.gz"
-```
-
-Then restart Claude Code and run `/mcp` to reconnect the server.
+Then restart your MCP client and run `/mcp` to reconnect the server.
 
 ---
 
@@ -436,6 +492,15 @@ To log out or reset your session:
 ```bash
 rm ~/.config/ddb-mcp/session.json
 ```
+
+---
+
+## Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DDB_CHARACTER_CACHE_TTL` | `60` | Character sheet cache lifetime in seconds. Lower values give fresher HP/spell slot data during live play at the cost of more API calls. Set to `10` for active sessions, leave at default for prep work. |
+| `DDB_NO_SANDBOX` | — | Set to `1` to disable Chromium sandboxing. Required in some container/CI environments. |
 
 ---
 

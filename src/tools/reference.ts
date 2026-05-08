@@ -362,6 +362,23 @@ export function addCharacterSpellsToCompendium(char: Record<string, unknown>): v
   }
 }
 
+/**
+ * Returns true/false if the spell is found in the character spell buffer or
+ * loaded compendium, null if the spell is unknown.
+ * Call after addCharacterSpellsToCompendium() has run.
+ */
+export function isConcentrationSpell(spellName: string): boolean | null {
+  const lower = spellName.toLowerCase();
+  for (const [name, spell] of characterSpellBuffer) {
+    if (name.toLowerCase() === lower) return spell.definition?.concentration ?? null;
+  }
+  if (spellCompendium) {
+    const found = spellCompendium.find(s => (s.definition?.name ?? "").toLowerCase() === lower);
+    if (found) return found.definition?.concentration ?? null;
+  }
+  return null;
+}
+
 function formatSpell(spell: DdbSpell): string {
   const d = spell.definition;
   const ACTIVATION_TYPES: Record<number, string> = {

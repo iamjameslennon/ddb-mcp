@@ -2,6 +2,52 @@ import { BrowserContext } from "playwright";
 import { getPage } from "../browser.js";
 import { hasValidSession } from "../session-fetch.js";
 
+// ── Book slug resolution ───────────────────────────────────────────────────────
+
+/**
+ * Match a plain-text book title against a library list.
+ * Exported for unit testing without a browser context.
+ *
+ * Resolution order:
+ *   1. Exact match (case-insensitive)
+ *   2. Substring: input is contained in the title (unambiguous)
+ *   3. Error with available options
+ */
+export function matchBookSlug(
+  books: Array<{ title: string; slug: string }>,
+  input: string
+): string {
+  const lower = input.toLowerCase();
+
+  // 1. Exact match
+  const exact = books.find(b => b.title.toLowerCase() === lower);
+  if (exact) return exact.slug;
+
+  // 2. Substring match
+  const matches = books.filter(b => b.title.toLowerCase().includes(lower));
+  if (matches.length === 1) return matches[0].slug;
+  if (matches.length > 1) {
+    const list = matches.map(b => `  • ${b.title} (${b.slug})`).join("\n");
+    throw new Error(`Multiple books match "${input}" — be more specific:\n${list}`);
+  }
+
+  // 3. No match
+  const all = books.map(b => `  • ${b.title} (${b.slug})`).join("\n");
+  throw new Error(`No book found matching "${input}".\nAvailable books:\n${all}`);
+}
+
+/**
+ * Resolve a user-supplied book identifier to a slug.
+ * If input already contains "/" it is treated as a slug and returned as-is.
+ * Otherwise, listLibrary() is called and the title is fuzzy-matched.
+ */
+export async function resolveBookSlug(context: BrowserContext, input: string): Promise<string> {
+  if (input.includes("/")) return input;
+  const raw = await listLibrary(context);
+  const { books } = JSON.parse(raw) as { books: Array<{ title: string; slug: string }> };
+  return matchBookSlug(books, input);
+}
+
 export async function listLibrary(context: BrowserContext): Promise<string> {
   const page = await getPage(context);
 
@@ -45,7 +91,10 @@ export async function readBook(
     throw new Error("Not logged in. Please run ddb_login first.");
   }
 
-  let url = `https://www.dndbeyond.com/sources/${bookSlug}`;
+  // Resolve plain title → slug (passthrough if input already contains "/")
+  const resolvedSlug = await resolveBookSlug(context, bookSlug);
+
+  let url = `https://www.dndbeyond.com/sources/${resolvedSlug}`;
   if (chapterSlug) url += `/${chapterSlug}`;
 
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
@@ -123,5 +172,5 @@ export async function readBook(
       `\n\n[Truncated at ${maxChars} chars. Use a larger max_chars or specify query/chapter_slug to narrow scope.]`
     : contentToReturn;
 
-  return `# ${bookSlug}${chapterSlug ? ` / ${chapterSlug}` : ""}\nURL: ${url}\n\n${truncated}`;
+  return `# ${resolvedSlug}${chapterSlug ? ` / ${chapterSlug}` : ""}\nURL: ${url}\n\n${truncated}`;
 }

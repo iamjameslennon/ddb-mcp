@@ -1,81 +1,99 @@
-import { BrowserContext } from "playwright";
-import { getPage } from "../browser.js";
-import { hasValidSession } from "../session-fetch.js";
+import { sessionFetch, getCobaltToken, hasValidSession } from "../session-fetch.js";
+import { TtlCache } from "../cache.js";
 
-export async function getCampaign(context: BrowserContext, campaignId: string): Promise<string> {
-  const page = await getPage(context);
+const CAMPAIGN_API = "https://www.dndbeyond.com/api/campaign/stt";
 
-  if (!hasValidSession()) {
-    throw new Error("Not logged in. Please run ddb_login first.");
-  }
+// 5 min TTL — campaign membership doesn't change often within a session
+const campaignCache = new TtlCache<string>(5 * 60_000, 20);
 
-  await page.goto(`https://www.dndbeyond.com/campaigns/${campaignId}`, {
-    waitUntil: "domcontentloaded",
-    timeout: 30000,
-  });
-  await page.waitForSelector("h1.page-title, .ddb-campaigns-detail", { timeout: 15000 }).catch(() => {});
-
-  const campaign = await page.evaluate(() => {
-    const data: Record<string, unknown> = {};
-
-    // Campaign name
-    const name = document.querySelector("h1.page-title")?.textContent?.trim();
-    if (name) data["name"] = name;
-
-    // DM/Owner
-    const dm = document.querySelector("span.user-interactions-profile-nickname")?.textContent?.trim();
-    if (dm) data["dungeonMaster"] = dm;
-
-    // Campaign description — first substantial <p> in the campaign detail body
-    const descEl = Array.from(document.querySelectorAll(".ddb-campaigns-detail p"))
-      .find((el) => (el.textContent?.trim().length ?? 0) > 50);
-    if (descEl) data["description"] = descEl.textContent?.trim();
-
-    // Active characters
-    const characters: Array<{ character: string; level: string; player: string; url: string }> = [];
-    document.querySelectorAll("li.ddb-campaigns-character-card-wrapper").forEach((el) => {
-      const charName = el.querySelector(".ddb-campaigns-character-card-header-upper-character-info-primary")?.textContent?.trim() ?? "";
-      const secondaries = el.querySelectorAll(".ddb-campaigns-character-card-header-upper-character-info-secondary");
-      const summary = secondaries[0]?.textContent?.trim() ?? "";
-      const playerRaw = secondaries[1]?.textContent?.trim() ?? "";
-      const player = playerRaw.replace(/^Player:\s*/i, "");
-      const charLink = (el.querySelector("a.ddb-campaigns-character-card-header-upper-details-link") as HTMLAnchorElement)?.href ?? "";
-      if (charName) characters.push({ character: charName, level: summary, player, url: charLink });
-    });
-    if (characters.length) data["characters"] = characters;
-
-    return data;
-  });
-
-  return JSON.stringify(campaign);
+export function invalidateCampaignCache(): void {
+  campaignCache.clear();
 }
 
-export async function listMyCampaigns(context: BrowserContext): Promise<string> {
-  const page = await getPage(context);
+interface CampaignSummary {
+  id: number;
+  name: string;
+  dmUsername: string;
+  dmId?: number;
+  playerCount: number;
+  dateCreated: string;
+}
 
-  if (!hasValidSession()) {
-    throw new Error("Not logged in. Please run ddb_login first.");
+// Always send the cobalt Bearer token — the API returns a 200 HTML redirect
+// (not a 401) when auth is missing, so cookies-only detection is unreliable.
+async function campaignFetch(url: string): Promise<Response> {
+  const { token } = await getCobaltToken();
+  return sessionFetch(url, { headers: { Authorization: `Bearer ${token}` } });
+}
+
+function assertJson(resp: Response): void {
+  const contentType = resp.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    throw new Error("Campaign API returned non-JSON response — session may have expired. Run ddb_login.");
+  }
+}
+
+async function fetchActiveCampaigns(): Promise<CampaignSummary[]> {
+  const cacheKey = "user-campaigns";
+  const cached = campaignCache.get(cacheKey);
+  if (cached) return JSON.parse(cached) as CampaignSummary[];
+
+  const resp = await campaignFetch(`${CAMPAIGN_API}/user-campaigns`);
+  if (!resp.ok) throw new Error(`Campaign API returned ${resp.status}`);
+  assertJson(resp);
+  const json = await resp.json() as { status: string; data: CampaignSummary[] };
+  const campaigns = json.data ?? [];
+  campaignCache.set(cacheKey, JSON.stringify(campaigns));
+  return campaigns;
+}
+
+export async function listMyCampaigns(): Promise<string> {
+  if (!hasValidSession()) throw new Error("Not logged in. Please run ddb_login first.");
+
+  const [campaigns, { userId }] = await Promise.all([fetchActiveCampaigns(), getCobaltToken()]);
+
+  const mapped = campaigns.map(c => ({
+    name: c.name,
+    id: String(c.id),
+    role: (c.dmId != null ? String(c.dmId) === userId : c.dmUsername === userId) ? "DM" : "Player",
+  }));
+
+  if (mapped.length === 0) {
+    return "You are not currently a member of any campaigns on D&D Beyond.";
+  }
+  return JSON.stringify(mapped);
+}
+
+export async function getCampaign(campaignId: string): Promise<string> {
+  if (!hasValidSession()) throw new Error("Not logged in. Please run ddb_login first.");
+
+  const campaigns = await fetchActiveCampaigns();
+  const campaign = campaigns.find(c => String(c.id) === campaignId);
+  if (!campaign) {
+    throw new Error(
+      `Campaign ${campaignId} not found in your active campaigns. ` +
+      `Use ddb_list_campaigns to see your campaigns.`
+    );
   }
 
-  await page.goto("https://www.dndbeyond.com/my-campaigns", {
-    waitUntil: "domcontentloaded",
-    timeout: 30000,
-  });
-  await page.waitForSelector("li.ddb-campaigns-list-item-wrapper, .ddb-campaigns-list-content", { timeout: 15000 }).catch(() => {});
+  const resp = await campaignFetch(`${CAMPAIGN_API}/active-short-characters/${campaignId}`);
+  if (!resp.ok) throw new Error(`Characters API returned ${resp.status}`);
+  assertJson(resp);
+  type CharEntry = { id: number; name: string; userName: string; characterStatus: string };
+  const json = await resp.json() as Array<CharEntry> | { data: Array<CharEntry> };
+  const chars = Array.isArray(json) ? json : (json as { data: Array<CharEntry> }).data ?? [];
 
-  const campaigns = await page.evaluate(() => {
-    const list: Array<{ name: string; id: string; role: string; url: string }> = [];
-    document.querySelectorAll("li.ddb-campaigns-list-item-wrapper").forEach((el) => {
-      const name = el.querySelector(".ddb-campaigns-list-item-body-title")?.textContent?.trim() ?? "";
-      const link = (el.querySelector("a.ddb-campaigns-list-item-footer-buttons-item[href*='/campaigns/']") as HTMLAnchorElement)?.href ?? "";
-      const idMatch = link.match(/\/campaigns\/(\d+)/);
-      const id = idMatch?.[1] ?? "";
-      const roleText = el.querySelector(".ddb-campaigns-list-item-body-role")?.textContent?.trim() ?? "";
-      const role = roleText.replace(/^Role:\s*/i, "").split("\n")[0].trim();
-      if (name && id) list.push({ name, id, role, url: link });
-    });
-    return list;
-  });
+  const characters = chars.map(c => ({
+    character: c.name,
+    player: c.userName,
+    url: `https://www.dndbeyond.com/characters/${c.id}`,
+  }));
 
-  return JSON.stringify(campaigns);
+  return JSON.stringify({
+    id: campaign.id,
+    name: campaign.name,
+    dungeonMaster: campaign.dmUsername,
+    playerCount: campaign.playerCount,
+    characters,
+  });
 }

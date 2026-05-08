@@ -6,6 +6,7 @@ import { getBrowser, getContext, closeBrowser } from "./browser.js";
 import { login } from "./auth.js";
 import { getCharacter, downloadCharacter, listCharacters, parseCharacter, findCharacterByName, getDefinition } from "./tools/character.js";
 import { getCampaign, listMyCampaigns } from "./tools/campaign.js";
+import { getParty } from "./tools/party.js";
 import { navigate, interact, getCurrentPageContent } from "./tools/navigate.js";
 import { search } from "./tools/search.js";
 import { listLibrary, readBook } from "./tools/library.js";
@@ -150,11 +151,11 @@ server.tool(
 // ─── ddb_get_character ───────────────────────────────────────────────────────
 server.tool(
   "ddb_get_character",
-  "Parse and display a character sheet. Use sections to reduce output: summary (vitals+stats), combat (adds actions/weapons), spells (spellcasting only), inventory, features, or full (default).",
+  "Parse and display a character sheet. Use sections to reduce output: summary (vitals+stats), combat (adds actions/weapons), spells (spellcasting only), inventory, features, concentration, notes (backstory, traits, bonds), or full (default).",
   {
     character_id: z.string().min(1).optional().describe("The D&D Beyond character ID (e.g. '12345678')"),
     character_name: z.string().min(1).optional().describe("Character name to look up (fuzzy matched — e.g. 'Throin' finds 'Thorin Ironforge')"),
-    sections: z.enum(["summary", "combat", "spells", "inventory", "features", "full"])
+    sections: z.enum(["summary", "combat", "spells", "inventory", "features", "concentration", "notes", "full"])
       .default("full")
       .describe("Which sections to return. Default: full. Use summary for a quick overview."),
   },
@@ -257,18 +258,15 @@ server.tool(
 // ─── ddb_get_campaign ─────────────────────────────────────────────────────────
 server.tool(
   "ddb_get_campaign",
-  "Fetch campaign information including player characters, notes, and description from a D&D Beyond campaign page.",
+  "Fetch campaign information including player characters from a D&D Beyond campaign.",
   {
     campaign_id: z.string().min(1).describe("The D&D Beyond campaign ID (found in the campaign URL)"),
   },
   async ({ campaign_id }) => {
     try {
-      const context = await getSharedContext();
-      const data = await getCampaign(context, campaign_id);
-      await closeBrowser();
+      const data = await getCampaign(campaign_id);
       return { content: [{ type: "text", text: data }] };
     } catch (err) {
-      await closeBrowser().catch(() => {});
       const msg = err instanceof Error ? err.message : String(err);
       process.stderr.write(`[ddb-mcp] ddb_get_campaign error: ${msg}\n`);
       return { content: [{ type: "text", text: `Failed to get campaign: ${msg}` }], isError: true };
@@ -283,15 +281,31 @@ server.tool(
   {},
   async () => {
     try {
-      const context = await getSharedContext();
-      const data = await listMyCampaigns(context);
-      await closeBrowser();
+      const data = await listMyCampaigns();
       return { content: [{ type: "text", text: data }] };
     } catch (err) {
-      await closeBrowser().catch(() => {});
       const msg = err instanceof Error ? err.message : String(err);
       process.stderr.write(`[ddb-mcp] ddb_list_campaigns error: ${msg}\n`);
       return { content: [{ type: "text", text: `Failed to list campaigns: ${msg}` }], isError: true };
+    }
+  }
+);
+
+// ─── ddb_get_party ────────────────────────────────────────────────────────────
+server.tool(
+  "ddb_get_party",
+  "Fetch a compact summary of every character in a campaign. Returns HP, AC, initiative, passive scores, ability scores, and skills for the whole party in one call.",
+  {
+    campaign_id: z.string().min(1).describe("The D&D Beyond campaign ID (found in the campaign URL)"),
+  },
+  async ({ campaign_id }) => {
+    try {
+      const data = await getParty(campaign_id);
+      return { content: [{ type: "text", text: data }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[ddb-mcp] ddb_get_party error: ${msg}\n`);
+      return { content: [{ type: "text", text: `Failed to get party: ${msg}` }], isError: true };
     }
   }
 );
@@ -423,13 +437,12 @@ server.tool(
 // ─── ddb_read_book ────────────────────────────────────────────────────────────
 server.tool(
   "ddb_read_book",
-  "Read a D&D Beyond book. Specify chapter_slug for a chapter, query to jump to a heading, and max_chars to control response size.",
+  "Read a D&D Beyond book. Accepts either a slug (e.g. dnd/phb-2024) or a plain title (e.g. \"Player's Handbook\" or \"monster manual\") — the server resolves titles against your library automatically. Specify chapter_slug for a chapter, query to jump to a heading, and max_chars to control response size.",
   {
     book_slug: z
       .string()
       .min(1)
-      .regex(/^[a-z0-9][a-z0-9\-\/]*$/, "book_slug may only contain lowercase letters, digits, hyphens, and forward slashes")
-      .describe("The book slug from the D&D Beyond URL (e.g. 'players-handbook', 'dungeon-masters-guide')"),
+      .describe("Book slug (e.g. 'dnd/phb-2024') or plain title (e.g. \"Player's Handbook\", \"monster manual\"). Slugs must contain '/'; titles are fuzzy-matched against your library."),
     chapter_slug: z
       .string()
       .regex(/^[a-z0-9][a-z0-9\-\/]*$/, "chapter_slug may only contain lowercase letters, digits, hyphens, and forward slashes")

@@ -831,3 +831,212 @@ describe("parseCharacterData — JoAT initiative via ability-checks modifier", (
     expect(out).toContain("Initiative: +1");
   });
 });
+
+// ── Concentration spell section ───────────────────────────────────────────────
+// Spell definitions include `concentration` directly in definition so
+// addCharacterSpellsToCompendium seeds the buffer before parsing.
+
+const makeClassSpells = (classDef: Record<string, unknown>, spells: Array<{ name: string; level: number; concentration: boolean; prepared?: boolean; ritual?: boolean }>) => ({
+  characterClassId: (classDef as Record<string, unknown>).id ?? 1,
+  spells: spells.map(s => ({
+    prepared: s.prepared ?? true,
+    definition: { id: Math.random(), name: s.name, level: s.level, concentration: s.concentration, ritual: s.ritual ?? false },
+  })),
+});
+
+describe("parseCharacterData — concentration section", () => {
+  it("shows prepared concentration spells grouped by level", () => {
+    const char = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        classes: [
+          {
+            id: 10, level: 5, hitDiceUsed: 0,
+            definition: { name: "Druid", hitDice: 8, canCastSpells: true, spellCastingAbilityId: 5, spellRules: { levelSpellSlots: Array.from({ length: 21 }, (_, l) => l >= 1 ? [3, 2, 0, 0, 0, 0, 0, 0, 0] : [0, 0, 0, 0, 0, 0, 0, 0, 0]) } },
+            subclassDefinition: null, classFeatures: [],
+          },
+        ],
+        classSpells: [makeClassSpells({ id: 10 }, [
+          { name: "Entangle",     level: 1, concentration: true },
+          { name: "Hunter's Mark", level: 1, concentration: true },
+          { name: "Cure Wounds",  level: 1, concentration: false },
+        ])],
+        spells: { race: [], class: [], background: [], feat: [], item: [] },
+        spellSlots: [],
+      },
+    };
+    const out = parseCharacterData(char as unknown as Record<string, unknown>, "concentration");
+    expect(out).toContain("CONCENTRATION SPELLS");
+    expect(out).toContain("Entangle");
+    expect(out).toContain("Hunter's Mark");
+    expect(out).not.toContain("Cure Wounds");
+    expect(out).toContain("1st-level slot");
+  });
+
+  it("returns no-concentration message when no concentration spells are prepared", () => {
+    const char = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        classes: [
+          {
+            id: 11, level: 3, hitDiceUsed: 0,
+            definition: { name: "Wizard", hitDice: 6, canCastSpells: true, spellCastingAbilityId: 4, spellRules: { levelSpellSlots: Array.from({ length: 21 }, (_, l) => l >= 1 ? [2, 0, 0, 0, 0, 0, 0, 0, 0] : [0, 0, 0, 0, 0, 0, 0, 0, 0]) } },
+            subclassDefinition: null, classFeatures: [],
+          },
+        ],
+        classSpells: [makeClassSpells({ id: 11 }, [
+          { name: "Magic Missile", level: 1, concentration: false, prepared: true },
+          { name: "Fireball",      level: 3, concentration: false, prepared: true },
+        ])],
+        spells: { race: [], class: [], background: [], feat: [], item: [] },
+        spellSlots: [],
+      },
+    };
+    const out = parseCharacterData(char as unknown as Record<string, unknown>, "concentration");
+    expect(out).toContain("no concentration spells prepared");
+  });
+
+  it("includes concentration spells from multiple sources (class + feat)", () => {
+    const char = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        classes: [
+          {
+            id: 12, level: 4, hitDiceUsed: 0,
+            definition: { name: "Ranger", hitDice: 10, canCastSpells: true, spellCastingAbilityId: 5, spellRules: { levelSpellSlots: Array.from({ length: 21 }, (_, l) => l >= 2 ? [2, 0, 0, 0, 0, 0, 0, 0, 0] : [0, 0, 0, 0, 0, 0, 0, 0, 0]) } },
+            subclassDefinition: null, classFeatures: [],
+          },
+        ],
+        classSpells: [makeClassSpells({ id: 12 }, [
+          { name: "Hunter's Mark", level: 1, concentration: true },
+        ])],
+        spells: {
+          race: [],
+          class: [],
+          background: [],
+          feat: [{ definition: { id: 999, name: "Faerie Fire", level: 1, concentration: true } }],
+          item: [],
+        },
+        spellSlots: [],
+      },
+    };
+    const out = parseCharacterData(char as unknown as Record<string, unknown>, "concentration");
+    expect(out).toContain("Hunter's Mark");
+    expect(out).toContain("Faerie Fire");
+  });
+
+  it("Wizard spellbook filter: only prepared concentration spells appear", () => {
+    const char = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        classes: [
+          {
+            id: 13, level: 5, hitDiceUsed: 0,
+            definition: { name: "Wizard", hitDice: 6, canCastSpells: true, spellCastingAbilityId: 4, spellRules: { levelSpellSlots: Array.from({ length: 21 }, (_, l) => l >= 1 ? [4, 3, 2, 0, 0, 0, 0, 0, 0] : [0, 0, 0, 0, 0, 0, 0, 0, 0]) } },
+            subclassDefinition: null, classFeatures: [],
+          },
+        ],
+        classSpells: [makeClassSpells({ id: 13 }, [
+          { name: "Blur",          level: 2, concentration: true,  prepared: true  },
+          { name: "Web",           level: 2, concentration: true,  prepared: true  },
+          // 8 unprepared concentration spells — should NOT appear
+          { name: "Invisibility",  level: 2, concentration: true,  prepared: false },
+          { name: "Hold Person",   level: 2, concentration: true,  prepared: false },
+          { name: "Fly",           level: 3, concentration: true,  prepared: false },
+          { name: "Haste",         level: 3, concentration: true,  prepared: false },
+          { name: "Slow",          level: 3, concentration: true,  prepared: false },
+          { name: "Blink",         level: 3, concentration: true,  prepared: false },
+          { name: "Polymorph",     level: 4, concentration: true,  prepared: false },
+          { name: "Confusion",     level: 4, concentration: true,  prepared: false },
+        ])],
+        spells: { race: [], class: [], background: [], feat: [], item: [] },
+        spellSlots: [],
+      },
+    };
+    const out = parseCharacterData(char as unknown as Record<string, unknown>, "concentration");
+    expect(out).toContain("Blur");
+    expect(out).toContain("Web");
+    // Unprepared spells must not appear
+    expect(out).not.toContain("Invisibility");
+    expect(out).not.toContain("Fly");
+    expect(out).not.toContain("Polymorph");
+  });
+});
+
+// ── Notes & Backstory section ─────────────────────────────────────────────────
+
+const withNotes = (traits: Record<string, unknown>, notes: Record<string, unknown>) => ({
+  data: {
+    ...((FIGHTER_5.data) as Record<string, unknown>),
+    traits,
+    notes,
+  },
+});
+
+describe("parseCharacterData — notes section", () => {
+  it("all fields populated: every label and value appears", () => {
+    const out = parseCharacterData(withNotes(
+      { personalityTraits: "Polysyllabic words.", ideals: "Knowledge is power.", bonds: "My tomes.", flaws: "I speak without thinking.", appearance: "Tall, pale, silver hair." },
+      { backstory: "Raised in Waterdeep.", allies: "The Harpers.", organizations: "Arcane Brotherhood.", personalPossessions: "A locket.", otherNotes: "Owes a debt to a devil." }
+    ) as Record<string, unknown>, "notes");
+
+    expect(out).toContain("PERSONALITY");
+    expect(out).toContain("Polysyllabic words.");
+    expect(out).toContain("Knowledge is power.");
+    expect(out).toContain("My tomes.");
+    expect(out).toContain("I speak without thinking.");
+    expect(out).toContain("Tall, pale, silver hair.");
+    expect(out).toContain("BACKSTORY");
+    expect(out).toContain("Raised in Waterdeep.");
+    expect(out).toContain("ALLIES & ORGANISATIONS");
+    expect(out).toContain("The Harpers.");
+    expect(out).toContain("Arcane Brotherhood.");
+    expect(out).toContain("ADDITIONAL NOTES");
+    expect(out).toContain("A locket.");
+    expect(out).toContain("Owes a debt to a devil.");
+  });
+
+  it("partial fields: only populated fields appear, no empty labels", () => {
+    const out = parseCharacterData(withNotes(
+      { personalityTraits: null, ideals: null, bonds: "My life's work.", flaws: null, appearance: null },
+      { backstory: "Grew up in a port town.", allies: null, organizations: null, personalPossessions: null, otherNotes: null }
+    ) as Record<string, unknown>, "notes");
+
+    expect(out).toContain("My life's work.");
+    expect(out).toContain("Grew up in a port town.");
+    // Absent fields must not produce label lines
+    expect(out).not.toContain("Traits:");
+    expect(out).not.toContain("Ideals:");
+    expect(out).not.toContain("Allies:");
+    // Sections with no content are skipped entirely
+    expect(out).not.toContain("ALLIES & ORGANISATIONS");
+    expect(out).not.toContain("ADDITIONAL NOTES");
+  });
+
+  it("all null: returns the no-notes message", () => {
+    const out = parseCharacterData(withNotes(
+      { personalityTraits: null, ideals: null, bonds: null, flaws: null, appearance: null },
+      { backstory: null, allies: null, organizations: null, personalPossessions: null, otherNotes: null }
+    ) as Record<string, unknown>, "notes");
+    expect(out).toContain("No notes or backstory have been recorded");
+  });
+
+  it("HTML is stripped from field values", () => {
+    const out = parseCharacterData(withNotes(
+      { personalityTraits: null, ideals: null, bonds: null, flaws: null, appearance: null },
+      { backstory: "<p>My <strong>backstory</strong> text.</p>", allies: null, organizations: null, personalPossessions: null, otherNotes: null }
+    ) as Record<string, unknown>, "notes");
+    expect(out).toContain("My backstory text.");
+    expect(out).not.toContain("<p>");
+    expect(out).not.toContain("<strong>");
+  });
+
+  it("full section includes notes block", () => {
+    const out = parseCharacterData(withNotes(
+      { personalityTraits: "I never back down.", ideals: null, bonds: null, flaws: null, appearance: null },
+      { backstory: null, allies: null, organizations: null, personalPossessions: null, otherNotes: null }
+    ) as Record<string, unknown>, "full");
+    expect(out).toContain("PERSONALITY");
+    expect(out).toContain("I never back down.");
+  });
+});

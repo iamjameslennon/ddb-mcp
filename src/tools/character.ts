@@ -1,13 +1,19 @@
 import { sessionFetch, hasValidSession, getCobaltToken } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
-import { addCharacterSpellsToCompendium } from "./reference.js";
+import { addCharacterSpellsToCompendium, isConcentrationSpell } from "./reference.js";
 import { stripHtml as stripHtmlFull } from "../utils.js";
 import { writeFileSync } from "fs";
 import { join, resolve, relative, basename } from "path";
 import { homedir } from "os";
 
-// Cache character JSON for 60 s to avoid redundant API calls within a session.
-const characterCache = new TtlCache<string>(60_000, 50);
+// Cache character JSON to avoid redundant API calls within a session.
+// TTL is configurable via DDB_CHARACTER_CACHE_TTL (seconds); default 60 s.
+const CHARACTER_CACHE_TTL_MS = (() => {
+  const raw = process.env.DDB_CHARACTER_CACHE_TTL;
+  const seconds = raw ? parseInt(raw, 10) : 60;
+  return (Number.isFinite(seconds) && seconds > 0 ? seconds : 60) * 1000;
+})();
+const characterCache = new TtlCache<string>(CHARACTER_CACHE_TTL_MS, 50);
 
 // ── Character name resolution ─────────────────────────────────────────────────
 
@@ -66,7 +72,7 @@ export async function findCharacterByName(name: string): Promise<{ id: string; n
 
 export function parseCharacterData(
   raw: Record<string, unknown>,
-  sections: "summary" | "combat" | "spells" | "inventory" | "features" | "full" = "full"
+  sections: "summary" | "combat" | "spells" | "inventory" | "features" | "concentration" | "notes" | "full" = "full"
 ): string {
   const char = (raw?.data ?? raw) as Record<string, unknown>;
 
@@ -878,6 +884,92 @@ export function parseCharacterData(
     ...(spellSections.length ? [`SPELLS`, ...spellSections, ``] : []),
   ];
 
+  // ── Concentration Spells ──────────────────────────────────────────────────────
+  // Collect all available/prepared spells, filter to concentration:true, group by level.
+  const concByLevel = new Map<number, string[]>();
+  const addConcSpell = (s: Record<string, unknown>) => {
+    const def = obj(s.definition);
+    const name = str(def.name);
+    if (!name) return;
+    const level = num(def.level);
+    const fromCompendium = isConcentrationSpell(name);
+    const isConc = fromCompendium !== null ? fromCompendium : def.concentration === true;
+    if (!isConc) return;
+    const bucket = concByLevel.get(level) ?? [];
+    if (!bucket.includes(name)) { bucket.push(name); concByLevel.set(level, bucket); }
+  };
+  for (const cs of classSpells) {
+    const classEntry = classes.find(c =>
+      c.id === cs.characterClassId || c.id === cs.id || c.id === cs.classId
+    );
+    const isSpellbook2 = str(obj(classEntry?.definition ?? {}).name) === "Wizard";
+    const allSp = arr<Record<string, unknown>>(cs.spells).length > 0
+      ? arr<Record<string, unknown>>(cs.spells)
+      : arr<Record<string, unknown>>(cs.classSpells);
+    for (const s of allSp) {
+      const def = obj(s.definition);
+      if (num(def.level) > 0 && isSpellbook2 && !(s.prepared === true || def.ritual === true)) continue;
+      addConcSpell(s);
+    }
+  }
+  for (const spellList of Object.values(spellsObj)) {
+    for (const s of arr<Record<string, unknown>>(spellList)) addConcSpell(s);
+  }
+  const slotOrdinal = (lvl: number) => {
+    const o = ["", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th"];
+    return o[lvl] ?? `${lvl}th`;
+  };
+  const concentrationBlock: string[] = [];
+  if (concByLevel.size === 0) {
+    concentrationBlock.push("This character has no concentration spells prepared.");
+  } else {
+    concentrationBlock.push("CONCENTRATION SPELLS");
+    for (const lvl of [...concByLevel.keys()].sort((a, b) => a - b)) {
+      concentrationBlock.push(lvl === 0 ? "  Cantrips (no slot required):" : `  Level ${lvl}:`);
+      for (const name of concByLevel.get(lvl)!) {
+        concentrationBlock.push(`    • ${name}${lvl > 0 ? ` [${slotOrdinal(lvl)}-level slot]` : ""}`);
+      }
+    }
+    concentrationBlock.push("");
+    if (slotLines.length) concentrationBlock.push("SPELL SLOTS", ...slotLines);
+  }
+
+  // ── Notes & Backstory ────────────────────────────────────────────────────────
+  const traits = obj(char.traits);
+  const notes  = obj(char.notes);
+  const field  = (v: unknown) => { const s = stripHtmlFull(str(v)).trim(); return s || null; };
+
+  const traitLines: string[] = [];
+  const addTrait = (label: string, v: unknown) => { const t = field(v); if (t) traitLines.push(`  ${label.padEnd(13)}${t}`); };
+  addTrait("Traits:",     traits.personalityTraits);
+  addTrait("Ideals:",     traits.ideals);
+  addTrait("Bonds:",      traits.bonds);
+  addTrait("Flaws:",      traits.flaws);
+  addTrait("Appearance:", traits.appearance);
+
+  const backstoryText = field(notes.backstory);
+
+  const allyLines: string[] = [];
+  const addAlly = (label: string, v: unknown) => { const t = field(v); if (t) allyLines.push(`  ${label.padEnd(15)}${t}`); };
+  addAlly("Allies:",        notes.allies);
+  addAlly("Organisations:", notes.organizations);
+
+  const extraLines: string[] = [];
+  const addExtra = (label: string, v: unknown) => { const t = field(v); if (t) extraLines.push(`  ${label.padEnd(13)}${t}`); };
+  addExtra("Possessions:", notes.personalPossessions);
+  addExtra("Other:",       notes.otherNotes);
+
+  const notesBlock: string[] = [];
+  const hasAny = traitLines.length || backstoryText || allyLines.length || extraLines.length;
+  if (!hasAny) {
+    notesBlock.push("No notes or backstory have been recorded for this character.");
+  } else {
+    if (traitLines.length) notesBlock.push("PERSONALITY", ...traitLines, "");
+    if (backstoryText)     notesBlock.push("BACKSTORY", `  ${backstoryText}`, "");
+    if (allyLines.length)  notesBlock.push("ALLIES & ORGANISATIONS", ...allyLines, "");
+    if (extraLines.length) notesBlock.push("ADDITIONAL NOTES", ...extraLines, "");
+  }
+
   const inventoryBlock: string[] = [
     ...(equippedNonWeapons.length ? [`EQUIPPED`, ...equippedNonWeapons.map(e => `  ${e}`), ``] : []),
     ...(inventoryLine ? [`INVENTORY`, `  ${inventoryLine}`, ``] : []),
@@ -905,11 +997,17 @@ export function parseCharacterData(
     case "features":
       out.push(...featuresBlock);
       break;
+    case "concentration":
+      out.push(...concentrationBlock);
+      break;
+    case "notes":
+      out.push(...notesBlock);
+      break;
     case "full":
     default:
       out.push(
         ...vitalsBlock, ...statsBlock, ...defensesBlock,
-        ...featuresBlock, ...combatBlock, ...spellsBlock, ...inventoryBlock,
+        ...featuresBlock, ...combatBlock, ...spellsBlock, ...inventoryBlock, ...notesBlock,
       );
       break;
   }
@@ -919,7 +1017,7 @@ export function parseCharacterData(
 
 export async function parseCharacter(
   characterId: string,
-  sections: "summary" | "combat" | "spells" | "inventory" | "features" | "full" = "full"
+  sections: "summary" | "combat" | "spells" | "inventory" | "features" | "concentration" | "notes" | "full" = "full"
 ): Promise<string> {
   const jsonData = await getCharacter(characterId);
   const raw = JSON.parse(jsonData) as Record<string, unknown>;
