@@ -5,7 +5,33 @@ on:
     types: [published]
 
 jobs:
+  check-ci:
+    name: Verify CI passed on release commit
+    runs-on: ubuntu-latest
+    permissions:
+      checks: read
+    steps:
+      - name: Wait for CI to pass on release commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha="${{ github.event.release.target_commitish }}"
+          for i in $(seq 1 20); do
+            conclusion=$(gh api "repos/${{ github.repository }}/commits/$sha/check-runs" \
+              --jq '[.check_runs[] | select(.name == "Type Check, Lint & Build")] | .[0].conclusion')
+            if [ "$conclusion" = "success" ]; then
+              echo "CI passed."; exit 0
+            elif [ "$conclusion" = "null" ] || [ "$conclusion" = "pending" ]; then
+              echo "CI still running (attempt $i/20), waiting 30s..."
+              sleep 30
+            else
+              echo "CI did not pass (conclusion: $conclusion)"; exit 1
+            fi
+          done
+          echo "Timed out waiting for CI (10 minutes)"; exit 1
+
   publish:
+    needs: check-ci
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -17,6 +43,7 @@ jobs:
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
+          cache: npm
 
       - name: Install dependencies
         run: npm ci

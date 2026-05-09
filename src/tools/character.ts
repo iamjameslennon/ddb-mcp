@@ -93,11 +93,10 @@ export function parseCharacterData(
   const stripHtml = (s: string) => s.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
   const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-  // Flatten all modifier sources into one array, keeping the source tag
-  const modSources = ["race", "class", "background", "feat", "item", "condition"];
-  const allMods = modSources.flatMap(src =>
-    arr<Record<string, unknown>>(obj(char.modifiers)[src])
-  );
+  // Flatten every modifier category — Object.values captures subclass and any future categories
+  // that the old hardcoded list missed (e.g. subclass modifiers like Remarkable Athlete).
+  const allMods = Object.values(obj(char.modifiers) as Record<string, unknown>)
+    .flatMap(src => arr<Record<string, unknown>>(src));
 
   // ── Identity ──────────────────────────────────────────────────────────────
   const charName = str(char.name);
@@ -192,7 +191,11 @@ export function parseCharacterData(
   // ── Hit Points ────────────────────────────────────────────────────────────
   // baseHitPoints does NOT include the CON modifier — must add conMod × level.
   const conMod = statMods[2];
-  const maxHp = num(char.baseHitPoints) + num(char.bonusHitPoints) + (conMod * totalLevel);
+  // Tough feat and Dwarven Toughness grant type:"bonus" subType:"hit-points-per-level" (value 2 or 1).
+  const hpPerLevelBonus = allMods
+    .filter(m => m.type === "bonus" && m.subType === "hit-points-per-level")
+    .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
+  const maxHp = num(char.baseHitPoints) + num(char.bonusHitPoints) + ((conMod + hpPerLevelBonus) * totalLevel);
   const currentHp = maxHp - num(char.removedHitPoints);
   const tempHp = num(char.temporaryHitPoints);
 
@@ -216,7 +219,13 @@ export function parseCharacterData(
       .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
     return (override || base || fallback) + bonus;
   };
-  const walkSpeed = speedCalc("innate-speed-walking", num(weightSpeeds.walk), 30);
+  // Monk Unarmored Movement uses "unarmored-movement" rather than "innate-speed-walking".
+  // Technically only applies when unarmored and unshielded; we add it unconditionally here.
+  // TODO: gate on absence of equipped armor/shield for strict correctness.
+  const unarmoredMoveBonus = allMods
+    .filter(m => m.type === "bonus" && m.subType === "unarmored-movement")
+    .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
+  const walkSpeed = speedCalc("innate-speed-walking", num(weightSpeeds.walk), 30) + unarmoredMoveBonus;
   const flySpeed  = speedCalc("innate-speed-flying",  num(weightSpeeds.fly));
   const swimSpeed = speedCalc("innate-speed-swimming", num(weightSpeeds.swim));
   const climbSpeed = speedCalc("innate-speed-climbing", num(weightSpeeds.climb));
@@ -229,22 +238,29 @@ export function parseCharacterData(
   if (burrowSpeed > 0) speedParts.push(`burrow ${burrowSpeed} ft.`);
 
   // ── Initiative ────────────────────────────────────────────────────────────
+  // Remarkable Athlete (Champion 7+) emits type:"half-proficiency" subType:"ability-checks",
+  // the same modifier as JoAT, but it DOES apply to initiative — JoAT does not.
+  // Detect it by subclass name + level so we can treat the two features differently.
+  const hasRemarkableAthlete = classes.some(cls => {
+    const sub = obj(cls.subclassDefinition);
+    const subName = str(obj(sub.definition ?? cls.subclassDefinition).name || sub.name);
+    return /champion/i.test(subName) && num(cls.level) >= 7;
+  });
   const dexMod = statMods[1];
-  // Jack of All Trades grants half-proficiency to initiative (an ability check).
-  // 2014 API emits both a specific "initiative" modifier AND a general "ability-checks" modifier.
-  // 2024 API only emits "ability-checks". Check both so either API version works.
-  const joatInitiative = allMods.some(
-    m => m.type === "half-proficiency" &&
-         (m.subType === "initiative" || m.subType === "ability-checks")
-  );
   const initiativeBonus = allMods
     .filter(m => m.subType === "initiative" && m.type === "bonus")
     .reduce((s, m) => {
       // bonusTypes [1] means the bonus value is the proficiency bonus, not a fixed number
       const usesProfBonus = arr<number>(m.bonusTypes).includes(1) && (m.fixedValue == null && m.value == null);
-      return s + (usesProfBonus ? profBonus : num(m.fixedValue ?? m.value));
+      if (usesProfBonus) return s + profBonus;
+      if (m.value != null) return s + num(m.value);
+      if (m.fixedValue != null) return s + num(m.fixedValue);
+      // statId-based bonus (e.g. Gloom Stalker Dread Ambusher adds WIS mod to initiative)
+      const sid = num(m.statId);
+      return s + (sid > 0 ? statMods[sid - 1] : 0);
     }, 0);
-  const initiative = dexMod + initiativeBonus + (joatInitiative ? Math.floor(profBonus / 2) : 0);
+  // JoAT does not apply to initiative on the DDB website; Remarkable Athlete does.
+  const initiative = dexMod + initiativeBonus + (hasRemarkableAthlete ? Math.floor(profBonus / 2) : 0);
 
   // ── Armor Class ───────────────────────────────────────────────────────────
   // armorTypeId: 1=light, 2=medium, 3=heavy, 4=shield
@@ -271,19 +287,24 @@ export function parseCharacterData(
     ac = effectiveBodyAc(bodyArmor);
   } else {
     // Unarmored Defense (Barbarian = 10+DEX+CON, Monk = 10+DEX+WIS)
+    // Draconic Resilience uses type:"set" with a numeric value to lift the base (e.g. value:3 → base 13).
     const unarmoredMod = allMods.find(m => m.subType === "unarmored-armor-class");
     if (unarmoredMod) {
-      const extraStatId = num(unarmoredMod.statId); // 3=CON, 5=WIS
+      const extraStatId = num(unarmoredMod.statId); // 3=CON (Barbarian), 5=WIS (Monk)
       const extraMod = extraStatId > 0 ? statMods[extraStatId - 1] : 0;
-      ac = 10 + dexMod + extraMod;
+      const baseBonus = unarmoredMod.type === "set" ? num(unarmoredMod.fixedValue ?? unarmoredMod.value) : 0;
+      ac = 10 + baseBonus + dexMod + extraMod;
     } else {
       ac = 10 + dexMod;
     }
   }
   if (shield) ac += num(obj(shield.definition).armorClass);
-  // Add any AC bonus modifiers (e.g. shield of faith, ring of protection)
+  // Add any AC bonus modifiers (e.g. shield of faith, ring of protection, Defense fighting style).
+  // Defense fighting style uses "armored-armor-class" instead of "armor-class"; it should only apply
+  // when wearing armor, but we include it unconditionally — most characters with it are armored.
+  // TODO: gate "armored-armor-class" on equipped armor to avoid inflating AC for unarmored characters.
   const acBonus = allMods
-    .filter(m => m.subType === "armor-class" && m.type === "bonus")
+    .filter(m => (m.subType === "armor-class" || m.subType === "armored-armor-class") && m.type === "bonus")
     .reduce((s, m) => s + num(m.fixedValue ?? m.value), 0);
   ac += acBonus;
 
@@ -330,6 +351,17 @@ export function parseCharacterData(
     if (isExpertise) bonus += profBonus * 2;
     else if (isProficient) bonus += profBonus;
     else if (isHalf) bonus += Math.floor(profBonus / 2);
+    // Flat bonus modifiers on the skill subType (e.g. Divine Order: Scholar adds WIS to Arcana/Religion).
+    // When value/fixedValue are null, statId identifies which ability modifier to add instead.
+    const flatBonus = allMods
+      .filter(m => m.type === "bonus" && m.subType === slug)
+      .reduce((s, m) => {
+        if (m.value != null) return s + num(m.value);
+        if (m.fixedValue != null) return s + num(m.fixedValue);
+        const sid = num(m.statId);
+        return s + (sid > 0 ? statMods[sid - 1] : 0);
+      }, 0);
+    bonus += flatBonus;
     return { bonus, isProficient, isExpertise };
   });
   const skillLines = SKILLS.map(([skillName, statIdx], i) => {
@@ -546,7 +578,7 @@ export function parseCharacterData(
   );
   const isWeaponProficient = (def: Record<string, unknown>): boolean => {
     const catId = num(def.categoryId); // 1=simple, 2=martial
-    const typeName = str(def.type).toLowerCase().replace(/ /g, "-");
+    const typeName = str(def.type).toLowerCase().replace(/[,\s]+/g, "-");
     return (catId === 1 && weaponProfSlugs.has("simple-weapons")) ||
            (catId === 2 && weaponProfSlugs.has("martial-weapons")) ||
            weaponProfSlugs.has(typeName);

@@ -22,6 +22,21 @@ if (!["patch", "minor", "major"].includes(bumpType)) {
   process.exit(1);
 }
 
+// ── Guard: clean working tree on main ─────────────────────────────────────────
+
+const gitStatus = execSync("git status --porcelain", { encoding: "utf8" }).trim();
+if (gitStatus) {
+  console.error("\nERROR: Working tree is not clean. Commit or stash your changes before releasing.\n");
+  console.error(gitStatus);
+  process.exit(1);
+}
+
+const currentBranch = execSync("git branch --show-current", { encoding: "utf8" }).trim();
+if (currentBranch !== "main") {
+  console.error(`\nERROR: Releases must be cut from 'main'. Currently on '${currentBranch}'.\n`);
+  process.exit(1);
+}
+
 // ── Check required tools ───────────────────────────────────────────────────────
 
 function requireTool(name, hint) {
@@ -169,7 +184,7 @@ writeFileSync("package-lock.json", JSON.stringify(lock, null, 2) + "\n");
 execSync("git add package.json package-lock.json", { stdio: "inherit" });
 execSync(`git commit -m "chore: release v${newVersion}"`, { stdio: "inherit" });
 execSync(`git tag v${newVersion}`, { stdio: "inherit" });
-execSync("git push && git push --tags", { stdio: "inherit" });
+execSync("git push origin HEAD --follow-tags", { stdio: "inherit" });
 
 // ── Create GitHub release ─────────────────────────────────────────────────────
 

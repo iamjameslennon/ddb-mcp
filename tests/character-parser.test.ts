@@ -435,6 +435,45 @@ describe("parseCharacterData — Monk Martial Arts DEX for monk weapons", () => 
   });
 });
 
+// ── Weapon proficiency: comma-containing type names (e.g. "Crossbow, Light") ──
+// "Crossbow, Light".toLowerCase().replace(/[,\s]+/g, "-") → "crossbow-light" ✓
+// The old replace(/ /g, "-") left the comma: "crossbow,-light" → no proficiency match.
+describe("parseCharacterData — comma-in-type-name weapon proficiency", () => {
+  it("detects proficiency for a weapon whose type name contains a comma", () => {
+    const withCrossbow: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        modifiers: {
+          ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+          class: [
+            ...((((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>).class as unknown[]),
+            { type: "proficiency", subType: "crossbow-light" },
+          ],
+        },
+        inventory: [{
+          equipped: true,
+          quantity: 1,
+          definition: {
+            name: "Crossbow, Light",
+            type: "Crossbow, Light",
+            filterType: "Weapon",
+            categoryId: 1,
+            attackType: 2,
+            damage: { diceCount: 1, diceValue: 8, diceString: "1d8" },
+            damageType: "piercing",
+            range: 80, longRange: 320,
+            properties: [{ name: "Ammunition" }, { name: "Loading" }, { name: "Range" }, { name: "Two-Handed" }],
+            grantedModifiers: [], mastery: "",
+          },
+        }],
+      },
+    };
+    const out = parseCharacterData(withCrossbow, "combat");
+    // FIGHTER_5: DEX 12 (+1), prof +3 → +1+3 = +4 to hit
+    expect(out).toContain("Crossbow, Light  +4 to hit");
+  });
+});
+
 // ── Arcane Trickster: subclass spellcasting ───────────────────────────────────
 // Rogue 9 / Arcane Trickster — canCastSpells is on subclassDefinition, not definition
 // INT 16 (+3), prof +4 (level 9)
@@ -585,6 +624,50 @@ describe("parseCharacterData — Amulet of Health type:set score modifier", () =
     // STR is 16 — a hypothetical set to 19 should raise it, but here STR has no set modifier
     // so it stays at 16 (+3)
     expect(result).toContain("STR 16 (+3)");
+  });
+});
+
+// ── Draconic Resilience — type:"set" unarmored-armor-class raises base to 13 ──
+// Real DDB shape: { type:"set", subType:"unarmored-armor-class", value:3, fixedValue:3, statId:null }
+// Correct formula: 10 + value(3) + DEX mod = 13 + DEX
+// FIGHTER_5: DEX 12 (+1) → AC = 14; CON 14 (+2) for Barbarian check → AC = 13
+describe("parseCharacterData — Draconic Resilience unarmored AC", () => {
+  it("applies type:set unarmored-armor-class value to base AC", () => {
+    const withDraconicResilience: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        inventory: [],
+        modifiers: {
+          race: [],
+          class: [
+            { type: "set", subType: "unarmored-armor-class", value: 3, fixedValue: 3, statId: null },
+          ],
+          background: [], feat: [], item: [], condition: [],
+        },
+      },
+    };
+    const out = parseCharacterData(withDraconicResilience, "summary");
+    // FIGHTER_5 DEX 12 (+1); base = 10+3 = 13; total = 14
+    expect(out).toContain("AC: 14");
+  });
+
+  it("does not break Barbarian-style CON unarmored defense", () => {
+    const withBarbarian: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        inventory: [],
+        modifiers: {
+          race: [],
+          class: [
+            { type: "bonus", subType: "unarmored-armor-class", value: null, fixedValue: null, statId: 3 },
+          ],
+          background: [], feat: [], item: [], condition: [],
+        },
+      },
+    };
+    const out = parseCharacterData(withBarbarian, "summary");
+    // FIGHTER_5: DEX 12 (+1), CON 14 (+2) → 10+1+2 = 13
+    expect(out).toContain("AC: 13");
   });
 });
 
@@ -802,33 +885,181 @@ describe("parseCharacterData — cross-source spell deduplication", () => {
   });
 });
 
-// ── Jack of All Trades via "ability-checks" (2024 Bard path) ─────────────────
-// 2014 API: half-proficiency/initiative + half-proficiency/ability-checks
-// 2024 API: half-proficiency/ability-checks only — the old check missed this
-// FIGHTER_5: DEX 12 (+1), level 5, prof +3 → JoAT adds floor(3/2)=1 → initiative +2
-describe("parseCharacterData — JoAT initiative via ability-checks modifier", () => {
-  it("applies half-proficiency to initiative when only ability-checks modifier is present", () => {
+// ── Remarkable Athlete (Champion 7+) — half-prof on initiative AND skills ─────
+// Subclass modifier lives in the "subclass" category, NOT in the old hardcoded list.
+// allMods must use Object.values to pick it up; hasRemarkableAthlete detects Champion 7+.
+// FIGHTER_5 base, overridden to level 9 Champion:
+//   DEX 12 (+1), prof +4, floor(4/2)=2
+//   Initiative: +1 + 2 = +3
+//   Acrobatics (non-proficient DEX): +1 + 2 = +3
+//   Athletics (proficient STR):      +3 + 4 = +7 (no extra)
+describe("parseCharacterData — Remarkable Athlete (Champion 7+)", () => {
+  const withRA: Record<string, unknown> = {
+    data: {
+      ...((FIGHTER_5.data) as Record<string, unknown>),
+      classes: [{
+        id: 1,
+        level: 9,
+        hitDiceUsed: 0,
+        definition: { name: "Fighter", hitDice: 10, canCastSpells: false, spellCastingAbilityId: 0, spellRules: {} },
+        subclassDefinition: { name: "Champion" },
+        classFeatures: [],
+      }],
+      modifiers: {
+        ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+        // RA emits into "subclass" — a category the old hardcoded list silently dropped
+        subclass: [{ type: "half-proficiency", subType: "ability-checks" }],
+      },
+    },
+  };
+
+  it("adds half-proficiency to initiative", () => {
+    const out = parseCharacterData(withRA, "summary");
+    expect(out).toContain("Initiative: +3");
+  });
+
+  it("adds half-proficiency to non-proficient skills", () => {
+    const out = parseCharacterData(withRA, "summary");
+    expect(out).toContain("Acrobatics (DEX)       +3");
+  });
+
+  it("does NOT double-add half-proficiency to proficient skills", () => {
+    const out = parseCharacterData(withRA, "summary");
+    // Athletics is proficient (STR +3 + prof +4 = +7), no RA bonus
+    expect(out).toContain("Athletics (STR)        +7 *");
+  });
+});
+
+// ── Gloom Stalker Dread Ambusher — statId-based WIS bonus to initiative ────────
+// Real DDB shape: type:"bonus" subType:"initiative" value:null fixedValue:null statId:5
+// FIGHTER_5: DEX 12 (+1), WIS 13 (+1) → initiative = DEX(+1) + WIS(+1) = +2
+describe("parseCharacterData — Dread Ambusher WIS-to-initiative (statId-based)", () => {
+  const withDreadAmbusher: Record<string, unknown> = {
+    data: {
+      ...((FIGHTER_5.data) as Record<string, unknown>),
+      modifiers: {
+        ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+        class: [
+          ...((((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>).class as unknown[]),
+          { type: "bonus", subType: "initiative", value: null, fixedValue: null, statId: 5, bonusTypes: [] },
+        ],
+      },
+    },
+  };
+
+  it("adds WIS modifier to initiative when statId:5 initiative bonus is present", () => {
+    const out = parseCharacterData(withDreadAmbusher, "summary");
+    expect(out).toContain("Initiative: +2");
+  });
+
+  it("does not affect initiative when no statId-based bonus is present", () => {
+    const out = parseCharacterData(FIGHTER_5, "summary");
+    expect(out).toContain("Initiative: +1");
+  });
+});
+
+// ── Jack of All Trades — half-prof on skills, NOT on initiative ───────────────
+// FIGHTER_5 level 5 with JoAT in "class" modifiers:
+//   DEX 12 (+1), prof +3, floor(3/2)=1
+//   Initiative:  +1 only (JoAT excluded)
+//   Acrobatics (non-proficient DEX): +1 + 1 = +2
+describe("parseCharacterData — Jack of All Trades skills", () => {
+  const withJoAT: Record<string, unknown> = {
+    data: {
+      ...((FIGHTER_5.data) as Record<string, unknown>),
+      modifiers: {
+        ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+        class: [
+          ...((FIGHTER_5.data as Record<string, unknown>).modifiers as Record<string, unknown[]>).class,
+          { type: "half-proficiency", subType: "ability-checks" },
+        ],
+      },
+    },
+  };
+
+  it("adds half-proficiency to non-proficient skills", () => {
+    const out = parseCharacterData(withJoAT, "summary");
+    expect(out).toContain("Acrobatics (DEX)       +2");
+  });
+
+  it("does NOT add half-proficiency to initiative", () => {
+    const out = parseCharacterData(withJoAT, "summary");
+    expect(out).toContain("Initiative: +1");
+  });
+});
+
+// ── Jack of All Trades does NOT apply to initiative ───────────────────────────
+// DDB's website does not apply JoAT half-proficiency to initiative.
+// FIGHTER_5: DEX 12 (+1), level 5, prof +3 → initiative = +1 regardless of JoAT.
+describe("parseCharacterData — JoAT does not affect initiative", () => {
+  it("does not apply half-proficiency to initiative even when ability-checks modifier is present", () => {
     const with2024Joat: Record<string, unknown> = {
       data: {
         ...((FIGHTER_5.data) as Record<string, unknown>),
         modifiers: {
           ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
           class: [
-            // 2024-style JoAT: only ability-checks, no initiative subType
             { type: "half-proficiency", subType: "ability-checks" },
           ],
         },
       },
     };
     const out = parseCharacterData(with2024Joat, "summary");
-    // DEX(+1) + floor(prof+3 / 2)=1 = +2
-    expect(out).toContain("Initiative: +2");
+    // DDB does not add JoAT to initiative; result is DEX mod only = +1
+    expect(out).toContain("Initiative: +1");
   });
 
   it("does not apply JoAT when no half-proficiency modifier is present", () => {
     // Baseline FIGHTER_5 has no JoAT modifier → initiative = DEX mod = +1
     const out = parseCharacterData(FIGHTER_5, "summary");
     expect(out).toContain("Initiative: +1");
+  });
+});
+
+// ── Skill flat-bonus modifiers (Divine Order / Primal Order) ─────────────────
+// DDB encodes 2024 class features like Divine Order: Scholar as
+//   { type:"bonus", subType:"arcana", statId:5, value:null, fixedValue:null }
+// where statId 5 = WIS. The skill calculator must resolve statId to the ability mod.
+// FIGHTER_5: WIS 13 → WIS mod = +1. Arcana baseline = INT mod = +0.
+// With Divine Order modifier on arcana (statId 5): Arcana should be +0 + 1 = +1.
+describe("parseCharacterData — skill flat-bonus modifiers (statId-based)", () => {
+  it("adds WIS mod to Arcana when a bonus modifier with statId=5 is present", () => {
+    const withDivineOrder: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        modifiers: {
+          ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+          class: [
+            ...((FIGHTER_5.data as Record<string, unknown>).modifiers as Record<string, unknown[]>).class,
+            // Divine Order: Scholar — adds WIS mod to Arcana; value/fixedValue are null, statId=5 (WIS)
+            { type: "bonus", subType: "arcana", statId: 5, value: null, fixedValue: null },
+          ],
+        },
+      },
+    };
+    const out = parseCharacterData(withDivineOrder, "summary");
+    // Arcana (INT) base = +0; WIS mod = +1 → total +1, no proficiency marker
+    expect(out).toContain("Arcana (INT)           +1");
+  });
+
+  it("stacks statId bonus on top of proficiency", () => {
+    const withDivineOrderAndProf: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        modifiers: {
+          ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+          class: [
+            ...((FIGHTER_5.data as Record<string, unknown>).modifiers as Record<string, unknown[]>).class,
+            { type: "proficiency", subType: "arcana" },
+            // Divine Order: Scholar adds WIS mod on top of proficiency
+            { type: "bonus", subType: "arcana", statId: 5, value: null, fixedValue: null },
+          ],
+        },
+      },
+    };
+    const out = parseCharacterData(withDivineOrderAndProf, "summary");
+    // INT(+0) + prof(+3) + WIS(+1) = +4, proficient marker *
+    expect(out).toContain("Arcana (INT)           +4 *");
   });
 });
 
