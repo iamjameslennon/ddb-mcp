@@ -183,7 +183,7 @@ writeFileSync("package-lock.json", JSON.stringify(lock, null, 2) + "\n");
 
 execSync("git add package.json package-lock.json", { stdio: "inherit" });
 execSync(`git commit -m "chore: release v${newVersion}"`, { stdio: "inherit" });
-execSync(`git tag v${newVersion}`, { stdio: "inherit" });
+execSync(`git tag -a v${newVersion} -m "Release v${newVersion}"`, { stdio: "inherit" });
 execSync("git push origin HEAD --follow-tags", { stdio: "inherit" });
 
 // ── Create GitHub release ─────────────────────────────────────────────────────
