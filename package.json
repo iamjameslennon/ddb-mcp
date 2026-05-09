@@ -22,6 +22,10 @@
     "postinstall": "node -e \"if (process.env.npm_config_global) { require('child_process').execSync('npx playwright install chromium', {stdio:'inherit'}); }\"",
     "preinstall": "node -e \"if (process.env.npm_command && process.env.npm_command !== 'ci' && !process.env.npm_config_global) { console.error('\\nERROR: Use npm ci instead of npm install.\\nThis project pins exact dependency versions via package-lock.json.\\nRunning npm install can silently upgrade packages and break things.\\n'); process.exit(1); }\""
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iamjameslennon/ddb-mcp"
+  },
   "engines": {
     "node": ">=18"
   },
