@@ -15,13 +15,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          sha="${{ github.event.release.target_commitish }}"
+          # Use tag_name (always a concrete ref) rather than target_commitish
+          # (which GitHub sets to the branch name when the tag is at the branch tip).
+          tag="${{ github.event.release.tag_name }}"
           for i in $(seq 1 20); do
-            conclusion=$(gh api "repos/${{ github.repository }}/commits/$sha/check-runs" \
-              --jq '[.check_runs[] | select(.name == "Type Check, Lint & Build")] | .[0].conclusion')
+            conclusion=$(gh api "repos/${{ github.repository }}/commits/$tag/check-runs" \
+              --jq '[.check_runs[] | select(.name == "Type Check, Lint & Build")] | .[0].conclusion // "pending"')
             if [ "$conclusion" = "success" ]; then
               echo "CI passed."; exit 0
-            elif [ "$conclusion" = "null" ] || [ "$conclusion" = "pending" ]; then
+            elif [ -z "$conclusion" ] || [ "$conclusion" = "pending" ]; then
               echo "CI still running (attempt $i/20), waiting 30s..."
               sleep 30
             else
@@ -43,7 +45,6 @@ jobs:
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
-          cache: npm
 
       - name: Install dependencies
         run: npm ci
