@@ -243,6 +243,22 @@ npx playwright install chromium
 
 ---
 
+## Security & Privacy
+
+- **Credentials stored**: D&D Beyond session cookies are saved to `~/.config/ddb-mcp/session.json` (file `0600`, directory `0700`). The cobalt JWT used for API calls is cached in memory only and never written to disk.
+- **Network access** (outbound HTTPS only):
+  - `*.dndbeyond.com` — character data, auth, campaigns, books
+  - `auth-service.dndbeyond.com` — cobalt token exchange
+  - `api.open5e.com` — SRD fallback (no auth)
+- **Filesystem writes**:
+  - Session: `~/.config/ddb-mcp/session.json`
+  - Character downloads (opt-in): `~/Downloads` or `~/Documents` only — paths outside these roots are rejected
+  - Screenshots (opt-in): `~/Downloads` only
+- **Transport**: stdio only — the server opens no HTTP listeners and no ports.
+- **Recommendation**: pin the version when installing — `npm install -g @iamjameslennon/ddb-mcp@2.6.1`.
+
+---
+
 ## Connecting to your MCP client
 
 This server was built and tested with Claude — it will work with any MCP-compatible client, but response quality for D&D-specific reasoning will vary depending on the model used.

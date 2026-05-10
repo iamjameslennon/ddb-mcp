@@ -1,5 +1,24 @@
 import { BrowserContext } from "playwright";
+import { homedir } from "os";
+import { join } from "path";
 import { getPage } from "../browser.js";
+
+// Reject Playwright selector forms that go beyond CSS/text matching. A prompt
+// injection on a rendered DDB page could otherwise craft a selector that runs
+// arbitrary XPath, calls into Playwright internals, or chains across frames.
+function assertSafeSelector(selector: string): void {
+  const lower = selector.toLowerCase();
+  if (
+    lower.startsWith("xpath=") ||
+    lower.startsWith("xpath/") ||
+    lower.includes("javascript:") ||
+    lower.startsWith(">>") ||
+    lower.includes("__playwright") ||
+    lower.includes("_eval")
+  ) {
+    throw new Error("Selector contains disallowed syntax. Use CSS selectors or Playwright text selectors only.");
+  }
+}
 
 export async function navigate(context: BrowserContext, url: string): Promise<string> {
   const page = await getPage(context);
@@ -43,6 +62,7 @@ export async function interact(
   selector: string,
   value?: string
 ): Promise<string> {
+  assertSafeSelector(selector);
   const page = await getPage(context);
 
   switch (action) {
@@ -64,7 +84,7 @@ export async function interact(
     }
 
     case "screenshot": {
-      const screenshotPath = `${process.env.HOME}/Downloads/ddb-screenshot-${Date.now()}.png`;
+      const screenshotPath = join(homedir(), "Downloads", `ddb-screenshot-${Date.now()}.png`);
       await page.screenshot({ path: screenshotPath, fullPage: false });
       return `Screenshot saved to: ${screenshotPath}`;
     }

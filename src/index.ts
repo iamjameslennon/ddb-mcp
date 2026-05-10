@@ -843,6 +843,9 @@ process.on("SIGINT",  () => { void shutdown("SIGINT"); });
 // ─── Start server ─────────────────────────────────────────────────────────────
 async function main() {
   const transport = new StdioServerTransport();
+  // Clean up the browser if the MCP client disconnects (e.g. host process exits
+  // without sending a signal). Without this, Playwright can leak processes.
+  transport.onclose = () => { void shutdown("transport-close"); };
   await server.connect(transport);
   process.stderr.write("D&D Beyond MCP server running on stdio\n");
 }

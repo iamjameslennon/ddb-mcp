@@ -100,9 +100,9 @@ Releases are automated via `scripts/release.js` (ES module, Node built-ins only)
 
 ### CI / CD
 
-- `.github/workflows/ci.yml` — runs on push/PR to `main`: typecheck → lint → build → test → audit
-- `.github/workflows/npm-publish.yml` — triggers on GitHub release published: ci → build → `npm publish --access public --provenance`
-- Both workflows use Node 22 and `actions/checkout@v4` / `actions/setup-node@v4`
+- `.github/workflows/ci.yml` — runs on push/PR to `main`: typecheck → lint → build → test (matrix: Node 18/20/22/24) → audit
+- `.github/workflows/npm-publish.yml` — triggers on GitHub release published: verifies CI passed → build → upgrades npm to latest → `npm publish --access public --provenance --registry https://registry.npmjs.org/`
+- Both workflows use `actions/checkout@v6` / `actions/setup-node@v6`; CI matrix tests Node 18–24, publish job pins Node 24
 
 ### Package metadata
 
