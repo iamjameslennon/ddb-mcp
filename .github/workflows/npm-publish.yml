@@ -17,11 +17,13 @@ jobs:
         run: |
           # Use tag_name (always a concrete ref) rather than target_commitish
           # (which GitHub sets to the branch name when the tag is at the branch tip).
+          # The CI job uses a matrix so its check-runs are named
+          # "Type Check, Lint & Build (20)", "(22)", "(24)" — match by prefix.
           tag="${{ github.event.release.tag_name }}"
           for i in $(seq 1 20); do
             conclusion=$(gh api "repos/${{ github.repository }}/commits/$tag/check-runs" \
               --jq '
-                [.check_runs[] | select(.name == "Type Check, Lint & Build") | .conclusion] as $c |
+                [.check_runs[] | select(.name | startswith("Type Check, Lint & Build")) | .conclusion] as $c |
                 if ($c | length) == 0 then "pending"
                 elif ($c | all(. == "success")) then "success"
                 elif ($c | any(. == null or . == "")) then "pending"
