@@ -215,7 +215,7 @@ Can a character use the Help action to assist with a skill check?
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org) 18 or later
+- [Node.js](https://nodejs.org) 20 or later
 - [Claude Code](https://claude.ai/claude-code) CLI
 
 ---
@@ -537,7 +537,7 @@ The character is set to private on D&D Beyond. You must be logged in as the owne
 Run `/mcp` in Claude Code to reconnect. If it still doesn't appear, verify the path in `claude mcp list` points to the correct `dist/index.js`.
 
 **Server crashes on startup**
-Make sure you're running Node.js 18 or later: `node --version`.
+Make sure you're running Node.js 20 or later: `node --version`.
 
 ---
 
