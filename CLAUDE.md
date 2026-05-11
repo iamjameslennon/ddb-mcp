@@ -25,7 +25,7 @@ This is a [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server
 The central architectural split is between tools that need a Playwright browser and tools that work entirely through the saved session cookies:
 
 **Browserless (preferred)** — `src/session-fetch.ts`
-- Reads cookies from `~/.config/ddb-mcp/session.json` (written by `ddb_login`)
+- Reads cookies from a per-user config dir — `~/.config/ddb-mcp/session.json` on macOS/Linux, `%APPDATA%\ddb-mcp\session.json` on Windows (written by `ddb_login`)
 - Exchanges cookies for a short-lived cobalt JWT via `getCobaltToken()`
 - All character, monster, spell, item, and condition tools use this path
 - `sessionFetch()` injects the cookie header into native Node `fetch`

@@ -39,34 +39,83 @@ if (currentBranch !== "main") {
 
 // ── Check required tools ───────────────────────────────────────────────────────
 
+const isWindows = process.platform === "win32";
+
+// Windows-aware spawn helper. .cmd shims (gh on Windows is gh.cmd, claude is
+// claude.cmd) require shell:true to be resolved by cmd.exe. But Node's
+// spawn-with-shell joins argv into a single command string without quoting,
+// which breaks paths containing spaces (e.g. C:\Users\First Last\…\claude.cmd
+// would be parsed as program `C:\Users\First` with arg `Last\…`, ENOENT — or
+// worse, hijacked by an unrelated `First.exe` earlier on PATH). On POSIX we
+// spawn directly. On Windows we build the command string with explicit
+// quoting so cmd.exe re-tokenizes it correctly.
+function spawnExecutable(executable, args, options = {}) {
+  if (!isWindows) return spawnSync(executable, args, options);
+  const quote = (s) => `"${String(s).replace(/"/g, '""')}"`;
+  const command = [executable, ...args].map(quote).join(" ");
+  return spawnSync(command, { ...options, shell: true });
+}
+
 function requireTool(name, hint) {
-  if (spawnSync("which", [name], { encoding: "utf8" }).status !== 0) {
-    console.error(`\nERROR: '${name}' not found on PATH.\n${hint}\n`);
+  // Portable existence check: invoke the tool with --version. The Windows
+  // .cmd-shim handling lives in spawnExecutable above. 10 s cap so a tool
+  // that hangs on first-run auth/keychain doesn't wedge the release.
+  const result = spawnExecutable(name, ["--version"], { stdio: "ignore", timeout: 10_000 });
+  // On POSIX, spawning a missing binary produces ENOENT; on Windows the .cmd
+  // shim is invoked through cmd.exe so result.error stays empty and the exit
+  // status reflects cmd.exe's "not recognized" response — we can't always
+  // distinguish "missing" from "broken" there.
+  if (result.error?.code === "ENOENT") {
+    console.error(`\nERROR: '${name}' not on PATH.\n${hint}\n`);
+    process.exit(1);
+  }
+  if (result.error || result.status !== 0) {
+    const detail = result.error?.code ?? (result.status !== null ? `exit ${result.status}` : "no exit status");
+    console.error(`\nERROR: '${name}' is missing or non-functional (${detail}).\n${hint}\n`);
     process.exit(1);
   }
 }
 
 requireTool("gh", "Install GitHub CLI: https://cli.github.com");
 
-// Find the claude binary by scanning mise's node installs directory directly.
-// This avoids shim resolution issues entirely — no bash, no mise commands.
 function findClaude() {
-  // 1. Check common direct locations first (non-mise installs)
-  const directPaths = [
-    join(homedir(), ".local", "bin", "claude"),
-    "/usr/local/bin/claude",
-  ];
-  for (const p of directPaths) {
-    if (existsSync(p)) return p;
+  // Platform-specific install locations for Claude Code. Use `||` (not `??`)
+  // for the env-var fallbacks so an empty-string APPDATA/LOCALAPPDATA still
+  // falls through to the homedir() default rather than producing a
+  // CWD-relative path.
+  const candidates = isWindows
+    ? [
+        // npm global on Windows installs to %APPDATA%\npm with a .cmd shim.
+        join(process.env.APPDATA || join(homedir(), "AppData", "Roaming"), "npm", "claude"),
+        join(process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local"), "npm", "claude"),
+      ]
+    : [
+        join(homedir(), ".local", "bin", "claude"),
+        "/usr/local/bin/claude",
+      ];
+
+  // Windows executables: prefer .cmd / .exe over the bare name, since npm-installed
+  // CLIs ship both an extensionless POSIX sh shim *and* a .cmd shim — cmd.exe can't
+  // execute the bare sh script.
+  const suffixes = isWindows ? [".cmd", ".exe", ""] : [""];
+
+  for (const base of candidates) {
+    for (const suffix of suffixes) {
+      const candidate = base + suffix;
+      if (existsSync(candidate)) return candidate;
+    }
   }
 
-  // 2. Scan mise node installs for a claude binary
-  const miseNodeDir = join(homedir(), ".local", "share", "mise", "installs", "node");
-  if (existsSync(miseNodeDir)) {
-    const versions = readdirSync(miseNodeDir).sort().reverse(); // newest first
-    for (const version of versions) {
-      const candidate = join(miseNodeDir, version, "bin", "claude");
-      if (existsSync(candidate)) return candidate;
+  // Fallback: scan mise's node installs (POSIX layout only — mise on Windows
+  // uses a different path structure that we don't probe).
+  if (!isWindows) {
+    const miseNodeDir = join(homedir(), ".local", "share", "mise", "installs", "node");
+    if (existsSync(miseNodeDir)) {
+      const versions = readdirSync(miseNodeDir).sort().reverse(); // newest first
+      for (const version of versions) {
+        const candidate = join(miseNodeDir, version, "bin", "claude");
+        if (existsSync(candidate)) return candidate;
+      }
     }
   }
 
@@ -140,9 +189,18 @@ const prompt = [
 ].join("\n");
 
 console.log("\nGenerating release notes with Claude...\n");
-const claudeResult = spawnSync(
-  claudePath, ["-p", prompt],
-  { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 }
+// Pipe the prompt via stdin rather than passing it as an argv. Multi-line
+// strings with shell metacharacters are unsafe through cmd.exe (which we need
+// for .cmd shims on Windows); stdin sidesteps the escaping problem entirely.
+// Requires a Claude CLI that accepts the prompt on stdin when no positional
+// arg is given (true since Claude Code 0.2.x).
+const claudeResult = spawnExecutable(
+  claudePath, ["-p"],
+  {
+    encoding: "utf8",
+    maxBuffer: 4 * 1024 * 1024,
+    input: prompt,
+  }
 );
 if (claudeResult.status !== 0) {
   console.error("Claude failed:", claudeResult.stderr || "(no output)");
@@ -187,11 +245,13 @@ execSync(`git tag -a v${newVersion} -m "Release v${newVersion}"`, { stdio: "inhe
 execSync("git push origin HEAD --follow-tags", { stdio: "inherit" });
 
 // ── Create GitHub release ─────────────────────────────────────────────────────
+// Pipe notes via stdin (--notes-file -) so multi-line markdown with backticks
+// and quotes doesn't have to survive cmd.exe escaping on Windows.
 
-const ghResult = spawnSync(
+const ghResult = spawnExecutable(
   "gh",
-  ["release", "create", `v${newVersion}`, "--title", `v${newVersion}`, "--notes", releaseNotes],
-  { stdio: "inherit" }
+  ["release", "create", `v${newVersion}`, "--title", `v${newVersion}`, "--notes-file", "-"],
+  { stdio: ["pipe", "inherit", "inherit"], input: releaseNotes }
 );
 if (ghResult.status !== 0) {
   console.error(

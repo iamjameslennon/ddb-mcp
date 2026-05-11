@@ -245,16 +245,19 @@ npx playwright install chromium
 
 ## Security & Privacy
 
-- **Credentials stored**: D&D Beyond session cookies are saved to `~/.config/ddb-mcp/session.json` (file `0600`, directory `0700`). The cobalt JWT used for API calls is cached in memory only and never written to disk.
+- **Credentials stored**: D&D Beyond session cookies are saved to a per-user config directory — `~/.config/ddb-mcp/session.json` on macOS/Linux, `%APPDATA%\ddb-mcp\session.json` on Windows.
+- **File permissions**: on macOS/Linux the file is `0600` and the directory `0700`. On Windows access is restricted to your user account by default via `%APPDATA%` ACL inheritance — note that on multi-admin/domain-joined machines local administrators may also have read access.
+- **Cobalt JWT**: cached in memory only and never written to disk.
 - **Network access** (outbound HTTPS only):
   - `*.dndbeyond.com` — character data, auth, campaigns, books
   - `auth-service.dndbeyond.com` — cobalt token exchange
   - `api.open5e.com` — SRD fallback (no auth)
 - **Filesystem writes**:
-  - Session: `~/.config/ddb-mcp/session.json`
+  - Session: `~/.config/ddb-mcp/session.json` (macOS/Linux) or `%APPDATA%\ddb-mcp\session.json` (Windows)
   - Character downloads (opt-in): `~/Downloads` or `~/Documents` only — paths outside these roots are rejected
   - Screenshots (opt-in): `~/Downloads` only
 - **Transport**: stdio only — the server opens no HTTP listeners and no ports.
+- **Untrusted content**: tools that return D&D Beyond page text (`ddb_navigate`, `ddb_get_page`) wrap the scraped output in `<untrusted_dndbeyond_content>` tags. Character notes, campaign descriptions, party-member backstories, and book content can be authored by other DDB users (DMs, party members, forum posters) and may contain prompt-injection attempts — treat them as untrusted input, never as instructions. The `confirm_click` / `confirm_fill` gates on `ddb_interact` exist for exactly this reason.
 - **Recommendation**: pin the version when installing — `npm install -g @iamjameslennon/ddb-mcp@2.6.1`.
 
 ---
@@ -267,14 +270,23 @@ First, find your global npm path:
 
 ```bash
 npm root -g
-# e.g. /usr/local/lib/node_modules
+# macOS/Linux example: /usr/local/lib/node_modules
+# Windows example:     C:\Users\<you>\AppData\Roaming\npm\node_modules
 ```
 
 > In all config examples below, replace `/usr/local/lib/node_modules` with the output of `npm root -g` on your system.
 
+> **Windows note**: JSON treats `\` as an escape character. Either use forward slashes (Node accepts them on Windows) — `"C:/Users/<you>/AppData/Roaming/npm/node_modules/@iamjameslennon/ddb-mcp/dist/index.js"` — or double every backslash: `"C:\\Users\\<you>\\AppData\\Roaming\\npm\\node_modules\\@iamjameslennon\\ddb-mcp\\dist\\index.js"`. Forward slashes are simpler and harder to get wrong.
+
 ### Claude Desktop (recommended)
 
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+Edit your Claude Desktop config file:
+
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux**: `~/.config/Claude/claude_desktop_config.json`
+
+Linux note: Claude Desktop has no official Linux release. If you don't run a community build, use [Claude Code](#claude-code), [Cursor](#cursor), or any other MCP client below.
 
 ```json
 {
@@ -343,7 +355,7 @@ Run `ddb_login` once to authenticate:
 ddb_login
 ```
 
-A browser window will open and navigate to the D&D Beyond login page. Complete the login using your Wizards ID account. Once redirected back to D&D Beyond, your session is automatically saved to `~/.config/ddb-mcp/session.json` and reused on all future calls — no browser needed again until the session expires.
+A browser window will open and navigate to the D&D Beyond login page. Complete the login using your Wizards ID account. Once redirected back to D&D Beyond, your session is automatically saved to a per-user config directory (`~/.config/ddb-mcp/session.json` on macOS/Linux, `%APPDATA%\ddb-mcp\session.json` on Windows) and reused on all future calls — no browser needed again until the session expires.
 
 ---
 
@@ -501,12 +513,21 @@ Then restart your MCP client and run `/mcp` to reconnect the server.
 
 ## Session storage
 
-Your session is saved to `~/.config/ddb-mcp/session.json`. This file contains browser cookies from your D&D Beyond login. Keep it private — it grants access to your account.
+Your session is saved to a per-user config directory:
+
+- **macOS/Linux**: `~/.config/ddb-mcp/session.json`
+- **Windows**: `%APPDATA%\ddb-mcp\session.json`
+
+This file contains browser cookies from your D&D Beyond login. Keep it private — it grants access to your account.
 
 To log out or reset your session:
 
 ```bash
+# macOS/Linux
 rm ~/.config/ddb-mcp/session.json
+
+# Windows (PowerShell)
+Remove-Item "$env:APPDATA\ddb-mcp\session.json"
 ```
 
 ---

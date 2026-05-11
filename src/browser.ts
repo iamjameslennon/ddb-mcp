@@ -1,11 +1,11 @@
 import { chromium, Browser, BrowserContext, Page } from "playwright";
-import { existsSync, mkdirSync, chmodSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
-import { invalidateSessionCache } from "./session-fetch.js";
+import {
+  existsSync, mkdirSync, openSync, closeSync, writeFileSync, fchmodSync,
+  renameSync, constants,
+} from "fs";
+import { invalidateSessionCache, SESSION_DIR, SESSION_PATH } from "./session-fetch.js";
 
-export const SESSION_DIR = join(homedir(), ".config", "ddb-mcp");
-export const SESSION_PATH = join(SESSION_DIR, "session.json");
+export { SESSION_DIR, SESSION_PATH };
 
 let browserInstance: Browser | null = null;
 let browserHeadless: boolean | null = null;
@@ -31,6 +31,8 @@ export async function getContext(browser: Browser): Promise<BrowserContext> {
   if (contextInstance) return contextInstance;
 
   if (!existsSync(SESSION_DIR)) {
+    // mode is honored on POSIX (0700) and silently ignored on Windows, where
+    // %APPDATA%\ddb-mcp inherits the user-profile ACL instead.
     mkdirSync(SESSION_DIR, { recursive: true, mode: 0o700 });
   }
 
@@ -48,11 +50,36 @@ export async function getContext(browser: Browser): Promise<BrowserContext> {
 
 export async function saveSession(context: BrowserContext): Promise<void> {
   if (!existsSync(SESSION_DIR)) {
+    // See note in getContext() — mode is a POSIX-only hint.
     mkdirSync(SESSION_DIR, { recursive: true, mode: 0o700 });
   }
-  await context.storageState({ path: SESSION_PATH });
-  // Restrict session file to owner-only access — it contains sensitive auth cookies.
-  chmodSync(SESSION_PATH, 0o600);
+  // Capture state in memory and write it atomically:
+  //   (1) write to a tempfile in the same directory, then renameSync into
+  //       place — readers always see either the previous file or the new one,
+  //       never a truncated mid-write file;
+  //   (2) on POSIX, open with O_NOFOLLOW + mode 0600 so a planted symlink at
+  //       the tempfile path can't redirect the write and the file is created
+  //       0600 from the start (no umask race window).
+  // Windows has no O_NOFOLLOW; rely on user-profile ACL inheritance for the
+  // parent %APPDATA% directory.
+  const state = await context.storageState();
+  const json = JSON.stringify(state);
+  const tmpPath = `${SESSION_PATH}.tmp`;
+  if (process.platform === "win32") {
+    writeFileSync(tmpPath, json, "utf8");
+  } else {
+    const flags = constants.O_CREAT | constants.O_TRUNC | constants.O_WRONLY | constants.O_NOFOLLOW;
+    const fd = openSync(tmpPath, flags, 0o600);
+    try {
+      // Force 0600 even if a prior crashed run left tmpPath behind (the mode
+      // arg to open() is only honored when the file is freshly created).
+      fchmodSync(fd, 0o600);
+      writeFileSync(fd, json, "utf8");
+    } finally {
+      closeSync(fd);
+    }
+  }
+  renameSync(tmpPath, SESSION_PATH);
   // Invalidate the in-memory cookie/token cache so the next request reads the new session.
   invalidateSessionCache();
 }

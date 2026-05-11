@@ -10,10 +10,55 @@
  */
 
 import { readFileSync, existsSync } from "fs";
-import { join } from "path";
+import { isAbsolute, join } from "path";
 import { homedir } from "os";
 
-export const SESSION_PATH = join(homedir(), ".config", "ddb-mcp", "session.json");
+function resolveSessionDir(): string {
+  if (process.platform === "win32") {
+    // Follow Windows convention (%APPDATA% → ~/AppData/Roaming) instead of
+    // dropping a Unix-style ".config" directory in the user's profile. Use
+    // `||` (not `??`) so an empty-string APPDATA still falls through to the
+    // homedir() default rather than producing a CWD-relative path.
+    const appData = process.env.APPDATA || join(homedir(), "AppData", "Roaming");
+    return join(appData, "ddb-mcp");
+  }
+  return join(homedir(), ".config", "ddb-mcp");
+}
+
+function assertAbsoluteSessionDir(dir: string): string {
+  // Refuse to operate on a relative path — that would land the session file
+  // (containing DDB auth cookies) somewhere unexpected, e.g. the process CWD
+  // if APPDATA is empty/unset on a stripped-down Windows account.
+  if (!isAbsolute(dir)) {
+    throw new Error(
+      `ddb-mcp: refusing to use non-absolute session directory '${dir}'. ` +
+      `Check that APPDATA is set to an absolute path.`
+    );
+  }
+  return dir;
+}
+
+export const SESSION_DIR = assertAbsoluteSessionDir(resolveSessionDir());
+export const SESSION_PATH = join(SESSION_DIR, "session.json");
+
+// One-time Windows migration notice. Releases up to v2.6.4 wrote the session
+// to ~/.config/ddb-mcp/session.json on every platform; from v2.6.5 Windows
+// uses %APPDATA%. Surface a warning so a Windows user upgrading isn't left
+// silently logged-out with an orphan credential file on disk.
+if (process.platform === "win32") {
+  try {
+    const legacyPath = join(homedir(), ".config", "ddb-mcp", "session.json");
+    if (existsSync(legacyPath) && !existsSync(SESSION_PATH)) {
+      process.stderr.write(
+        `[ddb-mcp] Legacy session detected at ${legacyPath}. The session file ` +
+        `now lives at ${SESSION_PATH}. Re-run ddb_login to authenticate at the ` +
+        `new location, then delete the legacy file.\n`
+      );
+    }
+  } catch {
+    // Best-effort notice — never let migration probing break startup.
+  }
+}
 
 interface PlaywrightCookie {
   name: string;
@@ -117,7 +162,12 @@ export async function getCobaltToken(): Promise<{ token: string; userId: string 
   });
   if (!resp.ok) throw new Error(`cobalt-token request failed: ${resp.status}`);
   const { token } = await resp.json() as { token: string };
-  // JWT payload is base64url-encoded — decode it to extract the userId claim
+  // JWT payload is base64url-encoded — decode it to extract the userId claim.
+  // We deliberately don't verify the JWT signature: the token came from
+  // auth-service.dndbeyond.com over HTTPS (the only trust anchor we have for
+  // this server), and we only consume it by passing it straight back to DDB
+  // APIs — DDB verifies the signature server-side. We're using the payload
+  // purely to read our own userId for subsequent API calls.
   const parts = token.split(".");
   if (parts.length < 3) throw new Error("cobalt-token response is not a valid JWT");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

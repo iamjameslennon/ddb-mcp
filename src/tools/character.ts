@@ -2,8 +2,8 @@ import { sessionFetch, hasValidSession, getCobaltToken } from "../session-fetch.
 import { TtlCache } from "../cache.js";
 import { addCharacterSpellsToCompendium, isConcentrationSpell } from "./reference.js";
 import { stripHtml as stripHtmlFull } from "../utils.js";
-import { writeFileSync } from "fs";
-import { join, resolve, relative, basename } from "path";
+import { writeFileSync, mkdirSync } from "fs";
+import { join, resolve, relative, basename, dirname, isAbsolute } from "path";
 import { homedir } from "os";
 
 // Cache character JSON to avoid redundant API calls within a session.
@@ -1116,15 +1116,33 @@ export async function downloadCharacter(
       join(homedir(), "Downloads"),
       join(homedir(), "Documents"),
     ];
-    const isAllowed = allowedDirs.some(dir => !relative(dir, resolved).startsWith(".."));
+    // Require resolved to be a strict child of an allowed dir — rel must be
+    // non-empty (rejects passing the root itself, which would later EISDIR),
+    // not escape with .., and not be absolute (cross-drive on Windows).
+    const isAllowed = allowedDirs.some(dir => {
+      const rel = relative(dir, resolved);
+      return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+    });
     if (!isAllowed) {
-      throw new Error("Output path must be under ~/Downloads or ~/Documents.");
+      throw new Error("Output path must be a file under ~/Downloads or ~/Documents.");
     }
     savePath = resolved;
   } else {
     savePath = defaultPath;
   }
 
+  // Minimal Linux installs (and some Windows profiles) don't ship with ~/Downloads
+  // or ~/Documents — create the target dir so the write doesn't ENOENT. Safe to
+  // do unconditionally because the allowlist above already constrained savePath.
+  try {
+    mkdirSync(dirname(savePath), { recursive: true });
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    throw new Error(
+      `Cannot create directory ${dirname(savePath)} (${code ?? "unknown"}). ` +
+      `Pass output_path pointing to an existing directory under ~/Downloads or ~/Documents.`
+    );
+  }
   writeFileSync(savePath, JSON.stringify(parsed, null, 2), "utf8");
   return `Character data for '${charName}' saved to: ${savePath}`;
 }
