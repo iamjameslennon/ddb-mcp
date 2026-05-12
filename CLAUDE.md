@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm ci               # Install dependencies (npm install is blocked — use npm ci)
+npm ci               # Install dependencies (prefer ci over install — respects the lockfile)
 npm run dev          # Run in development mode (no build step, uses tsx)
 npm run build        # Compile TypeScript to dist/
 npm run build:watch  # Watch mode
@@ -94,7 +94,7 @@ Releases are automated via `scripts/release.js` (ES module, Node built-ins only)
 
 1. Resolves the `claude` binary by scanning `~/.local/share/mise/installs/node/*/bin/claude` — no shim needed
 2. Collects git log and diff since last tag; calls `claude -p` to generate plain-English release notes for DMs/players
-3. Prompts for confirmation, then bumps `version` in `package.json` and `package-lock.json` directly (avoids `preinstall` guard)
+3. Prompts for confirmation, then bumps `version` in `package.json` and `package-lock.json` directly
 4. Commits as `chore: release vX.Y.Z`, pushes tag, creates GitHub release via `gh`
 5. The `npm-publish.yml` workflow triggers on GitHub release and publishes to npm using OIDC Trusted Publishing (`--provenance`, no `NPM_TOKEN` secret required)
 
@@ -108,8 +108,8 @@ Releases are automated via `scripts/release.js` (ES module, Node built-ins only)
 
 - Published as `@iamjameslennon/ddb-mcp` on npm (MIT licence)
 - `"files"` in `package.json` limits the published tarball to `dist/` and `README.md`
-- Global install (`npm install -g`) auto-runs `npx playwright install chromium` via `postinstall`
-- `preinstall` blocks `npm install` for local development — always use `npm ci`
+- `"bin": { "ddb-mcp": "dist/index.js" }` exposes `ddb-mcp` as a CLI on PATH for global installs; the entry has a `#!/usr/bin/env node` shebang preserved through `tsc`
+- **No postinstall** — Chromium is fetched lazily by `ensureChromiumInstalled()` in `src/browser.ts` on first `getBrowser()` call (i.e. first `ddb_login`). Uses `createRequire(import.meta.url).resolve("playwright/cli.js")` to find Playwright's CLI regardless of install path (npx-cache / global / local clone), then spawns `node <cli.js> install chromium` with **child stdout piped to parent stderr** so install progress doesn't corrupt the MCP JSON-RPC stream. Singleton `chromiumInstallPromise` deduplicates concurrent callers; cleared on failure so the next call retries
 
 ### Ongoing work: removing browser dependencies
 

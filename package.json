@@ -5,6 +5,9 @@
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "ddb-mcp": "dist/index.js"
+  },
   "files": [
     "dist/",
     "README.md"
@@ -18,9 +21,7 @@
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "release": "node scripts/release.js",
-    "postinstall": "node -e \"if (process.env.npm_config_global) { require('child_process').execSync('npx playwright install chromium', {stdio:'inherit'}); }\"",
-    "preinstall": "node -e \"if (process.env.npm_command && process.env.npm_command !== 'ci' && !process.env.npm_config_global) { console.error('\\nERROR: Use npm ci instead of npm install.\\nThis project pins exact dependency versions via package-lock.json.\\nRunning npm install can silently upgrade packages and break things.\\n'); process.exit(1); }\""
+    "release": "node scripts/release.js"
   },
   "repository": {
     "type": "git",

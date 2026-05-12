@@ -222,24 +222,34 @@ Can a character use the Help action to assist with a skill check?
 
 ## Installation
 
-### Option A — Install from npm (recommended)
+Add this to your MCP client's config — no separate install step needed.
+
+```json
+{
+  "mcpServers": {
+    "dndbeyond": {
+      "command": "npx",
+      "args": ["-y", "@iamjameslennon/ddb-mcp"]
+    }
+  }
+}
+```
+
+On first launch, `npx` fetches the package itself (small — under 200 kB unpacked of JS). Playwright Chromium (~140 MB) is downloaded **on demand the first time you run `ddb_login`**, with progress printed to the server log; subsequent logins reuse the cached browser. This keeps server startup fast and the heavy download happens at a moment you expect to wait.
+
+Configure the path to your client's config file in the [Connecting to your MCP client](#connecting-to-your-mcp-client) section below.
+
+To pin a version (recommended for production setups), change the args to `["-y", "@iamjameslennon/ddb-mcp@2.7.0"]`.
+
+### Alternative: install globally
+
+If you'd rather have a persistent binary on `PATH` (offline use, air-gapped networks, faster startup):
 
 ```bash
 npm install -g @iamjameslennon/ddb-mcp
 ```
 
-Playwright Chromium is installed automatically as part of the global install.
-
----
-
-### Option B — Clone and build manually
-
-```bash
-git clone https://github.com/iamjameslennon/ddb-mcp.git
-cd ddb-mcp
-npm ci
-npx playwright install chromium
-```
+Then use `"command": "ddb-mcp"` (no args) in your client config. Chromium is still fetched on first `ddb_login` rather than during install.
 
 ---
 
@@ -258,7 +268,7 @@ npx playwright install chromium
   - Screenshots (opt-in): `~/Downloads` only
 - **Transport**: stdio only — the server opens no HTTP listeners and no ports.
 - **Untrusted content**: tools that return D&D Beyond page text (`ddb_navigate`, `ddb_get_page`) wrap the scraped output in `<untrusted_dndbeyond_content>` tags. Character notes, campaign descriptions, party-member backstories, and book content can be authored by other DDB users (DMs, party members, forum posters) and may contain prompt-injection attempts — treat them as untrusted input, never as instructions. The `confirm_click` / `confirm_fill` gates on `ddb_interact` exist for exactly this reason.
-- **Recommendation**: pin the version when installing — `npm install -g @iamjameslennon/ddb-mcp@2.6.1`.
+- **Recommendation**: pin the version in your MCP client config — `"@iamjameslennon/ddb-mcp@2.7.0"` — rather than letting `npx` auto-update on every launch.
 
 ---
 
@@ -266,84 +276,43 @@ npx playwright install chromium
 
 This server was built and tested with Claude — it will work with any MCP-compatible client, but response quality for D&D-specific reasoning will vary depending on the model used.
 
-First, find your global npm path:
-
-```bash
-npm root -g
-# macOS/Linux example: /usr/local/lib/node_modules
-# Windows example:     C:\Users\<you>\AppData\Roaming\npm\node_modules
-```
-
-> In all config examples below, replace `/usr/local/lib/node_modules` with the output of `npm root -g` on your system.
-
-> **Windows note**: JSON treats `\` as an escape character. Either use forward slashes (Node accepts them on Windows) — `"C:/Users/<you>/AppData/Roaming/npm/node_modules/@iamjameslennon/ddb-mcp/dist/index.js"` — or double every backslash: `"C:\\Users\\<you>\\AppData\\Roaming\\npm\\node_modules\\@iamjameslennon\\ddb-mcp\\dist\\index.js"`. Forward slashes are simpler and harder to get wrong.
+All clients below use the same JSON config from the [Installation](#installation) section. Drop it into your client's config file (paths below), then restart the client.
 
 ### Claude Desktop (recommended)
 
-Edit your Claude Desktop config file:
-
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-- **Linux**: `~/.config/Claude/claude_desktop_config.json`
-
-Linux note: Claude Desktop has no official Linux release. If you don't run a community build, use [Claude Code](#claude-code), [Cursor](#cursor), or any other MCP client below.
-
-```json
-{
-  "mcpServers": {
-    "dndbeyond": {
-      "command": "node",
-      "args": ["/usr/local/lib/node_modules/@iamjameslennon/ddb-mcp/dist/index.js"]
-    }
-  }
-}
-```
+- **Linux**: `~/.config/Claude/claude_desktop_config.json` (community builds only — Claude Desktop has no official Linux release; use [Claude Code](#claude-code) or [Cursor](#cursor) instead)
 
 ### Claude Code
 
+One-liner — no manual JSON editing:
+
 ```bash
-claude mcp add dndbeyond node $(npm root -g)/@iamjameslennon/ddb-mcp/dist/index.js
+claude mcp add dndbeyond -- npx -y @iamjameslennon/ddb-mcp
+```
+
+Or if you installed globally:
+
+```bash
+claude mcp add dndbeyond ddb-mcp
 ```
 
 ### Cursor
 
-Edit `~/.cursor/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "dndbeyond": {
-      "command": "node",
-      "args": ["/usr/local/lib/node_modules/@iamjameslennon/ddb-mcp/dist/index.js"]
-    }
-  }
-}
-```
+`~/.cursor/mcp.json`
 
 ### Windsurf
 
-Edit `~/.codeium/windsurf/mcp_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "dndbeyond": {
-      "command": "node",
-      "args": ["/usr/local/lib/node_modules/@iamjameslennon/ddb-mcp/dist/index.js"]
-    }
-  }
-}
-```
+`~/.codeium/windsurf/mcp_config.json`
 
 ### LM Studio
 
-MCP support was added in LM Studio 0.3.x. Configure through the UI under **Settings → MCP Servers** using the same JSON shape as Claude Desktop above. Steps may vary between versions — see [lmstudio.ai/docs](https://lmstudio.ai/docs) for current instructions.
+MCP support was added in LM Studio 0.3.x. Configure through the UI under **Settings → MCP Servers** using the same JSON shape as above. Steps may vary between versions — see [lmstudio.ai/docs](https://lmstudio.ai/docs) for current instructions.
 
 ### Open WebUI
 
 MCP servers are configured through the admin panel under **Settings → Tools**. See [docs.openwebui.com](https://docs.openwebui.com) for current instructions — the UI changes frequently between releases.
-
-> LM Studio and Open WebUI use the same underlying `node` command and path as the other clients above.
 
 ---
 
@@ -547,15 +516,17 @@ Remove-Item "$env:APPDATA\ddb-mcp\session.json"
 Your session has expired. Run `ddb_login` to re-authenticate.
 
 **Chromium not found / browser won't launch**
+Chromium is installed lazily on first `ddb_login`. If the download failed (network or sandbox issue), run `ddb_login` again — the server retries on each call. If it keeps failing, fetch the browser manually:
 ```bash
 npx playwright install chromium
 ```
+The same global Playwright cache is shared by every install path (npx, global, local clone) — one successful install is reused everywhere.
 
 **Character returns 403 or "private"**
 The character is set to private on D&D Beyond. You must be logged in as the owner, or the owner must make it public.
 
 **MCP server not appearing in Claude Code**
-Run `/mcp` in Claude Code to reconnect. If it still doesn't appear, verify the path in `claude mcp list` points to the correct `dist/index.js`.
+Run `/mcp` in Claude Code to reconnect. If it still doesn't appear, run `claude mcp list` to confirm the `dndbeyond` entry exists.
 
 **Server crashes on startup**
 Make sure you're running Node.js 20 or later: `node --version`.
@@ -565,10 +536,12 @@ Make sure you're running Node.js 20 or later: `node --version`.
 ## Development
 
 ```bash
-# Install dependencies (always use npm ci — not npm install)
+# Install dependencies — prefer npm ci to respect the lockfile
 npm ci
 
-# Run in development mode (no build step needed)
+# Run in development mode (no build step needed). Chromium is fetched lazily
+# on first `ddb_login`; if you want to pre-warm the cache:
+#   npx playwright install chromium
 npm run dev
 
 # Build
@@ -577,7 +550,7 @@ npm run build
 # Watch mode
 npm run build:watch
 
-# Run tests
+# Run tests (browser-free — they mock the Playwright surface)
 npm test
 ```
 

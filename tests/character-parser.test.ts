@@ -1271,3 +1271,117 @@ describe("parseCharacterData — notes section", () => {
     expect(out).toContain("I never back down.");
   });
 });
+
+// ── 2024 race variant detection (Lineage / Legacy / Ancestry) ────────────────
+// 2024 PHB races store the player's sub-selection in char.options.race[] with
+// option names like "Wood Elf Lineage", "Infernal Legacy", "Stone's Endurance
+// (Stone Giant)". parseCharacterData should surface this in the header line,
+// e.g. "Elf (Wood Elf)", because the race.fullName / baseName fields alone
+// show only the base race (which is what 2024 PHB calls the "species").
+describe("parseCharacterData — 2024 race variant in header", () => {
+  // Minimal fixture: only what parseCharacterData reads for the header line.
+  // Everything else relies on the parser's graceful-default helpers (str/obj/arr).
+  function makeChar(opts: {
+    name: string;
+    race: { fullName: string; baseName: string };
+    className: string;
+    raceOptions: { name: string }[];
+  }): Record<string, unknown> {
+    return {
+      data: {
+        name: opts.name,
+        race: { ...opts.race, racialTraits: [], weightSpeeds: { normal: {} } },
+        classes: [{
+          id: 1, level: 5, hitDiceUsed: 0,
+          definition: { name: opts.className, hitDice: 8, canCastSpells: false, spellCastingAbilityId: 0, spellRules: {} },
+          subclassDefinition: null,
+          classFeatures: [],
+        }],
+        options: { race: opts.raceOptions.map(o => ({ definition: { name: o.name } })) },
+      },
+    };
+  }
+
+  it("Elven Lineage → 'Elf (Wood Elf)'  (Clover Darkbloom, char 155665213)", () => {
+    const out = parseCharacterData(makeChar({
+      name: "Clover Darkbloom",
+      race: { fullName: "Elf", baseName: "Elf" },
+      className: "Druid",
+      // Real names observed in DDB API for character 155665213
+      raceOptions: [{ name: "Wood Elf Lineage" }, { name: "Wood Elf - Wisdom" }],
+    }));
+    expect(out).toContain("Elf (Wood Elf)");
+  });
+
+  it("Elven Lineage → 'Elf (High Elf)'  (Idhren, char 155829352)", () => {
+    const out = parseCharacterData(makeChar({
+      name: "Idhren",
+      race: { fullName: "Elf", baseName: "Elf" },
+      className: "Barbarian",
+      raceOptions: [{ name: "High Elf Lineage" }, { name: "High Elf - Charisma" }],
+    }));
+    expect(out).toContain("Elf (High Elf)");
+  });
+
+  it("Fiendish Legacy → 'Tiefling (Infernal)'  (Claude Skamos, char 155447750)", () => {
+    const out = parseCharacterData(makeChar({
+      name: "Claude Skamos",
+      race: { fullName: "Tiefling", baseName: "Tiefling" },
+      className: "Wizard",
+      // Real names observed for char 155447750 — "Intelligence" entries are
+      // spellcasting-ability choices that must NOT be mistaken for the legacy.
+      raceOptions: [{ name: "Intelligence" }, { name: "Infernal Legacy" }, { name: "Intelligence" }],
+    }));
+    expect(out).toContain("Tiefling (Infernal)");
+  });
+
+  it("Giant Ancestry → 'Goliath (Stone)'  (Goliath Barbarian, char 152579009)", () => {
+    const out = parseCharacterData(makeChar({
+      name: "Goliath Barbarian",
+      race: { fullName: "Goliath", baseName: "Goliath" },
+      className: "Barbarian",
+      // The Giant Ancestry choice surfaces with the chosen feature wrapped in
+      // a "(<type> Giant)" parenthetical.
+      raceOptions: [{ name: "Stone's Endurance (Stone Giant)" }],
+    }));
+    expect(out).toContain("Goliath (Stone)");
+  });
+
+  it("preserves 2014 fullName when no race options present (no variant suffix added)", () => {
+    const out = parseCharacterData(makeChar({
+      name: "Thorin",
+      race: { fullName: "Mountain Dwarf", baseName: "Dwarf" },
+      className: "Fighter",
+      raceOptions: [], // 2014 chars surface subrace via fullName
+    }));
+    expect(out).toContain("Mountain Dwarf");
+    expect(out).not.toContain("Mountain Dwarf (");
+  });
+
+  it("does not double-decorate when fullName already contains the variant", () => {
+    const out = parseCharacterData(makeChar({
+      name: "Edge Case",
+      race: { fullName: "Wood Elf", baseName: "Elf" }, // hypothetical pre-decorated fullName
+      className: "Ranger",
+      raceOptions: [{ name: "Wood Elf Lineage" }],
+    }));
+    expect(out).toContain("Wood Elf");
+    expect(out).not.toContain("Wood Elf (Wood Elf)");
+  });
+
+  it("Aasimar has no creation-time revelation → 'Aasimar' (Orion Skyborn, char 152720684)", () => {
+    // 2024 Celestial Revelation is a transformation-time choice (the player
+    // picks Heavenly Wings / Inner Radiance / Necrotic Shroud each time they
+    // activate the trait), so the DDB API leaves char.options.race empty for
+    // Aasimar and no permanent variant should appear in the header.
+    const out = parseCharacterData(makeChar({
+      name: "Orion Skyborn",
+      race: { fullName: "Aasimar", baseName: "Aasimar" },
+      className: "Druid",
+      raceOptions: [], // empty for real Orion (152720684) — verified via API
+    }));
+    const headerLine = out.split("\n").find(l => l.includes("Druid")) ?? "";
+    expect(headerLine).toContain("Aasimar");
+    expect(headerLine).not.toMatch(/Aasimar\s*\(/);
+  });
+});

@@ -49,6 +49,7 @@ ddb_parse_character { character_id: "<ID>", sections: "summary" }
 | 49128422 | Zayda Snaketooth | Hobgoblin | Cleric | 3 | https://www.dndbeyond.com/profile/Maliki_lagiban/characters/49128422 |
 | 49053647 | Elona Silverflame | Tiefling | Paladin | 3 | https://www.dndbeyond.com/profile/Theloserlord2365/characters/49053647 |
 | 145414075 | Spurt the Sorcerer | Kobold | Sorcerer (Wild Magic Sorcery) | 3 | https://www.dndbeyond.com/characters/145414075 |
+| 152720684 | Orion Skyborn | Aasimar | Druid | 4 | https://www.dndbeyond.com/characters/152720684 |
 | 40193614 | Petit Nuage | Variant Human | Monk | 5 | https://www.dndbeyond.com/profile/KhamenTutis/characters/40193614 |
 | 127373542 | Ezra Trickweaver | Lightfoot Halfling | Rogue | 5 | https://www.dndbeyond.com/profile/EzraTrick/characters/127373542 |
 | 68903271 | Aerin Forrestlimb | Wood Elf | Ranger (Gloom Stalker) | 5 | https://www.dndbeyond.com/characters/68903271 |
@@ -79,6 +80,7 @@ ddb_parse_character { character_id: "<ID>", sections: "summary" }
 - **Races:** Dwarf, Elf, Fierna Tiefling, Forest Gnome, Githyanki, Gnome, Goliath, Half-Elf, Half-Orc, Halfling, High Elf, High Half-Elf, Hill Dwarf, Hobgoblin, Human, Kobold, Lightfoot Halfling, Tiefling, Variant Human, Wood Elf
 - **Spellcasters:** Ancarno Arnault, Astarion (none), BillytheBard, Caikrana Qualanthri, Calderax Greycastle, Cathartic, Claude Skamos, Clover Darkbloom, Danyr, Elona Silverflame, Ezra Trickweaver (none), Gale, Harry the Wizard, Hizar, Lysander, Mori Yosei, Niko, Presto, Rustle Berrydust, Shadowheart, Sister Baronessa, Spurt, Vi (Artificer), Weslocke, Wyll, Zayda Snaketooth
 - **Notable test cases:** Expertise rogues (Astarion, Dunil, Sheila, Halfling Rogue), racial darkvision (Astarion, Flemin, Karlach, Rustle Berrydust, Shadowheart, Spurt), non-standard speed (Goliath 35 ft., Elf Fighter 35 ft., Hill Dwarf 25 ft.), BG3-style backgrounds (Astarion, Gale, Karlach, Shadowheart, Wyll), Draconic Resilience unarmored AC (Caikrana), Half-Orc traits (Hizar), comma-in-weapon-name proficiency (Caikrana crossbow)
+- **2024 race sub-selection (parseCharacterData header):** Clover (Elven Lineage → Wood Elf), Idhren (Elven Lineage → High Elf), Claude Skamos (Fiendish Legacy → Infernal), Goliath Barbarian (Giant Ancestry → Stone). Orion Skyborn (Aasimar) is a control case: 2024 Celestial Revelation is a transformation-time choice — `options.race` is empty and the header correctly shows `Aasimar` with no parenthetical.
 
 ---
 

@@ -100,7 +100,42 @@ export function parseCharacterData(
 
   // ── Identity ──────────────────────────────────────────────────────────────
   const charName = str(char.name);
-  const race = str(obj(char.race).fullName || obj(char.race).baseName);
+  // 2024 races store the sub-selection (Elven Lineage, Fiendish Legacy, Giant
+  // Ancestry, Gnomish Lineage, …) in char.options.race[] rather than in the
+  // subRaceShortName field that 2014 characters use. The option name encodes
+  // the chosen variant — e.g. "Wood Elf Lineage", "Infernal Legacy",
+  // "Stone's Endurance (Stone Giant)". Pattern-match the suffix so this is
+  // generic across every 2024 race that follows the same naming convention.
+  // Note: 2024 Aasimar Celestial Revelation is *not* a creation-time choice —
+  // the player picks one of Heavenly Wings / Inner Radiance / Necrotic Shroud
+  // each time they transform, and char.options.race is empty for Aasimar.
+  // Header correctly shows just "Aasimar" with no parenthetical.
+  const detectRaceVariant = (): string | null => {
+    for (const opt of arr<Record<string, unknown>>(obj(char.options).race)) {
+      const name = str(obj(opt.definition).name).trim();
+      if (!name) continue;
+      // "Wood Elf Lineage" / "High Elf Lineage" / "Drow Lineage"
+      //  / "Forest Gnome Lineage" / "Rock Gnome Lineage" / …
+      let m = name.match(/^(.+?)\s+Lineage$/);
+      if (m) return m[1];
+      // "Infernal Legacy" / "Abyssal Legacy" / "Chthonic Legacy"
+      m = name.match(/^(.+?)\s+Legacy$/);
+      if (m) return m[1];
+      // Giant Ancestry: "Stone's Endurance (Stone Giant)" etc.
+      m = name.match(/\(([A-Za-z]+)\s+Giant\)$/);
+      if (m) return m[1];
+    }
+    return null;
+  };
+  const race = (() => {
+    const base = str(obj(char.race).fullName || obj(char.race).baseName);
+    const variant = detectRaceVariant();
+    if (!variant) return base;
+    // Avoid "Wood Elf (Wood Elf)" if the base race name already mentions the
+    // variant (defensive — happens when fullName has been pre-decorated).
+    if (base.toLowerCase().includes(variant.toLowerCase())) return base;
+    return `${base} (${variant})`;
+  })();
   const classes = arr<Record<string, unknown>>(char.classes);
   const classLine = classes.map(c => {
     const def = obj(c.definition);
