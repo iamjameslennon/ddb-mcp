@@ -222,6 +222,8 @@ Can a character use the Help action to assist with a skill check?
 
 ## Installation
 
+> 🆕 **New to all this?** If you're on a Mac starting from scratch (no Homebrew, no Node, no Claude Desktop), follow the [step-by-step beginner tutorial](INSTALL-MACOS.md) instead — it covers everything below plus how to install the prerequisites.
+
 Add this to your MCP client's config — no separate install step needed.
 
 ```json
