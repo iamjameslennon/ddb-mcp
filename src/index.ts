@@ -5,17 +5,18 @@ import { z } from "zod";
 
 import { getBrowser, getContext, closeBrowser } from "./browser.js";
 import { login } from "./auth.js";
-import { getCharacter, downloadCharacter, listCharacters, parseCharacter, findCharacterByName, getDefinition } from "./tools/character.js";
-import { getCampaign, listMyCampaigns } from "./tools/campaign.js";
+import { getCharacter, downloadCharacter, listCharacters, parseCharacter, findCharacterByName, getDefinition, clearCharacterCache } from "./tools/character.js";
+import { getCampaign, listMyCampaigns, invalidateCampaignCache } from "./tools/campaign.js";
 import { getParty } from "./tools/party.js";
 import { navigate, interact, getCurrentPageContent } from "./tools/navigate.js";
 import { search } from "./tools/search.js";
 import { listLibrary, readBook } from "./tools/library.js";
-import { searchMonsters, getMonster } from "./tools/monster.js";
+import { searchMonsters, getMonster, clearMonsterCache } from "./tools/monster.js";
 import { rateEncounter, targetEncounterCr } from "./tools/encounter.js";
 import type { Difficulty } from "./tools/encounter.js";
 import { generateTreasure } from "./tools/treasure.js";
-import { getCondition, searchSpells, getSpell, searchItems, getItem, searchRaces, searchClasses, searchBackgrounds, searchFeats, searchClassFeatures, searchRacialTraits, searchRules, getRule } from "./tools/reference.js";
+import { getCondition, searchSpells, getSpell, searchItems, getItem, searchRaces, searchClasses, searchBackgrounds, searchFeats, searchClassFeatures, searchRacialTraits, searchRules, getRule, clearReferenceCache } from "./tools/reference.js";
+import { clearOpen5eCache } from "./open5e.js";
 
 const server = new McpServer({
   name: "dndbeyond",
@@ -76,10 +77,43 @@ server.tool(
   }
 );
 
+// ─── ddb_clear_cache ─────────────────────────────────────────────────────────
+server.tool(
+  "ddb_clear_cache",
+  "Wipe in-process caches so the next call re-fetches from D&D Beyond. Use this when search results look like the SRD/Open5e fallback (e.g. 2024 cantrips missing from spell results) after you've logged in — the partial compendium build is cached for up to 5 minutes and this forces an immediate retry. cache='spells' (default) clears just the spell/reference compendium; 'all' wipes every cache.",
+  {
+    cache: z
+      .enum(["spells", "characters", "monsters", "all"])
+      .default("spells")
+      .describe("Which cache to clear. 'spells' (default) — the spell / equipment / races / classes / feats compendium. 'characters' — character JSON cache. 'monsters' — monster stat-block cache. 'all' — everything, including campaigns and Open5e responses."),
+  },
+  async ({ cache }) => {
+    const cleared: string[] = [];
+    if (cache === "spells" || cache === "all") {
+      clearReferenceCache();
+      cleared.push("spells/reference compendium");
+    }
+    if (cache === "characters" || cache === "all") {
+      clearCharacterCache();
+      cleared.push("character JSON");
+    }
+    if (cache === "monsters" || cache === "all") {
+      clearMonsterCache();
+      cleared.push("monsters");
+    }
+    if (cache === "all") {
+      invalidateCampaignCache();
+      clearOpen5eCache();
+      cleared.push("campaigns", "Open5e responses");
+    }
+    return { content: [{ type: "text", text: `Cleared: ${cleared.join(", ")}. The next relevant tool call will re-fetch from D&D Beyond.` }] };
+  }
+);
+
 // ─── ddb_list_characters ──────────────────────────────────────────────────────
 server.tool(
   "ddb_list_characters",
-  "List all characters in your D&D Beyond account, including their ID, level, race, and class.",
+  "List all characters in your D&D Beyond account, including their ID, level, race, and class. Requires login — run ddb_login first if you haven't already.",
   {},
   async () => {
     try {
@@ -96,7 +130,7 @@ server.tool(
 // ─── ddb_get_character_raw ────────────────────────────────────────────────────
 server.tool(
   "ddb_get_character_raw",
-  "Returns raw 300–500 KB character JSON. Requires confirm_large_response: true. Use ddb_get_character instead for all normal use.",
+  "Returns raw 300–500 KB character JSON. Requires confirm_large_response: true. Use ddb_get_character instead for all normal use. Requires login — run ddb_login first if you haven't already.",
   {
     character_id: z.string().min(1).optional().describe("The D&D Beyond character ID (e.g. '12345678')"),
     character_name: z.string().min(1).optional().describe("Character name to look up (fuzzy matched against your account)"),
@@ -128,7 +162,7 @@ server.tool(
 // ─── ddb_download_character ───────────────────────────────────────────────────
 server.tool(
   "ddb_download_character",
-  "Download a character's full JSON data to a local file.",
+  "Download a character's full JSON data to a local file. Requires login — run ddb_login first if you haven't already.",
   {
     character_id: z.string().min(1).describe("The D&D Beyond character ID"),
     output_path: z
@@ -152,7 +186,7 @@ server.tool(
 // ─── ddb_get_character ───────────────────────────────────────────────────────
 server.tool(
   "ddb_get_character",
-  "Parse and display a character sheet. Use sections to reduce output: summary (vitals+stats), combat (adds actions/weapons), spells (spellcasting only), inventory, features, concentration, notes (backstory, traits, bonds), or full (default).",
+  "Parse and display a character sheet. Use sections to reduce output: summary (vitals+stats), combat (adds actions/weapons), spells (spellcasting only), inventory, features, concentration, notes (backstory, traits, bonds), or full (default). Requires login — run ddb_login first if you haven't already.",
   {
     character_id: z.string().min(1).optional().describe("The D&D Beyond character ID (e.g. '12345678')"),
     character_name: z.string().min(1).optional().describe("Character name to look up (fuzzy matched — e.g. 'Throin' finds 'Thorin Ironforge')"),
@@ -186,7 +220,7 @@ server.tool(
 // ─── ddb_character_lookup ────────────────────────────────────────────────────
 server.tool(
   "ddb_character_lookup",
-  "Look up the full description of a spell, feat, class feature, subclass feature, racial trait, background feature, or equipped item by name. Supports partial and fuzzy name matching (e.g. 'cutting' finds Cutting Words, 'sheild' finds Shield). Accepts either a numeric character_id or a character_name.",
+  "Look up the full description of a spell, feat, class feature, subclass feature, racial trait, background feature, or equipped item by name. Supports partial and fuzzy name matching (e.g. 'cutting' finds Cutting Words, 'sheild' finds Shield). Accepts either a numeric character_id or a character_name. Requires login — run ddb_login first if you haven't already.",
   {
     character_id: z.string().min(1).optional().describe("The D&D Beyond character ID"),
     character_name: z.string().min(1).optional().describe("Character name (fuzzy matched against your account)"),
@@ -259,7 +293,7 @@ server.tool(
 // ─── ddb_get_campaign ─────────────────────────────────────────────────────────
 server.tool(
   "ddb_get_campaign",
-  "Fetch campaign information including player characters from a D&D Beyond campaign.",
+  "Fetch campaign information including player characters from a D&D Beyond campaign. Requires login — run ddb_login first if you haven't already.",
   {
     campaign_id: z.string().min(1).describe("The D&D Beyond campaign ID (found in the campaign URL)"),
   },
@@ -278,7 +312,7 @@ server.tool(
 // ─── ddb_list_campaigns ───────────────────────────────────────────────────────
 server.tool(
   "ddb_list_campaigns",
-  "List all D&D Beyond campaigns you are part of (as DM or player).",
+  "List all D&D Beyond campaigns you are part of (as DM or player). Requires login — run ddb_login first if you haven't already.",
   {},
   async () => {
     try {
@@ -295,7 +329,7 @@ server.tool(
 // ─── ddb_get_party ────────────────────────────────────────────────────────────
 server.tool(
   "ddb_get_party",
-  "Fetch a compact summary of every character in a campaign. Returns HP, AC, initiative, passive scores, ability scores, and skills for the whole party in one call.",
+  "Fetch a compact summary of every character in a campaign. Returns HP, AC, initiative, passive scores, ability scores, and skills for the whole party in one call. Requires login — run ddb_login first if you haven't already.",
   {
     campaign_id: z.string().min(1).describe("The D&D Beyond campaign ID (found in the campaign URL)"),
   },
@@ -428,7 +462,7 @@ server.tool(
 // ─── ddb_list_library ─────────────────────────────────────────────────────────
 server.tool(
   "ddb_list_library",
-  "List all books and sourcebooks you own in your D&D Beyond library.",
+  "List all books and sourcebooks you own in your D&D Beyond library. Requires login — run ddb_login first if you haven't already.",
   {},
   async () => {
     try {
@@ -448,7 +482,7 @@ server.tool(
 // ─── ddb_read_book ────────────────────────────────────────────────────────────
 server.tool(
   "ddb_read_book",
-  "Read a D&D Beyond book. Accepts either a slug (e.g. dnd/phb-2024) or a plain title (e.g. \"Player's Handbook\" or \"monster manual\") — the server resolves titles against your library automatically. Specify chapter_slug for a chapter, query to jump to a heading, and max_chars to control response size.",
+  "Read a D&D Beyond book. Accepts either a slug (e.g. dnd/phb-2024) or a plain title (e.g. \"Player's Handbook\" or \"monster manual\") — the server resolves titles against your library automatically. Specify chapter_slug for a chapter, query to jump to a heading, and max_chars to control response size. Requires login — run ddb_login first if you haven't already.",
   {
     book_slug: z
       .string()
@@ -577,7 +611,7 @@ server.tool(
 
 server.tool(
   "ddb_search_races",
-  "Search all D&D Beyond races and subraces (including homebrew). Not character-specific.",
+  "Search all D&D Beyond races and subraces (including homebrew). Not character-specific. Requires login — run ddb_login first if you haven't already.",
   {
     name: z.string().optional().describe("Partial race name (e.g. 'elf', 'tiefling')"),
     limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
@@ -597,7 +631,7 @@ server.tool(
 
 server.tool(
   "ddb_search_classes",
-  "Search all D&D Beyond classes with hit die, spellcasting, and subclasses.",
+  "Search all D&D Beyond classes with hit die, spellcasting, and subclasses. Requires login — run ddb_login first if you haven't already.",
   {
     name: z.string().optional().describe("Partial class name (e.g. 'fighter', 'wizard')"),
     limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
@@ -617,7 +651,7 @@ server.tool(
 
 server.tool(
   "ddb_search_backgrounds",
-  "Search all D&D Beyond backgrounds (including homebrew).",
+  "Search all D&D Beyond backgrounds (including homebrew). Requires login — run ddb_login first if you haven't already.",
   {
     name: z.string().optional().describe("Partial background name (e.g. 'sage', 'criminal')"),
     limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
@@ -637,7 +671,7 @@ server.tool(
 
 server.tool(
   "ddb_search_feats",
-  "Search feats by name or prerequisite text.",
+  "Search feats by name or prerequisite text. Requires login — run ddb_login first if you haven't already.",
   {
     name: z.string().optional().describe("Partial feat name (e.g. 'sharpshooter', 'magic')"),
     prerequisite: z.string().optional().describe("Filter by prerequisite text (e.g. 'spellcaster', 'level 4')"),
@@ -658,7 +692,7 @@ server.tool(
 
 server.tool(
   "ddb_search_class_features",
-  "Search class features by name, class, or level gained.",
+  "Search class features by name, class, or level gained. Requires login — run ddb_login first if you haven't already.",
   {
     name: z.string().optional().describe("Partial feature name (e.g. 'action surge', 'sneak attack')"),
     class_name: z.string().optional().describe("Class name filter (e.g. 'fighter', 'rogue')"),
@@ -680,7 +714,7 @@ server.tool(
 
 server.tool(
   "ddb_search_racial_traits",
-  "Search racial traits by name or race.",
+  "Search racial traits by name or race. Requires login — run ddb_login first if you haven't already.",
   {
     name: z.string().optional().describe("Partial trait name (e.g. 'darkvision', 'breath weapon')"),
     race_name: z.string().optional().describe("Race name filter (e.g. 'elf', 'dragonborn')"),

@@ -19,6 +19,11 @@ const SRD = "wotc-srd";
 // 1-hour cache — Open5e data doesn't change often
 const open5eCache = new TtlCache<unknown>(60 * 60_000, 100);
 
+/** Wipe the in-process Open5e response cache. */
+export function clearOpen5eCache(): void {
+  open5eCache.clear();
+}
+
 async function o5fetch(path: string): Promise<unknown> {
   const cached = open5eCache.get(path);
   if (cached !== undefined) return cached;

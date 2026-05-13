@@ -15,6 +15,11 @@ const CHARACTER_CACHE_TTL_MS = (() => {
 })();
 const characterCache = new TtlCache<string>(CHARACTER_CACHE_TTL_MS, 50);
 
+/** Wipe the in-process character JSON cache. */
+export function clearCharacterCache(): void {
+  characterCache.clear();
+}
+
 // ── Character name resolution ─────────────────────────────────────────────────
 
 function levenshteinDistance(a: string, b: string): number {
@@ -39,7 +44,13 @@ function levenshteinDistance(a: string, b: string): number {
  * Returns null if no match or multiple ambiguous fuzzy matches are found.
  */
 export async function findCharacterByName(name: string): Promise<{ id: string; name: string } | null> {
-  if (!hasValidSession()) return null;
+  // Throw rather than return null when there's no session — otherwise callers
+  // surface a misleading "No character found matching '<name>'" message that
+  // looks like the character doesn't exist, when really the user just hasn't
+  // logged in yet.
+  if (!hasValidSession()) {
+    throw new Error("No session found. Please run ddb_login first to authenticate.");
+  }
   const { token, userId } = await getCobaltToken();
   const resp = await sessionFetch(
     `https://character-service.dndbeyond.com/character/v5/characters/list?userId=${userId}`,

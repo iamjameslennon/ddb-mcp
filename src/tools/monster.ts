@@ -34,6 +34,11 @@ const STAT_NAMES: Record<number, string> = {
 
 const monsterCache = new TtlCache<string>(24 * 60 * 60_000, 200); // 24 h, 200 entries
 
+/** Wipe the in-process monster cache. */
+export function clearMonsterCache(): void {
+  monsterCache.clear();
+}
+
 // ── Game config ───────────────────────────────────────────────────────────────
 
 interface GameConfig {

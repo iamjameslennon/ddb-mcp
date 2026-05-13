@@ -48,7 +48,7 @@ The central architectural split is between tools that need a Playwright browser 
 | `src/open5e.ts` | Open5e SRD fallback — no auth required. Used when DDB is down or returns empty results. 1 h TTL cache. Stores parsed objects (not JSON strings). |
 | `src/utils.ts` | Shared `stripHtml()` utility — strips tags and decodes HTML entities. Imported by `character.ts` and `reference.ts`. |
 | `src/tools/character.ts` | Character fetch, `parseCharacterData(raw, sections)` (sections: summary/combat/spells/inventory/features/full), definition lookup, fuzzy name resolution |
-| `src/tools/reference.ts` | Conditions (hardcoded), spells/items/races/classes/backgrounds/feats (DDB character-service, 24 h cache, Open5e fallback). Exports `addCharacterSpellsToCompendium()` to seed cantrips from character JSON. |
+| `src/tools/reference.ts` | Conditions (hardcoded), spells/items/races/classes/backgrounds/feats (DDB character-service `/game-data/spells?classId=X&classLevel=20` — one request per spellcasting class, returns cantrips + leveled spells together). Provenance-tracked cache: 24 h on full success, 5 min on partial. Per-call Open5e fallback when DDB returns nothing. Exports `addCharacterSpellsToCompendium()` to seed cantrips from character JSON. |
 | `src/tools/monster.ts` | Monster search and stat block via DDB monster-service, Open5e fallback |
 | `src/tools/campaign.ts` | Campaign and character list via browser scraping |
 | `src/tools/library.ts` | Library listing and book reading via browser. `readBook` accepts `maxChars` (default 3000) and `query` (jump to heading). |
@@ -60,7 +60,7 @@ The central architectural split is between tools that need a Playwright browser 
 ### Caching layers
 
 - **Character JSON**: 60 s TTL in `character.ts`
-- **Spells/items/compendium**: 24 h TTL in `reference.ts` (first spell call builds the full compendium — slow)
+- **Spells/items/compendium**: 24 h TTL in `reference.ts` (5 min when build was partial) — first spell call builds the full compendium by firing 8 parallel `/game-data/spells?classId=X&classLevel=20` requests, one per spellcasting class; cantrips and leveled spells come back in one response
 - **Open5e responses**: 1 h TTL in `open5e.ts`
 - **Cobalt JWT**: cached in-memory until 60 s before expiry (`session-fetch.ts`)
 - **Session cookies**: in-memory after first disk read; invalidated by `invalidateSessionCache()` when a new session is saved

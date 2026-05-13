@@ -13,7 +13,7 @@ import { sessionFetch, getCobaltToken } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
 import { stripHtml } from "../utils.js";
 import {
-  fetchO5Cantrips, o5SearchSpells, o5GetSpell,
+  o5SearchSpells, o5GetSpell,
   o5SearchItems, o5GetItem,
   o5GetWeapon, o5GetArmor,
   o5SearchRaces, o5SearchClasses, o5SearchBackgrounds, o5SearchFeats,
@@ -24,7 +24,9 @@ const CHARACTER_SERVICE = "https://character-service.dndbeyond.com";
 
 // ── Cache ─────────────────────────────────────────────────────────────────────
 
-const referenceCache = new TtlCache<string>(24 * 60 * 60_000, 50);
+const AUTHORITATIVE_TTL_MS = 24 * 60 * 60_000; // 24 h — DDB build was complete
+const FALLBACK_TTL_MS = 5 * 60_000;            // 5 min — partial DDB build; retry sooner
+const referenceCache = new TtlCache<string>(AUTHORITATIVE_TTL_MS, 50);
 
 // ── Auth helper ───────────────────────────────────────────────────────────────
 
@@ -224,32 +226,32 @@ interface DdbSpell {
 
 let spellCompendium: DdbSpell[] | null = null;
 
-function parseO5Range(rangeStr: string): SpellDefinition["range"] {
-  if (!rangeStr) return undefined;
-  const s = rangeStr.trim();
-  if (/^self$/i.test(s)) return { origin: "Self" };
-  if (/^touch$/i.test(s)) return { origin: "Touch" };
-  if (/^unlimited$/i.test(s)) return { origin: "Unlimited" };
-  const match = s.match(/^(\d+)\s*(?:feet|foot|ft\.?)/i);
-  if (match) return { origin: "Ranged", rangeValue: parseInt(match[1], 10) };
-  return { origin: s };
+// Provenance of the currently-loaded compendium. "ddb-authoritative" means all
+// 32 DDB game-data requests succeeded; "ddb-partial" means at least one failed
+// and the result is missing content (commonly happens when the cobalt token is
+// rejected for some endpoints but not others, or DDB is mid-deploy).
+export type CompendiumSource = "ddb-authoritative" | "ddb-partial";
+let compendiumSource: CompendiumSource | null = null;
+
+interface CachedCompendium {
+  source: CompendiumSource;
+  spells: DdbSpell[];
 }
 
-function parseO5Components(compStr: string): { components: number[]; componentsDescription?: string } {
-  if (!compStr) return { components: [] };
-  const matMatch = compStr.match(/\(([^)]+)\)/);
-  const matDesc = matMatch ? matMatch[1] : undefined;
-  const MAP: Record<string, number> = { V: 1, S: 2, M: 3 };
-  const components = compStr
-    .replace(/\([^)]*\)/g, "")
-    .split(",")
-    .map(s => MAP[s.trim().toUpperCase()])
-    .filter(Boolean) as number[];
-  return { components, ...(matDesc ? { componentsDescription: matDesc } : {}) };
+/** Return the provenance of the currently-loaded spell compendium, or null if not loaded. */
+export function getCompendiumSource(): CompendiumSource | null {
+  return compendiumSource;
 }
 
-// Spells extracted from character JSON (cantrips, Warlock choices, etc.)
-// These are chosen spells absent from always-known/prepared endpoints.
+/** Wipe the spell/items/reference cache and in-memory compendium state. */
+export function clearReferenceCache(): void {
+  referenceCache.clear();
+  spellCompendium = null;
+  compendiumSource = null;
+}
+
+// Spells extracted from character JSON (Warlock invocations, racial cantrip
+// grants, etc.) that may not appear in the per-class /game-data/spells lists.
 const characterSpellBuffer = new Map<string, DdbSpell>();
 
 async function loadSpellCompendium(): Promise<DdbSpell[]> {
@@ -257,25 +259,44 @@ async function loadSpellCompendium(): Promise<DdbSpell[]> {
 
   const cached = referenceCache.get("spell-compendium");
   if (cached) {
-    spellCompendium = JSON.parse(cached) as DdbSpell[];
+    const parsed = JSON.parse(cached) as CachedCompendium | DdbSpell[];
+    // Backward compatibility: pre-2.7.2 cache entries are bare DdbSpell arrays
+    // without a provenance wrapper. Treat them as "partial" so the next build
+    // (after the 24 h legacy TTL) gets fresh provenance tracking.
+    if (Array.isArray(parsed)) {
+      spellCompendium = parsed;
+      compendiumSource = "ddb-partial";
+    } else {
+      spellCompendium = parsed.spells;
+      compendiumSource = parsed.source;
+    }
     return spellCompendium;
   }
 
   const allSpells = new Map<string, DdbSpell>();
+  let failedTasks = 0;
 
-  // Build all 32 request combos (8 classes × 2 endpoints × 2 levels) and fire in parallel.
+  // One request per spellcasting class against the /game-data/spells endpoint
+  // at classLevel=20. This returns every spell (cantrips + levels 1–9) the
+  // class can know at max level — which is what we want for a compendium.
+  //
+  // Earlier versions of this code queried always-known-spells/always-prepared-
+  // spells at L1/L20, but those endpoints return *leveled spells only* — they
+  // explicitly exclude cantrips, so the previous compendium was always cantrip-
+  // empty and silently fell back to the Open5e SRD cantrip list. The /spells
+  // endpoint returns the full class spell list including cantrips, identified
+  // experimentally via scripts/diagnose-compendium.mjs.
+  //
   // JS is single-threaded so Map writes between await points are race-free.
-  const tasks = SPELLCASTING_CLASS_IDS.flatMap(classId =>
-    (["always-known-spells", "always-prepared-spells"] as const).flatMap(endpoint =>
-      ([1, 20] as const).map(level => ({ classId, endpoint, level }))
-    )
-  );
-  await Promise.all(tasks.map(async ({ classId, endpoint, level }) => {
+  const tasks = SPELLCASTING_CLASS_IDS.map(classId => ({ classId }));
+  await Promise.all(tasks.map(async ({ classId }) => {
     try {
-      // classLevel=1 gets auto-granted spells, classLevel=20 gets the full list
-      const url = `${CHARACTER_SERVICE}/character/v5/game-data/${endpoint}?classId=${classId}&classLevel=${level}&sharingSetting=2`;
+      const url = `${CHARACTER_SERVICE}/character/v5/game-data/spells?classId=${classId}&classLevel=20&sharingSetting=2`;
       const resp = await refFetch(url);
-      if (!resp.ok) return;
+      if (!resp.ok) {
+        failedTasks++;
+        return;
+      }
       const json = await resp.json() as { data?: DdbSpell[] } | DdbSpell[];
       const spells = (Array.isArray(json) ? json : json.data) ?? [];
       for (const spell of spells) {
@@ -286,46 +307,34 @@ async function loadSpellCompendium(): Promise<DdbSpell[]> {
       }
     } catch {
       // Continue — partial compendium is still useful
+      failedTasks++;
     }
   }));
 
   if (allSpells.size === 0) {
-    throw new Error("Failed to load spell compendium — all API requests failed. Check login status.");
+    // Deliberately don't cache this case — the catch in searchSpells/getSpell
+    // falls through to per-call Open5e, and the next call retries DDB fresh.
+    throw new Error(
+      "Failed to load spell compendium — all D&D Beyond requests failed. " +
+      "Run ddb_login if your session has expired. Falling back to SRD content for this call."
+    );
   }
 
-  // Merge character-sourced spells (cantrips, Warlock choices, etc.)
+  // Merge character-sourced spells (Warlock-style invocations, racial cantrip
+  // grants, etc.). The /game-data/spells endpoint covers the canonical class
+  // spell lists; characterSpellBuffer fills in anything else a character knows.
   for (const [name, spell] of characterSpellBuffer) {
     if (!allSpells.has(name)) allSpells.set(name, spell);
   }
 
-  // Supplement with SRD cantrips from Open5e (covers cold lookups before any character is loaded)
-  try {
-    const cantrips = await fetchO5Cantrips();
-    for (const c of cantrips) {
-      if (!allSpells.has(c.name)) {
-        const { components, componentsDescription } = parseO5Components(c.components);
-        allSpells.set(c.name, {
-          definition: {
-            name: c.name,
-            level: c.level_int,
-            school: c.school,
-            description: c.desc,
-            concentration: c.requires_concentration,
-            ritual: c.ritual === "yes",
-            activation: { activationTime: 1, activationType: 1 },
-            range: parseO5Range(c.range),
-            components,
-            ...(componentsDescription ? { componentsDescription } : {}),
-          },
-        });
-      }
-    }
-  } catch {
-    // Open5e down — proceed without SRD cantrips from this source
-  }
-
   spellCompendium = Array.from(allSpells.values());
-  referenceCache.set("spell-compendium", JSON.stringify(spellCompendium));
+  // If any DDB task failed, the compendium is missing one or more class spell
+  // lists. Short-TTL so the build is retried after ~5 min instead of being
+  // locked stale for 24 h.
+  compendiumSource = failedTasks === 0 ? "ddb-authoritative" : "ddb-partial";
+  const ttl = compendiumSource === "ddb-authoritative" ? AUTHORITATIVE_TTL_MS : FALLBACK_TTL_MS;
+  const cacheValue: CachedCompendium = { source: compendiumSource, spells: spellCompendium };
+  referenceCache.set("spell-compendium", JSON.stringify(cacheValue), ttl);
   return spellCompendium;
 }
 
@@ -358,7 +367,14 @@ export function addCharacterSpellsToCompendium(char: Record<string, unknown>): v
     for (const [name, spell] of characterSpellBuffer) {
       if (!existing.has(name)) spellCompendium.push(spell);
     }
-    referenceCache.set("spell-compendium", JSON.stringify(spellCompendium));
+    // Preserve provenance and use the matching TTL. If we somehow re-merge
+    // before the source was set (unlikely — the compendium can't be loaded
+    // without going through loadSpellCompendium), default to "ddb-partial"
+    // / short TTL to err on the side of retrying sooner.
+    const source = compendiumSource ?? "ddb-partial";
+    const ttl = source === "ddb-authoritative" ? AUTHORITATIVE_TTL_MS : FALLBACK_TTL_MS;
+    const cacheValue: CachedCompendium = { source, spells: spellCompendium };
+    referenceCache.set("spell-compendium", JSON.stringify(cacheValue), ttl);
   }
 }
 
@@ -475,7 +491,14 @@ export async function searchSpells(params: {
       ? `**Spell Search** — showing ${offset + 1}–${offset + page.length} of ${total}`
       : `**Spell Search** (${total} found)`;
 
-    const lines = [header + "\n"];
+    // When the compendium build was incomplete (one or more class-list
+    // requests failed), tell the caller so they can re-run `ddb_login` and
+    // `ddb_clear_cache` to retry.
+    const provenanceNote = compendiumSource === "ddb-partial"
+      ? "\n> ⚠ Compendium build was incomplete — one or more class spell-list requests to D&D Beyond failed, so spells from those classes may be missing. If you've just re-logged in, run `ddb_clear_cache` to retry.\n"
+      : "";
+
+    const lines = [header + "\n" + provenanceNote];
     for (const s of page) {
       const d = s.definition;
       const level = d.level === 0 ? "Cantrip" : `Level ${d.level}`;
