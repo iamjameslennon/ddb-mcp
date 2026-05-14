@@ -157,7 +157,7 @@ is meaningless if the diff covers multiple phases.
 
 | Phase | Extract | Why this phase | Approx lines moved | Risk | Status |
 |---|---|---|---|---|---|
-| 1 | `helpers.ts`, `templates.ts`, `types.ts` | No business logic — validates the import path / build setup. | ~80 | Trivial | [ ] |
+| 1 | `helpers.ts`, `templates.ts`, `types.ts` | No business logic — validates the import path / build setup. | ~80 | Trivial | [x] |
 | 2 | `core.ts` (`computeCoreStats`) | Establishes the shared-context pattern that everything else depends on. | ~80 | Low | [ ] |
 | 3 | `identity.ts`, `vitals.ts` | Two simple, independent domains validate the pattern works. | ~120 | Low | [ ] |
 | 4 | `ac.ts` | Highest single-function complexity. Biggest test win — fixes [character.ts:351 TODO](../src/tools/character.ts#L351). | ~80 | Medium | [ ] |

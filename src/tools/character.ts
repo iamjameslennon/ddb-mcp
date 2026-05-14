@@ -5,6 +5,12 @@ import { stripHtml as stripHtmlFull } from "../utils.js";
 import { writeFileSync, mkdirSync } from "fs";
 import { join, resolve, relative, basename, dirname, isAbsolute } from "path";
 import { homedir } from "os";
+import type { CharData, ParseSection } from "./character/types.js";
+import {
+  str, num, arr, obj, signed, modOf, capitalize, hasTag, stripHtml,
+  statNames, statKeys,
+} from "./character/helpers.js";
+import { makeResolveTemplates } from "./character/templates.js";
 
 // Cache character JSON to avoid redundant API calls within a session.
 // TTL is configurable via DDB_CHARACTER_CACHE_TTL (seconds); default 60 s.
@@ -82,27 +88,17 @@ export async function findCharacterByName(name: string): Promise<{ id: string; n
 }
 
 export function parseCharacterData(
-  raw: Record<string, unknown>,
-  sections: "summary" | "combat" | "spells" | "inventory" | "features" | "concentration" | "notes" | "full" = "full"
+  raw: CharData,
+  sections: ParseSection = "full"
 ): string {
-  const char = (raw?.data ?? raw) as Record<string, unknown>;
+  const char = (raw?.data ?? raw) as CharData;
 
   // Supplement spell compendium with this character's chosen spells (cantrips etc.)
   addCharacterSpellsToCompendium(char);
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
-  const str = (v: unknown) => (v != null ? String(v) : "");
-  const num = (v: unknown) => (typeof v === "number" ? v : 0);
-  const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
-  const obj = (v: unknown): Record<string, unknown> =>
-    v != null && typeof v === "object" && !Array.isArray(v)
-      ? (v as Record<string, unknown>) : {};
-  const signed = (n: number) => n >= 0 ? `+${n}` : `${n}`;
-  const modOf = (score: number) => Math.floor((score - 10) / 2);
-  const hasTag = (feat: Record<string, unknown>, tag: string): boolean =>
-    arr<Record<string, unknown>>(obj(feat.definition).categories).some(c => c.tagName === tag);
-  const stripHtml = (s: string) => s.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
-  const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+  // Helpers (str/num/arr/obj/signed/modOf/hasTag/stripHtml/capitalize) are
+  // imported from ./character/helpers.js. statNames/statKeys also imported.
+  // resolveTemplates is built below once profBonus and totalLevel are known.
 
   // Flatten every modifier category — Object.values captures subclass and any future categories
   // that the old hardcoded list missed (e.g. subclass modifiers like Remarkable Athlete).
@@ -159,8 +155,7 @@ export function parseCharacterData(
   const xp = num(char.currentXp);
 
   // ── Ability Scores ────────────────────────────────────────────────────────
-  const statNames = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
-  const statKeys = ["strength","dexterity","constitution","intelligence","wisdom","charisma"];
+  // statNames / statKeys imported from ./character/helpers.js
   const baseStats = arr<Record<string, unknown>>(char.stats);
   const bonusStats = arr<Record<string, unknown>>(char.bonusStats);
   const overrideStats = arr<Record<string, unknown>>(char.overrideStats);
@@ -202,37 +197,8 @@ export function parseCharacterData(
   const profBonus = Math.floor((totalLevel - 1) / 4) + 2;
 
   // ── Template resolver ─────────────────────────────────────────────────────
-  const resolveTemplates = (text: string, classLevel?: number): string => {
-    const vars: Record<string, number> = {
-      proficiency: profBonus,
-      level: totalLevel,
-      characterlevel: totalLevel,
-      classlevel: classLevel ?? totalLevel,
-    };
-    return text.replace(/\{\{([^}]+)\}\}/g, (_match, expr: string) => {
-      const [rawExpr, modifier] = expr.split("#") as [string, string | undefined];
-      const opMatch = rawExpr.match(/^(\w+)\s*([*+\-/])\s*(\d+(?:\.\d+)?)$/);
-      let value: number | null = null;
-      if (opMatch) {
-        const [, varName, op, numStr] = opMatch;
-        const base = vars[varName] ?? null;
-        const n = parseFloat(numStr);
-        if (base !== null) {
-          if (op === "*") value = base * n;
-          else if (op === "+") value = base + n;
-          else if (op === "-") value = base - n;
-          else if (op === "/") value = Math.floor(base / n);
-        }
-      } else if (vars[rawExpr] !== undefined) {
-        value = vars[rawExpr];
-      }
-      if (value === null) return "?";
-      const rounded = Math.floor(value);
-      if (modifier === "signed") return rounded >= 0 ? `+${rounded}` : `${rounded}`;
-      if (modifier === "unsigned") return String(Math.max(0, rounded));
-      return String(rounded);
-    });
-  };
+  // makeResolveTemplates imported from ./character/templates.js
+  const resolveTemplates = makeResolveTemplates(profBonus, totalLevel);
 
   // ── Hit Points ────────────────────────────────────────────────────────────
   // baseHitPoints does NOT include the CON modifier — must add conMod × level.
@@ -1095,7 +1061,7 @@ export function parseCharacterData(
 
 export async function parseCharacter(
   characterId: string,
-  sections: "summary" | "combat" | "spells" | "inventory" | "features" | "concentration" | "notes" | "full" = "full"
+  sections: ParseSection = "full"
 ): Promise<string> {
   const jsonData = await getCharacter(characterId);
   const raw = JSON.parse(jsonData) as Record<string, unknown>;
