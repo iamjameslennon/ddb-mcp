@@ -1,0 +1,313 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`parseCharacterData snapshots > ARCANE_TRICKSTER_9 — full output 1`] = `
+"═══════════════════════════════════════
+  Lyra
+  Human | Rogue (Arcane Trickster) 9 | Level 9
+  Background: Criminal | XP: 0
+  Inspiration: No
+═══════════════════════════════════════
+
+HP: 63/63   Temp HP: —   Prof Bonus: +4
+Hit Dice: 9d8 (9 remaining)
+AC: 12   Initiative: +2   Speed: 30 ft.
+Death Saves: Successes 0/3   Failures 0/3
+
+ABILITY SCORES
+  STR 10 (+0)  DEX 14 (+2)  CON 12 (+1)  INT 16 (+3)  WIS 10 (+0)  CHA 8 (-1)
+
+SAVING THROWS
+  STR +0   DEX +2   CON +1   INT +3   WIS +0   CHA -1
+  (* proficient)
+
+SKILLS
+  Acrobatics (DEX)       +2
+  Animal Handling (WIS)  +0
+  Arcana (INT)           +3
+  Athletics (STR)        +0
+  Deception (CHA)        -1
+  History (INT)          +3
+  Insight (WIS)          +0
+  Intimidation (CHA)     -1
+  Investigation (INT)    +3
+  Medicine (WIS)         +0
+  Nature (INT)           +3
+  Perception (WIS)       +0
+  Performance (CHA)      -1
+  Persuasion (CHA)       -1
+  Religion (INT)         +3
+  Sleight of Hand (DEX)  +2
+  Stealth (DEX)          +2
+  Survival (WIS)         +0
+  (* proficient, ** expertise)
+
+SENSES
+  Passive Perception: 10   Passive Investigation: 13   Passive Insight: 10
+
+PROFICIENCIES & TRAINING
+  Armor: None
+  Weapons: None
+  Tools: None
+  Languages: None
+
+DEFENSES
+  Resistances: (none)
+  Immunities: (none)
+  Vulnerabilities: (none)
+CONDITIONS: (none)
+
+FEATS (0)
+  (none)
+
+CLASS FEATURES
+
+RACIAL TRAITS
+
+ACTIONS
+  (none)
+
+BONUS ACTIONS
+  (none)
+
+REACTIONS
+• Opportunity Attack
+
+SPELLCASTING
+  Rogue (Arcane Trickster): INT  Spell Attack: +7  Save DC: 15
+
+SPELL SLOTS
+  Level 1: 2/2
+
+ATTUNEMENT: 0/3 slots used
+
+CURRENCY: none
+No notes or backstory have been recorded for this character."
+`;
+
+exports[`parseCharacterData snapshots > ARCANE_TRICKSTER_9 — spells section only 1`] = `
+"═══════════════════════════════════════
+  Lyra
+  Human | Rogue (Arcane Trickster) 9 | Level 9
+  Background: Criminal | XP: 0
+  Inspiration: No
+═══════════════════════════════════════
+
+SPELLCASTING
+  Rogue (Arcane Trickster): INT  Spell Attack: +7  Save DC: 15
+
+SPELL SLOTS
+  Level 1: 2/2
+"
+`;
+
+exports[`parseCharacterData snapshots > FIGHTER_5 — full output 1`] = `
+"═══════════════════════════════════════
+  Thorin
+  Mountain Dwarf | Fighter 5 | Level 5
+  Background: Soldier | XP: 6500
+  Inspiration: No
+═══════════════════════════════════════
+
+HP: 44/49   Temp HP: —   Prof Bonus: +3
+Hit Dice: 5d10 (4 remaining)
+AC: 11   Initiative: +1   Speed: 25 ft.
+Death Saves: Successes 0/3   Failures 0/3
+
+ABILITY SCORES
+  STR 16 (+3)  DEX 12 (+1)  CON 14 (+2)  INT 10 (+0)  WIS 13 (+1)  CHA 8 (-1)
+
+SAVING THROWS
+  STR +6*   DEX +1   CON +5*   INT +0   WIS +1   CHA -1
+  (* proficient)
+
+SKILLS
+  Acrobatics (DEX)       +1
+  Animal Handling (WIS)  +1
+  Arcana (INT)           +0
+  Athletics (STR)        +6 *
+  Deception (CHA)        -1
+  History (INT)          +0
+  Insight (WIS)          +1
+  Intimidation (CHA)     -1
+  Investigation (INT)    +0
+  Medicine (WIS)         +1
+  Nature (INT)           +0
+  Perception (WIS)       +1
+  Performance (CHA)      -1
+  Persuasion (CHA)       -1
+  Religion (INT)         +0
+  Sleight of Hand (DEX)  +1
+  Stealth (DEX)          +1
+  Survival (WIS)         +1
+  (* proficient, ** expertise)
+
+SENSES
+  Passive Perception: 11   Passive Investigation: 10   Passive Insight: 11
+
+PROFICIENCIES & TRAINING
+  Armor: None
+  Weapons: None
+  Tools: None
+  Languages: None
+
+DEFENSES
+  Resistances: (none)
+  Immunities: (none)
+  Vulnerabilities: (none)
+CONDITIONS: (none)
+
+FEATS (1)
+• Great Weapon Master: On a critical hit or kill, make a bonus attack.
+
+OTHER FEATURES (stored as feats in API but NOT player-chosen feats)
+• Action Surge
+
+CLASS FEATURES
+
+RACIAL TRAITS
+
+ACTIONS
+  (none)
+
+BONUS ACTIONS
+  (none)
+
+REACTIONS
+• Opportunity Attack
+
+ATTUNEMENT: 0/3 slots used
+
+CURRENCY: 15gp, 20sp
+No notes or backstory have been recorded for this character."
+`;
+
+exports[`parseCharacterData snapshots > FIGHTER_5 — summary section only 1`] = `
+"═══════════════════════════════════════
+  Thorin
+  Mountain Dwarf | Fighter 5 | Level 5
+  Background: Soldier | XP: 6500
+  Inspiration: No
+═══════════════════════════════════════
+
+HP: 44/49   Temp HP: —   Prof Bonus: +3
+Hit Dice: 5d10 (4 remaining)
+AC: 11   Initiative: +1   Speed: 25 ft.
+Death Saves: Successes 0/3   Failures 0/3
+
+ABILITY SCORES
+  STR 16 (+3)  DEX 12 (+1)  CON 14 (+2)  INT 10 (+0)  WIS 13 (+1)  CHA 8 (-1)
+
+SAVING THROWS
+  STR +6*   DEX +1   CON +5*   INT +0   WIS +1   CHA -1
+  (* proficient)
+
+SKILLS
+  Acrobatics (DEX)       +1
+  Animal Handling (WIS)  +1
+  Arcana (INT)           +0
+  Athletics (STR)        +6 *
+  Deception (CHA)        -1
+  History (INT)          +0
+  Insight (WIS)          +1
+  Intimidation (CHA)     -1
+  Investigation (INT)    +0
+  Medicine (WIS)         +1
+  Nature (INT)           +0
+  Perception (WIS)       +1
+  Performance (CHA)      -1
+  Persuasion (CHA)       -1
+  Religion (INT)         +0
+  Sleight of Hand (DEX)  +1
+  Stealth (DEX)          +1
+  Survival (WIS)         +1
+  (* proficient, ** expertise)
+
+SENSES
+  Passive Perception: 11   Passive Investigation: 10   Passive Insight: 11
+
+PROFICIENCIES & TRAINING
+  Armor: None
+  Weapons: None
+  Tools: None
+  Languages: None
+"
+`;
+
+exports[`parseCharacterData snapshots > MONK_3_HANDAXE — full output 1`] = `
+"═══════════════════════════════════════
+  Sienna
+  Wood Elf | Monk 3 | Level 3
+  Background: Outlander | XP: 900
+  Inspiration: No
+═══════════════════════════════════════
+
+HP: 30/30   Temp HP: —   Prof Bonus: +2
+Hit Dice: 3d8 (3 remaining)
+AC: 13   Initiative: +3   Speed: 35 ft.
+Death Saves: Successes 0/3   Failures 0/3
+
+ABILITY SCORES
+  STR 10 (+0)  DEX 16 (+3)  CON 14 (+2)  INT 10 (+0)  WIS 14 (+2)  CHA 8 (-1)
+
+SAVING THROWS
+  STR +0   DEX +3   CON +2   INT +0   WIS +2   CHA -1
+  (* proficient)
+
+SKILLS
+  Acrobatics (DEX)       +3
+  Animal Handling (WIS)  +2
+  Arcana (INT)           +0
+  Athletics (STR)        +0
+  Deception (CHA)        -1
+  History (INT)          +0
+  Insight (WIS)          +2
+  Intimidation (CHA)     -1
+  Investigation (INT)    +0
+  Medicine (WIS)         +2
+  Nature (INT)           +0
+  Perception (WIS)       +2
+  Performance (CHA)      -1
+  Persuasion (CHA)       -1
+  Religion (INT)         +0
+  Sleight of Hand (DEX)  +3
+  Stealth (DEX)          +3
+  Survival (WIS)         +2
+  (* proficient, ** expertise)
+
+SENSES
+  Passive Perception: 12   Passive Investigation: 10   Passive Insight: 12
+
+PROFICIENCIES & TRAINING
+  Armor: None
+  Weapons: Simple Weapons
+  Tools: None
+  Languages: None
+
+DEFENSES
+  Resistances: (none)
+  Immunities: (none)
+  Vulnerabilities: (none)
+CONDITIONS: (none)
+
+FEATS (0)
+  (none)
+
+CLASS FEATURES
+• Martial Arts (Monk 1)
+
+RACIAL TRAITS
+
+ACTIONS
+• Handaxe          +5 to hit   1d6+3 slashing   reach 5 ft.   Light, Thrown
+
+BONUS ACTIONS
+  (none)
+
+REACTIONS
+• Opportunity Attack
+
+ATTUNEMENT: 0/3 slots used
+
+CURRENCY: 10gp
+No notes or backstory have been recorded for this character."
+`;

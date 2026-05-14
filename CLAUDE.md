@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **In-flight refactor:** `src/tools/character.ts` is mid-carve-up — see [docs/character-refactor.md](docs/character-refactor.md) before modifying. Do not skip the snapshot regression layers when changing this file.
+
 ## Commands
 
 ```bash
