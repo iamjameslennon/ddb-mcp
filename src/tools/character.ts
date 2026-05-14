@@ -7,10 +7,10 @@ import { join, resolve, relative, basename, dirname, isAbsolute } from "path";
 import { homedir } from "os";
 import type { CharData, ParseSection } from "./character/types.js";
 import {
-  str, num, arr, obj, signed, modOf, capitalize, hasTag, stripHtml,
+  str, num, arr, obj, signed, capitalize, hasTag, stripHtml,
   statNames, statKeys,
 } from "./character/helpers.js";
-import { makeResolveTemplates } from "./character/templates.js";
+import { computeCoreStats } from "./character/core.js";
 
 // Cache character JSON to avoid redundant API calls within a session.
 // TTL is configurable via DDB_CHARACTER_CACHE_TTL (seconds); default 60 s.
@@ -96,14 +96,16 @@ export function parseCharacterData(
   // Supplement spell compendium with this character's chosen spells (cantrips etc.)
   addCharacterSpellsToCompendium(char);
 
-  // Helpers (str/num/arr/obj/signed/modOf/hasTag/stripHtml/capitalize) are
+  // Helpers (str/num/arr/obj/signed/hasTag/stripHtml/capitalize) are
   // imported from ./character/helpers.js. statNames/statKeys also imported.
-  // resolveTemplates is built below once profBonus and totalLevel are known.
-
-  // Flatten every modifier category — Object.values captures subclass and any future categories
-  // that the old hardcoded list missed (e.g. subclass modifiers like Remarkable Athlete).
-  const allMods = Object.values(obj(char.modifiers) as Record<string, unknown>)
-    .flatMap(src => arr<Record<string, unknown>>(src));
+  //
+  // computeCoreStats produces every value used across multiple sections:
+  // allMods, classes, totalLevel, profBonus, statTotals, statMods, inventory,
+  // resolveTemplates. Phase 2 of the refactor (see docs/character-refactor.md).
+  const {
+    allMods, classes, totalLevel, profBonus,
+    statTotals, statMods, inventory, resolveTemplates,
+  } = computeCoreStats(char);
 
   // ── Identity ──────────────────────────────────────────────────────────────
   const charName = str(char.name);
@@ -143,62 +145,19 @@ export function parseCharacterData(
     if (base.toLowerCase().includes(variant.toLowerCase())) return base;
     return `${base} (${variant})`;
   })();
-  const classes = arr<Record<string, unknown>>(char.classes);
+  // classes / totalLevel come from computeCoreStats above.
   const classLine = classes.map(c => {
     const def = obj(c.definition);
     const sub = obj(c.subclassDefinition);
     const lvl = num(c.level);
     return sub.name ? `${def.name} (${sub.name}) ${lvl}` : `${def.name} ${lvl}`;
   }).join(" / ");
-  const totalLevel = classes.reduce((s, c) => s + num(c.level), 0);
   const background = str(obj(obj(char.background).definition).name);
   const xp = num(char.currentXp);
 
   // ── Ability Scores ────────────────────────────────────────────────────────
-  // statNames / statKeys imported from ./character/helpers.js
-  const baseStats = arr<Record<string, unknown>>(char.stats);
-  const bonusStats = arr<Record<string, unknown>>(char.bonusStats);
-  const overrideStats = arr<Record<string, unknown>>(char.overrideStats);
-
-  const scoreBonuses: Record<number, number> = {};
-  for (const m of allMods) {
-    if (m.type === "bonus" && typeof m.subType === "string" && m.subType.endsWith("-score")) {
-      const idx = statKeys.indexOf(m.subType.replace("-score", ""));
-      if (idx >= 0) scoreBonuses[idx + 1] = (scoreBonuses[idx + 1] ?? 0) + num(m.fixedValue);
-    }
-  }
-
-  const scoreSetValues: Record<number, number> = {};
-  for (const m of allMods) {
-    if (m.type === "set" && typeof m.subType === "string" && m.subType.endsWith("-score")) {
-      const idx = statKeys.indexOf(m.subType.replace("-score", ""));
-      if (idx >= 0) {
-        const setVal = num(m.fixedValue ?? m.value);
-        if (setVal > 0) scoreSetValues[idx + 1] = Math.max(scoreSetValues[idx + 1] ?? 0, setVal);
-      }
-    }
-  }
-
-  const statTotals = statNames.map((_, i) => {
-    const id = i + 1;
-    const base = baseStats.find(s => num(s.id) === id);
-    const bonus = bonusStats.find(s => num(s.id) === id);
-    const override = overrideStats.find(s => num(s.id) === id);
-    const baseVal = num(base?.value ?? 0);
-    const bonusVal = num(bonus?.value ?? 0);
-    const overrideVal = override?.value != null ? num(override.value) : null;
-    const calculated = overrideVal != null ? overrideVal : baseVal + bonusVal + (scoreBonuses[id] ?? 0);
-    return scoreSetValues[id] != null ? Math.max(calculated, scoreSetValues[id]) : calculated;
-  });
-  const statMods = statTotals.map(modOf);
+  // statTotals / statMods / profBonus / resolveTemplates come from computeCoreStats above.
   const abilityScoreDisplay = statNames.map((n, i) => `${n} ${statTotals[i]} (${signed(statMods[i])})`);
-
-  // ── Proficiency Bonus ─────────────────────────────────────────────────────
-  const profBonus = Math.floor((totalLevel - 1) / 4) + 2;
-
-  // ── Template resolver ─────────────────────────────────────────────────────
-  // makeResolveTemplates imported from ./character/templates.js
-  const resolveTemplates = makeResolveTemplates(profBonus, totalLevel);
 
   // ── Hit Points ────────────────────────────────────────────────────────────
   // baseHitPoints does NOT include the CON modifier — must add conMod × level.
@@ -276,7 +235,7 @@ export function parseCharacterData(
 
   // ── Armor Class ───────────────────────────────────────────────────────────
   // armorTypeId: 1=light, 2=medium, 3=heavy, 4=shield
-  const inventory = arr<Record<string, unknown>>(char.inventory);
+  // inventory comes from computeCoreStats above.
   const equippedArmorPieces = inventory.filter(i =>
     i.equipped === true && str(obj(i.definition).filterType) === "Armor"
   );
