@@ -132,7 +132,7 @@ server.tool(
   "ddb_get_character_raw",
   "Returns raw 300–500 KB character JSON. Requires confirm_large_response: true. Use ddb_get_character instead for all normal use. Requires login — run ddb_login first if you haven't already.",
   {
-    character_id: z.string().min(1).optional().describe("The D&D Beyond character ID (e.g. '12345678')"),
+    character_id: z.string().regex(/^\d+$/, "character_id must be numeric (e.g. '12345678')").optional().describe("The D&D Beyond character ID (e.g. '12345678')"),
     character_name: z.string().min(1).optional().describe("Character name to look up (fuzzy matched against your account)"),
     confirm_large_response: z.literal(true).describe("Must be true to proceed — acknowledges this call returns 300–500 KB."),
   },
@@ -164,7 +164,7 @@ server.tool(
   "ddb_download_character",
   "Download a character's full JSON data to a local file. Requires login — run ddb_login first if you haven't already.",
   {
-    character_id: z.string().min(1).describe("The D&D Beyond character ID"),
+    character_id: z.string().regex(/^\d+$/, "character_id must be numeric").describe("The D&D Beyond character ID"),
     output_path: z
       .string()
       .optional()
@@ -188,7 +188,7 @@ server.tool(
   "ddb_get_character",
   "Parse and display a character sheet. Use sections to reduce output: summary (vitals+stats), combat (adds actions/weapons), spells (spellcasting only), inventory, features, concentration, notes (backstory, traits, bonds), or full (default). Requires login — run ddb_login first if you haven't already.",
   {
-    character_id: z.string().min(1).optional().describe("The D&D Beyond character ID (e.g. '12345678')"),
+    character_id: z.string().regex(/^\d+$/, "character_id must be numeric (e.g. '12345678')").optional().describe("The D&D Beyond character ID (e.g. '12345678')"),
     character_name: z.string().min(1).optional().describe("Character name to look up (fuzzy matched — e.g. 'Throin' finds 'Thorin Ironforge')"),
     sections: z.enum(["summary", "combat", "spells", "inventory", "features", "concentration", "notes", "full"])
       .default("full")
@@ -222,7 +222,7 @@ server.tool(
   "ddb_character_lookup",
   "Look up the full description of a spell, feat, class feature, subclass feature, racial trait, background feature, or equipped item by name. Supports partial and fuzzy name matching (e.g. 'cutting' finds Cutting Words, 'sheild' finds Shield). Accepts either a numeric character_id or a character_name. Requires login — run ddb_login first if you haven't already.",
   {
-    character_id: z.string().min(1).optional().describe("The D&D Beyond character ID"),
+    character_id: z.string().regex(/^\d+$/, "character_id must be numeric").optional().describe("The D&D Beyond character ID"),
     character_name: z.string().min(1).optional().describe("Character name (fuzzy matched against your account)"),
     name: z.string().min(1).describe("Name to search for — partial match, e.g. 'hunter' finds Hunter's Mark"),
   },
@@ -295,7 +295,7 @@ server.tool(
   "ddb_get_campaign",
   "Fetch campaign information including player characters from a D&D Beyond campaign. Requires login — run ddb_login first if you haven't already.",
   {
-    campaign_id: z.string().min(1).describe("The D&D Beyond campaign ID (found in the campaign URL)"),
+    campaign_id: z.string().regex(/^\d+$/, "campaign_id must be numeric").describe("The D&D Beyond campaign ID (found in the campaign URL)"),
   },
   async ({ campaign_id }) => {
     try {
@@ -331,7 +331,7 @@ server.tool(
   "ddb_get_party",
   "Fetch a compact summary of every character in a campaign. Returns HP, AC, initiative, passive scores, ability scores, and skills for the whole party in one call. Requires login — run ddb_login first if you haven't already.",
   {
-    campaign_id: z.string().min(1).describe("The D&D Beyond campaign ID (found in the campaign URL)"),
+    campaign_id: z.string().regex(/^\d+$/, "campaign_id must be numeric").describe("The D&D Beyond campaign ID (found in the campaign URL)"),
   },
   async ({ campaign_id }) => {
     try {
@@ -487,6 +487,10 @@ server.tool(
     book_slug: z
       .string()
       .min(1)
+      .refine(
+        (s) => !s.includes("/") || /^[a-z0-9][a-z0-9\-/]*$/.test(s),
+        "book_slug containing '/' must be lowercase letters, digits, hyphens, and forward slashes only — e.g. 'dnd/phb-2024'",
+      )
       .describe("Book slug (e.g. 'dnd/phb-2024') or plain title (e.g. \"Player's Handbook\", \"monster manual\"). Slugs must contain '/'; titles are fuzzy-matched against your library."),
     chapter_slug: z
       .string()

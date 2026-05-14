@@ -94,8 +94,12 @@ export async function readBook(
   // Resolve plain title → slug (passthrough if input already contains "/")
   const resolvedSlug = await resolveBookSlug(context, bookSlug);
 
-  let url = `https://www.dndbeyond.com/sources/${resolvedSlug}`;
-  if (chapterSlug) url += `/${chapterSlug}`;
+  // Encode per path segment so legitimate slug separators (e.g. 'dnd/phb-2024')
+  // are preserved while any other character is percent-encoded. Defense in depth
+  // — the Zod schema already restricts slug shape.
+  const encodePath = (s: string) => s.split("/").map(encodeURIComponent).join("/");
+  let url = `https://www.dndbeyond.com/sources/${encodePath(resolvedSlug)}`;
+  if (chapterSlug) url += `/${encodePath(chapterSlug)}`;
 
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
   // Wait for content to render (DDB uses heavy JS rendering)

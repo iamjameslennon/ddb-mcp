@@ -76,7 +76,7 @@ export async function getCampaign(campaignId: string): Promise<string> {
     );
   }
 
-  const resp = await campaignFetch(`${CAMPAIGN_API}/active-short-characters/${campaignId}`);
+  const resp = await campaignFetch(`${CAMPAIGN_API}/active-short-characters/${encodeURIComponent(campaignId)}`);
   if (!resp.ok) throw new Error(`Characters API returned ${resp.status}`);
   assertJson(resp);
   type CharEntry = { id: number; name: string; userName: string; characterStatus: string };

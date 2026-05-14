@@ -1113,7 +1113,7 @@ export async function getCharacter(
   const cached = characterCache.get(cacheKey);
   if (cached !== undefined) return cached;
 
-  const url = `https://character-service.dndbeyond.com/character/v5/character/${characterId}?includeCustomItems=true`;
+  const url = `https://character-service.dndbeyond.com/character/v5/character/${encodeURIComponent(characterId)}?includeCustomItems=true`;
 
   // Public characters work without auth. Use session cookies if available so
   // private/campaign-only characters owned by the logged-in user also work.
