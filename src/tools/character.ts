@@ -7,7 +7,7 @@ import { join, resolve, relative, basename, dirname, isAbsolute } from "path";
 import { homedir } from "os";
 import type { CharData, ParseSection } from "./character/types.js";
 import {
-  str, num, arr, obj, signed, capitalize, hasTag, stripHtml,
+  str, num, arr, obj, signed, hasTag, stripHtml,
   statNames,
 } from "./character/helpers.js";
 import { computeCoreStats } from "./character/core.js";
@@ -15,6 +15,7 @@ import { computeIdentity, formatHeaderBlock } from "./character/identity.js";
 import { computeVitals, formatVitalsBlock } from "./character/vitals.js";
 import { computeAc } from "./character/ac.js";
 import { computeStats, formatStatsBlock } from "./character/stats.js";
+import { computeDefenses, formatDefensesBlock } from "./character/defenses.js";
 
 // Cache character JSON to avoid redundant API calls within a session.
 // TTL is configurable via DDB_CHARACTER_CACHE_TTL (seconds); default 60 s.
@@ -100,8 +101,8 @@ export function parseCharacterData(
   // Supplement spell compendium with this character's chosen spells (cantrips etc.)
   addCharacterSpellsToCompendium(char);
 
-  // Helpers (str/num/arr/obj/signed/hasTag/stripHtml/capitalize) and
-  // statNames are imported from ./character/helpers.js.
+  // Helpers (str/num/arr/obj/signed/hasTag/stripHtml) and statNames are
+  // imported from ./character/helpers.js.
   //
   // computeCoreStats produces every value used across multiple sections.
   // We keep both `core` (for passing whole to per-domain modules) and the
@@ -133,10 +134,8 @@ export function parseCharacterData(
   const stats = computeStats(core);
 
   // ── Defenses & Conditions ─────────────────────────────────────────────────
-  const resistances = [...new Set(allMods.filter(m => m.type === "resistance").map(m => capitalize(str(m.subType))))];
-  const immunities = [...new Set(allMods.filter(m => m.type === "immunity").map(m => capitalize(str(m.subType))))];
-  const vulnerabilities = [...new Set(allMods.filter(m => m.type === "vulnerability").map(m => capitalize(str(m.subType))))];
-  const conditions = arr<Record<string, unknown>>(char.conditions).map(c => str(c.id));
+  // Computed in ./character/defenses.js (Phase 5b of the refactor).
+  const defenses = computeDefenses(core);
 
   // ── Feats ─────────────────────────────────────────────────────────────────
   // DDB stores some non-feat entries in the feats array.
@@ -505,14 +504,7 @@ export function parseCharacterData(
 
   const statsBlock = formatStatsBlock(stats);
 
-  const defensesBlock: string[] = [
-    `DEFENSES`,
-    `  Resistances: ${resistances.length ? resistances.join(", ") : "(none)"}`,
-    `  Immunities: ${immunities.length ? immunities.join(", ") : "(none)"}`,
-    `  Vulnerabilities: ${vulnerabilities.length ? vulnerabilities.join(", ") : "(none)"}`,
-    `CONDITIONS: ${conditions.length ? conditions.join(", ") : "(none)"}`,
-    ``,
-  ];
+  const defensesBlock = formatDefensesBlock(defenses);
 
   const featuresBlock: string[] = [
     `FEATS (${realFeats.length})`,
