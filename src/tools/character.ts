@@ -1,15 +1,12 @@
 import { sessionFetch, hasValidSession, getCobaltToken } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
-import { addCharacterSpellsToCompendium, isConcentrationSpell } from "./reference.js";
+import { addCharacterSpellsToCompendium } from "./reference.js";
 import { stripHtml as stripHtmlFull } from "../utils.js";
 import { writeFileSync, mkdirSync } from "fs";
 import { join, resolve, relative, basename, dirname, isAbsolute } from "path";
 import { homedir } from "os";
 import type { CharData, ParseSection } from "./character/types.js";
-import {
-  str, num, arr, obj, signed,
-  statNames,
-} from "./character/helpers.js";
+import { str, num, obj } from "./character/helpers.js";
 import { computeCoreStats } from "./character/core.js";
 import { computeIdentity, formatHeaderBlock } from "./character/identity.js";
 import { computeVitals, formatVitalsBlock } from "./character/vitals.js";
@@ -18,6 +15,7 @@ import { computeStats, formatStatsBlock } from "./character/stats.js";
 import { computeDefenses, formatDefensesBlock } from "./character/defenses.js";
 import { computeFeatures, formatFeaturesBlock } from "./character/features.js";
 import { computeActions, formatCombatBlock } from "./character/actions.js";
+import { computeSpells, formatSpellsBlock, formatConcentrationBlock } from "./character/spells.js";
 
 // Cache character JSON to avoid redundant API calls within a session.
 // TTL is configurable via DDB_CHARACTER_CACHE_TTL (seconds); default 60 s.
@@ -103,17 +101,13 @@ export function parseCharacterData(
   // Supplement spell compendium with this character's chosen spells (cantrips etc.)
   addCharacterSpellsToCompendium(char);
 
-  // Helpers (str/num/arr/obj/signed) and statNames are imported from
-  // ./character/helpers.js.
+  // Helpers (str/num/obj) are imported from ./character/helpers.js.
   //
   // computeCoreStats produces every value used across multiple sections.
   // We keep both `core` (for passing whole to per-domain modules) and the
   // destructured locals (for inline use further down). Phase 2 of the refactor.
   const core = computeCoreStats(char);
-  const {
-    classes, profBonus,
-    statMods, inventory,
-  } = core;
+  const { profBonus, inventory } = core;
 
   // ── Identity & Vitals ─────────────────────────────────────────────────────
   // Computed in ./character/identity.js and ./character/vitals.js (Phase 3 of the refactor).
@@ -144,143 +138,9 @@ export function parseCharacterData(
   // internally calls ./character/weapons.js (Phase 6a).
   const actions = computeActions(core);
 
-  // ── Spellcasting ──────────────────────────────────────────────────────────
-  // spellCastingAbilityId: 1=STR 2=DEX 3=CON 4=INT 5=WIS 6=CHA
-  const spellcastingLines: string[] = [];
-  for (const c of classes) {
-    const def = obj(c.definition);
-    const subDef = obj(c.subclassDefinition);
-    const classCasts = def.canCastSpells === true;
-    const subclassCasts = subDef.canCastSpells === true;
-    if (!classCasts && !subclassCasts) continue;
-    const abilityId = num(classCasts ? def.spellCastingAbilityId : subDef.spellCastingAbilityId);
-    if (!abilityId) continue;
-    const className = classCasts ? str(def.name) : `${str(def.name)} (${str(subDef.name)})`;
-    const abilityMod = statMods[abilityId - 1];
-    const spellAttack = abilityMod + profBonus;
-    const saveDc = 8 + abilityMod + profBonus;
-    spellcastingLines.push(
-      `  ${className}: ${statNames[abilityId - 1]}  Spell Attack: ${signed(spellAttack)}  Save DC: ${saveDc}`
-    );
-  }
-
-  // ── Spell Slots ───────────────────────────────────────────────────────────
-  // char.spellSlots only tracks used counts; max slots come from the class's
-  // levelSpellSlots progression table: levelSpellSlots[classLevel][slotLevel-1]
-  const spellSlotUsed: Record<number, number> = {};
-  for (const s of arr<Record<string, unknown>>(char.spellSlots)) {
-    spellSlotUsed[num(s.level)] = num(s.used);
-  }
-  const slotMax: Record<number, number> = {};
-  for (const c of classes) {
-    // Only compute slots for classes/subclasses that actually grant spellcasting.
-    // Non-spellcasting base classes (Barbarian, Rogue, Monk, etc.) have canCastSpells: false
-    // but still carry non-empty levelSpellSlots tables — skip those.
-    // Spellcasting subclasses (Arcane Trickster, Eldritch Knight) set canCastSpells on
-    // the subclassDefinition instead, so check both.
-    const classCasts = obj(c.definition).canCastSpells === true;
-    const subclassCasts = obj(c.subclassDefinition).canCastSpells === true;
-    if (!classCasts && !subclassCasts) continue;
-    const spellRules = obj(obj(c.definition).spellRules);
-    const rawTable = spellRules.levelSpellSlots;
-    const table: number[][] = Array.isArray(rawTable) ? rawTable as number[][] : [];
-    const lvl = num(c.level);
-    const row = table[lvl] ?? [];
-    for (let i = 0; i < row.length; i++) {
-      if (row[i] > 0) slotMax[i + 1] = (slotMax[i + 1] ?? 0) + row[i];
-    }
-  }
-  const slotLines = Object.entries(slotMax)
-    .sort(([a], [b]) => Number(a) - Number(b))
-    .map(([lvl, max]) => {
-      const used = spellSlotUsed[Number(lvl)] ?? 0;
-      return `  Level ${lvl}: ${max - used}/${max}`;
-    });
-
-  // ── Spells ────────────────────────────────────────────────────────────────
-  const spellSections: string[] = [];
-  const classSpells = arr<Record<string, unknown>>(char.classSpells);
-  // seenSpellIds is pre-seeded here so cross-source duplicate detection also
-  // catches class-feature auto-grants of spells the player already has prepared.
-  const seenSpellIds = new Map<number, string>(); // spellId → first source label
-  for (const cs of classSpells) {
-    // Try characterClassId first; fall back to id/classId for 2024-rules format
-    const classEntry = classes.find(c =>
-      c.id === cs.characterClassId ||
-      c.id === cs.id ||
-      c.id === cs.classId
-    );
-    const className = str(obj(classEntry?.definition ?? {}).name);
-    const isSpellbook = className === "Wizard";
-    // spells may be under cs.spells or cs.classSpells (2024 format variation)
-    const allSpells = arr<Record<string, unknown>>(cs.spells).length > 0
-      ? arr<Record<string, unknown>>(cs.spells)
-      : arr<Record<string, unknown>>(cs.classSpells);
-    const cantrips = allSpells
-      .filter(s => num(obj(s.definition).level) === 0)
-      .map(s => str(obj(s.definition).name));
-    const leveled = allSpells
-      .filter(s => {
-        if (num(obj(s.definition).level) === 0) return false;
-        if (isSpellbook) return s.prepared === true || obj(s.definition).ritual === true;
-        return true;
-      })
-      .map(s => {
-        const def = obj(s.definition);
-        const ritual = isSpellbook && def.ritual ? " [ritual]" : "";
-        return `${str(def.name)} (L${num(def.level)}${ritual})`;
-      });
-    if (cantrips.length) spellSections.push(`  Cantrips: ${cantrips.join(", ")}`);
-    if (leveled.length) spellSections.push(`  Spells: ${leveled.join(", ")}`);
-    // Pre-seed duplicate detection in the same pass
-    for (const s of allSpells) {
-      const spellId = num(obj(s.definition).id);
-      if (spellId && !seenSpellIds.has(spellId)) seenSpellIds.set(spellId, "Spells");
-    }
-  }
-  const spellsObj = obj(char.spells);
-  const sourceLabels: Record<string, string> = {
-    race: "Racial Trait", class: "Class Feature", background: "Background", feat: "Feat", item: "Item",
-  };
-  const duplicateWarnings: string[] = [];
-
-  for (const [key, label] of Object.entries(sourceLabels)) {
-    const spellList = arr<Record<string, unknown>>(spellsObj[key]);
-    if (!spellList.length) continue;
-    const names = [...new Set(
-      spellList
-        .filter(s => {
-          const def = obj(s.definition);
-          const spellId = num(def.id);
-          if (!spellId) return true;
-          if (seenSpellIds.has(spellId)) {
-            const firstLabel = seenSpellIds.get(spellId)!;
-            const spellName = str(def.name);
-            const lvl = num(def.level);
-            const spellStr = lvl === 0 ? spellName : `${spellName} (L${lvl})`;
-            duplicateWarnings.push(`  • ${spellStr} — already granted by ${firstLabel}, also in ${label}`);
-            return false;
-          }
-          seenSpellIds.set(spellId, label);
-          return true;
-        })
-        .map(s => {
-          const def = obj(s.definition);
-          const n = str(def.name);
-          return n ? (num(def.level) === 0 ? n : `${n} (L${num(def.level)})`) : "";
-        })
-        .filter(n => n.length > 0)
-    )];
-    if (names.length) spellSections.push(`  From ${label}: ${names.join(", ")}`);
-  }
-
-  if (duplicateWarnings.length) {
-    spellSections.push(
-      `  ⚠ Duplicate spell grants detected — the following spells are already`,
-      `  provided by an earlier source; the extra grant may be a wasted choice:`,
-      ...duplicateWarnings
-    );
-  }
+  // ── Spells (Spellcasting / Spell Slots / Spells / Concentration) ─────────
+  // Computed in ./character/spells.js (Phase 7 of the refactor).
+  const spells = computeSpells(core);
 
   // ── Full Inventory ────────────────────────────────────────────────────────
   const equippedNonWeapons: string[] = [];
@@ -324,61 +184,8 @@ export function parseCharacterData(
 
   const combatBlock = formatCombatBlock(actions);
 
-  const spellsBlock: string[] = [
-    ...(spellcastingLines.length ? [`SPELLCASTING`, ...spellcastingLines, ``] : []),
-    ...(slotLines.length ? [`SPELL SLOTS`, ...slotLines, ``] : []),
-    ...(spellSections.length ? [`SPELLS`, ...spellSections, ``] : []),
-  ];
-
-  // ── Concentration Spells ──────────────────────────────────────────────────────
-  // Collect all available/prepared spells, filter to concentration:true, group by level.
-  const concByLevel = new Map<number, string[]>();
-  const addConcSpell = (s: Record<string, unknown>) => {
-    const def = obj(s.definition);
-    const name = str(def.name);
-    if (!name) return;
-    const level = num(def.level);
-    const fromCompendium = isConcentrationSpell(name);
-    const isConc = fromCompendium !== null ? fromCompendium : def.concentration === true;
-    if (!isConc) return;
-    const bucket = concByLevel.get(level) ?? [];
-    if (!bucket.includes(name)) { bucket.push(name); concByLevel.set(level, bucket); }
-  };
-  for (const cs of classSpells) {
-    const classEntry = classes.find(c =>
-      c.id === cs.characterClassId || c.id === cs.id || c.id === cs.classId
-    );
-    const isSpellbook2 = str(obj(classEntry?.definition ?? {}).name) === "Wizard";
-    const allSp = arr<Record<string, unknown>>(cs.spells).length > 0
-      ? arr<Record<string, unknown>>(cs.spells)
-      : arr<Record<string, unknown>>(cs.classSpells);
-    for (const s of allSp) {
-      const def = obj(s.definition);
-      if (num(def.level) > 0 && isSpellbook2 && !(s.prepared === true || def.ritual === true)) continue;
-      addConcSpell(s);
-    }
-  }
-  for (const spellList of Object.values(spellsObj)) {
-    for (const s of arr<Record<string, unknown>>(spellList)) addConcSpell(s);
-  }
-  const slotOrdinal = (lvl: number) => {
-    const o = ["", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th"];
-    return o[lvl] ?? `${lvl}th`;
-  };
-  const concentrationBlock: string[] = [];
-  if (concByLevel.size === 0) {
-    concentrationBlock.push("This character has no concentration spells prepared.");
-  } else {
-    concentrationBlock.push("CONCENTRATION SPELLS");
-    for (const lvl of [...concByLevel.keys()].sort((a, b) => a - b)) {
-      concentrationBlock.push(lvl === 0 ? "  Cantrips (no slot required):" : `  Level ${lvl}:`);
-      for (const name of concByLevel.get(lvl)!) {
-        concentrationBlock.push(`    • ${name}${lvl > 0 ? ` [${slotOrdinal(lvl)}-level slot]` : ""}`);
-      }
-    }
-    concentrationBlock.push("");
-    if (slotLines.length) concentrationBlock.push("SPELL SLOTS", ...slotLines);
-  }
+  const spellsBlock = formatSpellsBlock(spells);
+  const concentrationBlock = formatConcentrationBlock(spells);
 
   // ── Notes & Backstory ────────────────────────────────────────────────────────
   const traits = obj(char.traits);

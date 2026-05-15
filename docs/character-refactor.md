@@ -163,7 +163,7 @@ is meaningless if the diff covers multiple phases.
 | 4 | `ac.ts` | Highest single-function complexity. Biggest test win — fixes [character.ts:351 TODO](../src/tools/character.ts#L351). | ~80 | Medium | [x] |
 | 5 | `stats.ts`, `defenses.ts`, `features.ts` | Independent of each other; can be one PR or three. | ~280 | Medium | [x] |
 | 6 | `weapons.ts`, then `actions.ts` | Weapons first because actions depends on it. | ~150 | Medium | [x] |
-| 7 | `spells.ts` | The most cross-cutting module. Save until the pattern is well-established. | ~200 | High | [ ] |
+| 7 | `spells.ts` | The most cross-cutting module. Save until the pattern is well-established. | ~200 | High | [x] |
 | 8 | `inventory.ts`, `notes.ts` | Simple. Cleanup. | ~100 | Low | [ ] |
 | 9 | Final `parse.ts` carve-up + `definition.ts` move | `parseCharacterData` is mostly imports by now — finish the orchestrator. | — | Low | [ ] |
 
