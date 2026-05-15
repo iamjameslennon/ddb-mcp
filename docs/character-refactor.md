@@ -164,7 +164,7 @@ is meaningless if the diff covers multiple phases.
 | 5 | `stats.ts`, `defenses.ts`, `features.ts` | Independent of each other; can be one PR or three. | ~280 | Medium | [x] |
 | 6 | `weapons.ts`, then `actions.ts` | Weapons first because actions depends on it. | ~150 | Medium | [x] |
 | 7 | `spells.ts` | The most cross-cutting module. Save until the pattern is well-established. | ~200 | High | [x] |
-| 8 | `inventory.ts`, `notes.ts` | Simple. Cleanup. | ~100 | Low | [ ] |
+| 8 | `inventory.ts`, `notes.ts` | Simple. Cleanup. | ~100 | Low | [x] |
 | 9 | Final `parse.ts` carve-up + `definition.ts` move | `parseCharacterData` is mostly imports by now — finish the orchestrator. | — | Low | [ ] |
 
 **When you complete a phase: tick the box above, commit the doc change in the

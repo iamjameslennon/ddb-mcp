@@ -6,7 +6,6 @@ import { writeFileSync, mkdirSync } from "fs";
 import { join, resolve, relative, basename, dirname, isAbsolute } from "path";
 import { homedir } from "os";
 import type { CharData, ParseSection } from "./character/types.js";
-import { str, num, obj } from "./character/helpers.js";
 import { computeCoreStats } from "./character/core.js";
 import { computeIdentity, formatHeaderBlock } from "./character/identity.js";
 import { computeVitals, formatVitalsBlock } from "./character/vitals.js";
@@ -16,6 +15,8 @@ import { computeDefenses, formatDefensesBlock } from "./character/defenses.js";
 import { computeFeatures, formatFeaturesBlock } from "./character/features.js";
 import { computeActions, formatCombatBlock } from "./character/actions.js";
 import { computeSpells, formatSpellsBlock, formatConcentrationBlock } from "./character/spells.js";
+import { computeInventory, formatInventoryBlock } from "./character/inventory.js";
+import { computeNotes, formatNotesBlock } from "./character/notes.js";
 
 // Cache character JSON to avoid redundant API calls within a session.
 // TTL is configurable via DDB_CHARACTER_CACHE_TTL (seconds); default 60 s.
@@ -101,13 +102,12 @@ export function parseCharacterData(
   // Supplement spell compendium with this character's chosen spells (cantrips etc.)
   addCharacterSpellsToCompendium(char);
 
-  // Helpers (str/num/obj) are imported from ./character/helpers.js.
-  //
   // computeCoreStats produces every value used across multiple sections.
-  // We keep both `core` (for passing whole to per-domain modules) and the
-  // destructured locals (for inline use further down). Phase 2 of the refactor.
+  // Phase 2 of the refactor. After phases 3–8 every domain consumes `core`
+  // directly; only profBonus is still needed inline (threaded into vitals
+  // for the formatter's prof line).
   const core = computeCoreStats(char);
-  const { profBonus, inventory } = core;
+  const { profBonus } = core;
 
   // ── Identity & Vitals ─────────────────────────────────────────────────────
   // Computed in ./character/identity.js and ./character/vitals.js (Phase 3 of the refactor).
@@ -142,33 +142,13 @@ export function parseCharacterData(
   // Computed in ./character/spells.js (Phase 7 of the refactor).
   const spells = computeSpells(core);
 
-  // ── Full Inventory ────────────────────────────────────────────────────────
-  const equippedNonWeapons: string[] = [];
-  const carriedItems = new Map<string, number>();
-  let attuned = 0;
-  for (const i of inventory) {
-    const def = obj(i.definition);
-    const iName = str(def.name);
-    const filterType = str(def.filterType);
-    const qty = num(i.quantity) || 1;
-    if (i.isAttuned) attuned++;
-    if (i.equipped && filterType === "Armor") {
-      const ac2 = num(def.armorClass);
-      equippedNonWeapons.push(`${iName}${ac2 ? ` (AC ${ac2})` : ""}`);
-    } else if (filterType !== "Weapon") {
-      carriedItems.set(iName, (carriedItems.get(iName) ?? 0) + qty);
-    }
-  }
-  const inventoryLine = [...carriedItems.entries()]
-    .map(([n, q]) => q > 1 ? `${n} ×${q}` : n)
-    .join(", ");
+  // ── Inventory (equipped armor / carried items / attunement / currency) ──
+  // Computed in ./character/inventory.js (Phase 8 of the refactor).
+  const inv = computeInventory(core);
 
-  // ── Currency ──────────────────────────────────────────────────────────────
-  const currencies = obj(char.currencies);
-  const currencyLine = ["pp","gp","ep","sp","cp"]
-    .map(c => `${num(currencies[c])}${c}`)
-    .filter(c => !c.startsWith("0"))
-    .join(", ") || "none";
+  // ── Notes & Backstory ─────────────────────────────────────────────────────
+  // Computed in ./character/notes.js (Phase 8 of the refactor).
+  const notes = computeNotes(core);
 
   // ── Assemble named blocks ─────────────────────────────────────────────────
   // headerBlock and vitalsBlock are produced by ./character/identity.js and
@@ -187,49 +167,8 @@ export function parseCharacterData(
   const spellsBlock = formatSpellsBlock(spells);
   const concentrationBlock = formatConcentrationBlock(spells);
 
-  // ── Notes & Backstory ────────────────────────────────────────────────────────
-  const traits = obj(char.traits);
-  const notes  = obj(char.notes);
-  const field  = (v: unknown) => { const s = stripHtmlFull(str(v)).trim(); return s || null; };
-
-  const traitLines: string[] = [];
-  const addTrait = (label: string, v: unknown) => { const t = field(v); if (t) traitLines.push(`  ${label.padEnd(13)}${t}`); };
-  addTrait("Traits:",     traits.personalityTraits);
-  addTrait("Ideals:",     traits.ideals);
-  addTrait("Bonds:",      traits.bonds);
-  addTrait("Flaws:",      traits.flaws);
-  addTrait("Appearance:", traits.appearance);
-
-  const backstoryText = field(notes.backstory);
-
-  const allyLines: string[] = [];
-  const addAlly = (label: string, v: unknown) => { const t = field(v); if (t) allyLines.push(`  ${label.padEnd(15)}${t}`); };
-  addAlly("Allies:",        notes.allies);
-  addAlly("Organisations:", notes.organizations);
-
-  const extraLines: string[] = [];
-  const addExtra = (label: string, v: unknown) => { const t = field(v); if (t) extraLines.push(`  ${label.padEnd(13)}${t}`); };
-  addExtra("Possessions:", notes.personalPossessions);
-  addExtra("Other:",       notes.otherNotes);
-
-  const notesBlock: string[] = [];
-  const hasAny = traitLines.length || backstoryText || allyLines.length || extraLines.length;
-  if (!hasAny) {
-    notesBlock.push("No notes or backstory have been recorded for this character.");
-  } else {
-    if (traitLines.length) notesBlock.push("PERSONALITY", ...traitLines, "");
-    if (backstoryText)     notesBlock.push("BACKSTORY", `  ${backstoryText}`, "");
-    if (allyLines.length)  notesBlock.push("ALLIES & ORGANISATIONS", ...allyLines, "");
-    if (extraLines.length) notesBlock.push("ADDITIONAL NOTES", ...extraLines, "");
-  }
-
-  const inventoryBlock: string[] = [
-    ...(equippedNonWeapons.length ? [`EQUIPPED`, ...equippedNonWeapons.map(e => `  ${e}`), ``] : []),
-    ...(inventoryLine ? [`INVENTORY`, `  ${inventoryLine}`, ``] : []),
-    `ATTUNEMENT: ${attuned}/3 slots used`,
-    ``,
-    `CURRENCY: ${currencyLine}`,
-  ];
+  const inventoryBlock = formatInventoryBlock(inv);
+  const notesBlock = formatNotesBlock(notes);
 
   // ── Select blocks by section ──────────────────────────────────────────────
   const out: string[] = [...headerBlock];
