@@ -8,12 +8,13 @@ import { homedir } from "os";
 import type { CharData, ParseSection } from "./character/types.js";
 import {
   str, num, arr, obj, signed, capitalize, hasTag, stripHtml,
-  statNames, statKeys,
+  statNames,
 } from "./character/helpers.js";
 import { computeCoreStats } from "./character/core.js";
 import { computeIdentity, formatHeaderBlock } from "./character/identity.js";
 import { computeVitals, formatVitalsBlock } from "./character/vitals.js";
 import { computeAc } from "./character/ac.js";
+import { computeStats, formatStatsBlock } from "./character/stats.js";
 
 // Cache character JSON to avoid redundant API calls within a session.
 // TTL is configurable via DDB_CHARACTER_CACHE_TTL (seconds); default 60 s.
@@ -99,8 +100,8 @@ export function parseCharacterData(
   // Supplement spell compendium with this character's chosen spells (cantrips etc.)
   addCharacterSpellsToCompendium(char);
 
-  // Helpers (str/num/arr/obj/signed/hasTag/stripHtml/capitalize) are
-  // imported from ./character/helpers.js. statNames/statKeys also imported.
+  // Helpers (str/num/arr/obj/signed/hasTag/stripHtml/capitalize) and
+  // statNames are imported from ./character/helpers.js.
   //
   // computeCoreStats produces every value used across multiple sections.
   // We keep both `core` (for passing whole to per-domain modules) and the
@@ -108,7 +109,7 @@ export function parseCharacterData(
   const core = computeCoreStats(char);
   const {
     allMods, classes, profBonus,
-    statTotals, statMods, inventory, resolveTemplates,
+    statMods, inventory, resolveTemplates,
   } = core;
 
   // ── Identity & Vitals ─────────────────────────────────────────────────────
@@ -119,157 +120,17 @@ export function parseCharacterData(
   const identity = computeIdentity(core);
   const vitals = computeVitals(core);
 
-  // dexMod is needed by AC (Phase 4 will extract) and weapon attacks (Phase 6).
-  // Keep one local convenience binding here until those phases land.
+  // dexMod is needed by weapon attacks (Phase 6). Keep one local convenience
+  // binding here until that phase lands.
   const dexMod = statMods[1];
-
-  // Used by the STATS block (Phase 5 will extract).
-  const abilityScoreDisplay = statNames.map((n, i) => `${n} ${statTotals[i]} (${signed(statMods[i])})`);
 
   // ── Armor Class ───────────────────────────────────────────────────────────
   // Computed in ./character/ac.js (Phase 4 of the refactor).
   const ac = computeAc(core);
 
-  // ── Saving Throws ─────────────────────────────────────────────────────────
-  const saveProfSubTypes = new Set(
-    allMods.filter(m => m.type === "proficiency" && str(m.subType).includes("saving-throws"))
-      .map(m => str(m.subType))
-  );
-  const savingThrows = statKeys.map((key, i) => {
-    const isProficient = saveProfSubTypes.has(`${key}-saving-throws`);
-    const total = statMods[i] + (isProficient ? profBonus : 0);
-    return `${statNames[i]} ${signed(total)}${isProficient ? "*" : ""}`;
-  });
-
-  // ── Skills ────────────────────────────────────────────────────────────────
-  const SKILLS: Array<[string, number]> = [
-    ["Acrobatics", 1], ["Animal Handling", 4], ["Arcana", 3], ["Athletics", 0],
-    ["Deception", 5], ["History", 3], ["Insight", 4], ["Intimidation", 5],
-    ["Investigation", 3], ["Medicine", 4], ["Nature", 3], ["Perception", 4],
-    ["Performance", 5], ["Persuasion", 5], ["Religion", 3], ["Sleight of Hand", 1],
-    ["Stealth", 1], ["Survival", 4],
-  ];
-  const skillProfSubTypes = new Set(
-    allMods.filter(m => m.type === "proficiency").map(m => str(m.subType))
-  );
-  const skillExpertiseSubTypes = new Set(
-    allMods.filter(m => m.type === "expertise").map(m => str(m.subType))
-  );
-  // half-proficiency (e.g. Bard's Jack of All Trades applies to all ability checks)
-  const hasJackOfAllTrades = allMods.some(
-    m => m.type === "half-proficiency" && m.subType === "ability-checks"
-  );
-  const skillHalfProfSubTypes = new Set(
-    allMods.filter(m => m.type === "half-proficiency" && m.subType !== "ability-checks")
-      .map(m => str(m.subType))
-  );
-  // Compute skill bonuses once; reuse for both the display lines and passive senses.
-  const skillBonuses = SKILLS.map(([skillName, statIdx]) => {
-    const slug = skillName.toLowerCase().replace(/ /g, "-").replace(/'/g, "");
-    const isProficient = skillProfSubTypes.has(slug);
-    const isExpertise = skillExpertiseSubTypes.has(slug);
-    const isHalf = !isProficient && (skillHalfProfSubTypes.has(slug) || hasJackOfAllTrades);
-    let bonus = statMods[statIdx];
-    if (isExpertise) bonus += profBonus * 2;
-    else if (isProficient) bonus += profBonus;
-    else if (isHalf) bonus += Math.floor(profBonus / 2);
-    // Flat bonus modifiers on the skill subType (e.g. Divine Order: Scholar adds WIS to Arcana/Religion).
-    // When value/fixedValue are null, statId identifies which ability modifier to add instead.
-    const flatBonus = allMods
-      .filter(m => m.type === "bonus" && m.subType === slug)
-      .reduce((s, m) => {
-        if (m.value != null) return s + num(m.value);
-        if (m.fixedValue != null) return s + num(m.fixedValue);
-        const sid = num(m.statId);
-        return s + (sid > 0 ? statMods[sid - 1] : 0);
-      }, 0);
-    bonus += flatBonus;
-    return { bonus, isProficient, isExpertise };
-  });
-  const skillLines = SKILLS.map(([skillName, statIdx], i) => {
-    const { bonus, isProficient, isExpertise } = skillBonuses[i];
-    const marker = isExpertise ? " **" : isProficient ? " *" : "";
-    const statLabel = statNames[statIdx];
-    return `  ${(skillName + ` (${statLabel})`).padEnd(22)} ${signed(bonus)}${marker}`;
-  });
-
-  // ── Senses ────────────────────────────────────────────────────────────────
-  const perceptionIdx = SKILLS.findIndex(([n]) => n === "Perception");
-  const investigationIdx = SKILLS.findIndex(([n]) => n === "Investigation");
-  const insightIdx = SKILLS.findIndex(([n]) => n === "Insight");
-  const passivePerception = 10 + skillBonuses[perceptionIdx].bonus;
-  const passiveInvestigation = 10 + skillBonuses[investigationIdx].bonus;
-  const passiveInsight = 10 + skillBonuses[insightIdx].bonus;
-  // Collect senses from all sources; keep highest value per sense name.
-  const SENSE_ID_NAMES: Record<number, string> = {
-    1: "Blindsight", 2: "Darkvision", 3: "Tremorsense", 4: "Truesight",
-  };
-  const SENSE_SLUGS = new Set(["darkvision", "blindsight", "tremorsense", "truesight"]);
-  const senseMap = new Map<string, number>();
-  const mergeSense = (name: string, val: number) => {
-    if (val > 0) senseMap.set(name, Math.max(senseMap.get(name) ?? 0, val));
-  };
-  // 2024: type:"sense" modifiers
-  for (const m of allMods)
-    if (m.type === "sense") mergeSense(capitalize(str(m.subType)), num(m.value));
-  // 2014: type:"set" / type:"set-base" modifiers with sense subType slugs
-  for (const m of allMods)
-    if ((m.type === "set" || m.type === "set-base") && SENSE_SLUGS.has(str(m.subType)))
-      mergeSense(capitalize(str(m.subType)), num(m.value));
-  // 2014: customSenses array (explicit overrides / grants)
-  for (const cs of arr<Record<string, unknown>>(char.customSenses)) {
-    const name = SENSE_ID_NAMES[num(cs.senseId)];
-    if (name) mergeSense(name, num(cs.value));
-  }
-  // 2014: racial trait senses (range parsed from notes, e.g. "60 feet")
-  for (const trait of arr<Record<string, unknown>>(obj(char.race).racialTraits)) {
-    for (const sense of arr<Record<string, unknown>>(obj(trait.definition).senses)) {
-      const name = SENSE_ID_NAMES[num(sense.senseId)];
-      const match = str(sense.notes).match(/\d+/);
-      if (name && match) mergeSense(name, parseInt(match[0], 10));
-    }
-  }
-  const specialSenses = Array.from(senseMap.entries()).map(([n, v]) => `${n} ${v} ft.`);
-
-  // ── Proficiencies ─────────────────────────────────────────────────────────
-  const armorProfMap: Record<string, string> = {
-    "light-armor": "Light Armor", "medium-armor": "Medium Armor",
-    "heavy-armor": "Heavy Armor", "shields": "Shields",
-  };
-  const weaponProfMap: Record<string, string> = {
-    "simple-weapons": "Simple Weapons", "martial-weapons": "Martial Weapons",
-  };
-  // Placeholder subType values that are unresolved character-builder selections — discard them.
-  const isProfPlaceholder = (sub: string) =>
-    sub.toLowerCase().startsWith("choose") || sub.toLowerCase() === "self";
-  // Specific weapon type slugs — route to Weapons, not Tools.
-  const isWeaponSlug = (sub: string) =>
-    /sword|axe|bow|crossbow|dagger|dart|sling|blowgun|staff|spear|club|mace|hammer|flail|lance|pike|rapier|scimitar|sickle|whip|maul|halberd|glaive|javelin|trident|handaxe|net|morningstar/.test(sub);
-  const armorProfs: string[] = [];
-  const weaponProfs: string[] = [];
-  const toolProfs: string[] = [];
-  const languages: string[] = [];
-  for (const m of allMods) {
-    const sub = str(m.subType);
-    if (isProfPlaceholder(sub)) continue;
-    if (m.type === "proficiency") {
-      if (armorProfMap[sub]) armorProfs.push(armorProfMap[sub]);
-      else if (weaponProfMap[sub]) weaponProfs.push(weaponProfMap[sub]);
-      else if (sub.includes("saving-throws") || sub.includes("-skill") ||
-               SKILLS.some(([n]) => n.toLowerCase().replace(/ /g, "-").replace(/'/g, "") === sub)) {
-        // skill/save prof — handled elsewhere
-      } else if (!sub.includes("-score") && sub.length > 0 &&
-                 !statKeys.some(k => sub.startsWith(k))) {
-        if (isWeaponSlug(sub)) {
-          weaponProfs.push(capitalize(sub.replace(/-/g, " ")));
-        } else {
-          toolProfs.push(capitalize(sub.replace(/-/g, " ")));
-        }
-      }
-    } else if (m.type === "language") {
-      languages.push(capitalize(sub.replace(/-/g, " ")));
-    }
-  }
+  // ── Stats (saves / skills / senses / proficiencies) ──────────────────────
+  // Computed in ./character/stats.js (Phase 5 of the refactor).
+  const stats = computeStats(core);
 
   // ── Defenses & Conditions ─────────────────────────────────────────────────
   const resistances = [...new Set(allMods.filter(m => m.type === "resistance").map(m => capitalize(str(m.subType))))];
@@ -642,29 +503,7 @@ export function parseCharacterData(
   const headerBlock = formatHeaderBlock(identity);
   const vitalsBlock = formatVitalsBlock(vitals, ac, profBonus);
 
-  const statsBlock: string[] = [
-    `ABILITY SCORES`,
-    `  ${abilityScoreDisplay.join("  ")}`,
-    ``,
-    `SAVING THROWS`,
-    `  ${savingThrows.join("   ")}`,
-    `  (* proficient)`,
-    ``,
-    `SKILLS`,
-    ...skillLines,
-    `  (* proficient, ** expertise)`,
-    ``,
-    `SENSES`,
-    `  Passive Perception: ${passivePerception}   Passive Investigation: ${passiveInvestigation}   Passive Insight: ${passiveInsight}`,
-    ...(specialSenses.length ? [`  ${specialSenses.join(", ")}`] : []),
-    ``,
-    `PROFICIENCIES & TRAINING`,
-    `  Armor: ${armorProfs.length ? [...new Set(armorProfs)].join(", ") : "None"}`,
-    `  Weapons: ${weaponProfs.length ? [...new Set(weaponProfs)].join(", ") : "None"}`,
-    `  Tools: ${toolProfs.length ? [...new Set(toolProfs)].join(", ") : "None"}`,
-    `  Languages: ${languages.length ? [...new Set(languages)].join(", ") : "None"}`,
-    ``,
-  ];
+  const statsBlock = formatStatsBlock(stats);
 
   const defensesBlock: string[] = [
     `DEFENSES`,
