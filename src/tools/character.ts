@@ -17,7 +17,7 @@ import { computeAc } from "./character/ac.js";
 import { computeStats, formatStatsBlock } from "./character/stats.js";
 import { computeDefenses, formatDefensesBlock } from "./character/defenses.js";
 import { computeFeatures, formatFeaturesBlock } from "./character/features.js";
-import { computeWeaponAttacks } from "./character/weapons.js";
+import { computeActions, formatCombatBlock } from "./character/actions.js";
 
 // Cache character JSON to avoid redundant API calls within a session.
 // TTL is configurable via DDB_CHARACTER_CACHE_TTL (seconds); default 60 s.
@@ -139,75 +139,10 @@ export function parseCharacterData(
   // Computed in ./character/features.js (Phase 5c of the refactor).
   const features = computeFeatures(core);
 
-  // ── Actions / Bonus Actions / Reactions / Limited Use ─────────────────────
-  // activation.activationType: 1=action, 3=bonus action, 4=reaction, 8=special (skip)
-  // Filter Circle Spell entries — these leak from the Dark Bargain campaign feature
-  // and don't represent real character abilities on the website.
-  const allActions = Object.values(obj(char.actions))
-    .flatMap(v => arr<Record<string, unknown>>(v))
-    .filter(a => a != null && !str(a.name).startsWith("Circle Spell") && str(a.name) !== "Initiate a Circle Spell");
-  const activationType = (a: Record<string, unknown>) => num(obj(a.activation).activationType);
-
-  // Bonus-action and reaction spells — activationType 3=bonus action, 4=reaction.
-  // Apply the same prepared/ritual filter used in the main SPELLS section for spellbook
-  // classes (Wizards) so unprepared non-ritual spells don't bleed into these sections.
-  const allCharSpells = [
-    ...arr<Record<string, unknown>>(char.classSpells).flatMap(cs => {
-      const classEntry = classes.find(c => c.id === cs.characterClassId);
-      const isSpellbook = str(obj(classEntry?.definition ?? {}).name) === "Wizard";
-      return arr<Record<string, unknown>>(cs.spells).filter(s =>
-        !isSpellbook || s.prepared === true || obj(s.definition).ritual === true
-      );
-    }),
-    ...Object.values(obj(char.spells)).flatMap(v => arr<Record<string, unknown>>(v)),
-  ].filter(Boolean);
-  const spellActivationType = (s: Record<string, unknown>) =>
-    num(obj(obj(s.definition).activation).activationType);
-  const formatSpell = (s: Record<string, unknown>) => {
-    const def = obj(s.definition);
-    const lvl = num(def.level);
-    const slotStr = lvl === 0 ? "cantrip" : `${lvl === 1 ? "1st" : lvl === 2 ? "2nd" : lvl === 3 ? "3rd" : `${lvl}th`}-level slot`;
-    return `• ${str(def.name)} (spell, ${slotStr})`;
-  };
-  // Spell activationTypes (from rule-data): 1=Action, 2=No Action, 3=Bonus Action, 4=Reaction, 8=Special
-  const bonusActionSpells = allCharSpells.filter(s => spellActivationType(s) === 3).map(formatSpell);
-  const reactionSpells = allCharSpells.filter(s => spellActivationType(s) === 4).map(formatSpell);
-
-  // activationType 3 = bonus action in class actions, 4 = reaction
-  // activationType 1 = action (weapon masteries — skip, shown in ACTIONS already)
-  // activationType 8 = special/passive — skip
-  const bonusActions = [
-    ...allActions.filter(a => activationType(a) === 3).map(a => `• ${str(a.name)}`),
-    ...bonusActionSpells,
-  ];
-  // Reactions: Opportunity Attack is universal, then class reactions, then reaction spells
-  const reactions: string[] = [
-    "• Opportunity Attack",
-    ...allActions.filter(a => activationType(a) === 4).map(a => `• ${str(a.name)}`),
-    ...reactionSpells,
-  ];
-  const limitedUseFeatures = allActions
-    .filter(a => {
-      const lu = obj(a.limitedUse);
-      // maxUses=0 with statModifierUsesId means uses = that stat modifier (e.g. CHA for Bardic Inspiration)
-      return lu.maxUses !== undefined && (num(lu.maxUses) > 0 || lu.statModifierUsesId != null);
-    })
-    .map(a => {
-      const lu = obj(a.limitedUse);
-      const resetLabels: Record<number, string> = { 1: "Short Rest", 2: "Long Rest" };
-      const reset = resetLabels[num(lu.resetType)] ?? "Rest";
-      let maxStr = num(lu.maxUses) > 0
-        ? String(num(lu.maxUses))
-        : lu.statModifierUsesId != null
-          ? `${signed(statMods[num(lu.statModifierUsesId) - 1])} (stat)`
-          : "?";
-      const used = num(lu.numberUsed);
-      return `• ${str(a.name)}   ${used} used / ${maxStr} max   (${reset})`;
-    });
-
-  // ── Weapon Attacks ────────────────────────────────────────────────────────
-  // Computed in ./character/weapons.js (Phase 6a of the refactor).
-  const weaponAttacks = computeWeaponAttacks(core);
+  // ── Combat actions (Actions / Bonus Actions / Reactions / Limited Use + Weapons) ──
+  // Computed in ./character/actions.js (Phase 6b of the refactor) which
+  // internally calls ./character/weapons.js (Phase 6a).
+  const actions = computeActions(core);
 
   // ── Spellcasting ──────────────────────────────────────────────────────────
   // spellCastingAbilityId: 1=STR 2=DEX 3=CON 4=INT 5=WIS 6=CHA
@@ -387,18 +322,7 @@ export function parseCharacterData(
 
   const featuresBlock = formatFeaturesBlock(features);
 
-  const combatBlock: string[] = [
-    `ACTIONS`,
-    ...(weaponAttacks.length ? weaponAttacks : ["  (none)"]),
-    ``,
-    `BONUS ACTIONS`,
-    ...(bonusActions.length ? bonusActions : ["  (none)"]),
-    ``,
-    `REACTIONS`,
-    ...(reactions.length ? reactions : ["  (none)"]),
-    ``,
-    ...(limitedUseFeatures.length ? [`LIMITED USE`, ...limitedUseFeatures, ``] : []),
-  ];
+  const combatBlock = formatCombatBlock(actions);
 
   const spellsBlock: string[] = [
     ...(spellcastingLines.length ? [`SPELLCASTING`, ...spellcastingLines, ``] : []),
