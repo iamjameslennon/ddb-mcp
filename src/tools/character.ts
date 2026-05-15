@@ -7,7 +7,7 @@ import { join, resolve, relative, basename, dirname, isAbsolute } from "path";
 import { homedir } from "os";
 import type { CharData, ParseSection } from "./character/types.js";
 import {
-  str, num, arr, obj, signed, hasTag, stripHtml,
+  str, num, arr, obj, signed,
   statNames,
 } from "./character/helpers.js";
 import { computeCoreStats } from "./character/core.js";
@@ -16,6 +16,7 @@ import { computeVitals, formatVitalsBlock } from "./character/vitals.js";
 import { computeAc } from "./character/ac.js";
 import { computeStats, formatStatsBlock } from "./character/stats.js";
 import { computeDefenses, formatDefensesBlock } from "./character/defenses.js";
+import { computeFeatures, formatFeaturesBlock } from "./character/features.js";
 
 // Cache character JSON to avoid redundant API calls within a session.
 // TTL is configurable via DDB_CHARACTER_CACHE_TTL (seconds); default 60 s.
@@ -101,8 +102,8 @@ export function parseCharacterData(
   // Supplement spell compendium with this character's chosen spells (cantrips etc.)
   addCharacterSpellsToCompendium(char);
 
-  // Helpers (str/num/arr/obj/signed/hasTag/stripHtml) and statNames are
-  // imported from ./character/helpers.js.
+  // Helpers (str/num/arr/obj/signed) and statNames are imported from
+  // ./character/helpers.js.
   //
   // computeCoreStats produces every value used across multiple sections.
   // We keep both `core` (for passing whole to per-domain modules) and the
@@ -110,7 +111,7 @@ export function parseCharacterData(
   const core = computeCoreStats(char);
   const {
     allMods, classes, profBonus,
-    statMods, inventory, resolveTemplates,
+    statMods, inventory,
   } = core;
 
   // ── Identity & Vitals ─────────────────────────────────────────────────────
@@ -137,56 +138,9 @@ export function parseCharacterData(
   // Computed in ./character/defenses.js (Phase 5b of the refactor).
   const defenses = computeDefenses(core);
 
-  // ── Feats ─────────────────────────────────────────────────────────────────
-  // DDB stores some non-feat entries in the feats array.
-  // __DISGUISE_FEAT = class features surfaced as feats (shown in OTHER FEATURES).
-  // __INITIAL_ASI   = 2024 background Ability Score Improvements (already in ABILITY SCORES; drop entirely).
-  const allFeats = arr<Record<string, unknown>>(char.feats);
-  const realFeats = allFeats.filter(
-    f => !hasTag(f, "__DISGUISE_FEAT") && !hasTag(f, "__INITIAL_ASI")
-  );
-  const disguisedFeats = allFeats.filter(f => hasTag(f, "__DISGUISE_FEAT"));
-  const featLines = realFeats.map(f => {
-    const def = obj(f.definition);
-    const snippet = resolveTemplates(stripHtml(str(def.snippet || def.description))).slice(0, 120);
-    return `• ${str(def.name)}${snippet ? `: ${snippet}${snippet.length >= 120 ? "…" : ""}` : ""}`;
-  });
-
-  // ── Class Features ────────────────────────────────────────────────────────
-  const classFeatureLines: string[] = [];
-  const seenClassFeatures = new Set<string>();
-  for (const c of classes) {
-    const charLevel = num(c.level);
-    for (const cf of arr<Record<string, unknown>>(c.classFeatures)) {
-      const def = obj(cf.definition);
-      const line = `• ${str(def.name)} (${str(obj(c.definition).name)} ${num(def.requiredLevel || 1)})`;
-      if (num(def.requiredLevel || 0) <= charLevel && !seenClassFeatures.has(line)) {
-        seenClassFeatures.add(line);
-        classFeatureLines.push(line);
-      }
-    }
-  }
-
-  // ── Racial Traits ─────────────────────────────────────────────────────────
-  const racialTraitLines = arr<Record<string, unknown>>(obj(char.race).racialTraits).map(
-    t => `• ${str(obj(t.definition).name)}`
-  );
-
-  // ── Background Feature ────────────────────────────────────────────────────
-  // For custom backgrounds, featureName may reflect a feat name rather than
-  // the actual background feature. Check customBackground first if present.
-  const bgObj = obj(char.background);
-  const customBg = obj(bgObj.customBackground);
-  const featuresBackgroundDef = obj(obj(customBg.featuresBackground).definition);
-  const customBgDef = Object.keys(featuresBackgroundDef).length > 0
-    ? featuresBackgroundDef
-    : obj(customBg.definition);
-  const bgDef = Object.keys(customBgDef).length > 0 ? customBgDef : obj(bgObj.definition);
-  const bgFeatureName = str(bgDef.featureName);
-  const bgFeatureIsFeat = bgDef.featureIsFeat === true;
-  const bgFeatureDesc = bgDef.featureDescription
-    ? resolveTemplates(stripHtml(str(bgDef.featureDescription))).slice(0, 300)
-    : "";
+  // ── Features (feats + class features + racial traits + background feature) ──
+  // Computed in ./character/features.js (Phase 5c of the refactor).
+  const features = computeFeatures(core);
 
   // ── Actions / Bonus Actions / Reactions / Limited Use ─────────────────────
   // activation.activationType: 1=action, 3=bonus action, 4=reaction, 8=special (skip)
@@ -506,31 +460,7 @@ export function parseCharacterData(
 
   const defensesBlock = formatDefensesBlock(defenses);
 
-  const featuresBlock: string[] = [
-    `FEATS (${realFeats.length})`,
-    ...(featLines.length ? featLines : ["  (none)"]),
-    ``,
-    ...(disguisedFeats.length ? [
-      `OTHER FEATURES (stored as feats in API but NOT player-chosen feats)`,
-      ...disguisedFeats.map(f => `• ${str(obj(f.definition).name)}`),
-      ``,
-    ] : []),
-    `CLASS FEATURES`,
-    ...classFeatureLines,
-    ``,
-    `RACIAL TRAITS`,
-    ...racialTraitLines,
-    ``,
-    ...(!bgFeatureName || bgFeatureIsFeat ? [] : (() => {
-      const descSnippet = bgFeatureDesc
-        ? `${bgFeatureDesc}${bgFeatureDesc.length >= 300 ? "…" : ""}` : "";
-      return [
-        `BACKGROUND FEATURE`,
-        `  ${bgFeatureName}${descSnippet ? `: ${descSnippet}` : ""}`,
-        ``,
-      ];
-    })()),
-  ];
+  const featuresBlock = formatFeaturesBlock(features);
 
   const combatBlock: string[] = [
     `ACTIONS`,
