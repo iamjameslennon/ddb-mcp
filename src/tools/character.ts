@@ -11,6 +11,8 @@ import {
   statNames, statKeys,
 } from "./character/helpers.js";
 import { computeCoreStats } from "./character/core.js";
+import { computeIdentity, formatHeaderBlock } from "./character/identity.js";
+import { computeVitals, formatVitalsBlock } from "./character/vitals.js";
 
 // Cache character JSON to avoid redundant API calls within a session.
 // TTL is configurable via DDB_CHARACTER_CACHE_TTL (seconds); default 60 s.
@@ -99,139 +101,29 @@ export function parseCharacterData(
   // Helpers (str/num/arr/obj/signed/hasTag/stripHtml/capitalize) are
   // imported from ./character/helpers.js. statNames/statKeys also imported.
   //
-  // computeCoreStats produces every value used across multiple sections:
-  // allMods, classes, totalLevel, profBonus, statTotals, statMods, inventory,
-  // resolveTemplates. Phase 2 of the refactor (see docs/character-refactor.md).
+  // computeCoreStats produces every value used across multiple sections.
+  // We keep both `core` (for passing whole to per-domain modules) and the
+  // destructured locals (for inline use further down). Phase 2 of the refactor.
+  const core = computeCoreStats(char);
   const {
-    allMods, classes, totalLevel, profBonus,
+    allMods, classes, profBonus,
     statTotals, statMods, inventory, resolveTemplates,
-  } = computeCoreStats(char);
+  } = core;
 
-  // ── Identity ──────────────────────────────────────────────────────────────
-  const charName = str(char.name);
-  // 2024 races store the sub-selection (Elven Lineage, Fiendish Legacy, Giant
-  // Ancestry, Gnomish Lineage, …) in char.options.race[] rather than in the
-  // subRaceShortName field that 2014 characters use. The option name encodes
-  // the chosen variant — e.g. "Wood Elf Lineage", "Infernal Legacy",
-  // "Stone's Endurance (Stone Giant)". Pattern-match the suffix so this is
-  // generic across every 2024 race that follows the same naming convention.
-  // Note: 2024 Aasimar Celestial Revelation is *not* a creation-time choice —
-  // the player picks one of Heavenly Wings / Inner Radiance / Necrotic Shroud
-  // each time they transform, and char.options.race is empty for Aasimar.
-  // Header correctly shows just "Aasimar" with no parenthetical.
-  const detectRaceVariant = (): string | null => {
-    for (const opt of arr<Record<string, unknown>>(obj(char.options).race)) {
-      const name = str(obj(opt.definition).name).trim();
-      if (!name) continue;
-      // "Wood Elf Lineage" / "High Elf Lineage" / "Drow Lineage"
-      //  / "Forest Gnome Lineage" / "Rock Gnome Lineage" / …
-      let m = name.match(/^(.+?)\s+Lineage$/);
-      if (m) return m[1];
-      // "Infernal Legacy" / "Abyssal Legacy" / "Chthonic Legacy"
-      m = name.match(/^(.+?)\s+Legacy$/);
-      if (m) return m[1];
-      // Giant Ancestry: "Stone's Endurance (Stone Giant)" etc.
-      m = name.match(/\(([A-Za-z]+)\s+Giant\)$/);
-      if (m) return m[1];
-    }
-    return null;
-  };
-  const race = (() => {
-    const base = str(obj(char.race).fullName || obj(char.race).baseName);
-    const variant = detectRaceVariant();
-    if (!variant) return base;
-    // Avoid "Wood Elf (Wood Elf)" if the base race name already mentions the
-    // variant (defensive — happens when fullName has been pre-decorated).
-    if (base.toLowerCase().includes(variant.toLowerCase())) return base;
-    return `${base} (${variant})`;
-  })();
-  // classes / totalLevel come from computeCoreStats above.
-  const classLine = classes.map(c => {
-    const def = obj(c.definition);
-    const sub = obj(c.subclassDefinition);
-    const lvl = num(c.level);
-    return sub.name ? `${def.name} (${sub.name}) ${lvl}` : `${def.name} ${lvl}`;
-  }).join(" / ");
-  const background = str(obj(obj(char.background).definition).name);
-  const xp = num(char.currentXp);
+  // ── Identity & Vitals ─────────────────────────────────────────────────────
+  // Computed in ./character/identity.js and ./character/vitals.js (Phase 3 of the refactor).
+  // Vitals owns HP, hit dice, speed, initiative, death saves. AC is its own
+  // module (Phase 4) — for now, AC is computed inline below and threaded into
+  // formatVitalsBlock as a separate parameter.
+  const identity = computeIdentity(core);
+  const vitals = computeVitals(core);
 
-  // ── Ability Scores ────────────────────────────────────────────────────────
-  // statTotals / statMods / profBonus / resolveTemplates come from computeCoreStats above.
-  const abilityScoreDisplay = statNames.map((n, i) => `${n} ${statTotals[i]} (${signed(statMods[i])})`);
-
-  // ── Hit Points ────────────────────────────────────────────────────────────
-  // baseHitPoints does NOT include the CON modifier — must add conMod × level.
-  const conMod = statMods[2];
-  // Tough feat and Dwarven Toughness grant type:"bonus" subType:"hit-points-per-level" (value 2 or 1).
-  const hpPerLevelBonus = allMods
-    .filter(m => m.type === "bonus" && m.subType === "hit-points-per-level")
-    .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
-  const maxHp = num(char.baseHitPoints) + num(char.bonusHitPoints) + ((conMod + hpPerLevelBonus) * totalLevel);
-  const currentHp = maxHp - num(char.removedHitPoints);
-  const tempHp = num(char.temporaryHitPoints);
-
-  // ── Hit Dice ──────────────────────────────────────────────────────────────
-  const hitDiceLines = classes.map(c => {
-    const die = num(obj(c.definition).hitDice);
-    const lvl = num(c.level);
-    const used = num(c.hitDiceUsed);
-    return `${lvl}d${die} (${lvl - used} remaining)`;
-  });
-
-  // ── Speed ─────────────────────────────────────────────────────────────────
-  const weightSpeeds = obj(obj(obj(char.race).weightSpeeds).normal);
-  // "set" modifiers override the base race speed; "bonus" modifiers add to it (e.g. Longstrider)
-  const speedCalc = (subType: string, base: number, fallback = 0): number => {
-    const override = allMods
-      .filter(m => m.type === "set" && m.subType === subType && num(m.value ?? m.fixedValue) > 0)
-      .reduce((max, m) => Math.max(max, num(m.value ?? m.fixedValue)), 0);
-    const bonus = allMods
-      .filter(m => m.type === "bonus" && m.subType === subType)
-      .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
-    return (override || base || fallback) + bonus;
-  };
-  // Monk Unarmored Movement uses "unarmored-movement" rather than "innate-speed-walking".
-  // Technically only applies when unarmored and unshielded; we add it unconditionally here.
-  // TODO: gate on absence of equipped armor/shield for strict correctness.
-  const unarmoredMoveBonus = allMods
-    .filter(m => m.type === "bonus" && m.subType === "unarmored-movement")
-    .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
-  const walkSpeed = speedCalc("innate-speed-walking", num(weightSpeeds.walk), 30) + unarmoredMoveBonus;
-  const flySpeed  = speedCalc("innate-speed-flying",  num(weightSpeeds.fly));
-  const swimSpeed = speedCalc("innate-speed-swimming", num(weightSpeeds.swim));
-  const climbSpeed = speedCalc("innate-speed-climbing", num(weightSpeeds.climb));
-  const burrowSpeed = speedCalc("innate-speed-burrowing", num(weightSpeeds.burrow));
-  const speedParts: string[] = [];
-  speedParts.push(`${walkSpeed} ft.`);
-  if (flySpeed   > 0) speedParts.push(`fly ${flySpeed} ft.`);
-  if (swimSpeed  > 0) speedParts.push(`swim ${swimSpeed} ft.`);
-  if (climbSpeed > 0) speedParts.push(`climb ${climbSpeed} ft.`);
-  if (burrowSpeed > 0) speedParts.push(`burrow ${burrowSpeed} ft.`);
-
-  // ── Initiative ────────────────────────────────────────────────────────────
-  // Remarkable Athlete (Champion 7+) emits type:"half-proficiency" subType:"ability-checks",
-  // the same modifier as JoAT, but it DOES apply to initiative — JoAT does not.
-  // Detect it by subclass name + level so we can treat the two features differently.
-  const hasRemarkableAthlete = classes.some(cls => {
-    const sub = obj(cls.subclassDefinition);
-    const subName = str(obj(sub.definition ?? cls.subclassDefinition).name || sub.name);
-    return /champion/i.test(subName) && num(cls.level) >= 7;
-  });
+  // dexMod is needed by AC (Phase 4 will extract) and weapon attacks (Phase 6).
+  // Keep one local convenience binding here until those phases land.
   const dexMod = statMods[1];
-  const initiativeBonus = allMods
-    .filter(m => m.subType === "initiative" && m.type === "bonus")
-    .reduce((s, m) => {
-      // bonusTypes [1] means the bonus value is the proficiency bonus, not a fixed number
-      const usesProfBonus = arr<number>(m.bonusTypes).includes(1) && (m.fixedValue == null && m.value == null);
-      if (usesProfBonus) return s + profBonus;
-      if (m.value != null) return s + num(m.value);
-      if (m.fixedValue != null) return s + num(m.fixedValue);
-      // statId-based bonus (e.g. Gloom Stalker Dread Ambusher adds WIS mod to initiative)
-      const sid = num(m.statId);
-      return s + (sid > 0 ? statMods[sid - 1] : 0);
-    }, 0);
-  // JoAT does not apply to initiative on the DDB website; Remarkable Athlete does.
-  const initiative = dexMod + initiativeBonus + (hasRemarkableAthlete ? Math.floor(profBonus / 2) : 0);
+
+  // Used by the STATS block (Phase 5 will extract).
+  const abilityScoreDisplay = statNames.map((n, i) => `${n} ${statTotals[i]} (${signed(statMods[i])})`);
 
   // ── Armor Class ───────────────────────────────────────────────────────────
   // armorTypeId: 1=light, 2=medium, 3=heavy, 4=shield
@@ -785,29 +677,11 @@ export function parseCharacterData(
     .filter(c => !c.startsWith("0"))
     .join(", ") || "none";
 
-  // ── Death Saves ───────────────────────────────────────────────────────────
-  const deathSaves = obj(char.deathSaves);
-  const dsSucc = num(deathSaves.successCount);
-  const dsFail = num(deathSaves.failCount);
-
   // ── Assemble named blocks ─────────────────────────────────────────────────
-  const headerBlock: string[] = [
-    `═══════════════════════════════════════`,
-    `  ${charName}`,
-    `  ${race} | ${classLine} | Level ${totalLevel}`,
-    `  Background: ${background || "—"} | XP: ${xp}`,
-    `  Inspiration: ${char.inspiration ? "Yes" : "No"}`,
-    `═══════════════════════════════════════`,
-    ``,
-  ];
-
-  const vitalsBlock: string[] = [
-    `HP: ${currentHp}/${maxHp}   Temp HP: ${tempHp || "—"}   Prof Bonus: ${signed(profBonus)}`,
-    `Hit Dice: ${hitDiceLines.join(" / ")}`,
-    `AC: ${ac}   Initiative: ${signed(initiative)}   Speed: ${speedParts.join(", ")}`,
-    `Death Saves: Successes ${dsSucc}/3   Failures ${dsFail}/3`,
-    ``,
-  ];
+  // headerBlock and vitalsBlock are produced by ./character/identity.js and
+  // ./character/vitals.js (Phase 3). AC is still computed inline above.
+  const headerBlock = formatHeaderBlock(identity);
+  const vitalsBlock = formatVitalsBlock(vitals, ac, profBonus);
 
   const statsBlock: string[] = [
     `ABILITY SCORES`,
