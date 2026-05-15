@@ -13,6 +13,7 @@ import {
 import { computeCoreStats } from "./character/core.js";
 import { computeIdentity, formatHeaderBlock } from "./character/identity.js";
 import { computeVitals, formatVitalsBlock } from "./character/vitals.js";
+import { computeAc } from "./character/ac.js";
 
 // Cache character JSON to avoid redundant API calls within a session.
 // TTL is configurable via DDB_CHARACTER_CACHE_TTL (seconds); default 60 s.
@@ -126,50 +127,8 @@ export function parseCharacterData(
   const abilityScoreDisplay = statNames.map((n, i) => `${n} ${statTotals[i]} (${signed(statMods[i])})`);
 
   // ── Armor Class ───────────────────────────────────────────────────────────
-  // armorTypeId: 1=light, 2=medium, 3=heavy, 4=shield
-  // inventory comes from computeCoreStats above.
-  const equippedArmorPieces = inventory.filter(i =>
-    i.equipped === true && str(obj(i.definition).filterType) === "Armor"
-  );
-  const shield = equippedArmorPieces.find(i => num(obj(i.definition).armorTypeId) === 4);
-  // If multiple body armors are equipped (e.g. party loot), pick whichever yields the best effective AC.
-  const bodyArmorCandidates = equippedArmorPieces.filter(i => num(obj(i.definition).armorTypeId) !== 4);
-  const effectiveBodyAc = (i: Record<string, unknown>) => {
-    const def = obj(i.definition);
-    const baseAc = num(def.armorClass);
-    const typeId = num(def.armorTypeId);
-    if (typeId === 1) return baseAc + dexMod;
-    if (typeId === 2) return baseAc + Math.min(dexMod, 2);
-    return baseAc;
-  };
-  const bodyArmor = bodyArmorCandidates.reduce<Record<string, unknown> | null>(
-    (best, i) => best === null || effectiveBodyAc(i) > effectiveBodyAc(best) ? i : best, null
-  );
-  let ac: number;
-  if (bodyArmor) {
-    ac = effectiveBodyAc(bodyArmor);
-  } else {
-    // Unarmored Defense (Barbarian = 10+DEX+CON, Monk = 10+DEX+WIS)
-    // Draconic Resilience uses type:"set" with a numeric value to lift the base (e.g. value:3 → base 13).
-    const unarmoredMod = allMods.find(m => m.subType === "unarmored-armor-class");
-    if (unarmoredMod) {
-      const extraStatId = num(unarmoredMod.statId); // 3=CON (Barbarian), 5=WIS (Monk)
-      const extraMod = extraStatId > 0 ? statMods[extraStatId - 1] : 0;
-      const baseBonus = unarmoredMod.type === "set" ? num(unarmoredMod.fixedValue ?? unarmoredMod.value) : 0;
-      ac = 10 + baseBonus + dexMod + extraMod;
-    } else {
-      ac = 10 + dexMod;
-    }
-  }
-  if (shield) ac += num(obj(shield.definition).armorClass);
-  // Add any AC bonus modifiers (e.g. shield of faith, ring of protection, Defense fighting style).
-  // Defense fighting style uses "armored-armor-class" instead of "armor-class"; it should only apply
-  // when wearing armor, but we include it unconditionally — most characters with it are armored.
-  // TODO: gate "armored-armor-class" on equipped armor to avoid inflating AC for unarmored characters.
-  const acBonus = allMods
-    .filter(m => (m.subType === "armor-class" || m.subType === "armored-armor-class") && m.type === "bonus")
-    .reduce((s, m) => s + num(m.fixedValue ?? m.value), 0);
-  ac += acBonus;
+  // Computed in ./character/ac.js (Phase 4 of the refactor).
+  const ac = computeAc(core);
 
   // ── Saving Throws ─────────────────────────────────────────────────────────
   const saveProfSubTypes = new Set(
