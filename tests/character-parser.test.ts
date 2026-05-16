@@ -725,14 +725,24 @@ describe("parseCharacterData — cross-source spell deduplication", () => {
   });
 });
 
-// ── Remarkable Athlete (Champion 7+) — half-prof on initiative AND skills ─────
-// Subclass modifier lives in the "subclass" category, NOT in the old hardcoded list.
-// allMods must use Object.values to pick it up; hasRemarkableAthlete detects Champion 7+.
+// ── Remarkable Athlete (Champion 7+) — half-prof on initiative AND STR/DEX/CON skills ─
+// DDB does NOT emit a `half-proficiency` modifier for Remarkable Athlete (confirmed
+// by inspecting Ethelrede 112314883's raw JSON — zero half-proficiency mods). The
+// feature is only present as a class-feature entry with name "Remarkable Athlete"
+// and requiredLevel 7. So detection must be by subclass name + level, not by
+// modifier presence.
+//
+// Per the 2014 PHB: Remarkable Athlete adds half your proficiency bonus
+// (round up) to STR, DEX, and CON ability checks that don't already include
+// your proficiency bonus. Initiative is a DEX check, so it gets the bonus too.
 // FIGHTER_5 base, overridden to level 9 Champion:
-//   DEX 12 (+1), prof +4, floor(4/2)=2
+//   DEX 12 (+1), STR 16 (+3), prof +4, ceil(4/2) = 2
 //   Initiative: +1 + 2 = +3
-//   Acrobatics (non-proficient DEX): +1 + 2 = +3
-//   Athletics (proficient STR):      +3 + 4 = +7 (no extra)
+//   Acrobatics (DEX, non-proficient): +1 + 2 = +3
+//   Sleight of Hand (DEX, non-proficient): +1 + 2 = +3
+//   Stealth (DEX, non-proficient): +1 + 2 = +3
+//   Athletics (STR, proficient): +3 + 4 = +7 (no RA — already has prof)
+//   Insight (WIS, non-proficient): +1 + 0 = +1 (not STR/DEX/CON, no RA)
 describe("parseCharacterData — Remarkable Athlete (Champion 7+)", () => {
   const withRA: Record<string, unknown> = {
     data: {
@@ -745,11 +755,8 @@ describe("parseCharacterData — Remarkable Athlete (Champion 7+)", () => {
         subclassDefinition: { name: "Champion" },
         classFeatures: [],
       }],
-      modifiers: {
-        ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
-        // RA emits into "subclass" — a category the old hardcoded list silently dropped
-        subclass: [{ type: "half-proficiency", subType: "ability-checks" }],
-      },
+      // No spurious half-proficiency modifier — real DDB JSON for Champion
+      // Fighters does not include one. RA must be detected via subclass.
     },
   };
 
@@ -758,15 +765,61 @@ describe("parseCharacterData — Remarkable Athlete (Champion 7+)", () => {
     expect(out).toContain("Initiative: +3");
   });
 
-  it("adds half-proficiency to non-proficient skills", () => {
+  it("adds half-proficiency to non-proficient DEX skills", () => {
     const out = parseCharacterData(withRA, "summary");
     expect(out).toContain("Acrobatics (DEX)       +3");
+    expect(out).toContain("Sleight of Hand (DEX)  +3");
+    expect(out).toContain("Stealth (DEX)          +3");
   });
 
   it("does NOT double-add half-proficiency to proficient skills", () => {
     const out = parseCharacterData(withRA, "summary");
-    // Athletics is proficient (STR +3 + prof +4 = +7), no RA bonus
+    // Athletics is proficient (STR +3 + prof +4 = +7), no extra RA bonus
     expect(out).toContain("Athletics (STR)        +7 *");
+  });
+
+  it("does NOT apply RA to non-STR/DEX/CON skills", () => {
+    const out = parseCharacterData(withRA, "summary");
+    // Insight is WIS-based and non-proficient — should be just WIS (+1), no RA
+    expect(out).toContain("Insight (WIS)          +1");
+    // Arcana is INT-based — should be just INT mod (+0)
+    expect(out).toContain("Arcana (INT)           +0");
+  });
+
+  it("does NOT apply RA below Champion level 7", () => {
+    const champL6: Record<string, unknown> = {
+      data: {
+        ...((withRA.data) as Record<string, unknown>),
+        classes: [{
+          ...((withRA.data as Record<string, unknown>).classes as Array<Record<string, unknown>>)[0],
+          level: 6,
+        }],
+      },
+    };
+    const out = parseCharacterData(champL6, "summary");
+    // Prof +3 at L6, no RA → Acrobatics = DEX +1 only
+    expect(out).toContain("Acrobatics (DEX)       +1");
+    // Initiative is just DEX +1 too
+    expect(out).toContain("Initiative: +1");
+  });
+
+  it("uses round-up (ceil) for half-prof at odd proficiency bonuses", () => {
+    // At Champion L7, prof bonus is +3. ceil(3/2) = 2, floor(3/2) = 1.
+    // PHB specifies "round up", so non-prof STR/DEX/CON skills get +2 from RA.
+    const champL7: Record<string, unknown> = {
+      data: {
+        ...((withRA.data) as Record<string, unknown>),
+        classes: [{
+          ...((withRA.data as Record<string, unknown>).classes as Array<Record<string, unknown>>)[0],
+          level: 7,
+        }],
+      },
+    };
+    const out = parseCharacterData(champL7, "summary");
+    // Acrobatics: DEX (+1) + ceil(3/2)=2 = +3
+    expect(out).toContain("Acrobatics (DEX)       +3");
+    // Initiative: DEX (+1) + ceil(3/2)=2 = +3 (would be +2 if we used floor)
+    expect(out).toContain("Initiative: +3");
   });
 });
 

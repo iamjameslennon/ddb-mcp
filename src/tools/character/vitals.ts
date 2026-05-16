@@ -9,7 +9,7 @@
  * a vitals concern.
  */
 
-import { arr, num, obj, signed, str } from "./helpers.js";
+import { arr, hasRemarkableAthlete, num, obj, signed } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
 
 export interface HitPoints { current: number; max: number; temp: number }
@@ -84,14 +84,6 @@ function computeSpeed(core: CoreStats): string[] {
 // ── Initiative ───────────────────────────────────────────────────────────────
 function computeInitiative(core: CoreStats): number {
   const { allMods, statMods, classes, profBonus } = core;
-  // Remarkable Athlete (Champion 7+) emits type:"half-proficiency" subType:"ability-checks",
-  // the same modifier as JoAT, but it DOES apply to initiative — JoAT does not.
-  // Detect it by subclass name + level so we can treat the two features differently.
-  const hasRemarkableAthlete = classes.some(cls => {
-    const sub = obj(cls.subclassDefinition);
-    const subName = str(obj(sub.definition ?? cls.subclassDefinition).name || sub.name);
-    return /champion/i.test(subName) && num(cls.level) >= 7;
-  });
   const dexMod = statMods[1];
   const initiativeBonus = allMods
     .filter(m => m.subType === "initiative" && m.type === "bonus")
@@ -105,8 +97,11 @@ function computeInitiative(core: CoreStats): number {
       const sid = num(m.statId);
       return s + (sid > 0 ? statMods[sid - 1] : 0);
     }, 0);
-  // JoAT does not apply to initiative on the DDB website; Remarkable Athlete does.
-  return dexMod + initiativeBonus + (hasRemarkableAthlete ? Math.floor(profBonus / 2) : 0);
+  // JoAT does not apply to initiative on the DDB website; Remarkable Athlete
+  // does (initiative is a DEX ability check). RA uses round-up per the 2014
+  // PHB, which matters at odd proficiency bonuses (e.g. Champion L7-8 prof
+  // +3 → +2, not +1).
+  return dexMod + initiativeBonus + (hasRemarkableAthlete(classes) ? Math.ceil(profBonus / 2) : 0);
 }
 
 // ── Death saves ──────────────────────────────────────────────────────────────

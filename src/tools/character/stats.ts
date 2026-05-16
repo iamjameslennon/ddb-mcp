@@ -9,8 +9,8 @@
  * pass could lift these into structured data, but that's a separate concern.
  */
 
-import { arr, capitalize, num, obj, signed, statKeys, statNames, str } from "./helpers.js";
-import type { CharData, CoreStats, Mod } from "./types.js";
+import { arr, capitalize, hasRemarkableAthlete, num, obj, signed, statKeys, statNames, str } from "./helpers.js";
+import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
 
 export interface Senses {
   passivePerception: number;
@@ -69,14 +69,23 @@ function buildSavingThrows(allMods: readonly Mod[], statMods: readonly number[],
 // ── Skills (returns bonuses + display lines together — both needed downstream) ──
 interface SkillBonus { bonus: number; isProficient: boolean; isExpertise: boolean }
 
-function computeSkillBonuses(allMods: readonly Mod[], statMods: readonly number[], profBonus: number): SkillBonus[] {
+// STR/DEX/CON stat indices — the abilities that Remarkable Athlete covers.
+const RA_STAT_INDICES = new Set([0, 1, 2]);
+
+function computeSkillBonuses(
+  allMods: readonly Mod[],
+  statMods: readonly number[],
+  profBonus: number,
+  classes: ReadonlyArray<ClassEntry>,
+): SkillBonus[] {
   const skillProfSubTypes = new Set(
     allMods.filter(m => m.type === "proficiency").map(m => str(m.subType))
   );
   const skillExpertiseSubTypes = new Set(
     allMods.filter(m => m.type === "expertise").map(m => str(m.subType))
   );
-  // half-proficiency (e.g. Bard's Jack of All Trades applies to all ability checks)
+  // half-proficiency (e.g. Bard's Jack of All Trades applies to all ability
+  // checks; floor(prof/2)).
   const hasJackOfAllTrades = allMods.some(
     m => m.type === "half-proficiency" && m.subType === "ability-checks"
   );
@@ -84,15 +93,23 @@ function computeSkillBonuses(allMods: readonly Mod[], statMods: readonly number[
     allMods.filter(m => m.type === "half-proficiency" && m.subType !== "ability-checks")
       .map(m => str(m.subType))
   );
+  // Remarkable Athlete (Champion 7+) adds ceil(prof/2) to non-proficient
+  // STR/DEX/CON ability checks. DDB does NOT emit a half-proficiency
+  // modifier for RA, so we must detect it by class + level.
+  const ra = hasRemarkableAthlete(classes);
   return SKILLS.map(([skillName, statIdx]) => {
     const slug = skillName.toLowerCase().replace(/ /g, "-").replace(/'/g, "");
     const isProficient = skillProfSubTypes.has(slug);
     const isExpertise = skillExpertiseSubTypes.has(slug);
-    const isHalf = !isProficient && (skillHalfProfSubTypes.has(slug) || hasJackOfAllTrades);
+    const isJoatHalf = !isProficient && (skillHalfProfSubTypes.has(slug) || hasJackOfAllTrades);
+    const isRaHalf = !isProficient && ra && RA_STAT_INDICES.has(statIdx);
     let bonus = statMods[statIdx];
     if (isExpertise) bonus += profBonus * 2;
     else if (isProficient) bonus += profBonus;
-    else if (isHalf) bonus += Math.floor(profBonus / 2);
+    // RA takes precedence over JoAT on STR/DEX/CON because it rounds up
+    // (a strict superset of JoAT's floor at odd proficiency bonuses).
+    else if (isRaHalf) bonus += Math.ceil(profBonus / 2);
+    else if (isJoatHalf) bonus += Math.floor(profBonus / 2);
     // Flat bonus modifiers on the skill subType (e.g. Divine Order: Scholar adds WIS to Arcana/Religion).
     // When value/fixedValue are null, statId identifies which ability modifier to add instead.
     const flatBonus = allMods
@@ -199,8 +216,8 @@ function computeProficiencies(allMods: readonly Mod[]): Proficiencies {
 
 // ── Public API ──────────────────────────────────────────────────────────────
 export function computeStats(core: CoreStats): Stats {
-  const { char, allMods, statMods, statTotals, profBonus } = core;
-  const skillBonuses = computeSkillBonuses(allMods, statMods, profBonus);
+  const { char, allMods, statMods, statTotals, profBonus, classes } = core;
+  const skillBonuses = computeSkillBonuses(allMods, statMods, profBonus, classes);
   return {
     abilityScoreDisplay: buildAbilityScoreDisplay(statTotals, statMods),
     savingThrows: buildSavingThrows(allMods, statMods, profBonus),

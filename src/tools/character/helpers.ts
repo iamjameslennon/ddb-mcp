@@ -30,6 +30,26 @@ export const stripHtml = (s: string): string =>
 export const hasTag = (feat: Mod, tag: string): boolean =>
   arr<Record<string, unknown>>(obj(feat.definition).categories).some(c => c.tagName === tag);
 
+/**
+ * True if any class entry is a Champion Fighter at level 7+ — the
+ * threshold at which the Remarkable Athlete feature kicks in. DDB does
+ * NOT emit a `half-proficiency` modifier for Remarkable Athlete (the way
+ * it does for Bard's Jack of All Trades), so this predicate is the only
+ * way to detect the feature reliably. Used by:
+ *   - vitals.ts: adds half prof to initiative
+ *   - stats.ts:  adds half prof to non-proficient STR/DEX/CON skills
+ *
+ * Detection accepts both shapes DDB has used for subclassDefinition
+ * (`{ name: "..." }` and `{ definition: { name: "..." } }`).
+ */
+export function hasRemarkableAthlete(classes: ReadonlyArray<Record<string, unknown>>): boolean {
+  return classes.some(cls => {
+    const sub = obj(cls.subclassDefinition);
+    const subName = str(obj(sub.definition ?? cls.subclassDefinition).name || sub.name);
+    return /champion/i.test(subName) && num(cls.level) >= 7;
+  });
+}
+
 /** Display labels for the six ability scores, in canonical order. */
 export const statNames = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
 
