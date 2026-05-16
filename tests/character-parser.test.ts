@@ -941,6 +941,54 @@ describe("parseCharacterData — speed bonuses from class/feat modifiers", () =>
     // 25 + 5 = 30
     expect(out).toContain("Speed: 30 ft.");
   });
+
+  // Tasha's optional class features (Roving etc.) live in char.options.class
+  // and emit modifiers with `isGranted: true` even when
+  // `preferences.enableOptionalClassFeatures: false`. The DDB website does
+  // NOT apply them in that case — confirmed against Ehsu Ferncraig (42519628)
+  // whose `class bonus speed-walking +5` from Tasha's Roving is left in the
+  // JSON but the website shows 40 ft (only the +10 Mobile feat applies, not
+  // the +5 Roving). The discriminator: the modifier's componentId matches an
+  // entry in char.classes[].classFeatures only when the feature is actually
+  // granted; orphan componentIds belong to deselected optional features.
+  it("skips class modifier whose componentId is not in the granted classFeatures list", () => {
+    const data = {
+      ...((FIGHTER_5.data) as Record<string, unknown>),
+      classes: [{
+        id: 1,
+        level: 5,
+        hitDiceUsed: 0,
+        definition: { name: "Fighter", hitDice: 10, canCastSpells: false, spellCastingAbilityId: 0, spellRules: {} },
+        subclassDefinition: null,
+        // The character has ONE granted class feature with id 100.
+        classFeatures: [{ definition: { id: 100, name: "Some Granted Feature", requiredLevel: 1 } }],
+      }],
+      modifiers: {
+        ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+        class: [
+          ...((((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown[]>).class ?? []),
+          // Mod from the granted feature (componentId=100) — should apply.
+          { type: "bonus", subType: "speed-walking", fixedValue: 10, value: 10, isGranted: true, componentId: 100 },
+          // Mod from a Tasha's optional feature that isn't in classFeatures
+          // (componentId=999) — should be ignored even though isGranted is true.
+          { type: "bonus", subType: "speed-walking", fixedValue: 5, value: 5, isGranted: true, componentId: 999 },
+        ],
+      },
+    };
+    const out = parseCharacterData({ data }, "summary");
+    // 25 + 10 (granted) = 35; the orphan +5 must NOT be added.
+    expect(out).toContain("Speed: 35 ft.");
+  });
+
+  it("still applies class modifier with no componentId (fixture / legacy shape)", () => {
+    // Hand-built fixtures throughout the test suite don't set componentId.
+    // The filter must bypass when componentId is missing so fixtures keep working.
+    const out = parseCharacterData(
+      withModifier("class", { type: "bonus", subType: "speed-walking", fixedValue: 10, value: 10 }),
+      "summary",
+    );
+    expect(out).toContain("Speed: 35 ft.");
+  });
 });
 
 // ── Gloom Stalker Dread Ambusher — statId-based WIS bonus to initiative ────────

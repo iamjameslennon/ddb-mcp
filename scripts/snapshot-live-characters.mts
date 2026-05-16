@@ -44,6 +44,7 @@ const TARGETS: SnapshotTarget[] = [
   { id: "145415789", description: "Vi — L10 Gnome Artificer (Artillerist) — non-PHB class" },
   { id: "152570649", description: "Dwarf Cleric (2024) — 2024 rules; race-categorised ASIs are vestigial (isGranted:false) and must be skipped — see BUG #1 in regression-report-2026-05-16.md" },
   { id: "26158232",  description: "Laena — L20 High Elf Rogue (Scout) — Scout's Superior Mobility emits `bonus speed-walking +10` (axis-specific; not `innate-`) — see BUG #3 in regression-report-2026-05-16.md" },
+  { id: "42519628",  description: "Ehsu Ferncraig — L10 Kobold Ranger (Monster Slayer) — Tasha's optional Roving feature emits an orphan `class bonus speed-walking +5` modifier whose componentId is NOT in classFeatures; must be skipped because enableOptionalClassFeatures is false (website 40 ft = base 30 + Mobile feat +10 only)" },
 ];
 
 async function main(): Promise<void> {

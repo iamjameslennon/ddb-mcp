@@ -52,6 +52,41 @@ function computeHitDice(classes: readonly ClassEntry[]): string[] {
 function computeSpeed(core: CoreStats): string[] {
   const { char, allMods } = core;
   const weightSpeeds = obj(obj(obj(char.race).weightSpeeds).normal);
+
+  // Tasha's optional class features (Roving, Canny, Tireless, etc.) live in
+  // char.options.class. When preferences.enableOptionalClassFeatures is
+  // false, DDB does NOT include them in char.classes[].classFeatures, but
+  // their modifiers still appear in char.modifiers.class with
+  // `isGranted: true`. The website ignores those orphan modifiers; we must
+  // too. Discriminator: the modifier's componentId must match the id of a
+  // feature actually present in classFeatures/subclassFeatures. Hand-built
+  // fixtures don't set componentId at all (cid=0) — those bypass the filter
+  // unchanged.
+  const grantedClassFeatureIds = new Set<number>();
+  for (const c of arr<Record<string, unknown>>(char.classes)) {
+    for (const cf of arr<Record<string, unknown>>(c.classFeatures)) {
+      const id = num(obj(cf.definition).id);
+      if (id) grantedClassFeatureIds.add(id);
+    }
+    for (const cf of arr<Record<string, unknown>>(obj(c.subclassDefinition).classFeatures)) {
+      const id = num(obj(cf.definition).id);
+      if (id) grantedClassFeatureIds.add(id);
+    }
+  }
+  // Build the set of modifier object identities (by reference) that originate
+  // from a class/subclass category but whose componentId is orphaned — these
+  // must be skipped. Other sources (race, feat, item, background, condition)
+  // never get filtered.
+  const skippedClassMods = new Set<Mod>();
+  for (const [source, list] of Object.entries(obj(char.modifiers))) {
+    if (source !== "class" && source !== "subclass") continue;
+    for (const m of arr<Mod>(list)) {
+      const cid = num(m.componentId);
+      if (cid !== 0 && !grantedClassFeatureIds.has(cid)) skippedClassMods.add(m);
+    }
+  }
+  const isApplicable = (m: Mod): boolean => !skippedClassMods.has(m);
+
   // DDB uses three subType patterns for speed modifiers:
   //   - `innate-speed-{axis}` — race-granted base / overrides (e.g. Dwarven slow speed)
   //   - `speed-{axis}` — class/feat/subclass axis-specific bonus (e.g. Scout's Superior Mobility, Ranger's Roving)
@@ -62,10 +97,10 @@ function computeSpeed(core: CoreStats): string[] {
     // The bare "speed" subType is a walking-default bonus only; never applies to fly/swim/climb/burrow.
     if (axis === "walking") subTypes.add("speed");
     const override = allMods
-      .filter(m => m.type === "set" && typeof m.subType === "string" && subTypes.has(m.subType) && num(m.value ?? m.fixedValue) > 0)
+      .filter(m => m.type === "set" && typeof m.subType === "string" && subTypes.has(m.subType) && num(m.value ?? m.fixedValue) > 0 && isApplicable(m))
       .reduce((max, m) => Math.max(max, num(m.value ?? m.fixedValue)), 0);
     const bonus = allMods
-      .filter(m => m.type === "bonus" && typeof m.subType === "string" && subTypes.has(m.subType))
+      .filter(m => m.type === "bonus" && typeof m.subType === "string" && subTypes.has(m.subType) && isApplicable(m))
       .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
     return (override || base || fallback) + bonus;
   };
@@ -73,7 +108,7 @@ function computeSpeed(core: CoreStats): string[] {
   // Technically only applies when unarmored and unshielded; we add it unconditionally here.
   // TODO: gate on absence of equipped armor/shield for strict correctness.
   const unarmoredMoveBonus = allMods
-    .filter(m => m.type === "bonus" && m.subType === "unarmored-movement")
+    .filter(m => m.type === "bonus" && m.subType === "unarmored-movement" && isApplicable(m))
     .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
   const walkSpeed = speedCalc("walking", num(weightSpeeds.walk), 30) + unarmoredMoveBonus;
   const flySpeed = speedCalc("flying", num(weightSpeeds.fly));
