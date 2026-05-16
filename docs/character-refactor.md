@@ -1,13 +1,19 @@
 # `parseCharacterData` Refactor Plan
 
-`src/tools/character.ts` is mid-refactor. The goal is to carve the
-~1000-line `parseCharacterData` function into ~14 small, focused, independently
-testable modules under `src/tools/character/`. **No behavior change** — the
-existing 156 vitest tests are the contract.
+> **Status: complete (2026-05-16).** All 9 phases landed. `src/tools/character.ts`
+> is now a 219-line public-API/IO surface; the per-domain modules live under
+> `src/tools/character/`. The "Post-refactor follow-ups" section at the bottom
+> of this doc lists the work that was intentionally deferred.
 
-This document is the **single source of truth** for the refactor. Future agents
-working on this codebase should read it before touching `character.ts` and
-update the progress checklist as phases complete.
+The goal was to carve the ~1000-line `parseCharacterData` function into small,
+focused, independently testable modules under `src/tools/character/` — with
+**no behavior change**. The existing vitest tests (now 161) plus the
+committed character snapshot + the live-character regression script were
+the contract.
+
+This document remains the source of truth for the *design* of the carve-up
+and the rationale behind each module boundary. Future agents touching
+`src/tools/character/` should read it before making structural changes.
 
 ---
 
@@ -165,7 +171,7 @@ is meaningless if the diff covers multiple phases.
 | 6 | `weapons.ts`, then `actions.ts` | Weapons first because actions depends on it. | ~150 | Medium | [x] |
 | 7 | `spells.ts` | The most cross-cutting module. Save until the pattern is well-established. | ~200 | High | [x] |
 | 8 | `inventory.ts`, `notes.ts` | Simple. Cleanup. | ~100 | Low | [x] |
-| 9 | Final `parse.ts` carve-up + `definition.ts` move | `parseCharacterData` is mostly imports by now — finish the orchestrator. | — | Low | [ ] |
+| 9 | Final `parse.ts` carve-up + `definition.ts` move | `parseCharacterData` is mostly imports by now — finish the orchestrator. | — | Low | [x] |
 
 **When you complete a phase: tick the box above, commit the doc change in the
 same PR.** That's how the next agent knows where things stand.

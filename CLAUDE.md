@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **In-flight refactor:** `src/tools/character.ts` is mid-carve-up — see [docs/character-refactor.md](docs/character-refactor.md) before modifying. Do not skip the snapshot regression layers when changing this file.
+> **Note:** The original 1000-line `parseCharacterData` has been carved into per-domain modules under [src/tools/character/](src/tools/character/) (identity, vitals, ac, stats, defenses, features, weapons, actions, spells, inventory, notes, parse, definition). See [docs/character-refactor.md](docs/character-refactor.md) for the module boundaries. When changing parse behaviour, keep the live-character snapshot regression flow listed there.
 
 ## Commands
 
@@ -49,7 +49,9 @@ The central architectural split is between tools that need a Playwright browser 
 | `src/cache.ts` | Generic in-memory TTL cache (`TtlCache<T>`) with FIFO eviction |
 | `src/open5e.ts` | Open5e SRD fallback — no auth required. Used when DDB is down or returns empty results. 1 h TTL cache. Stores parsed objects (not JSON strings). |
 | `src/utils.ts` | Shared `stripHtml()` utility — strips tags and decodes HTML entities. Imported by `character.ts` and `reference.ts`. |
-| `src/tools/character.ts` | Character fetch, `parseCharacterData(raw, sections)` (sections: summary/combat/spells/inventory/features/full), definition lookup, fuzzy name resolution |
+| `src/tools/character.ts` | Public API surface — network/IO (`getCharacter`, `downloadCharacter`, `listCharacters`, fuzzy `findCharacterByName`), JSON cache, plus re-exports of `parseCharacterData` and `getDefinition` from the per-domain modules in `src/tools/character/` |
+| `src/tools/character/parse.ts` | `parseCharacterData(raw, sections)` orchestrator (sections: summary/combat/spells/inventory/features/notes/concentration/full) — delegates to the per-domain modules |
+| `src/tools/character/definition.ts` | `getDefinition` — searches a character's spells/feats/class features/racial traits/background/equipped items for name matches |
 | `src/tools/reference.ts` | Conditions (hardcoded), spells/items/races/classes/backgrounds/feats (DDB character-service `/game-data/spells?classId=X&classLevel=20` — one request per spellcasting class, returns cantrips + leveled spells together). Provenance-tracked cache: 24 h on full success, 5 min on partial. Per-call Open5e fallback when DDB returns nothing. Exports `addCharacterSpellsToCompendium()` to seed cantrips from character JSON. |
 | `src/tools/monster.ts` | Monster search and stat block via DDB monster-service, Open5e fallback |
 | `src/tools/campaign.ts` | Campaign and character list via browser scraping |
