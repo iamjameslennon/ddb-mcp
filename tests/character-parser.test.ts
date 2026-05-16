@@ -515,6 +515,114 @@ describe("parseCharacterData — __INITIAL_ASI feats excluded from FEATS", () =>
   });
 });
 
+// ── 2024 rules: race-sourced ability score bonuses are vestigial ─────────────
+// In the 2024 rules, ability score increases come from the character's
+// background (origin feat), not the race. The race-sourced *-score
+// modifiers persist in the JSON with isGranted:false — the website ignores
+// them, so we must too. Feat/background-sourced ASIs (also isGranted:false
+// in 2024) are still applied.
+//
+// Reproduces BUG #1 from regression-report-2026-05-16.md (Dwarf Cleric STR
+// reported as 16 instead of 14 due to double-counting the +2 race mod).
+describe("parseCharacterData — 2024 race ASI handling", () => {
+  // Synthetic fixture mimicking the shape of a 2024-rules character:
+  // char.stats already contains the user's chosen ASIs baked in. The
+  // race-sourced ASI mods are present in the JSON but flagged
+  // isGranted:false. The feat-sourced ASIs (from the background's origin
+  // feat) are also isGranted:false but ARE applied by the website.
+  const CHAR_2024: Record<string, unknown> = {
+    data: {
+      ...((FIGHTER_5.data) as Record<string, unknown>),
+      // STR 14, DEX 8, CON 10, INT 12, WIS 15, CHA 13 (Dwarf Cleric values)
+      stats: [
+        { id: 1, value: 14 }, { id: 2, value: 8 }, { id: 3, value: 10 },
+        { id: 4, value: 12 }, { id: 5, value: 15 }, { id: 6, value: 13 },
+      ],
+      bonusStats: [
+        { id: 1, value: null }, { id: 2, value: null }, { id: 3, value: null },
+        { id: 4, value: null }, { id: 5, value: null }, { id: 6, value: null },
+      ],
+      overrideStats: [
+        { id: 1, value: null }, { id: 2, value: null }, { id: 3, value: null },
+        { id: 4, value: null }, { id: 5, value: null }, { id: 6, value: null },
+      ],
+      modifiers: {
+        race: [
+          // Vestigial 2024 race ASIs — must NOT be applied
+          { type: "bonus", subType: "strength-score",  fixedValue: 2, isGranted: false },
+          { type: "bonus", subType: "dexterity-score", fixedValue: 1, isGranted: false },
+        ],
+        class: [],
+        background: [],
+        feat: [
+          // 2024 background origin-feat ASIs — must be applied
+          { type: "bonus", subType: "wisdom-score",   fixedValue: 2, isGranted: false },
+          { type: "bonus", subType: "charisma-score", fixedValue: 1, isGranted: false },
+        ],
+        item: [],
+        condition: [],
+      },
+    },
+  };
+
+  it("does not apply race-sourced score bonuses when isGranted is false", () => {
+    const out = parseCharacterData(CHAR_2024);
+    // STR stays at char.stats value 14 (race +2 must be skipped)
+    expect(out).toContain("STR 14 (+2)");
+    // DEX stays at char.stats value 8 (race +1 must be skipped)
+    expect(out).toContain("DEX 8 (-1)");
+  });
+
+  it("still applies non-race ability score bonuses (e.g. feat from origin)", () => {
+    const out = parseCharacterData(CHAR_2024);
+    // WIS 15 + feat +2 = 17
+    expect(out).toContain("WIS 17 (+3)");
+    // CHA 13 + feat +1 = 14
+    expect(out).toContain("CHA 14 (+2)");
+  });
+
+  it("still applies race-sourced score bonuses when isGranted is true (2014 rules)", () => {
+    // Same shape but isGranted:true on race mods (legacy 2014 behaviour)
+    const char2014: Record<string, unknown> = {
+      data: {
+        ...((CHAR_2024.data) as Record<string, unknown>),
+        modifiers: {
+          race: [
+            { type: "bonus", subType: "constitution-score", fixedValue: 2, isGranted: true },
+            { type: "bonus", subType: "wisdom-score",       fixedValue: 1, isGranted: true },
+          ],
+          class: [], background: [], feat: [], item: [], condition: [],
+        },
+      },
+    };
+    const out = parseCharacterData(char2014);
+    // CON 10 + race +2 = 12
+    expect(out).toContain("CON 12 (+1)");
+    // WIS 15 + race +1 = 16
+    expect(out).toContain("WIS 16 (+3)");
+  });
+
+  it("treats undefined isGranted as applied (backwards-compatible default)", () => {
+    // Fixtures predating this rule (e.g. FIGHTER_5) don't set isGranted on
+    // their race score mods — historical behaviour was to apply them.
+    const charLegacy: Record<string, unknown> = {
+      data: {
+        ...((CHAR_2024.data) as Record<string, unknown>),
+        modifiers: {
+          race: [
+            // No isGranted field — must still apply
+            { type: "bonus", subType: "strength-score", fixedValue: 2 },
+          ],
+          class: [], background: [], feat: [], item: [], condition: [],
+        },
+      },
+    };
+    const out = parseCharacterData(charLegacy);
+    // STR 14 + race +2 = 16
+    expect(out).toContain("STR 16 (+3)");
+  });
+});
+
 // ── resolveTemplates — expression evaluation ──────────────────────────────────
 // FIGHTER_5: level 5, prof +3. Template tokens are injected via a feat snippet
 // so we can assert the resolved text in the parsed output.

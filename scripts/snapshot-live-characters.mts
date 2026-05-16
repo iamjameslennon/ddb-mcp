@@ -42,6 +42,7 @@ const TARGETS: SnapshotTarget[] = [
   { id: "40046334",  description: "Caikrana Qualanthri — L1 High Elf Sorcerer — Draconic Resilience unarmored AC" },
   { id: "112314883", description: "Ethelrede — L9 Human Champion Fighter — Remarkable Athlete" },
   { id: "145415789", description: "Vi — L10 Gnome Artificer (Artillerist) — non-PHB class" },
+  { id: "152570649", description: "Dwarf Cleric (2024) — 2024 rules; race-categorised ASIs are vestigial (isGranted:false) and must be skipped — see BUG #1 in regression-report-2026-05-16.md" },
 ];
 
 async function main(): Promise<void> {

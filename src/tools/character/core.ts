@@ -31,9 +31,23 @@ export function computeCoreStats(char: CharData): CoreStats {
   const bonusStats = arr<Record<string, unknown>>(char.bonusStats);
   const overrideStats = arr<Record<string, unknown>>(char.overrideStats);
 
+  // Sum ability-score `bonus` modifiers, but iterate per-source so we can
+  // gate race-sourced bonuses on `isGranted`. In the 2024 rules ability
+  // score increases come from the character's background (origin feat),
+  // not from race — DDB still emits the race-categorized ASI modifiers in
+  // the JSON, but they carry `isGranted: false` and the website ignores
+  // them. We must too, or the race ASI gets double-counted against
+  // char.stats (which already includes it).
+  //
+  // 2014-era race ASIs always have `isGranted: true` (or no flag at all
+  // on hand-built fixtures), so the gate is backwards-compatible: a
+  // missing flag is treated as granted.
   const scoreBonuses: Record<number, number> = {};
-  for (const m of allMods) {
-    if (m.type === "bonus" && typeof m.subType === "string" && m.subType.endsWith("-score")) {
+  for (const [source, list] of Object.entries(obj(char.modifiers))) {
+    for (const m of arr<Mod>(list)) {
+      if (m.type !== "bonus") continue;
+      if (typeof m.subType !== "string" || !m.subType.endsWith("-score")) continue;
+      if (source === "race" && m.isGranted === false) continue;
       const idx = statKeys.indexOf(m.subType.replace("-score", ""));
       if (idx >= 0) scoreBonuses[idx + 1] = (scoreBonuses[idx + 1] ?? 0) + num(m.fixedValue);
     }
