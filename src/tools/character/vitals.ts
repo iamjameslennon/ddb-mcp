@@ -139,11 +139,25 @@ function computeInitiative(core: CoreStats): number {
       const sid = num(m.statId);
       return s + (sid > 0 ? statMods[sid - 1] : 0);
     }, 0);
-  // JoAT does not apply to initiative on the DDB website; Remarkable Athlete
-  // does (initiative is a DEX ability check). RA uses round-up per the 2014
-  // PHB, which matters at odd proficiency bonuses (e.g. Champion L7-8 prof
-  // +3 → +2, not +1).
-  return dexMod + initiativeBonus + (hasRemarkableAthlete(classes) ? Math.ceil(profBonus / 2) : 0);
+  // Half-proficiency to initiative comes from two distinct sources:
+  //
+  //   1. Bard's Jack of All Trades emits an explicit
+  //      `type:"half-proficiency" subType:"initiative"` modifier (in addition
+  //      to its `subType:"ability-checks"` modifier that drives skills).
+  //      PHB rule: round DOWN.
+  //   2. Champion Fighter's Remarkable Athlete emits NO modifier at all —
+  //      detection is by subclass name + level (see hasRemarkableAthlete).
+  //      PHB rule: round UP.
+  //
+  // We must NOT infer initiative half-prof from `subType:"ability-checks"`
+  // alone — the DDB website doesn't. If a character has both JoAT and RA
+  // somehow (Bard 2 / Champion 7 multiclass), take the max rather than
+  // double-stacking.
+  const joatInit = allMods.some(m => m.type === "half-proficiency" && m.subType === "initiative")
+    ? Math.floor(profBonus / 2)
+    : 0;
+  const raInit = hasRemarkableAthlete(classes) ? Math.ceil(profBonus / 2) : 0;
+  return dexMod + initiativeBonus + Math.max(joatInit, raInit);
 }
 
 // ── Death saves ──────────────────────────────────────────────────────────────

@@ -1049,11 +1049,38 @@ describe("parseCharacterData — Jack of All Trades skills", () => {
   });
 });
 
-// ── Jack of All Trades does NOT apply to initiative ───────────────────────────
-// DDB's website does not apply JoAT half-proficiency to initiative.
-// FIGHTER_5: DEX 12 (+1), level 5, prof +3 → initiative = +1 regardless of JoAT.
-describe("parseCharacterData — JoAT does not affect initiative", () => {
-  it("does not apply half-proficiency to initiative even when ability-checks modifier is present", () => {
+// ── JoAT initiative is driven by a separate `subType:"initiative"` modifier ───
+// DDB encodes Bard's Jack of All Trades as TWO modifiers (confirmed against
+// BillytheBard 40080729):
+//   • { type: "half-proficiency", subType: "ability-checks" } — applies to skills
+//   • { type: "half-proficiency", subType: "initiative" }     — applies to initiative
+// The website applies the initiative bonus only when the `initiative` subType
+// is present — the `ability-checks` modifier alone does NOT propagate. This
+// matches the previous behaviour of refusing to infer initiative from the
+// generic ability-checks flag; the bug was missing the explicit subType.
+describe("parseCharacterData — half-proficiency to initiative", () => {
+  it("adds floor(prof/2) to initiative when subType:'initiative' half-prof mod is present (JoAT shape)", () => {
+    // FIGHTER_5: DEX 12 (+1), level 5, prof +3, floor(3/2)=1 → initiative = +1 + 1 = +2
+    const withJoatInit: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        modifiers: {
+          ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+          class: [
+            ...((FIGHTER_5.data as Record<string, unknown>).modifiers as Record<string, unknown[]>).class,
+            { type: "half-proficiency", subType: "ability-checks" },
+            { type: "half-proficiency", subType: "initiative" },
+          ],
+        },
+      },
+    };
+    const out = parseCharacterData(withJoatInit, "summary");
+    expect(out).toContain("Initiative: +2");
+  });
+
+  it("does NOT add half-proficiency to initiative when only subType:'ability-checks' is present", () => {
+    // ability-checks alone is the skills flag — the website does not infer
+    // initiative from it. Confirms the previous (correct) narrow behaviour.
     const with2024Joat: Record<string, unknown> = {
       data: {
         ...((FIGHTER_5.data) as Record<string, unknown>),
@@ -1066,7 +1093,6 @@ describe("parseCharacterData — JoAT does not affect initiative", () => {
       },
     };
     const out = parseCharacterData(with2024Joat, "summary");
-    // DDB does not add JoAT to initiative; result is DEX mod only = +1
     expect(out).toContain("Initiative: +1");
   });
 
@@ -1074,6 +1100,49 @@ describe("parseCharacterData — JoAT does not affect initiative", () => {
     // Baseline FIGHTER_5 has no JoAT modifier → initiative = DEX mod = +1
     const out = parseCharacterData(FIGHTER_5, "summary");
     expect(out).toContain("Initiative: +1");
+  });
+
+  it("uses round-down (floor) for JoAT — matches PHB and DDB website", () => {
+    // FIGHTER_5: level 5, prof +3, floor(3/2)=1, ceil(3/2)=2.
+    // JoAT specifies round-down per the 2014 PHB.
+    const withJoatInit: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        modifiers: {
+          ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+          class: [
+            { type: "half-proficiency", subType: "initiative" },
+          ],
+        },
+      },
+    };
+    const out = parseCharacterData(withJoatInit, "summary");
+    // DEX +1 + floor(3/2)=1 = +2 (NOT +3 which would be ceil)
+    expect(out).toContain("Initiative: +2");
+  });
+
+  it("does not double-apply when both JoAT and Remarkable Athlete grant half-prof", () => {
+    // Synthetic Bard 2 / Champion 7 multiclass (level 9, prof +4):
+    // floor(4/2) = ceil(4/2) = 2. Total init = DEX +1 + 2 = +3 (NOT +5).
+    const multiclass: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        classes: [{
+          id: 1, level: 9, hitDiceUsed: 0,
+          definition: { name: "Fighter", hitDice: 10, canCastSpells: false, spellCastingAbilityId: 0, spellRules: {} },
+          subclassDefinition: { name: "Champion" },
+          classFeatures: [],
+        }],
+        modifiers: {
+          ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+          class: [
+            { type: "half-proficiency", subType: "initiative" },
+          ],
+        },
+      },
+    };
+    const out = parseCharacterData(multiclass, "summary");
+    expect(out).toContain("Initiative: +3");
   });
 });
 
