@@ -46,6 +46,7 @@ const TARGETS: SnapshotTarget[] = [
   { id: "26158232",  description: "Laena — L20 High Elf Rogue (Scout) — Scout's Superior Mobility emits `bonus speed-walking +10` (axis-specific; not `innate-`) — see BUG #3 in regression-report-2026-05-16.md" },
   { id: "42519628",  description: "Ehsu Ferncraig — L10 Kobold Ranger (Monster Slayer) — Tasha's optional Roving feature emits an orphan `class bonus speed-walking +5` modifier whose componentId is NOT in classFeatures; must be skipped because enableOptionalClassFeatures is false (website 40 ft = base 30 + Mobile feat +10 only)" },
   { id: "40080729",  description: "BillytheBard — L2 Human Bard — Jack of All Trades emits TWO half-proficiency mods: `subType:\"ability-checks\"` for skills + `subType:\"initiative\"` for initiative. Initiative path requires the explicit subType — see BUG #4 in regression-report-2026-05-16.md" },
+  { id: "40193614",  description: "Petit Nuage — L5 V. Human Monk — has char.overrideHitPoints set (rolled HP), so max HP must come from the override field, not the baseHitPoints + CON×L auto-calc — see BUG #5 in regression-report-2026-05-16.md" },
 ];
 
 async function main(): Promise<void> {

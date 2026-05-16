@@ -1193,6 +1193,74 @@ describe("parseCharacterData — skill flat-bonus modifiers (statId-based)", () 
   });
 });
 
+// ── overrideHitPoints replaces auto-calculated HP ─────────────────────────────
+// DDB stores a manual / rolled-low HP override in char.overrideHitPoints.
+// When set, it already includes CON mod and any hit-points-per-level features
+// baked in — we must NOT add them on top. Bonus HP (from items, Aid spell, etc.)
+// in char.bonusHitPoints stacks on top of the override.
+//
+// Reproduces BUG #5 (Petit Nuage 40193614, MCP 38 vs website 23) and the HP
+// part of BUG #6 (Aerin 68903271, MCP 39 vs website 33).
+describe("parseCharacterData — overrideHitPoints", () => {
+  it("uses overrideHitPoints as max when it is set, ignoring the auto-calc", () => {
+    // FIGHTER_5 auto-calc: 39 base + (CON +2 × 5 levels) = 49. With override,
+    // we want exactly the override value as max, regardless of base.
+    const withOverride: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        overrideHitPoints: 25,
+        removedHitPoints: 0,
+      },
+    };
+    const out = parseCharacterData(withOverride, "summary");
+    expect(out).toContain("HP: 25/25");
+  });
+
+  it("subtracts removedHitPoints from the override-based max", () => {
+    const withOverride: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        overrideHitPoints: 25,
+        removedHitPoints: 5,
+      },
+    };
+    const out = parseCharacterData(withOverride, "summary");
+    expect(out).toContain("HP: 20/25");
+  });
+
+  it("stacks bonusHitPoints on top of the override", () => {
+    const withOverrideAndBonus: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        overrideHitPoints: 25,
+        bonusHitPoints: 5,
+        removedHitPoints: 0,
+      },
+    };
+    const out = parseCharacterData(withOverrideAndBonus, "summary");
+    expect(out).toContain("HP: 30/30");
+  });
+
+  it("regression guard: when overrideHitPoints is null, falls back to auto-calc", () => {
+    // FIGHTER_5 has no override and currentHp = 44, maxHp = 49.
+    const out = parseCharacterData(FIGHTER_5, "summary");
+    expect(out).toContain("HP: 44/49");
+  });
+
+  it("regression guard: overrideHitPoints of 0 is treated as 'not overridden'", () => {
+    // Safety check — a literal 0 is nonsensical as a max HP. Treat like null.
+    const withZeroOverride: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        overrideHitPoints: 0,
+      },
+    };
+    const out = parseCharacterData(withZeroOverride, "summary");
+    // Falls back to auto-calc: 39 + 2×5 = 49, removed 5 → 44/49
+    expect(out).toContain("HP: 44/49");
+  });
+});
+
 // ── Concentration spell section ───────────────────────────────────────────────
 // Spell definitions include `concentration` directly in definition so
 // addCharacterSpellsToCompendium seeds the buffer before parsing.

@@ -32,7 +32,16 @@ function computeHp(core: CoreStats): HitPoints {
   const hpPerLevelBonus = allMods
     .filter(m => m.type === "bonus" && m.subType === "hit-points-per-level")
     .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
-  const max = num(char.baseHitPoints) + num(char.bonusHitPoints) + ((conMod + hpPerLevelBonus) * totalLevel);
+  // When the player rolls for HP (or manually edits their max), DDB stores the
+  // final value in `overrideHitPoints`. This already includes CON mod and any
+  // hit-points-per-level features baked in — we must NOT add them on top.
+  // `bonusHitPoints` (items, Aid, etc.) still stacks on top either way.
+  // A literal 0 is treated as "not overridden" — defensive against malformed data.
+  const override = num(char.overrideHitPoints);
+  const bonus = num(char.bonusHitPoints);
+  const max = override > 0
+    ? override + bonus
+    : num(char.baseHitPoints) + bonus + ((conMod + hpPerLevelBonus) * totalLevel);
   const current = max - num(char.removedHitPoints);
   const temp = num(char.temporaryHitPoints);
   return { current, max, temp };
