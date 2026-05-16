@@ -823,6 +823,126 @@ describe("parseCharacterData — Remarkable Athlete (Champion 7+)", () => {
   });
 });
 
+// ── Speed bonuses from class/subclass/feat modifiers ─────────────────────────
+// DDB encodes class-feature speed bonuses with three different subTypes:
+//   • subType:"speed-walking"     — axis-specific (e.g. Scout's Superior Mobility, Ranger's Roving)
+//   • subType:"speed"              — generic walking-default (e.g. Barbarian Fast Movement, Mobile feat)
+//   • subType:"innate-speed-walking" — race-granted base (already handled)
+//
+// Reproduces BUG #3 from regression-report-2026-05-16.md (Laena/Xarius/Ehsu
+// all reporting 30ft instead of 40ft).
+describe("parseCharacterData — speed bonuses from class/feat modifiers", () => {
+  // FIGHTER_5 has Mountain Dwarf walking speed 25 ft — use it as the base.
+  const withModifier = (modCategory: string, mod: Record<string, unknown>): Record<string, unknown> => ({
+    data: {
+      ...((FIGHTER_5.data) as Record<string, unknown>),
+      modifiers: {
+        ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+        [modCategory]: [
+          ...((((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown[]>)[modCategory] ?? []),
+          mod,
+        ],
+      },
+    },
+  });
+
+  it("applies bonus speed-walking from class (Scout's Superior Mobility shape)", () => {
+    const out = parseCharacterData(
+      withModifier("class", { type: "bonus", subType: "speed-walking", fixedValue: 10, value: 10 }),
+      "summary",
+    );
+    // 25 + 10 = 35
+    expect(out).toContain("Speed: 35 ft.");
+  });
+
+  it("applies bonus speed (no axis suffix) as a walking bonus (Barbarian Fast Movement shape)", () => {
+    const out = parseCharacterData(
+      withModifier("class", { type: "bonus", subType: "speed", fixedValue: 10, value: 10 }),
+      "summary",
+    );
+    expect(out).toContain("Speed: 35 ft.");
+  });
+
+  it("applies bonus speed from a feat-sourced modifier (Mobile feat shape)", () => {
+    const out = parseCharacterData(
+      withModifier("feat", { type: "bonus", subType: "speed", fixedValue: 10, value: 10 }),
+      "summary",
+    );
+    expect(out).toContain("Speed: 35 ft.");
+  });
+
+  it("stacks bonus speed-walking and bonus speed", () => {
+    // Ehsu's shape: class speed-walking +5 plus feat speed +10
+    const data = {
+      ...((FIGHTER_5.data) as Record<string, unknown>),
+      modifiers: {
+        ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+        class: [
+          ...((((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown[]>).class ?? []),
+          { type: "bonus", subType: "speed-walking", fixedValue: 5, value: 5 },
+        ],
+        feat: [
+          { type: "bonus", subType: "speed", fixedValue: 10, value: 10 },
+        ],
+      },
+    };
+    const out = parseCharacterData({ data }, "summary");
+    // 25 + 5 + 10 = 40
+    expect(out).toContain("Speed: 40 ft.");
+  });
+
+  it("does NOT apply generic 'speed' bonus to non-walking axes", () => {
+    // Give the character a fly speed of 30, then add a generic +10 'speed'
+    // bonus. The bonus should affect walking (25 + 10 = 35) but NOT flying
+    // (which should stay at 30).
+    const data = {
+      ...((FIGHTER_5.data) as Record<string, unknown>),
+      race: {
+        ...((FIGHTER_5.data) as Record<string, unknown>).race as Record<string, unknown>,
+        weightSpeeds: { normal: { walk: 25, fly: 30, swim: 0, climb: 0, burrow: 0 } },
+      },
+      modifiers: {
+        ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+        class: [
+          ...((((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown[]>).class ?? []),
+          { type: "bonus", subType: "speed", fixedValue: 10, value: 10 },
+        ],
+      },
+    };
+    const out = parseCharacterData({ data }, "summary");
+    expect(out).toContain("Speed: 35 ft., fly 30 ft.");
+  });
+
+  it("applies bonus speed-flying to flying speed only", () => {
+    const data = {
+      ...((FIGHTER_5.data) as Record<string, unknown>),
+      race: {
+        ...((FIGHTER_5.data) as Record<string, unknown>).race as Record<string, unknown>,
+        weightSpeeds: { normal: { walk: 25, fly: 30, swim: 0, climb: 0, burrow: 0 } },
+      },
+      modifiers: {
+        ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+        class: [
+          ...((((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown[]>).class ?? []),
+          { type: "bonus", subType: "speed-flying", fixedValue: 10, value: 10 },
+        ],
+      },
+    };
+    const out = parseCharacterData({ data }, "summary");
+    expect(out).toContain("Speed: 25 ft., fly 40 ft.");
+  });
+
+  it("regression guard: bonus innate-speed-walking still works", () => {
+    // Pre-fix path — race-emitted speed bonuses use this subType.
+    const out = parseCharacterData(
+      withModifier("race", { type: "bonus", subType: "innate-speed-walking", fixedValue: 5, value: 5, isGranted: true }),
+      "summary",
+    );
+    // 25 + 5 = 30
+    expect(out).toContain("Speed: 30 ft.");
+  });
+});
+
 // ── Gloom Stalker Dread Ambusher — statId-based WIS bonus to initiative ────────
 // Real DDB shape: type:"bonus" subType:"initiative" value:null fixedValue:null statId:5
 // FIGHTER_5: DEX 12 (+1), WIS 13 (+1) → initiative = DEX(+1) + WIS(+1) = +2

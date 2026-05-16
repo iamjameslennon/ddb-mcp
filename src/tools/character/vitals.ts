@@ -52,13 +52,20 @@ function computeHitDice(classes: readonly ClassEntry[]): string[] {
 function computeSpeed(core: CoreStats): string[] {
   const { char, allMods } = core;
   const weightSpeeds = obj(obj(obj(char.race).weightSpeeds).normal);
-  // "set" modifiers override the base race speed; "bonus" modifiers add to it (e.g. Longstrider)
-  const speedCalc = (subType: string, base: number, fallback = 0): number => {
+  // DDB uses three subType patterns for speed modifiers:
+  //   - `innate-speed-{axis}` — race-granted base / overrides (e.g. Dwarven slow speed)
+  //   - `speed-{axis}` — class/feat/subclass axis-specific bonus (e.g. Scout's Superior Mobility, Ranger's Roving)
+  //   - `speed` (no axis suffix) — generic walking-speed bonus (e.g. Barbarian Fast Movement, Mobile feat, Longstrider)
+  // `set` mods override the base axis speed; `bonus` mods stack on top.
+  const speedCalc = (axis: "walking" | "flying" | "swimming" | "climbing" | "burrowing", base: number, fallback = 0): number => {
+    const subTypes = new Set([`innate-speed-${axis}`, `speed-${axis}`]);
+    // The bare "speed" subType is a walking-default bonus only; never applies to fly/swim/climb/burrow.
+    if (axis === "walking") subTypes.add("speed");
     const override = allMods
-      .filter(m => m.type === "set" && m.subType === subType && num(m.value ?? m.fixedValue) > 0)
+      .filter(m => m.type === "set" && typeof m.subType === "string" && subTypes.has(m.subType) && num(m.value ?? m.fixedValue) > 0)
       .reduce((max, m) => Math.max(max, num(m.value ?? m.fixedValue)), 0);
     const bonus = allMods
-      .filter(m => m.type === "bonus" && m.subType === subType)
+      .filter(m => m.type === "bonus" && typeof m.subType === "string" && subTypes.has(m.subType))
       .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
     return (override || base || fallback) + bonus;
   };
@@ -68,11 +75,11 @@ function computeSpeed(core: CoreStats): string[] {
   const unarmoredMoveBonus = allMods
     .filter(m => m.type === "bonus" && m.subType === "unarmored-movement")
     .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
-  const walkSpeed = speedCalc("innate-speed-walking", num(weightSpeeds.walk), 30) + unarmoredMoveBonus;
-  const flySpeed = speedCalc("innate-speed-flying", num(weightSpeeds.fly));
-  const swimSpeed = speedCalc("innate-speed-swimming", num(weightSpeeds.swim));
-  const climbSpeed = speedCalc("innate-speed-climbing", num(weightSpeeds.climb));
-  const burrowSpeed = speedCalc("innate-speed-burrowing", num(weightSpeeds.burrow));
+  const walkSpeed = speedCalc("walking", num(weightSpeeds.walk), 30) + unarmoredMoveBonus;
+  const flySpeed = speedCalc("flying", num(weightSpeeds.fly));
+  const swimSpeed = speedCalc("swimming", num(weightSpeeds.swim));
+  const climbSpeed = speedCalc("climbing", num(weightSpeeds.climb));
+  const burrowSpeed = speedCalc("burrowing", num(weightSpeeds.burrow));
   const parts: string[] = [`${walkSpeed} ft.`];
   if (flySpeed > 0) parts.push(`fly ${flySpeed} ft.`);
   if (swimSpeed > 0) parts.push(`swim ${swimSpeed} ft.`);

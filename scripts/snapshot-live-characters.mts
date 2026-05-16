@@ -43,6 +43,7 @@ const TARGETS: SnapshotTarget[] = [
   { id: "112314883", description: "Ethelrede — L9 Human Champion Fighter — Remarkable Athlete" },
   { id: "145415789", description: "Vi — L10 Gnome Artificer (Artillerist) — non-PHB class" },
   { id: "152570649", description: "Dwarf Cleric (2024) — 2024 rules; race-categorised ASIs are vestigial (isGranted:false) and must be skipped — see BUG #1 in regression-report-2026-05-16.md" },
+  { id: "26158232",  description: "Laena — L20 High Elf Rogue (Scout) — Scout's Superior Mobility emits `bonus speed-walking +10` (axis-specific; not `innate-`) — see BUG #3 in regression-report-2026-05-16.md" },
 ];
 
 async function main(): Promise<void> {
