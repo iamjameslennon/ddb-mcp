@@ -211,7 +211,14 @@ function computeSenses(char: CharData, allMods: readonly Mod[], skillBonuses: re
 }
 
 // ── Proficiencies ───────────────────────────────────────────────────────────
-function computeProficiencies(allMods: readonly Mod[]): Proficiencies {
+// customProficiencies type IDs (DDB's encoding):
+//   1 = Skill, 2 = Tool, 3 = Language
+// Languages added by the player directly (not via a race/background/feat
+// modifier) live here. Confirmed by inspecting Astarion (107164636) whose
+// "Orc" language is stored as {name:"Orc", type:3, proficiencyLevel:3}.
+const CUSTOM_PROF_TYPE_LANGUAGE = 3;
+
+function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficiencies {
   const armorProfMap: Record<string, string> = {
     "light-armor": "Light Armor", "medium-armor": "Medium Armor",
     "heavy-armor": "Heavy Armor", "shields": "Shields",
@@ -250,6 +257,12 @@ function computeProficiencies(allMods: readonly Mod[]): Proficiencies {
       languages.push(capitalize(sub.replace(/-/g, " ")));
     }
   }
+  // Player-added languages via DDB's "Custom Proficiency" UI live here.
+  for (const cp of arr<Record<string, unknown>>(char.customProficiencies)) {
+    if (num(cp.type) !== CUSTOM_PROF_TYPE_LANGUAGE) continue;
+    const name = str(cp.name).trim();
+    if (name) languages.push(name);
+  }
   return { armor, weapons, tools, languages };
 }
 
@@ -262,7 +275,7 @@ export function computeStats(core: CoreStats): Stats {
     savingThrows: buildSavingThrows(allMods, statMods, profBonus),
     skillLines: buildSkillLines(skillBonuses),
     senses: computeSenses(char, allMods, skillBonuses),
-    proficiencies: computeProficiencies(allMods),
+    proficiencies: computeProficiencies(char, allMods),
   };
 }
 

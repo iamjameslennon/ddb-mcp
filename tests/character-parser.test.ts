@@ -333,6 +333,85 @@ describe("parseCharacterData — Monk Martial Arts DEX for monk weapons", () => 
   });
 });
 
+// ── Languages from char.customProficiencies (type:3) ─────────────────────────
+// Player-added languages live in `char.customProficiencies` with `type: 3`.
+// (type 1 = skill, type 2 = tool, type 3 = language.) Confirmed against
+// Astarion (107164636) whose "Orc" language lives here, not in
+// char.modifiers.* as a `type:"language"` entry. The proficiency
+// collector previously only walked allMods, so customProficiencies were
+// silently dropped.
+//
+// Addresses the Astarion case in BUG #7. Note: the other 3 characters
+// listed in that bug (Halfling Rogue LF / Elf Fighter Wood / Human Paladin)
+// have NO data in their JSON for the reported missing languages — neither
+// in customProficiencies nor in char.choices nor in char.modifiers. Likely
+// the regression report confused "languages the website CAN grant for this
+// background" with "languages actually selected on the character".
+describe("parseCharacterData — languages from customProficiencies", () => {
+  it("adds customProficiencies type:3 entries to the Languages line", () => {
+    const withCustomLang: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        customProficiencies: [
+          { id: 1, name: "Orc", type: 3, proficiencyLevel: 3 },
+          { id: 2, name: "Sylvan", type: 3, proficiencyLevel: 3 },
+        ],
+      },
+    };
+    const out = parseCharacterData(withCustomLang, "summary");
+    const langLine = out.split("\n").find(l => /Languages:/.test(l)) ?? "";
+    expect(langLine).toContain("Orc");
+    expect(langLine).toContain("Sylvan");
+  });
+
+  it("does NOT add customProficiencies type:1 (skill) or type:2 (tool) to languages", () => {
+    const withMixedProfs: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        customProficiencies: [
+          { id: 1, name: "Underwater Basket Weaving", type: 1, proficiencyLevel: 3 },
+          { id: 2, name: "Theremin", type: 2, proficiencyLevel: 3 },
+          { id: 3, name: "Goblin", type: 3, proficiencyLevel: 3 },
+        ],
+      },
+    };
+    const out = parseCharacterData(withMixedProfs, "summary");
+    const langLine = out.split("\n").find(l => /Languages:/.test(l)) ?? "";
+    expect(langLine).toContain("Goblin");
+    expect(langLine).not.toContain("Underwater Basket Weaving");
+    expect(langLine).not.toContain("Theremin");
+  });
+
+  it("stacks customProficiencies languages alongside type:'language' modifier languages", () => {
+    const withBoth: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        customProficiencies: [
+          { id: 1, name: "Orc", type: 3, proficiencyLevel: 3 },
+        ],
+        modifiers: {
+          ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+          race: [
+            { type: "language", subType: "common" },
+            { type: "language", subType: "elvish" },
+          ],
+        },
+      },
+    };
+    const out = parseCharacterData(withBoth, "summary");
+    const langLine = out.split("\n").find(l => /Languages:/.test(l)) ?? "";
+    expect(langLine).toContain("Common");
+    expect(langLine).toContain("Elvish");
+    expect(langLine).toContain("Orc");
+  });
+
+  it("regression: no customProficiencies still produces the existing output", () => {
+    const out = parseCharacterData(FIGHTER_5, "summary");
+    // FIGHTER_5 has no language modifiers → "Languages: None"
+    expect(out).toContain("Languages: None");
+  });
+});
+
 // ── Weapon proficiency: comma-containing type names (e.g. "Crossbow, Light") ──
 // "Crossbow, Light".toLowerCase().replace(/[,\s]+/g, "-") → "crossbow-light" ✓
 // The old replace(/ /g, "-") left the comma: "crossbow,-light" → no proficiency match.

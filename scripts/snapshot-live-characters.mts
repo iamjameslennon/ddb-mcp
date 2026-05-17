@@ -47,6 +47,7 @@ const TARGETS: SnapshotTarget[] = [
   { id: "42519628",  description: "Ehsu Ferncraig — L10 Kobold Ranger (Monster Slayer) — Tasha's optional Roving feature emits an orphan `class bonus speed-walking +5` modifier whose componentId is NOT in classFeatures; must be skipped because enableOptionalClassFeatures is false (website 40 ft = base 30 + Mobile feat +10 only)" },
   { id: "40080729",  description: "BillytheBard — L2 Human Bard — Jack of All Trades emits TWO half-proficiency mods: `subType:\"ability-checks\"` for skills + `subType:\"initiative\"` for initiative. Initiative path requires the explicit subType — see BUG #4 in regression-report-2026-05-16.md" },
   { id: "40193614",  description: "Petit Nuage — L5 V. Human Monk — has char.overrideHitPoints set (rolled HP), so max HP must come from the override field, not the baseHitPoints + CON×L auto-calc — see BUG #5 in regression-report-2026-05-16.md" },
+  { id: "107164636", description: "Astarion — L1 High Elf Rogue — \"Orc\" language added via char.customProficiencies (type:3); not present as a type:'language' modifier in char.modifiers.* — see BUG #7 in regression-report-2026-05-16.md" },
 ];
 
 async function main(): Promise<void> {
