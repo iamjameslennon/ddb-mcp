@@ -84,7 +84,12 @@ The central architectural split is between tools that need a Playwright browser 
 
 ### parseCharacterData notes
 
-- **Senses**: collected from four sources — `type:"sense"` mods (2024), `type:"set"`/`type:"set-base"` mods (2014), `char.customSenses`, and `race.racialTraits[].definition.senses`. Deduplication keeps the highest value per sense.
+- **Senses**: collected from four sources — `type:"sense"` mods (2024), `type:"set"`/`type:"set-base"` mods (2014), `char.customSenses`, and `race.racialTraits[].definition.senses`. Deduplication keeps the highest value per sense. Two-pass model: pass 1 records baselines from `set`/`set-base`/customSenses/trait notes (each with its source componentId), pass 2 walks `type:"sense"` mods — same componentId as baseline = dual encoding (take max), different componentId = additive extension (e.g. Gloom Stalker Umbral Sight +30 ft on top of race darkvision).
+- **Languages**: three storage mechanisms in DDB, all collected in `computeProficiencies`:
+  1. `type:"language"` modifiers in `char.modifiers.*` — standard race/class/feat grants.
+  2. `char.customProficiencies` entries with `type: 3` — player-added via "Custom Proficiency" UI; name is in the entry itself.
+  3. `char.characterValues` entries with `typeId: 35` — `valueId` is a stringified integer pointing into the rule-data language table. Resolved client-side by DDB's React app via `/character/v5/rule-data` → `data.languages[]`. We mirror the ID→name lookup in `LANGUAGE_NAMES_BY_ID` (in `stats.ts`), covering all 115 officially-sourced languages plus Telepathy. Unknown IDs fall back to `Language #N` so homebrew never silently disappears.
+  - **Refreshing the language table**: run `npx tsx scripts/dump-sourced-languages.mts`. It fetches rule-data, filters for entries with `rpgSourceId != null`, and emits TypeScript-ready Record entries grouped by source. Paste the output into the `LANGUAGE_NAMES_BY_ID` block when DDB publishes a new sourcebook.
 - **Ability scores**: `type:"set"` item modifiers (e.g. Amulet of Health) floor the calculated score; `type:"bonus"` modifiers (e.g. Ioun Stone) add to it.
 - **Speed**: `type:"set"` overrides the base race speed; `type:"bonus"` modifiers (e.g. Longstrider, Boots of Speed) stack on top. Applies to walk/fly/swim/climb/burrow.
 - **Spells**: cross-source duplicate detection flags spells granted by both `classSpells` (prepared/known) and `char.spells.*` (auto-granted). Warning line included in output.
