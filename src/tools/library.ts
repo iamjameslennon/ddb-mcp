@@ -2,6 +2,30 @@ import { BrowserContext } from "playwright";
 import { getPage } from "../browser.js";
 import { hasValidSession } from "../session-fetch.js";
 
+// ── Library scrape deduplication ─────────────────────────────────────────────
+
+export interface LibraryBook { title: string; slug: string; ownership: string }
+
+/**
+ * Dedupe library entries by `slug` (with `title` as fallback when slug is
+ * empty). DDB's /library page renders the same book card in multiple
+ * surfaces — e.g. a "Recently viewed" row above the main grid — and the
+ * scrape pulls both DOM nodes. Order is preserved by first occurrence so
+ * the displayed list keeps DDB's intended sort. Exported for unit testing
+ * without a browser context.
+ */
+export function dedupeLibraryBooks(books: ReadonlyArray<LibraryBook>): LibraryBook[] {
+  const seen = new Set<string>();
+  const out: LibraryBook[] = [];
+  for (const b of books) {
+    const key = b.slug || b.title;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(b);
+  }
+  return out;
+}
+
 // ── Book slug resolution ───────────────────────────────────────────────────────
 
 /**
@@ -61,7 +85,7 @@ export async function listLibrary(context: BrowserContext): Promise<string> {
   });
   await page.waitForSelector("div[data-testid='sourceCard'], .library-empty", { timeout: 15000 }).catch(() => {});
 
-  const books = await page.evaluate(() => {
+  const rawBooks = await page.evaluate(() => {
     const items: Array<{ title: string; slug: string; ownership: string }> = [];
     document.querySelectorAll("div[data-testid='sourceCard']").forEach((card) => {
       const titleEl = card.querySelector("a[class*='SourceCard_sourceTitle']") as HTMLAnchorElement | null;
@@ -75,6 +99,9 @@ export async function listLibrary(context: BrowserContext): Promise<string> {
     return items;
   });
 
+  // DDB renders some books in multiple surfaces (recently-viewed row + main grid);
+  // dedupe on slug so the same book doesn't appear twice in the result.
+  const books = dedupeLibraryBooks(rawBooks);
   return JSON.stringify({ count: books.length, books });
 }
 

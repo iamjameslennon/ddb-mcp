@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { matchBookSlug } from "../src/tools/library.js";
+import { matchBookSlug, dedupeLibraryBooks } from "../src/tools/library.js";
 
 const BOOKS = [
   { title: "Player's Handbook (2024)",        slug: "dnd/phb-2024",  ownership: "Owned" },
@@ -51,4 +51,55 @@ describe("matchBookSlug", () => {
     }
   });
 
+});
+
+// ── Library entry deduplication ──────────────────────────────────────────────
+// DDB's /library page can render the same book card twice (e.g. once under
+// a "Recently viewed" / "Featured" row AND once in the main grid). The raw
+// scrape pulls both DOM nodes — confirmed against an "owned-shared" library
+// that returned 12 entries for 6 unique books. Deduplication is by slug
+// (canonical, URL-derived); when slug is empty, fall back to title.
+describe("dedupeLibraryBooks", () => {
+  it("removes duplicate entries with identical slugs", () => {
+    const dupes = [
+      { title: "Player's Handbook (2024)", slug: "dnd/phb-2024", ownership: "Owned" },
+      { title: "Monster Manual (2024)",    slug: "dnd/mm-2024",  ownership: "Owned" },
+      { title: "Player's Handbook (2024)", slug: "dnd/phb-2024", ownership: "Owned" },  // dupe
+      { title: "Monster Manual (2024)",    slug: "dnd/mm-2024",  ownership: "Owned" },  // dupe
+    ];
+    expect(dedupeLibraryBooks(dupes)).toEqual([
+      { title: "Player's Handbook (2024)", slug: "dnd/phb-2024", ownership: "Owned" },
+      { title: "Monster Manual (2024)",    slug: "dnd/mm-2024",  ownership: "Owned" },
+    ]);
+  });
+
+  it("preserves the order of first occurrence", () => {
+    const dupes = [
+      { title: "A", slug: "x/a", ownership: "Owned" },
+      { title: "B", slug: "x/b", ownership: "Owned" },
+      { title: "A", slug: "x/a", ownership: "Owned" },
+      { title: "C", slug: "x/c", ownership: "Owned" },
+    ];
+    expect(dedupeLibraryBooks(dupes).map(b => b.slug)).toEqual(["x/a", "x/b", "x/c"]);
+  });
+
+  it("falls back to title when slug is empty", () => {
+    const dupes = [
+      { title: "Mystery Book", slug: "", ownership: "Owned" },
+      { title: "Mystery Book", slug: "", ownership: "Owned" },
+    ];
+    expect(dedupeLibraryBooks(dupes)).toHaveLength(1);
+  });
+
+  it("keeps entries with identical titles but different slugs (separate editions)", () => {
+    const editions = [
+      { title: "Player's Handbook", slug: "dnd/phb",      ownership: "Owned" },
+      { title: "Player's Handbook", slug: "dnd/phb-2024", ownership: "Owned" },
+    ];
+    expect(dedupeLibraryBooks(editions)).toHaveLength(2);
+  });
+
+  it("returns an empty array unchanged", () => {
+    expect(dedupeLibraryBooks([])).toEqual([]);
+  });
 });
