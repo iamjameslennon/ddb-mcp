@@ -64,6 +64,13 @@ export function computeCoreStats(char: CharData): CoreStats {
     }
   }
 
+  // PHB cap: ability scores from race/class/feat/background ASI sources max
+  // out at 20 (both 2014 and 2024 PHB). Two sources are explicitly allowed
+  // to exceed: manual overrides via `overrideStats` and `type:"set"` item
+  // modifiers (Belt of Giant Strength, Manual of Bodily Health, etc.).
+  // Without this cap, characters like Calderax (base 18 + multiple +1 ASIs)
+  // display as 21 (+5) while the DDB website shows 20 (+5).
+  const ABILITY_SCORE_CAP = 20;
   const statTotals = statNames.map((_, i) => {
     const id = i + 1;
     const base = baseStats.find(s => num(s.id) === id);
@@ -73,7 +80,8 @@ export function computeCoreStats(char: CharData): CoreStats {
     const bonusVal = num(bonus?.value ?? 0);
     const overrideVal = override?.value != null ? num(override.value) : null;
     const calculated = overrideVal != null ? overrideVal : baseVal + bonusVal + (scoreBonuses[id] ?? 0);
-    return scoreSetValues[id] != null ? Math.max(calculated, scoreSetValues[id]) : calculated;
+    const capped = overrideVal != null ? calculated : Math.min(calculated, ABILITY_SCORE_CAP);
+    return scoreSetValues[id] != null ? Math.max(capped, scoreSetValues[id]) : capped;
   });
   const statMods = statTotals.map(modOf);
 

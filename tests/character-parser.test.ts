@@ -849,6 +849,108 @@ describe("parseCharacterData — 2024 race ASI handling", () => {
   });
 });
 
+// ── Ability scores capped at 20 from ASIs / race / feats ──────────────────────
+// Per PHB (both 2014 and 2024): "Your ability scores can't go higher than 20
+// unless a feature specifically says otherwise." DDB's website applies the
+// cap; the parser didn't, producing scores like WIS 21 (+5) where the
+// website shows 20 (+5). Same modifier either way, so derived values match,
+// but the displayed score was off by 1.
+//
+// Reproduces BUG #8 from regression-report-2026-05-16.md (Calderax
+// Greycastle 14814039 — WIS 18 + 3 separate +1 ASIs from race/Survivalist/
+// Ritual Caster = 21, website caps to 20).
+//
+// `type:"set"` modifiers from items (Belt of Giant Strength etc) and
+// `overrideStats` are explicitly designed to exceed 20 — those must
+// continue to bypass the cap.
+describe("parseCharacterData — ability score 20 cap (PHB)", () => {
+  const withWisdomBase = (baseWis: number, bonuses: Array<{ src: string; val: number }>): Record<string, unknown> => ({
+    data: {
+      ...((FIGHTER_5.data) as Record<string, unknown>),
+      stats: [
+        { id: 1, value: 16 }, { id: 2, value: 12 }, { id: 3, value: 14 },
+        { id: 4, value: 10 }, { id: 5, value: baseWis }, { id: 6, value: 8 },
+      ],
+      bonusStats: [
+        { id: 1, value: null }, { id: 2, value: null }, { id: 3, value: null },
+        { id: 4, value: null }, { id: 5, value: null }, { id: 6, value: null },
+      ],
+      overrideStats: [
+        { id: 1, value: null }, { id: 2, value: null }, { id: 3, value: null },
+        { id: 4, value: null }, { id: 5, value: null }, { id: 6, value: null },
+      ],
+      modifiers: {
+        ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+        race: [], background: [], item: [], condition: [],
+        feat: bonuses.filter(b => b.src === "feat").map(b => ({ type: "bonus", subType: "wisdom-score", fixedValue: b.val, value: b.val, isGranted: true })),
+        class: bonuses.filter(b => b.src === "class").map(b => ({ type: "bonus", subType: "wisdom-score", fixedValue: b.val, value: b.val, isGranted: true })),
+      },
+    },
+  });
+
+  it("caps additive ASI/feat bonuses at 20 (Calderax shape)", () => {
+    // base 18 + 1 + 1 + 1 = 21 raw; capped to 20.
+    const char = {
+      data: {
+        ...((withWisdomBase(18, []).data) as Record<string, unknown>),
+        modifiers: {
+          ...((withWisdomBase(18, []).data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+          race: [{ type: "bonus", subType: "wisdom-score", fixedValue: 1, value: 1, isGranted: true }],
+          feat: [
+            { type: "bonus", subType: "wisdom-score", fixedValue: 1, value: 1, isGranted: true },
+            { type: "bonus", subType: "wisdom-score", fixedValue: 1, value: 1, isGranted: true },
+          ],
+        },
+      },
+    };
+    const out = parseCharacterData(char, "summary");
+    expect(out).toContain("WIS 20 (+5)");
+    expect(out).not.toContain("WIS 21");
+  });
+
+  it("does NOT cap below 20 (scores under cap unchanged)", () => {
+    const char = withWisdomBase(13, [{ src: "feat", val: 1 }]);
+    const out = parseCharacterData(char, "summary");
+    // 13 + 1 = 14
+    expect(out).toContain("WIS 14 (+2)");
+  });
+
+  it("does NOT cap exactly at 20", () => {
+    const char = withWisdomBase(18, [{ src: "feat", val: 2 }]);
+    const out = parseCharacterData(char, "summary");
+    expect(out).toContain("WIS 20 (+5)");
+  });
+
+  it("respects overrideStats above 20 (manual override bypasses cap)", () => {
+    const char: Record<string, unknown> = {
+      data: {
+        ...((withWisdomBase(18, []).data) as Record<string, unknown>),
+        overrideStats: [
+          { id: 1, value: null }, { id: 2, value: null }, { id: 3, value: null },
+          { id: 4, value: null }, { id: 5, value: 24 }, { id: 6, value: null },
+        ],
+      },
+    };
+    const out = parseCharacterData(char, "summary");
+    expect(out).toContain("WIS 24 (+7)");
+  });
+
+  it("respects type:set item modifiers above 20 (Belt of Giant Strength shape)", () => {
+    // Belt of Cloud Giant Strength: type:"set" subType:"strength-score" value:27
+    const char: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        modifiers: {
+          ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+          item: [{ type: "set", subType: "strength-score", fixedValue: 27, value: 27, isGranted: true }],
+        },
+      },
+    };
+    const out = parseCharacterData(char, "summary");
+    expect(out).toContain("STR 27 (+8)");
+  });
+});
+
 // ── resolveTemplates — expression evaluation ──────────────────────────────────
 // FIGHTER_5: level 5, prof +3. Template tokens are injected via a feat snippet
 // so we can assert the resolved text in the parsed output.
