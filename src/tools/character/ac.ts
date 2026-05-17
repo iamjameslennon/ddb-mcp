@@ -74,12 +74,18 @@ export function computeAc(core: CoreStats): number {
 
   if (shield) ac += num(obj(shield.definition).armorClass);
 
-  // Add any AC bonus modifiers (e.g. shield of faith, ring of protection, Defense fighting style).
-  // Defense fighting style uses "armored-armor-class" instead of "armor-class"; it should only apply
-  // when wearing armor, but we include it unconditionally — most characters with it are armored.
-  // TODO: gate "armored-armor-class" on equipped armor to avoid inflating AC for unarmored characters.
-  const acBonus = allMods
-    .filter(m => (m.subType === "armor-class" || m.subType === "armored-armor-class") && m.type === "bonus")
+  // Generic AC bonuses (Shield of Faith, Ring of Protection, Cloak of
+  // Protection) apply unconditionally. The "armored-armor-class" variant is
+  // Defense fighting style — per PHB, it only applies "while you are wearing
+  // armor", so gate on the presence of body armor (a shield alone doesn't
+  // qualify).
+  const genericAcBonus = allMods
+    .filter(m => m.subType === "armor-class" && m.type === "bonus")
     .reduce((s, m) => s + num(m.fixedValue ?? m.value), 0);
-  return ac + acBonus;
+  const armoredAcBonus = bodyArmor
+    ? allMods
+        .filter(m => m.subType === "armored-armor-class" && m.type === "bonus")
+        .reduce((s, m) => s + num(m.fixedValue ?? m.value), 0)
+    : 0;
+  return ac + genericAcBonus + armoredAcBonus;
 }

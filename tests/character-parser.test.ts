@@ -622,6 +622,139 @@ describe("parseCharacterData — Amulet of Health type:set score modifier", () =
   });
 });
 
+// ── Monk Unarmored Movement gate ─────────────────────────────────────────────
+// Per PHB: "Your speed increases by 10 feet while you are not wearing armor or
+// wielding a shield." The `unarmored-movement` bonus was previously applied
+// unconditionally, inflating monk walking speed when they had armor equipped
+// (rare but possible — e.g. a multiclass Monk/Fighter who toggles armor on
+// in the website builder).
+describe("parseCharacterData — Monk Unarmored Movement gate", () => {
+  // FIGHTER_5 walk = 25. With Monk L2 unarmored movement +10, gated bonus.
+  const baseMonk = (extraInventory: Array<Record<string, unknown>>): Record<string, unknown> => ({
+    data: {
+      ...((FIGHTER_5.data) as Record<string, unknown>),
+      inventory: extraInventory,
+      modifiers: {
+        ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+        class: [
+          ...((((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>).class as unknown[]),
+          { type: "bonus", subType: "unarmored-movement", fixedValue: 10, value: 10 },
+        ],
+      },
+    },
+  });
+
+  it("applies unarmored-movement bonus when no armor or shield equipped", () => {
+    const out = parseCharacterData(baseMonk([]), "summary");
+    // 25 + 10 = 35
+    expect(out).toContain("Speed: 35 ft.");
+  });
+
+  it("does NOT apply unarmored-movement when body armor is equipped", () => {
+    const out = parseCharacterData(baseMonk([
+      { equipped: true, definition: { name: "Chain Mail", filterType: "Armor", armorTypeId: 3, armorClass: 16 } },
+    ]), "summary");
+    // 25 alone — bonus must NOT apply
+    expect(out).toContain("Speed: 25 ft.");
+  });
+
+  it("does NOT apply unarmored-movement when a shield is equipped", () => {
+    const out = parseCharacterData(baseMonk([
+      { equipped: true, definition: { name: "Shield", filterType: "Armor", armorTypeId: 4, armorClass: 2 } },
+    ]), "summary");
+    expect(out).toContain("Speed: 25 ft.");
+  });
+
+  it("applies unarmored-movement when armor is in inventory but UNEQUIPPED", () => {
+    const out = parseCharacterData(baseMonk([
+      { equipped: false, definition: { name: "Chain Mail", filterType: "Armor", armorTypeId: 3, armorClass: 16 } },
+    ]), "summary");
+    // Bonus applies — only equipped armor blocks it
+    expect(out).toContain("Speed: 35 ft.");
+  });
+
+  it("applies unarmored-movement when equipped item is not armor (e.g. Backpack)", () => {
+    const out = parseCharacterData(baseMonk([
+      { equipped: true, definition: { name: "Backpack", filterType: "Other Gear" } },
+    ]), "summary");
+    expect(out).toContain("Speed: 35 ft.");
+  });
+});
+
+// ── Defense fighting style armor gate (armored-armor-class) ──────────────────
+// Per PHB: "While you are wearing armor, you gain a +1 bonus to AC."
+// DDB emits the bonus as { type:"bonus", subType:"armored-armor-class", value:1 }
+// regardless of whether armor is equipped. The bonus must only apply when
+// body armor is actually equipped — a shield alone doesn't count, and an
+// unarmored character (or one wearing only a shield) shouldn't get +1.
+//
+// Generic AC bonuses (subType:"armor-class") from Shield of Faith, Ring of
+// Protection, Cloak of Protection, etc. apply unconditionally and must
+// still work.
+describe("parseCharacterData — Defense fighting style armor gate", () => {
+  const withMods = (modList: Array<Record<string, unknown>>, inventory: Array<Record<string, unknown>> = []): Record<string, unknown> => ({
+    data: {
+      ...((FIGHTER_5.data) as Record<string, unknown>),
+      inventory,
+      modifiers: {
+        ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+        class: [
+          ...((((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>).class as unknown[]),
+          ...modList,
+        ],
+      },
+    },
+  });
+
+  it("applies armored-armor-class bonus when body armor is equipped", () => {
+    const out = parseCharacterData(withMods(
+      [{ type: "bonus", subType: "armored-armor-class", fixedValue: 1, value: 1 }],
+      [{ equipped: true, definition: { name: "Chain Mail", filterType: "Armor", armorTypeId: 3, armorClass: 16 } }],
+    ), "summary");
+    // Heavy armor (16) ignores DEX → 16 + 1 (Defense) = 17
+    expect(out).toContain("AC: 17");
+  });
+
+  it("does NOT apply armored-armor-class bonus when no armor is equipped", () => {
+    const out = parseCharacterData(withMods(
+      [{ type: "bonus", subType: "armored-armor-class", fixedValue: 1, value: 1 }],
+      [],
+    ), "summary");
+    // 10 + DEX(+1) = 11; Defense must NOT add
+    expect(out).toContain("AC: 11");
+  });
+
+  it("does NOT apply armored-armor-class bonus with only a shield equipped", () => {
+    const out = parseCharacterData(withMods(
+      [{ type: "bonus", subType: "armored-armor-class", fixedValue: 1, value: 1 }],
+      [{ equipped: true, definition: { name: "Shield", filterType: "Armor", armorTypeId: 4, armorClass: 2 } }],
+    ), "summary");
+    // 10 + DEX(+1) + shield(2) = 13; Defense does NOT apply (no body armor)
+    expect(out).toContain("AC: 13");
+  });
+
+  it("regression: generic armor-class bonus (Ring of Protection) applies unarmored", () => {
+    const out = parseCharacterData(withMods(
+      [{ type: "bonus", subType: "armor-class", fixedValue: 1, value: 1 }],
+      [],
+    ), "summary");
+    // 10 + DEX(+1) + 1 = 12; Ring of Protection style applies regardless of armor
+    expect(out).toContain("AC: 12");
+  });
+
+  it("regression: generic armor-class bonus stacks with armored-armor-class when armored", () => {
+    const out = parseCharacterData(withMods(
+      [
+        { type: "bonus", subType: "armor-class", fixedValue: 1, value: 1 },           // Ring of Protection
+        { type: "bonus", subType: "armored-armor-class", fixedValue: 1, value: 1 },   // Defense fighting style
+      ],
+      [{ equipped: true, definition: { name: "Chain Mail", filterType: "Armor", armorTypeId: 3, armorClass: 16 } }],
+    ), "summary");
+    // 16 + 1 (Ring) + 1 (Defense) = 18
+    expect(out).toContain("AC: 18");
+  });
+});
+
 // ── Draconic Resilience — type:"set" unarmored-armor-class raises base to 13 ──
 // Real DDB shape: { type:"set", subType:"unarmored-armor-class", value:3, fixedValue:3, statId:null }
 // Correct formula: 10 + value(3) + DEX mod = 13 + DEX

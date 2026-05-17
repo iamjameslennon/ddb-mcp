@@ -9,7 +9,7 @@
  * a vitals concern.
  */
 
-import { arr, hasRemarkableAthlete, num, obj, signed } from "./helpers.js";
+import { arr, hasRemarkableAthlete, num, obj, signed, str } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
 
 export interface HitPoints { current: number; max: number; temp: number }
@@ -114,11 +114,19 @@ function computeSpeed(core: CoreStats): string[] {
     return (override || base || fallback) + bonus;
   };
   // Monk Unarmored Movement uses "unarmored-movement" rather than "innate-speed-walking".
-  // Technically only applies when unarmored and unshielded; we add it unconditionally here.
-  // TODO: gate on absence of equipped armor/shield for strict correctness.
-  const unarmoredMoveBonus = allMods
-    .filter(m => m.type === "bonus" && m.subType === "unarmored-movement" && isApplicable(m))
-    .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
+  // Per PHB: only applies "while you are not wearing armor or wielding a
+  // shield." Gate on the absence of any equipped item with filterType="Armor"
+  // (which covers both body armor and shields, since DDB uses armorTypeId
+  // 1/2/3 for light/medium/heavy and 4 for shield, all under the same
+  // filterType).
+  const hasEquippedArmorOrShield = arr<Record<string, unknown>>(char.inventory).some(
+    i => i.equipped === true && str(obj(i.definition).filterType) === "Armor"
+  );
+  const unarmoredMoveBonus = hasEquippedArmorOrShield
+    ? 0
+    : allMods
+        .filter(m => m.type === "bonus" && m.subType === "unarmored-movement" && isApplicable(m))
+        .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
   const walkSpeed = speedCalc("walking", num(weightSpeeds.walk), 30) + unarmoredMoveBonus;
   const flySpeed = speedCalc("flying", num(weightSpeeds.fly));
   const swimSpeed = speedCalc("swimming", num(weightSpeeds.swim));

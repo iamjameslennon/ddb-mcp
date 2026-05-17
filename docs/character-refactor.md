@@ -314,15 +314,14 @@ Don't try to share one canonical `Mod` union across modules until at least
 3 modules have independently arrived at compatible shapes. Premature
 consolidation is what made the original function hard to refactor.
 
-### B. Fix the 4 known TODOs
+### B. Fix the 4 known TODOs — DONE
 
-Each is a one-line correctness fix once the surrounding module is isolated.
-Do these as small, focused PRs after their owning module lands:
+All resolved:
 
-- [character.ts:269](../src/tools/character.ts#L269) — Monk Unarmored Movement should gate on absence of armor/shield (lands with Phase 3, fix after).
-- [character.ts:308](../src/tools/character.ts#L308) — JoAT vs. Remarkable Athlete initiative distinction (already handled, may be removable).
-- [character.ts:351](../src/tools/character.ts#L351) — `armored-armor-class` (Defense fighting style) should gate on equipped armor (lands with Phase 4, fix after).
-- Any others that surface during the carve-up.
+- ~~character.ts:269 — Monk Unarmored Movement gate~~ → fixed in vitals.ts (gate on absence of equipped Armor-filterType inventory).
+- ~~character.ts:308 — JoAT vs. Remarkable Athlete initiative distinction~~ → resolved during BUG #4 rewrite. JoAT is detected via the explicit `subType:"initiative"` half-prof modifier (PHB round-down); RA via subclass+level (PHB round-up); `Math.max` of the two avoids double-stacking for the rare Bard 2 / Champion 7 multiclass.
+- ~~character.ts:351 — `armored-armor-class` (Defense fighting style) gate~~ → fixed in ac.ts (split into generic `armor-class` always-on bonus + `armored-armor-class` gated on equipped body armor — shield alone doesn't qualify).
+- Nothing else surfaced during the carve-up.
 
 ### C. Carve up `getDefinition` if it grows
 
