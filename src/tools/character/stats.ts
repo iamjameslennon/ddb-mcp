@@ -222,17 +222,77 @@ const CUSTOM_PROF_TYPE_LANGUAGE = 3;
 // into the rule-data language table via `valueId` (a stringified integer).
 // DDB's React app resolves the ID → name client-side from a /rule-data
 // fetch. Confirmed via Playwright network trace against the three "missing
-// languages" characters in BUG #7. Standard PHB + commonly-encountered
-// exotic languages are mirrored here so we don't need a network call.
-// Unknown IDs (homebrew / setting-specific) fall back to a placeholder.
+// languages" characters in BUG #7. We mirror every officially-sourced
+// language (those with `rpgSourceId != null` in /character/v5/rule-data)
+// here so the parser doesn't need a network call. Creature-language IDs
+// (Worg, Sahuagin, Giant Eagle, etc — `rpgSourceId: null`) are excluded
+// since they aren't typically player-selectable. Unknown IDs fall back
+// to a placeholder so homebrew never silently disappears.
+//
+// Refresh procedure: re-run `scripts/dump-sourced-languages.mts` and
+// paste the output here, keeping the ID-sorted order.
 const CHAR_VALUE_TYPE_LANGUAGE = 35;
 const LANGUAGE_NAMES_BY_ID: Record<number, string> = {
+  // PHB (rpgSourceId 198) — core 2014 + 2024 standard languages
   1: "Common", 2: "Dwarvish", 3: "Elvish", 4: "Giant", 5: "Gnomish",
   6: "Goblin", 7: "Halfling", 8: "Orc", 9: "Abyssal", 10: "Celestial",
   11: "Draconic", 12: "Deep Speech", 13: "Infernal", 14: "Primordial",
   15: "Sylvan", 16: "Undercommon",
-  18: "Telepathy", 19: "Aquan", 20: "Auran", 21: "Ignan", 22: "Terran",
-  23: "Druidic", 46: "Thieves' Cant",
+  // Telepathy (unsourced in rule-data but commonly granted by monster races / mind flayers)
+  18: "Telepathy",
+  // PHB elementals + Druidic + Thieves' Cant
+  19: "Aquan", 20: "Auran", 21: "Ignan", 22: "Terran", 23: "Druidic",
+  46: "Thieves' Cant",
+  // Journeys through the Radiant Citadel (rpgSourceId 87)
+  74: "Citlanés", 75: "Djaynaian", 76: "Godstongue", 77: "Halri",
+  78: "Maynah", 79: "N'warian", 80: "Quirapu", 81: "Sensan",
+  82: "Shankhi", 83: "Tletlahtolli", 84: "Xingyu", 85: "Zabaani",
+  // Spelljammer: Adventures in Space (rpgSourceId 90)
+  86: "Dohwar", 87: "Hadozee", 88: "Aartuk",
+  // Dragonlance: Shadow of the Dragon Queen (rpgSourceId 95)
+  89: "Abanasinian", 90: "Ergot", 91: "Istarian", 92: "Kenderspeak",
+  93: "Kharolian", 94: "Khur", 95: "Kothian", 96: "Nerakese",
+  97: "Nordmaarian", 98: "Ogre", 99: "Solamnic",
+  // Planescape: Adventures in the Multiverse (rpgSourceId 114)
+  101: "Demodand",
+  // Humblewood (rpgSourceId 133)
+  102: "Birdfolk", 103: "Cervan", 105: "Hedge", 106: "Jerbeen",
+  107: "Mapach", 108: "Vulpin",
+  // Tome of Beasts / Kobold Press (rpgSourceId 139)
+  110: "Derro", 111: "Eonic", 113: "Lemurfolk", 114: "Loxodan",
+  115: "Millitaur", 117: "Tosculi", 118: "Trollkin", 120: "Void Speech",
+  // Tales of the Valiant (rpgSourceId 142)
+  121: "Angulotl", 122: "Kuran'zoi",
+  // Tome of Beasts 2 / Midgard (rpgSourceId 151)
+  109: "Darakhul", 112: "Erina", 116: "Ravenfolk", 119: "Umbral",
+  124: "Huginn's Speech", 125: "Northern Tongue",
+  // Ankeshel (rpgSourceId 152)
+  126: "Ankeshelian",
+  // Birdfolk feather speech (rpgSourceId 39)
+  104: "Feather Speech",
+  // Old Gods of Appalachia / Drakkenheim (rpgSourceId 137)
+  123: "Gibberling",
+  // 2024 additions (rpgSourceId 198)
+  127: "Common Sign Language",
+  // Adventures in Middle-earth (rpgSourceId 154)
+  129: "Black Speech", 130: "Dalish", 131: "Khuzdul", 132: "Orkish",
+  133: "Sindarin", 134: "Warg-speech", 135: "Westron", 136: "Dunlendish",
+  // Setting expansion (rpgSourceId 156) — secondary Thieves' Cant entry
+  137: "Thieves' Cant",
+  // Quests from the Infinite Staircase / Critical Role / etc (rpgSourceId 158, 160, 162)
+  138: "Capran", 139: "Eluran", 140: "Tilia",
+  141: "Swallybog",
+  142: "Dara", 143: "Howler", 144: "Naku Naku", 145: "Torum",
+  // Pathfinder for Dummies / Paizo-style (rpgSourceId 202)
+  146: "Aklo", 147: "Caligni", 148: "Daemonic", 149: "Necril",
+  150: "Varisian",
+  // Forgotten Realms regional (rpgSourceId 205)
+  151: "Aglarondan", 152: "Alzhedo", 153: "Chessentan", 154: "Chondathan",
+  155: "Damaran", 156: "Iluskan", 157: "Lantanese", 158: "Midani",
+  159: "Mulhorandi", 160: "Rashemi", 161: "Reghedjic", 162: "Sespech",
+  163: "Turmic", 164: "Untheric",
+  // Misc later additions (rpgSourceId 224, 225, 230)
+  165: "Skin Cant", 166: "Communication Spores", 167: "Archosauric",
 };
 
 function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficiencies {
