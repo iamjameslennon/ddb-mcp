@@ -135,6 +135,21 @@ function buildSkillLines(skillBonuses: readonly SkillBonus[]): string[] {
 }
 
 // ── Senses ──────────────────────────────────────────────────────────────────
+// Senses use a two-pass model so Gloom Stalker's Umbral Sight extends race
+// darkvision rather than being clamped to the higher of the two:
+//
+//   Pass 1 (base-establishing): record `set`/`set-base` modifiers,
+//     `customSenses`, and racial-trait sense notes. These define the
+//     character's baseline for each sense.
+//   Pass 2 (`type:"sense"` modifiers): for each, decide:
+//     • no baseline yet → this sense becomes the base (2024-style: race
+//       emits `type:"sense"` directly without a paired set-base)
+//     • baseline from a DIFFERENT component → additive (Umbral Sight pattern:
+//       race has set-base 60 from one component, class emits sense 30 from
+//       another → 60 + 30 = 90)
+//     • baseline from the SAME component → take the max (Umbral Sight in
+//       isolation emits both set-base 30 and sense 30 from the same
+//       component as dual encodings — must not double-count to 60)
 function computeSenses(char: CharData, allMods: readonly Mod[], skillBonuses: readonly SkillBonus[]): Senses {
   const perceptionIdx = SKILLS.findIndex(([n]) => n === "Perception");
   const investigationIdx = SKILLS.findIndex(([n]) => n === "Investigation");
@@ -142,32 +157,56 @@ function computeSenses(char: CharData, allMods: readonly Mod[], skillBonuses: re
   const passivePerception = 10 + skillBonuses[perceptionIdx].bonus;
   const passiveInvestigation = 10 + skillBonuses[investigationIdx].bonus;
   const passiveInsight = 10 + skillBonuses[insightIdx].bonus;
-  // Collect senses from all sources; keep highest value per sense name.
-  const senseMap = new Map<string, number>();
-  const mergeSense = (name: string, val: number) => {
-    if (val > 0) senseMap.set(name, Math.max(senseMap.get(name) ?? 0, val));
+
+  const senseBase = new Map<string, { value: number; componentId: number }>();
+  const senseAdditions = new Map<string, number>();
+  const recordBase = (name: string, val: number, cid: number) => {
+    if (val <= 0) return;
+    const existing = senseBase.get(name);
+    if (!existing || val > existing.value) senseBase.set(name, { value: val, componentId: cid });
   };
-  // 2024: type:"sense" modifiers
-  for (const m of allMods)
-    if (m.type === "sense") mergeSense(capitalize(str(m.subType)), num(m.value));
-  // 2014: type:"set" / type:"set-base" modifiers with sense subType slugs
-  for (const m of allMods)
-    if ((m.type === "set" || m.type === "set-base") && SENSE_SLUGS.has(str(m.subType)))
-      mergeSense(capitalize(str(m.subType)), num(m.value));
-  // 2014: customSenses array (explicit overrides / grants)
+
+  // Pass 1: collect baseline-establishing sources.
+  for (const m of allMods) {
+    if ((m.type === "set" || m.type === "set-base") && SENSE_SLUGS.has(str(m.subType))) {
+      recordBase(capitalize(str(m.subType)), num(m.value), num(m.componentId));
+    }
+  }
   for (const cs of arr<Record<string, unknown>>(char.customSenses)) {
     const name = SENSE_ID_NAMES[num(cs.senseId)];
-    if (name) mergeSense(name, num(cs.value));
+    if (name) recordBase(name, num(cs.value), 0);
   }
-  // 2014: racial trait senses (range parsed from notes, e.g. "60 feet")
   for (const trait of arr<Record<string, unknown>>(obj(char.race).racialTraits)) {
     for (const sense of arr<Record<string, unknown>>(obj(trait.definition).senses)) {
       const name = SENSE_ID_NAMES[num(sense.senseId)];
       const match = str(sense.notes).match(/\d+/);
-      if (name && match) mergeSense(name, parseInt(match[0], 10));
+      if (name && match) recordBase(name, parseInt(match[0], 10), 0);
     }
   }
-  const special = Array.from(senseMap.entries()).map(([n, v]) => `${n} ${v} ft.`);
+
+  // Pass 2: process `type:"sense"` modifiers — additive if from a different
+  // component than the current baseline (Umbral Sight extending race darkvision).
+  for (const m of allMods) {
+    if (m.type !== "sense") continue;
+    const name = capitalize(str(m.subType));
+    const val = num(m.value);
+    if (val <= 0) continue;
+    const cid = num(m.componentId);
+    const baseEntry = senseBase.get(name);
+    if (!baseEntry) {
+      recordBase(name, val, cid);
+    } else if (baseEntry.componentId !== cid) {
+      senseAdditions.set(name, (senseAdditions.get(name) ?? 0) + val);
+    } else if (val > baseEntry.value) {
+      // Same component — dual encoding of one effective value; keep the higher.
+      senseBase.set(name, { value: val, componentId: cid });
+    }
+  }
+
+  const special: string[] = [];
+  for (const [name, { value }] of senseBase) {
+    special.push(`${name} ${value + (senseAdditions.get(name) ?? 0)} ft.`);
+  }
   return { passivePerception, passiveInvestigation, passiveInsight, special };
 }
 

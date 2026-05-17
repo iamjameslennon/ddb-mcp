@@ -140,6 +140,95 @@ describe("parseCharacterData — 2014 darkvision via customSenses", () => {
     expect(out).toContain("Darkvision 60 ft.");
   });
 
+  // BUG #6 (darkvision portion): Gloom Stalker's Umbral Sight should add 30
+  // ft to the character's existing darkvision (or grant 30 ft if there is
+  // none). DDB encodes it as both a `set-base 30` AND a `sense 30` modifier
+  // emitted from the same subclass-feature component. When a character has
+  // race-granted darkvision, the website ignores the class set-base (which
+  // is lower than the race base) AND adds the sense as an extension —
+  // confirmed against Aerin Forrestlimb (68903271) Wood Elf Gloom Stalker 5,
+  // website shows 90 ft.
+  //
+  // Discriminator for additive behaviour: the sense mod's componentId
+  // differs from the component owning the highest set-base. When both come
+  // from the same component (lone Umbral Sight on a character with no race
+  // darkvision), the dual emission is just two encodings of the same value —
+  // don't double-count.
+  it("Umbral Sight extends race darkvision by 30 (Aerin shape)", () => {
+    const aerinShape: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        race: {
+          fullName: "Wood Elf",
+          baseName: "Elf",
+          weightSpeeds: { normal: { walk: 30, fly: 0, swim: 0, climb: 0, burrow: 0 } },
+          racialTraits: [],
+        },
+        customSenses: [],
+        modifiers: {
+          ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+          race: [{ type: "set-base", subType: "darkvision", fixedValue: 60, value: 60, componentId: 11 }],
+          class: [
+            { type: "set-base", subType: "darkvision", fixedValue: 30, value: 30, componentId: 718 },
+            { type: "sense",    subType: "darkvision", fixedValue: 30, value: 30, componentId: 718 },
+          ],
+        },
+      },
+    };
+    const out = parseCharacterData(aerinShape, "summary");
+    expect(out).toContain("Darkvision 90 ft.");
+    expect(out).not.toContain("Darkvision 60 ft.");
+  });
+
+  it("lone Umbral Sight without race darkvision grants exactly 30 ft (no double-count)", () => {
+    // The set-base 30 and sense 30 from the SAME component are two encodings
+    // of the same effective value — must not stack to 60.
+    const humanGloomStalker: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        race: {
+          fullName: "Human",
+          baseName: "Human",
+          weightSpeeds: { normal: { walk: 30, fly: 0, swim: 0, climb: 0, burrow: 0 } },
+          racialTraits: [],
+        },
+        customSenses: [],
+        modifiers: {
+          ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+          race: [],
+          class: [
+            { type: "set-base", subType: "darkvision", fixedValue: 30, value: 30, componentId: 718 },
+            { type: "sense",    subType: "darkvision", fixedValue: 30, value: 30, componentId: 718 },
+          ],
+        },
+      },
+    };
+    const out = parseCharacterData(humanGloomStalker, "summary");
+    expect(out).toContain("Darkvision 30 ft.");
+    expect(out).not.toContain("Darkvision 60 ft.");
+  });
+
+  it("regression: 2024-style race darkvision via type:sense alone (no set-base)", () => {
+    const dwarf2024: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        race: {
+          fullName: "Dwarf",
+          baseName: "Dwarf",
+          weightSpeeds: { normal: { walk: 30, fly: 0, swim: 0, climb: 0, burrow: 0 } },
+          racialTraits: [],
+        },
+        customSenses: [],
+        modifiers: {
+          ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+          race: [{ type: "sense", subType: "darkvision", fixedValue: 120, value: 120, componentId: 13856097, isGranted: true }],
+        },
+      },
+    };
+    const out = parseCharacterData(dwarf2024, "summary");
+    expect(out).toContain("Darkvision 120 ft.");
+  });
+
   it("deduplicates: keeps the higher value when same sense appears in multiple sources", () => {
     const both: Record<string, unknown> = {
       data: {
