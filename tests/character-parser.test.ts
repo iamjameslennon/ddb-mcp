@@ -333,6 +333,101 @@ describe("parseCharacterData — Monk Martial Arts DEX for monk weapons", () => 
   });
 });
 
+// ── Languages granted via characterValues typeId:35 ───────────────────────────
+// DDB stores some language grants outside the modifier system in
+// `char.characterValues` entries with `typeId: 35`. `valueId` is a
+// stringified integer pointing into the rule-data language table
+// (id:1=Common, 2=Dwarvish, 3=Elvish, 4=Giant, 5=Gnomish, 6=Goblin,
+// 7=Halfling, 8=Orc, 9=Abyssal, 10=Celestial, 11=Draconic, 12=Deep Speech,
+// 13=Infernal, 14=Primordial, 15=Sylvan, 16=Undercommon, ...).
+// Confirmed via Playwright network trace of the React app — none of these
+// languages appear in modifiers or customProficiencies for the affected
+// characters; the React app resolves them client-side using rule-data.
+//
+// Closes the rest of BUG #7 (Halfling Rogue / Elf Fighter Wood / Human
+// Paladin).
+describe("parseCharacterData — languages from characterValues typeId:35", () => {
+  it("resolves typeId:35 entries to language names via the rule-data ID table", () => {
+    const withCv: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        characterValues: [
+          // Halfling Rogue LF shape — Goblin (valueId "6")
+          { typeId: 35, value: 3, valueId: "6", valueTypeId: "906033267", notes: null, contextId: null, contextTypeId: null },
+        ],
+      },
+    };
+    const out = parseCharacterData(withCv, "summary");
+    const langLine = out.split("\n").find(l => /Languages:/.test(l)) ?? "";
+    expect(langLine).toContain("Goblin");
+  });
+
+  it("handles multiple language grants in one character (Elf Fighter Wood shape)", () => {
+    const withCv: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        characterValues: [
+          { typeId: 35, value: 3, valueId: "2", valueTypeId: "906033267" },  // Dwarvish
+          { typeId: 35, value: 3, valueId: "7", valueTypeId: "906033267" },  // Halfling
+        ],
+      },
+    };
+    const out = parseCharacterData(withCv, "summary");
+    const langLine = out.split("\n").find(l => /Languages:/.test(l)) ?? "";
+    expect(langLine).toContain("Dwarvish");
+    expect(langLine).toContain("Halfling");
+  });
+
+  it("ignores characterValues with other typeIds (e.g. AC override typeId:1)", () => {
+    const withCv: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        characterValues: [
+          { typeId: 1, value: 17 },                              // AC override
+          { typeId: 35, value: 3, valueId: "4" },                // Giant (the actual language)
+          { typeId: 8, value: "Custom Sword", valueId: "12345" }, // item-scoped (BUG#6 shape)
+        ],
+      },
+    };
+    const out = parseCharacterData(withCv, "summary");
+    const langLine = out.split("\n").find(l => /Languages:/.test(l)) ?? "";
+    expect(langLine).toContain("Giant");
+    expect(langLine).not.toContain("17");
+    expect(langLine).not.toContain("Custom Sword");
+  });
+
+  it("falls back to placeholder for unknown language IDs", () => {
+    // valueId 999 isn't in the hardcoded standard-language table — should
+    // still appear so users can see something is granted, just with a
+    // clearly-marked unresolved name.
+    const withCv: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        characterValues: [
+          { typeId: 35, value: 3, valueId: "999" },
+        ],
+      },
+    };
+    const out = parseCharacterData(withCv, "summary");
+    const langLine = out.split("\n").find(l => /Languages:/.test(l)) ?? "";
+    expect(langLine).toContain("Language #999");
+  });
+
+  it("ignores typeId:35 entries with value <= 0 (not granted)", () => {
+    const withCv: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        characterValues: [
+          { typeId: 35, value: 0, valueId: "6" },  // Goblin but not granted
+        ],
+      },
+    };
+    const out = parseCharacterData(withCv, "summary");
+    // FIGHTER_5 has no language mods + no granted typeId 35 → still "None"
+    expect(out).toContain("Languages: None");
+  });
+});
+
 // ── Languages from char.customProficiencies (type:3) ─────────────────────────
 // Player-added languages live in `char.customProficiencies` with `type: 3`.
 // (type 1 = skill, type 2 = tool, type 3 = language.) Confirmed against

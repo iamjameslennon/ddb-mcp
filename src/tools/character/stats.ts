@@ -218,6 +218,23 @@ function computeSenses(char: CharData, allMods: readonly Mod[], skillBonuses: re
 // "Orc" language is stored as {name:"Orc", type:3, proficiencyLevel:3}.
 const CUSTOM_PROF_TYPE_LANGUAGE = 3;
 
+// characterValues entries with typeId 35 are language grants that point
+// into the rule-data language table via `valueId` (a stringified integer).
+// DDB's React app resolves the ID → name client-side from a /rule-data
+// fetch. Confirmed via Playwright network trace against the three "missing
+// languages" characters in BUG #7. Standard PHB + commonly-encountered
+// exotic languages are mirrored here so we don't need a network call.
+// Unknown IDs (homebrew / setting-specific) fall back to a placeholder.
+const CHAR_VALUE_TYPE_LANGUAGE = 35;
+const LANGUAGE_NAMES_BY_ID: Record<number, string> = {
+  1: "Common", 2: "Dwarvish", 3: "Elvish", 4: "Giant", 5: "Gnomish",
+  6: "Goblin", 7: "Halfling", 8: "Orc", 9: "Abyssal", 10: "Celestial",
+  11: "Draconic", 12: "Deep Speech", 13: "Infernal", 14: "Primordial",
+  15: "Sylvan", 16: "Undercommon",
+  18: "Telepathy", 19: "Aquan", 20: "Auran", 21: "Ignan", 22: "Terran",
+  23: "Druidic", 46: "Thieves' Cant",
+};
+
 function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficiencies {
   const armorProfMap: Record<string, string> = {
     "light-armor": "Light Armor", "medium-armor": "Medium Armor",
@@ -262,6 +279,15 @@ function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficie
     if (num(cp.type) !== CUSTOM_PROF_TYPE_LANGUAGE) continue;
     const name = str(cp.name).trim();
     if (name) languages.push(name);
+  }
+  // Language grants stored in char.characterValues (typeId 35). valueId is
+  // a stringified integer pointing into the rule-data language table.
+  for (const cv of arr<Record<string, unknown>>(char.characterValues)) {
+    if (num(cv.typeId) !== CHAR_VALUE_TYPE_LANGUAGE) continue;
+    if (num(cv.value) <= 0) continue;
+    const id = parseInt(str(cv.valueId), 10);
+    if (!Number.isFinite(id) || id <= 0) continue;
+    languages.push(LANGUAGE_NAMES_BY_ID[id] ?? `Language #${id}`);
   }
   return { armor, weapons, tools, languages };
 }
