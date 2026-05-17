@@ -492,6 +492,64 @@ describe("parseCharacterData — Draconic Resilience unarmored AC", () => {
   });
 });
 
+// ── AC override via char.characterValues typeId:1 ───────────────────────────
+// DDB stores manual AC overrides in char.characterValues with typeId:1
+// (confirmed against Aerin Forrestlimb 68903271, who has equipped Leather
+// + DEX +2 = calc 13 but the website shows AC 17 from the override field).
+// The override is character-wide (contextId / contextTypeId both null) and
+// replaces the entire AC calculation — not added as a bonus.
+describe("parseCharacterData — AC override via characterValues", () => {
+  it("uses characterValues typeId:1 as AC, replacing the calc", () => {
+    const withOverride: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        // FIGHTER_5 would calc to 10 + DEX(1) = 11 unarmored, or 11+1=12 with
+        // its default inventory. The override should win regardless.
+        characterValues: [
+          { typeId: 1, value: 17, notes: null, valueId: null, valueTypeId: null, contextId: null, contextTypeId: null },
+        ],
+      },
+    };
+    const out = parseCharacterData(withOverride, "summary");
+    expect(out).toContain("AC: 17");
+  });
+
+  it("ignores characterValues entries with other typeIds (e.g. item-scoped notes)", () => {
+    const withItemValues: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        characterValues: [
+          // Item-scoped custom name (typeId 8) — must not affect AC
+          { typeId: 8, value: "My Custom Sword", valueId: "12345", valueTypeId: "1439493548" },
+          // Item-scoped quantity (typeId 10)
+          { typeId: 10, value: 1, valueId: "12345", valueTypeId: "1439493548" },
+        ],
+      },
+    };
+    const out = parseCharacterData(withItemValues, "summary");
+    // FIGHTER_5 with default inventory: 10 + DEX 1 = 11 (no armor in fixture)
+    expect(out).toContain("AC: 11");
+  });
+
+  it("regression: AC override of 0 falls back to the calc", () => {
+    // Defensive — a literal 0 makes no sense as an AC. Treat like absent.
+    const withZeroOverride: Record<string, unknown> = {
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        characterValues: [{ typeId: 1, value: 0 }],
+      },
+    };
+    const out = parseCharacterData(withZeroOverride, "summary");
+    expect(out).toContain("AC: 11");
+  });
+
+  it("regression: no characterValues array still computes AC normally", () => {
+    // FIGHTER_5 baseline: no characterValues at all → AC 11.
+    const out = parseCharacterData(FIGHTER_5, "summary");
+    expect(out).toContain("AC: 11");
+  });
+});
+
 // ── activationType 4 class actions appear in REACTIONS ────────────────────────
 // Verified against live API: Uncanny Dodge, Deflect Missiles, Slow Fall all have
 // activation.activationType === 4 in char.actions.class.

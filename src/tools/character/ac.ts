@@ -16,12 +16,23 @@
  * that AC is isolated.
  */
 
-import { num, obj, str } from "./helpers.js";
+import { arr, num, obj, str } from "./helpers.js";
 import type { CoreStats, InventoryItem } from "./types.js";
 
 export function computeAc(core: CoreStats): number {
-  const { inventory, allMods, statMods } = core;
+  const { char, inventory, allMods, statMods } = core;
   const dexMod = statMods[1];
+
+  // Manual AC override: DDB stores it as `char.characterValues[{ typeId: 1 }]`.
+  // The override is character-wide (typeId 1 entries always have null
+  // contextId / valueId, unlike item-scoped entries with typeIds 8/10/12/etc)
+  // and replaces the entire calc — not a bonus. A literal 0 is treated as
+  // absent (defensive: it would make no sense as an AC value).
+  const overrideEntry = arr<Record<string, unknown>>(char.characterValues)
+    .find(v => num(v.typeId) === 1);
+  if (overrideEntry && num(overrideEntry.value) > 0) {
+    return num(overrideEntry.value);
+  }
 
   // armorTypeId: 1=light, 2=medium, 3=heavy, 4=shield
   const equippedArmorPieces = inventory.filter(i =>
