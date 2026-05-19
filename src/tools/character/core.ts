@@ -11,20 +11,48 @@
  * downstream.
  */
 
-import { arr, num, modOf, obj, statKeys, statNames } from "./helpers.js";
+import { arr, isBonusMod, isSetMod, num, modOf, obj, statKeys, statNames } from "./helpers.js";
 import { makeResolveTemplates } from "./templates.js";
 import type { CharData, ClassEntry, CoreStats, InventoryItem, Mod } from "./types.js";
 
 export function computeCoreStats(char: CharData): CoreStats {
-  // Flatten every modifier category — Object.values captures subclass and any
-  // future categories that the old hardcoded list missed (e.g. subclass
-  // modifiers like Remarkable Athlete).
-  const allMods = Object.values(obj(char.modifiers))
-    .flatMap(src => arr<Mod>(src));
-
   const classes = arr<ClassEntry>(char.classes);
   const totalLevel = classes.reduce((s, c) => s + num(c.level), 0);
   const profBonus = Math.floor((totalLevel - 1) / 4) + 2;
+
+  // PHB multiclass rule: only the *starting* class grants saving-throw
+  // proficiencies. DDB still hoists every class's Proficiencies-feature
+  // modifiers into modifiers.class regardless, so we drop the non-starting
+  // save-prof entries here at the source. Collect the starting class's
+  // classFeature + subclassFeature ids; a save-prof mod whose componentId
+  // is in that set is from the starting class and stays.
+  const startingClass = classes.find(c => c.isStartingClass === true) ?? classes[0];
+  const startingClassFeatureIds = new Set<number>();
+  if (startingClass) {
+    for (const cf of arr<Record<string, unknown>>(startingClass.classFeatures)) {
+      const id = num(obj(cf.definition).id);
+      if (id) startingClassFeatureIds.add(id);
+    }
+    for (const cf of arr<Record<string, unknown>>(obj(startingClass.subclassDefinition).classFeatures)) {
+      const id = num(obj(cf.definition).id);
+      if (id) startingClassFeatureIds.add(id);
+    }
+  }
+  const isStartingClassSaveProf = (m: Mod): boolean => {
+    if (m.type !== "proficiency") return true;
+    if (typeof m.subType !== "string" || !m.subType.includes("saving-throws")) return true;
+    const cid = num(m.componentId);
+    // cid === 0 means no componentId (hand-built fixtures, older DDB data) —
+    // keep, since we can't disprove it's from the starting class.
+    return cid === 0 || startingClassFeatureIds.has(cid);
+  };
+
+  const allMods = Object.entries(obj(char.modifiers)).flatMap(([source, list]) => {
+    const mods = arr<Mod>(list);
+    return source === "class" || source === "subclass"
+      ? mods.filter(isStartingClassSaveProf)
+      : mods;
+  });
 
   // ── Ability Scores ─────────────────────────────────────────────────────────
   const baseStats = arr<Record<string, unknown>>(char.stats);
@@ -45,8 +73,8 @@ export function computeCoreStats(char: CharData): CoreStats {
   const scoreBonuses: Record<number, number> = {};
   for (const [source, list] of Object.entries(obj(char.modifiers))) {
     for (const m of arr<Mod>(list)) {
-      if (m.type !== "bonus") continue;
-      if (typeof m.subType !== "string" || !m.subType.endsWith("-score")) continue;
+      if (!isBonusMod(m)) continue;
+      if (!m.subType.endsWith("-score")) continue;
       if (source === "race" && m.isGranted === false) continue;
       const idx = statKeys.indexOf(m.subType.replace("-score", ""));
       if (idx >= 0) scoreBonuses[idx + 1] = (scoreBonuses[idx + 1] ?? 0) + num(m.fixedValue);
@@ -55,7 +83,7 @@ export function computeCoreStats(char: CharData): CoreStats {
 
   const scoreSetValues: Record<number, number> = {};
   for (const m of allMods) {
-    if (m.type === "set" && typeof m.subType === "string" && m.subType.endsWith("-score")) {
+    if (isSetMod(m) && m.subType.endsWith("-score")) {
       const idx = statKeys.indexOf(m.subType.replace("-score", ""));
       if (idx >= 0) {
         const setVal = num(m.fixedValue ?? m.value);

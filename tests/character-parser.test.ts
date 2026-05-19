@@ -2139,3 +2139,124 @@ describe("parseCharacterData — 2024 race variant in header", () => {
     expect(headerLine).not.toMatch(/Aasimar\s*\(/);
   });
 });
+
+// ── Multiclass: save proficiencies come only from the starting class ────────
+// PHB Multiclass table: only your *first* class grants saving-throw
+// proficiencies. Additional classes contribute armor/weapons/tools/skills only.
+// DDB hoists every class's save-prof modifiers into `modifiers.class` regardless;
+// we need to drop the non-starting-class ones in `computeCoreStats`.
+// Confirmed against Xarius Wo Tan (58640338) — Barbarian 5 / Rogue 5 starting
+// as Barbarian. Website shows proficiency in STR + CON only; the parser was
+// also marking DEX + INT (Rogue's saves) as proficient.
+describe("parseCharacterData — multiclass save proficiencies", () => {
+  // Build a Fighter 5 / Rogue 1 multiclass starting as Fighter. The save profs
+  // are tagged with componentIds matching each class's "Proficiencies" feature
+  // id so the source-of-grant is traceable (same shape DDB emits).
+  const FIGHTER_BASE = (FIGHTER_5.data) as Record<string, unknown>;
+  const multiclass: Record<string, unknown> = {
+    data: {
+      ...FIGHTER_BASE,
+      classes: [
+        // Starting class (Fighter) — STR + CON save profs should survive.
+        {
+          ...((FIGHTER_BASE.classes as Array<Record<string, unknown>>)[0]),
+          isStartingClass: true,
+          classFeatures: [{ definition: { id: 100, name: "Proficiencies" } }],
+        },
+        // Non-starting class (Rogue 1) — DEX + INT save profs MUST be dropped.
+        {
+          id: 999,
+          level: 1,
+          hitDiceUsed: 0,
+          definition: { id: 12, name: "Rogue", hitDice: 8, canCastSpells: false, spellRules: {} },
+          subclassDefinition: null,
+          classFeatures: [{ definition: { id: 200, name: "Proficiencies" } }],
+          isStartingClass: false,
+        },
+      ],
+      modifiers: {
+        ...(FIGHTER_BASE.modifiers as Record<string, unknown>),
+        class: [
+          // Starting-class grants
+          { type: "proficiency", subType: "strength-saving-throws",     componentId: 100 },
+          { type: "proficiency", subType: "constitution-saving-throws", componentId: 100 },
+          { type: "proficiency", subType: "athletics",                  componentId: 100 },
+          // Non-starting-class grants — saves dropped, others kept
+          { type: "proficiency", subType: "dexterity-saving-throws",    componentId: 200 },
+          { type: "proficiency", subType: "intelligence-saving-throws", componentId: 200 },
+          { type: "proficiency", subType: "thieves-tools",              componentId: 200 },
+        ],
+      },
+    },
+  };
+
+  it("keeps starting-class save proficiencies (STR, CON)", () => {
+    // FIGHTER_5: STR 16 (+3), CON 14 (+2). Total level 6, profBonus 3.
+    const out = parseCharacterData(multiclass);
+    expect(out).toContain("STR +6*"); // 3 + 3
+    expect(out).toContain("CON +5*"); // 2 + 3
+  });
+
+  it("does NOT apply non-starting-class save proficiencies (DEX, INT)", () => {
+    const out = parseCharacterData(multiclass);
+    // DEX 12 (+1), INT 10 (+0). Without the bug they should NOT have the * marker.
+    expect(out).toMatch(/DEX \+1(?!\*)/);
+    expect(out).not.toContain("DEX +4*"); // would be +4 if proficient
+    expect(out).toMatch(/INT \+0(?!\*)/);
+    expect(out).not.toContain("INT +3*"); // would be +3 if proficient
+  });
+
+  it("still keeps non-save proficiencies from non-starting classes (e.g. tools)", () => {
+    // Multiclass Rogue does grant Thieves' Tools per the PHB table — verify
+    // we're filtering ONLY save profs, not all class proficiencies.
+    const out = parseCharacterData(multiclass);
+    expect(out).toMatch(/Tools?:.*Thieves tools/i);
+  });
+});
+
+// ── Global ability-checks / saving-throws bonuses ────────────────────────────
+// Stone of Good Luck (Luckstone) and similar items grant
+//   { type:"bonus", subType:"ability-checks", value:1 }
+//   { type:"bonus", subType:"saving-throws", value:1 }
+// These are GLOBAL — they apply to every save and every skill / passive,
+// stacking on top of proficiency / per-skill bonuses. Confirmed against
+// Xarius Wo Tan (58640338) attuned to a Luckstone — the DDB website's stat
+// block was +1 across the board vs the parser's output before this fix.
+describe("parseCharacterData — global bonus modifiers (Luckstone)", () => {
+  const withLuckstone: Record<string, unknown> = {
+    data: {
+      ...((FIGHTER_5.data) as Record<string, unknown>),
+      modifiers: {
+        ...((FIGHTER_5.data) as Record<string, unknown>).modifiers as Record<string, unknown>,
+        item: [
+          { type: "bonus", subType: "ability-checks", value: 1, fixedValue: 1 },
+          { type: "bonus", subType: "saving-throws", value: 1, fixedValue: 1 },
+        ],
+      },
+    },
+  };
+
+  it("adds the global saving-throws bonus to every save (proficient and not)", () => {
+    // FIGHTER_5: STR 16 (+3), DEX 12 (+1), CON 14 (+2), INT 10, WIS 13 (+1), CHA 8 (-1)
+    // Profbonus 3. Proficient saves: STR, CON.
+    const out = parseCharacterData(withLuckstone);
+    expect(out).toContain("STR +7*"); // 3 + 3 (prof) + 1 (luck)
+    expect(out).toContain("DEX +2");  // 1 + 1
+    expect(out).toContain("CON +6*"); // 2 + 3 (prof) + 1
+    expect(out).toContain("INT +1");  // 0 + 1
+    expect(out).toContain("WIS +2");  // 1 + 1
+    expect(out).toContain("CHA +0");  // -1 + 1
+  });
+
+  it("adds the global ability-checks bonus to every skill and to passives", () => {
+    const out = parseCharacterData(withLuckstone);
+    // Athletics: STR (+3) + prof (3) + luck (1) = +7
+    expect(out).toMatch(/Athletics\s+\(STR\)\s+\+7\s\*/);
+    // Acrobatics: DEX (+1) + luck (1) = +2 (no prof)
+    expect(out).toMatch(/Acrobatics\s+\(DEX\)\s+\+2(?!\s\*)/);
+    // Perception: WIS (+1) + luck (1) = +2 → passive 12
+    expect(out).toContain("Passive Perception: 12");
+    expect(out).toContain("Passive Investigation: 11"); // INT 0 + 1
+    expect(out).toContain("Passive Insight: 12");        // WIS 1 + 1
+  });
+});

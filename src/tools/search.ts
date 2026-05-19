@@ -1,78 +1,53 @@
-import { BrowserContext } from "playwright";
-import { getPage } from "../browser.js";
+import { searchSpells, searchItems, searchRaces, searchClasses, searchFeats } from "./reference.js";
+import { searchMonsters } from "./monster.js";
 
 export type SearchCategory = "spells" | "monsters" | "items" | "races" | "classes" | "feats" | "all";
 
-export async function search(
-  context: BrowserContext,
-  query: string,
-  category: SearchCategory = "all"
-): Promise<string> {
-  const page = await getPage(context);
+const ALL_CATEGORIES = ["spells", "monsters", "items", "races", "classes", "feats"] as const;
+type SpecificCategory = (typeof ALL_CATEGORIES)[number];
 
-  const categoryPaths: Record<SearchCategory, string> = {
-    spells: "spells",
-    monsters: "monsters",
-    items: "magic-items",
-    races: "races",
-    classes: "classes",
-    feats: "feats",
-    all: "search",
-  };
+const CATEGORY_LABELS: Record<SpecificCategory, string> = {
+  spells: "Spells",
+  monsters: "Monsters",
+  items: "Items",
+  races: "Races",
+  classes: "Classes",
+  feats: "Feats",
+};
 
-  const path = categoryPaths[category];
-  const encodedQuery = encodeURIComponent(query);
+// Each underlying search returns its own "no results" sentence. Detect them so
+// we can omit empty sections in the "all" rollup.
+const EMPTY_RESULT_PATTERN = /^no\s+\w+\s+found/i;
 
-  let searchUrl: string;
-  if (category === "all") {
-    searchUrl = `https://www.dndbeyond.com/search?q=${encodedQuery}`;
-  } else {
-    searchUrl = `https://www.dndbeyond.com/${path}?filter-search=${encodedQuery}`;
+export async function search(query: string, category: SearchCategory = "all"): Promise<string> {
+  if (category !== "all") {
+    return runCategory(category, query);
   }
 
-  await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-  await page.waitForSelector(".listing-body, .search-result, .results-item", { timeout: 15000 }).catch(() => {});
+  const results = await Promise.all(
+    ALL_CATEGORIES.map(c =>
+      runCategory(c, query).catch(err => `_${err instanceof Error ? err.message : String(err)}_`)
+    )
+  );
 
-  const results = await page.evaluate((cat: SearchCategory) => {
-    const items: Array<{ name: string; type: string; url: string }> = [];
-
-    if (cat === "all") {
-      // General search results page
-      document.querySelectorAll(".search-result, .results-item").forEach((el) => {
-        const nameLink = el.querySelector("a.result-title, a.listing-name, h2 a, h3 a") as HTMLAnchorElement | null;
-        const name = nameLink?.textContent?.trim() ?? el.querySelector("h2, h3")?.textContent?.trim() ?? "";
-        const type = el.querySelector(".result-category, .result-type, .listing-tag")?.textContent?.trim() ?? "";
-        const link = (nameLink ?? (el.querySelector("a") as HTMLAnchorElement | null))?.href ?? "";
-        const path = link ? new URL(link).pathname : "";
-        if (name) items.push({ name, type, url: path });
-      });
-    } else {
-      // Category listing page — items are in div.info[data-slug] containers
-      document.querySelectorAll(".listing-body div.info[data-slug]").forEach((el) => {
-        // Use a.link for the name — avoids picking up child tags like <i class="i-concentration">
-        const nameLink = el.querySelector("a.link") as HTMLAnchorElement | null;
-        const name = nameLink?.textContent?.trim() ?? "";
-        const url = nameLink?.href ?? "";
-        const path = url ? new URL(url).pathname : "";
-        // Pull level/CR/rarity from typed rows (avoids the noisy name row)
-        const levelEl = el.querySelector(
-          ".row.spell-level span, .row.monster-challenge span, .row.item-rarity span, .row.class-level span, .row.feat-prerequisite span"
-        );
-        const schoolEl = el.querySelector(".row.spell-school .school");
-        const schoolName = schoolEl
-          ? (schoolEl.className.replace("school", "").trim() || "")
-          : "";
-        const extras = [levelEl?.textContent?.trim(), schoolName].filter(Boolean).join(" | ");
-        if (name) items.push({ name, type: extras, url: path });
-      });
-    }
-
-    return items;
-  }, category);
-
-  if (results.length === 0) {
-    return `No results found for "${query}" in category "${category}". The page URL was: ${searchUrl}`;
+  const sections: string[] = [];
+  for (let i = 0; i < ALL_CATEGORIES.length; i++) {
+    const body = results[i].trim();
+    if (!body || EMPTY_RESULT_PATTERN.test(body)) continue;
+    sections.push(`## ${CATEGORY_LABELS[ALL_CATEGORIES[i]]}\n\n${body}`);
   }
 
-  return JSON.stringify({ query, category, count: results.length, results });
+  if (sections.length === 0) return `No results found for "${query}".`;
+  return [`# Search results for "${query}"`, ...sections].join("\n\n");
+}
+
+async function runCategory(category: SpecificCategory, query: string): Promise<string> {
+  switch (category) {
+    case "spells":   return searchSpells({ name: query, limit: 10 });
+    case "monsters": return searchMonsters({ name: query });
+    case "items":    return searchItems({ name: query });
+    case "races":    return searchRaces(query, 10, 0);
+    case "classes":  return searchClasses(query, 10, 0);
+    case "feats":    return searchFeats({ name: query, limit: 10, offset: 0 });
+  }
 }

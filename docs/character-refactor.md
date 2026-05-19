@@ -289,16 +289,49 @@ blast radius is bounded to one module per change.
 
 Recommended sequence, simplest first:
 
-1. **`proficiency` / `expertise` / `half-proficiency`** — flat shape (just
-   `subType`), highest usage count, exercised by every character. Lowest risk.
-2. **`bonus`** — most fields (`value`, `fixedValue`, `statId`, `bonusTypes`).
-   Touches AC, skills, saves, weapons, initiative, HP. Biggest single win.
-3. **`set` / `set-base`** — overlaps with `bonus` shape. Touches AC,
-   speeds, ability scores.
-4. **`sense`** — narrow surface (only `senses.ts` consumes).
-5. **`resistance` / `immunity` / `vulnerability`** — flat, narrow surface
-   (only `defenses.ts`).
-6. **`language`** — flat, only `stats.ts` (proficiencies block).
+1. ~~**`proficiency` / `expertise` / `half-proficiency`** — flat shape (just
+   `subType`), highest usage count, exercised by every character. Lowest risk.~~
+   **DONE 2026-05-18.** Interfaces in `types.ts`, guards (`isProficiencyMod`,
+   `isExpertiseMod`, `isHalfProficiencyMod`) in `helpers.ts`. Consumers updated:
+   `weapons.ts`, `stats.ts`, `vitals.ts`. Snapshot diff empty. Pattern
+   established: `.filter(isXxxMod)` narrows the array and lets consumers drop
+   `str(m.subType)` in favor of direct `m.subType`.
+2. ~~**`bonus`** — most fields (`value`, `fixedValue`, `statId`, `bonusTypes`).
+   Touches AC, skills, saves, weapons, initiative, HP. Biggest single win.~~
+   **DONE 2026-05-18.** `BonusMod` (with optional `value`/`fixedValue`/
+   `statId`/`isGranted`/`bonusTypes`) in `types.ts`, `isBonusMod` guard in
+   `helpers.ts`. 9 sites swept: `vitals.ts` (HP-per-level, speed, unarmored
+   movement, initiative), `weapons.ts` (magic enhancement on grantedModifiers),
+   `stats.ts` (skill flat bonus), `core.ts` (ability-score bonuses), `ac.ts`
+   (generic + armored AC bonus). The `m.value ?? m.fixedValue` pattern stays
+   (intentional "use whichever is present"). Snapshot diff empty.
+3. ~~**`set` / `set-base`** — overlaps with `bonus` shape. Touches AC,
+   speeds, ability scores.~~ **DONE 2026-05-18.** `SetMod` and `SetBaseMod`
+   in `types.ts`, `isSetMod` / `isSetBaseMod` guards in `helpers.ts`. 4 sites
+   swept: `vitals.ts` (speed override), `stats.ts` (sense baseline — both
+   set + set-base), `core.ts` (ability-score override), `ac.ts` (Draconic
+   Resilience base bump in Unarmored Defense). Snapshot diff empty.
+4. ~~**`sense`** — narrow surface (only `senses.ts` consumes).~~
+   **DONE 2026-05-18.** `SenseMod` in `types.ts`, `isSenseMod` in `helpers.ts`.
+   One site swept (the Pass 2 loop in `stats.ts:computeSenses`). Snapshot
+   diff empty.
+5. ~~**`resistance` / `immunity` / `vulnerability`** — flat, narrow surface
+   (only `defenses.ts`).~~ **DONE 2026-05-18.** Three interfaces and three
+   guards. All 3 sites in `defenses.ts:computeDefenses` swept. Snapshot
+   diff empty.
+6. ~~**`language`** — flat, only `stats.ts` (proficiencies block).~~
+   **DONE 2026-05-18.** `LanguageMod` in `types.ts`, `isLanguageMod` in
+   `helpers.ts`. One site swept: the `else if` branch of the dispatch loop
+   in `stats.ts:computeProficiencies`. Snapshot diff empty.
+
+**All 6 phases of follow-up A complete (2026-05-18).** Every mod type the
+parser reads now has a typed interface and a guard. `Mod` itself remains
+`Record<string, unknown>` — the open-ended fallback for fields the parser
+doesn't (yet) read and for unknown homebrew shapes. Future tightening could
+replace `Mod` with `ProficiencyMod | ExpertiseMod | ... | UnknownMod` once a
+canonical fallback shape is settled, but the per-type guards are already
+sufficient to give consumers `string` `subType` and typed `value`/`fixedValue`
+without globally widening the surface.
 
 Strategy for each step:
 - Define the typed shape as a TypeScript `interface`, not a class.

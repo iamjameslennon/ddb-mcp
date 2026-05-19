@@ -16,7 +16,7 @@
  * that AC is isolated.
  */
 
-import { arr, num, obj, str } from "./helpers.js";
+import { arr, isBonusMod, isSetMod, num, obj, str } from "./helpers.js";
 import type { CoreStats, InventoryItem } from "./types.js";
 
 export function computeAc(core: CoreStats): number {
@@ -65,7 +65,7 @@ export function computeAc(core: CoreStats): number {
     if (unarmoredMod) {
       const extraStatId = num(unarmoredMod.statId); // 3=CON (Barbarian), 5=WIS (Monk)
       const extraMod = extraStatId > 0 ? statMods[extraStatId - 1] : 0;
-      const baseBonus = unarmoredMod.type === "set" ? num(unarmoredMod.fixedValue ?? unarmoredMod.value) : 0;
+      const baseBonus = isSetMod(unarmoredMod) ? num(unarmoredMod.fixedValue ?? unarmoredMod.value) : 0;
       ac = 10 + baseBonus + dexMod + extraMod;
     } else {
       ac = 10 + dexMod;
@@ -80,11 +80,11 @@ export function computeAc(core: CoreStats): number {
   // armor", so gate on the presence of body armor (a shield alone doesn't
   // qualify).
   const genericAcBonus = allMods
-    .filter(m => m.subType === "armor-class" && m.type === "bonus")
+    .filter(m => isBonusMod(m) && m.subType === "armor-class")
     .reduce((s, m) => s + num(m.fixedValue ?? m.value), 0);
   const armoredAcBonus = bodyArmor
     ? allMods
-        .filter(m => m.subType === "armored-armor-class" && m.type === "bonus")
+        .filter(m => isBonusMod(m) && m.subType === "armored-armor-class")
         .reduce((s, m) => s + num(m.fixedValue ?? m.value), 0)
     : 0;
   return ac + genericAcBonus + armoredAcBonus;

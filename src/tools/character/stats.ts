@@ -9,7 +9,7 @@
  * pass could lift these into structured data, but that's a separate concern.
  */
 
-import { arr, capitalize, hasRemarkableAthlete, num, obj, signed, statKeys, statNames, str } from "./helpers.js";
+import { arr, capitalize, hasRemarkableAthlete, isBonusMod, isExpertiseMod, isHalfProficiencyMod, isLanguageMod, isProficiencyMod, isSenseMod, isSetBaseMod, isSetMod, num, obj, signed, statKeys, statNames, str } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
 
 export interface Senses {
@@ -56,12 +56,19 @@ function buildAbilityScoreDisplay(statTotals: readonly number[], statMods: reado
 // ── Saving throws ────────────────────────────────────────────────────────────
 function buildSavingThrows(allMods: readonly Mod[], statMods: readonly number[], profBonus: number): string[] {
   const saveProfSubTypes = new Set(
-    allMods.filter(m => m.type === "proficiency" && str(m.subType).includes("saving-throws"))
-      .map(m => str(m.subType))
+    allMods.filter(isProficiencyMod)
+      .filter(m => m.subType.includes("saving-throws"))
+      .map(m => m.subType)
   );
+  // Global save bonus — `bonus subType:"saving-throws"` applies to every save.
+  // Sources: Stone of Good Luck (Luckstone), Cloak of Protection, Paladin's
+  // Aura of Protection (via grantedModifiers on the aura feature), etc.
+  const globalSaveBonus = allMods
+    .filter(m => isBonusMod(m) && m.subType === "saving-throws")
+    .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
   return statKeys.map((key, i) => {
     const isProficient = saveProfSubTypes.has(`${key}-saving-throws`);
-    const total = statMods[i] + (isProficient ? profBonus : 0);
+    const total = statMods[i] + (isProficient ? profBonus : 0) + globalSaveBonus;
     return `${statNames[i]} ${signed(total)}${isProficient ? "*" : ""}`;
   });
 }
@@ -79,24 +86,31 @@ function computeSkillBonuses(
   classes: ReadonlyArray<ClassEntry>,
 ): SkillBonus[] {
   const skillProfSubTypes = new Set(
-    allMods.filter(m => m.type === "proficiency").map(m => str(m.subType))
+    allMods.filter(isProficiencyMod).map(m => m.subType)
   );
   const skillExpertiseSubTypes = new Set(
-    allMods.filter(m => m.type === "expertise").map(m => str(m.subType))
+    allMods.filter(isExpertiseMod).map(m => m.subType)
   );
   // half-proficiency (e.g. Bard's Jack of All Trades applies to all ability
   // checks; floor(prof/2)).
   const hasJackOfAllTrades = allMods.some(
-    m => m.type === "half-proficiency" && m.subType === "ability-checks"
+    m => isHalfProficiencyMod(m) && m.subType === "ability-checks"
   );
   const skillHalfProfSubTypes = new Set(
-    allMods.filter(m => m.type === "half-proficiency" && m.subType !== "ability-checks")
-      .map(m => str(m.subType))
+    allMods.filter(isHalfProficiencyMod)
+      .filter(m => m.subType !== "ability-checks")
+      .map(m => m.subType)
   );
   // Remarkable Athlete (Champion 7+) adds ceil(prof/2) to non-proficient
   // STR/DEX/CON ability checks. DDB does NOT emit a half-proficiency
   // modifier for RA, so we must detect it by class + level.
   const ra = hasRemarkableAthlete(classes);
+  // Global ability-check bonus — `bonus subType:"ability-checks"` applies to
+  // every skill (and therefore every passive). Sources: Stone of Good Luck
+  // (Luckstone), Headband of Intellect (no — that's a set on INT score), etc.
+  const globalAbilityCheckBonus = allMods
+    .filter(m => isBonusMod(m) && m.subType === "ability-checks")
+    .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
   return SKILLS.map(([skillName, statIdx]) => {
     const slug = skillName.toLowerCase().replace(/ /g, "-").replace(/'/g, "");
     const isProficient = skillProfSubTypes.has(slug);
@@ -113,14 +127,14 @@ function computeSkillBonuses(
     // Flat bonus modifiers on the skill subType (e.g. Divine Order: Scholar adds WIS to Arcana/Religion).
     // When value/fixedValue are null, statId identifies which ability modifier to add instead.
     const flatBonus = allMods
-      .filter(m => m.type === "bonus" && m.subType === slug)
+      .filter(m => isBonusMod(m) && m.subType === slug)
       .reduce((s, m) => {
         if (m.value != null) return s + num(m.value);
         if (m.fixedValue != null) return s + num(m.fixedValue);
         const sid = num(m.statId);
         return s + (sid > 0 ? statMods[sid - 1] : 0);
       }, 0);
-    bonus += flatBonus;
+    bonus += flatBonus + globalAbilityCheckBonus;
     return { bonus, isProficient, isExpertise };
   });
 }
@@ -168,8 +182,8 @@ function computeSenses(char: CharData, allMods: readonly Mod[], skillBonuses: re
 
   // Pass 1: collect baseline-establishing sources.
   for (const m of allMods) {
-    if ((m.type === "set" || m.type === "set-base") && SENSE_SLUGS.has(str(m.subType))) {
-      recordBase(capitalize(str(m.subType)), num(m.value), num(m.componentId));
+    if ((isSetMod(m) || isSetBaseMod(m)) && SENSE_SLUGS.has(m.subType)) {
+      recordBase(capitalize(m.subType), num(m.value), num(m.componentId));
     }
   }
   for (const cs of arr<Record<string, unknown>>(char.customSenses)) {
@@ -187,8 +201,8 @@ function computeSenses(char: CharData, allMods: readonly Mod[], skillBonuses: re
   // Pass 2: process `type:"sense"` modifiers — additive if from a different
   // component than the current baseline (Umbral Sight extending race darkvision).
   for (const m of allMods) {
-    if (m.type !== "sense") continue;
-    const name = capitalize(str(m.subType));
+    if (!isSenseMod(m)) continue;
+    const name = capitalize(m.subType);
     const val = num(m.value);
     if (val <= 0) continue;
     const cid = num(m.componentId);
@@ -316,7 +330,7 @@ function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficie
   for (const m of allMods) {
     const sub = str(m.subType);
     if (isProfPlaceholder(sub)) continue;
-    if (m.type === "proficiency") {
+    if (isProficiencyMod(m)) {
       if (armorProfMap[sub]) armor.push(armorProfMap[sub]);
       else if (weaponProfMap[sub]) weapons.push(weaponProfMap[sub]);
       else if (sub.includes("saving-throws") || sub.includes("-skill") ||
@@ -330,7 +344,7 @@ function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficie
           tools.push(capitalize(sub.replace(/-/g, " ")));
         }
       }
-    } else if (m.type === "language") {
+    } else if (isLanguageMod(m)) {
       languages.push(capitalize(sub.replace(/-/g, " ")));
     }
   }

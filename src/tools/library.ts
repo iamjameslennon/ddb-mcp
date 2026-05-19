@@ -1,6 +1,9 @@
-import { BrowserContext } from "playwright";
-import { getPage } from "../browser.js";
-import { hasValidSession } from "../session-fetch.js";
+import * as cheerio from "cheerio";
+import type { AnyNode } from "domhandler";
+import { sessionFetch, hasValidSession } from "../session-fetch.js";
+
+const LIBRARY_URL =
+  "https://www.dndbeyond.com/en/library?type=sourcebooks&ownership=owned-shared";
 
 // ── Library scrape deduplication ─────────────────────────────────────────────
 
@@ -8,11 +11,10 @@ export interface LibraryBook { title: string; slug: string; ownership: string }
 
 /**
  * Dedupe library entries by `slug` (with `title` as fallback when slug is
- * empty). DDB's /library page renders the same book card in multiple
- * surfaces — e.g. a "Recently viewed" row above the main grid — and the
- * scrape pulls both DOM nodes. Order is preserved by first occurrence so
- * the displayed list keeps DDB's intended sort. Exported for unit testing
- * without a browser context.
+ * empty). The DDB library page embeds the same source list twice in its
+ * server-rendered RSC payload — we parse both arrays for resilience but the
+ * caller wants a unique list. Order is preserved by first occurrence so the
+ * displayed list keeps DDB's intended sort. Exported for unit testing.
  */
 export function dedupeLibraryBooks(books: ReadonlyArray<LibraryBook>): LibraryBook[] {
   const seen = new Set<string>();
@@ -24,6 +26,80 @@ export function dedupeLibraryBooks(books: ReadonlyArray<LibraryBook>): LibraryBo
     out.push(b);
   }
   return out;
+}
+
+// ── HTML/RSC parser ──────────────────────────────────────────────────────────
+
+interface LibrarySource {
+  name?: string;
+  relativePath?: string;
+  isOwned?: boolean;
+  isSharedWithMe?: boolean;
+  // Other fields exist (image, sku, ruleset, etc.) but we don't surface them.
+}
+
+/**
+ * Pull the `sources:[…]` array(s) from the library page's React Server Component
+ * payload. The page is a Next.js app-router route; its initial data is streamed
+ * as a sequence of `self.__next_f.push([1, "<chunk>"])` calls in the HTML, with
+ * the same payload appearing twice (head + body stream). We concatenate all
+ * chunks, then bracket-balance every `"sources":[…]` occurrence into JSON.
+ * Exported for unit testing without a live HTTP request.
+ */
+export function parseSourcesFromLibraryHtml(html: string): LibraryBook[] {
+  const chunks: string[] = [];
+  for (const m of html.matchAll(/self\.__next_f\.push\(\[1,"((?:[^"\\]|\\.)*)"\]\)/g)) {
+    chunks.push(JSON.parse(`"${m[1]}"`));
+  }
+  const combined = chunks.join("");
+
+  const collected: LibrarySource[] = [];
+  let from = 0;
+  while (true) {
+    const keyAt = combined.indexOf('"sources":[', from);
+    if (keyAt < 0) break;
+    const arrayStart = combined.indexOf("[", keyAt);
+    const end = findMatchingBracket(combined, arrayStart);
+    if (end < 0) break;
+    try {
+      const arr = JSON.parse(combined.slice(arrayStart, end + 1)) as LibrarySource[];
+      collected.push(...arr);
+    } catch {
+      // Skip malformed slices and continue scanning — the second occurrence may
+      // still parse cleanly.
+    }
+    from = end + 1;
+  }
+
+  const books: LibraryBook[] = [];
+  for (const s of collected) {
+    if (!s.isOwned && !s.isSharedWithMe) continue;
+    const name = s.name?.trim();
+    const relPath = s.relativePath ?? "";
+    const slug = relPath.startsWith("/sources/") ? relPath.slice("/sources/".length) : "";
+    if (!name) continue;
+    const ownership = s.isOwned
+      ? (s.isSharedWithMe ? "Owned, Shared" : "Owned")
+      : "Shared with you";
+    books.push({ title: name, slug, ownership });
+  }
+  return dedupeLibraryBooks(books);
+}
+
+function findMatchingBracket(s: string, openIdx: number): number {
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = openIdx; i < s.length; i++) {
+    const ch = s[i];
+    if (esc) { esc = false; continue; }
+    if (ch === "\\") { esc = true; continue; }
+    if (inStr) { if (ch === '"') inStr = false; continue; }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === "[") depth++;
+    else if (ch === "]" && --depth === 0) return i;
+  }
+  return -1;
 }
 
 // ── Book slug resolution ───────────────────────────────────────────────────────
@@ -65,61 +141,88 @@ export function matchBookSlug(
  * If input already contains "/" it is treated as a slug and returned as-is.
  * Otherwise, listLibrary() is called and the title is fuzzy-matched.
  */
-export async function resolveBookSlug(context: BrowserContext, input: string): Promise<string> {
+export async function resolveBookSlug(input: string): Promise<string> {
   if (input.includes("/")) return input;
-  const raw = await listLibrary(context);
+  const raw = await listLibrary();
   const { books } = JSON.parse(raw) as { books: Array<{ title: string; slug: string }> };
   return matchBookSlug(books, input);
 }
 
-export async function listLibrary(context: BrowserContext): Promise<string> {
-  const page = await getPage(context);
+// ── Public tools ─────────────────────────────────────────────────────────────
 
+export async function listLibrary(): Promise<string> {
   if (!hasValidSession()) {
     throw new Error("Not logged in. Please run ddb_login first.");
   }
 
-  await page.goto("https://www.dndbeyond.com/en/library?type=sourcebooks&ownership=owned-shared", {
-    waitUntil: "domcontentloaded",
-    timeout: 30000,
-  });
-  await page.waitForSelector("div[data-testid='sourceCard'], .library-empty", { timeout: 15000 }).catch(() => {});
-
-  const rawBooks = await page.evaluate(() => {
-    const items: Array<{ title: string; slug: string; ownership: string }> = [];
-    document.querySelectorAll("div[data-testid='sourceCard']").forEach((card) => {
-      const titleEl = card.querySelector("a[class*='SourceCard_sourceTitle']") as HTMLAnchorElement | null;
-      const title = titleEl?.textContent?.trim() ?? "";
-      const href = titleEl?.href ?? "";
-      const slugMatch = href.match(/\/sources\/(.+)/);
-      const slug = slugMatch?.[1] ?? "";
-      const ownership = card.querySelector("p[class*='SourceCard_sourceSubtitle']")?.textContent?.trim() ?? "";
-      if (title) items.push({ title, slug, ownership });
-    });
-    return items;
-  });
-
-  // DDB renders some books in multiple surfaces (recently-viewed row + main grid);
-  // dedupe on slug so the same book doesn't appear twice in the result.
-  const books = dedupeLibraryBooks(rawBooks);
+  const resp = await sessionFetch(LIBRARY_URL);
+  if (!resp.ok) {
+    throw new Error(`Library fetch failed: ${resp.status} ${resp.statusText}`);
+  }
+  const html = await resp.text();
+  const books = parseSourcesFromLibraryHtml(html);
   return JSON.stringify({ count: books.length, books });
 }
 
+/**
+ * Convert a DDB sourcebook page's article HTML into plain markdown.
+ * Mirrors the tag mapping the previous browser-based extractor used
+ * (h1/h2 → ##, h3/h4 → ###, p, li, ul/ol, strong/em, hr, br, table).
+ * Exported for unit testing.
+ */
+export function extractArticleMarkdown(html: string): string {
+  const $ = cheerio.load(html);
+
+  // Strip non-content chrome — matches the browser version's removals.
+  $("script, style, nav, header, footer, aside, .ad-container, .sidebar, .toc, .breadcrumb").remove();
+
+  const root =
+    $("article").first().get(0) ??
+    $(".content-container").first().get(0) ??
+    $(".p-content").first().get(0) ??
+    $("main").first().get(0) ??
+    $("body").first().get(0);
+
+  if (!root) return "";
+
+  const processNode = (node: AnyNode): string => {
+    if (node.type === "text") return (node as { data: string }).data ?? "";
+    if (node.type !== "tag") return "";
+
+    const el = node as { name: string; children: AnyNode[] };
+    const tag = el.name.toLowerCase();
+    if (["script", "style", "aside", "nav"].includes(tag)) return "";
+
+    const childText = el.children.map(processNode).join("");
+
+    if (tag === "h1" || tag === "h2") return `\n\n## ${childText.trim()}\n\n`;
+    if (tag === "h3" || tag === "h4") return `\n\n### ${childText.trim()}\n\n`;
+    if (tag === "p")                  return `\n${childText.trim()}\n`;
+    if (tag === "li")                 return `\n- ${childText.trim()}`;
+    if (tag === "ul" || tag === "ol") return `\n${childText}\n`;
+    if (tag === "strong" || tag === "b") return `**${childText}**`;
+    if (tag === "em" || tag === "i")     return `_${childText}_`;
+    if (tag === "hr")                 return `\n---\n`;
+    if (tag === "br")                 return "\n";
+    if (tag === "table")              return `\n[Table]\n${childText}\n`;
+    return childText;
+  };
+
+  return processNode(root as AnyNode).trim();
+}
+
 export async function readBook(
-  context: BrowserContext,
   bookSlug: string,
   chapterSlug?: string,
   maxChars = 3000,
   query?: string
 ): Promise<string> {
-  const page = await getPage(context);
-
   if (!hasValidSession()) {
     throw new Error("Not logged in. Please run ddb_login first.");
   }
 
   // Resolve plain title → slug (passthrough if input already contains "/")
-  const resolvedSlug = await resolveBookSlug(context, bookSlug);
+  const resolvedSlug = await resolveBookSlug(bookSlug);
 
   // Encode per path segment so legitimate slug separators (e.g. 'dnd/phb-2024')
   // are preserved while any other character is percent-encoded. Defense in depth
@@ -128,74 +231,28 @@ export async function readBook(
   let url = `https://www.dndbeyond.com/sources/${encodePath(resolvedSlug)}`;
   if (chapterSlug) url += `/${encodePath(chapterSlug)}`;
 
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
-  // Wait for content to render (DDB uses heavy JS rendering)
-  await page.waitForSelector("article, .content-container, .p-content-title", { timeout: 15000 }).catch(() => {});
-
-  const content = await page.evaluate(() => {
-    // Remove non-content elements
-    document
-      .querySelectorAll("script, style, nav, header, footer, .ad-container, .sidebar, .toc, .breadcrumb")
-      .forEach((el) => el.remove());
-
-    // Try to find the main reading area
-    const article =
-      document.querySelector("article") ??
-      document.querySelector(".content-container") ??
-      document.querySelector(".p-content") ??
-      document.querySelector("main");
-
-    if (!article) return document.body.innerText;
-
-    // Extract text preserving basic structure
-    function processNode(node: Node): string {
-      if (node.nodeType === Node.TEXT_NODE) {
-        return node.textContent ?? "";
-      }
-      if (node.nodeType !== Node.ELEMENT_NODE) return "";
-
-      const el = node as Element;
-      const tag = el.tagName.toLowerCase();
-
-      if (["script", "style", "aside", "nav"].includes(tag)) return "";
-
-      const childText = Array.from(el.childNodes).map(processNode).join("");
-
-      if (["h1", "h2"].includes(tag)) return `\n\n## ${childText.trim()}\n\n`;
-      if (["h3", "h4"].includes(tag)) return `\n\n### ${childText.trim()}\n\n`;
-      if (tag === "p") return `\n${childText.trim()}\n`;
-      if (tag === "li") return `\n- ${childText.trim()}`;
-      if (["ul", "ol"].includes(tag)) return `\n${childText}\n`;
-      if (tag === "strong" || tag === "b") return `**${childText}**`;
-      if (tag === "em" || tag === "i") return `_${childText}_`;
-      if (tag === "hr") return `\n---\n`;
-      if (tag === "br") return "\n";
-      if (tag === "table") {
-        // Simplify tables to text
-        return `\n[Table]\n${childText}\n`;
-      }
-
-      return childText;
-    }
-
-    return processNode(article);
+  const resp = await sessionFetch(url, {
+    headers: { Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" },
   });
+  if (!resp.ok) {
+    throw new Error(`Book fetch failed: ${resp.status} ${resp.statusText} (${url})`);
+  }
+  const html = await resp.text();
+  const content = extractArticleMarkdown(html);
 
-  const trimmed = content.trim();
-  let contentToReturn = trimmed;
-
+  let contentToReturn = content;
   if (query) {
     const q = query.toLowerCase();
     const headingRegex = /^#{1,4}\s.+$/gm;
     let bestPos = -1;
     let match;
-    while ((match = headingRegex.exec(trimmed)) !== null) {
+    while ((match = headingRegex.exec(content)) !== null) {
       if (match[0].toLowerCase().includes(q)) {
         bestPos = match.index;
         break;
       }
     }
-    if (bestPos >= 0) contentToReturn = trimmed.slice(bestPos);
+    if (bestPos >= 0) contentToReturn = content.slice(bestPos);
   }
 
   const truncated = contentToReturn.length > maxChars

@@ -9,7 +9,7 @@
  * to preserve byte-for-byte parity with the original inline code.
  */
 
-import { arr, num, obj, signed, str } from "./helpers.js";
+import { arr, isBonusMod, isProficiencyMod, num, obj, signed, str } from "./helpers.js";
 import type { CoreStats } from "./types.js";
 
 export function computeWeaponAttacks(core: CoreStats): string[] {
@@ -17,7 +17,7 @@ export function computeWeaponAttacks(core: CoreStats): string[] {
   const dexMod = statMods[1];
 
   const weaponProfSlugs = new Set(
-    allMods.filter(m => m.type === "proficiency").map(m => str(m.subType))
+    allMods.filter(isProficiencyMod).map(m => m.subType)
   );
   const isWeaponProficient = (def: Record<string, unknown>): boolean => {
     const catId = num(def.categoryId); // 1=simple, 2=martial
@@ -57,7 +57,7 @@ export function computeWeaponAttacks(core: CoreStats): string[] {
 
     // Magic enhancement bonus from grantedModifiers (e.g. +1 weapon)
     const magicBonus = arr<Record<string, unknown>>(def.grantedModifiers)
-      .filter(gm => gm.type === "bonus" && gm.subType === "magic")
+      .filter(gm => isBonusMod(gm) && gm.subType === "magic")
       .reduce((s, gm) => s + num(gm.value ?? gm.fixedValue), 0);
 
     // Monk weapons: simple melee or shortsword, no Two-Handed/Heavy

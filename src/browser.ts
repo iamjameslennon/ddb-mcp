@@ -73,14 +73,31 @@ export async function getBrowser(headless = true): Promise<Browser> {
     await closeBrowser();
   }
   if (browserInstance) return browserInstance;
-  // Lazy Chromium provisioning: fetched on first use (during ddb_login) so
-  // package install stays fast and the ~140 MB download happens at a moment
-  // the user expects work to happen and we can surface progress.
-  await ensureChromiumInstalled();
+
   const args = ["--disable-blink-features=AutomationControlled"];
   // Sandbox should stay enabled. Only disable it in constrained container
   // environments (e.g. CI/Docker) where the kernel doesn't support it.
   if (process.env["DDB_NO_SANDBOX"] === "1") args.push("--no-sandbox");
+
+  // Prefer the user's installed Chrome (channel:'chrome') — zero download,
+  // same Chromium engine, identical Playwright API. Fall back to the bundled
+  // Chromium (lazy-fetched on first miss) when Chrome isn't present.
+  // Escape hatch: DDB_USE_BUNDLED_CHROMIUM=1 forces the bundled path, useful
+  // if a user's system Chrome is broken or too old.
+  if (process.env["DDB_USE_BUNDLED_CHROMIUM"] !== "1") {
+    try {
+      browserInstance = await chromium.launch({ headless, channel: "chrome", args });
+      browserHeadless = headless;
+      return browserInstance;
+    } catch {
+      // Chrome not installed at a standard path — fall through to bundled Chromium.
+    }
+  }
+
+  // Lazy Chromium provisioning: fetched on first use (during ddb_login) so
+  // package install stays fast and the ~140 MB download happens at a moment
+  // the user expects work to happen and we can surface progress.
+  await ensureChromiumInstalled();
   browserInstance = await chromium.launch({ headless, args });
   browserHeadless = headless;
   return browserInstance;

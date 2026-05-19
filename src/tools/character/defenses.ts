@@ -5,7 +5,7 @@
  * Phase 5b of the character.ts refactor — see docs/character-refactor.md.
  */
 
-import { arr, capitalize, str } from "./helpers.js";
+import { arr, capitalize, isImmunityMod, isResistanceMod, isVulnerabilityMod, str } from "./helpers.js";
 import type { CoreStats } from "./types.js";
 
 export interface Defenses {
@@ -19,13 +19,13 @@ export function computeDefenses(core: CoreStats): Defenses {
   const { char, allMods } = core;
   return {
     resistances: [...new Set(
-      allMods.filter(m => m.type === "resistance").map(m => capitalize(str(m.subType)))
+      allMods.filter(isResistanceMod).map(m => capitalize(m.subType))
     )],
     immunities: [...new Set(
-      allMods.filter(m => m.type === "immunity").map(m => capitalize(str(m.subType)))
+      allMods.filter(isImmunityMod).map(m => capitalize(m.subType))
     )],
     vulnerabilities: [...new Set(
-      allMods.filter(m => m.type === "vulnerability").map(m => capitalize(str(m.subType)))
+      allMods.filter(isVulnerabilityMod).map(m => capitalize(m.subType))
     )],
     conditions: arr<Record<string, unknown>>(char.conditions).map(c => str(c.id)),
   };

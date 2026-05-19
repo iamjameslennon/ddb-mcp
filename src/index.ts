@@ -446,12 +446,9 @@ server.tool(
   },
   async ({ query, category }) => {
     try {
-      const context = await getSharedContext();
-      const results = await search(context, query, category ?? "all");
-      await closeBrowser();
+      const results = await search(query, category ?? "all");
       return { content: [{ type: "text", text: results }] };
     } catch (err) {
-      await closeBrowser().catch(() => {});
       const msg = err instanceof Error ? err.message : String(err);
       process.stderr.write(`[ddb-mcp] ddb_search_site error: ${msg}\n`);
       return { content: [{ type: "text", text: `Search failed: ${msg}` }], isError: true };
@@ -466,12 +463,9 @@ server.tool(
   {},
   async () => {
     try {
-      const context = await getSharedContext();
-      const books = await listLibrary(context);
-      await closeBrowser();
+      const books = await listLibrary();
       return { content: [{ type: "text", text: books }] };
     } catch (err) {
-      await closeBrowser().catch(() => {});
       const msg = err instanceof Error ? err.message : String(err);
       process.stderr.write(`[ddb-mcp] ddb_list_library error: ${msg}\n`);
       return { content: [{ type: "text", text: `Failed to list library: ${msg}` }], isError: true };
@@ -504,12 +498,9 @@ server.tool(
   },
   async ({ book_slug, chapter_slug, max_chars, query }) => {
     try {
-      const context = await getSharedContext();
-      const content = await readBook(context, book_slug, chapter_slug, max_chars, query);
-      await closeBrowser();
+      const content = await readBook(book_slug, chapter_slug, max_chars, query);
       return { content: [{ type: "text", text: content }] };
     } catch (err) {
-      await closeBrowser().catch(() => {});
       const msg = err instanceof Error ? err.message : String(err);
       process.stderr.write(`[ddb-mcp] ddb_read_book error: ${msg}\n`);
       return { content: [{ type: "text", text: `Failed to read book: ${msg}` }], isError: true };

@@ -9,7 +9,7 @@
  * a vitals concern.
  */
 
-import { arr, hasRemarkableAthlete, num, obj, signed, str } from "./helpers.js";
+import { arr, hasRemarkableAthlete, isBonusMod, isHalfProficiencyMod, isSetMod, num, obj, signed, str } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
 
 export interface HitPoints { current: number; max: number; temp: number }
@@ -30,7 +30,7 @@ function computeHp(core: CoreStats): HitPoints {
   const conMod = statMods[2];
   // Tough feat and Dwarven Toughness grant type:"bonus" subType:"hit-points-per-level" (value 2 or 1).
   const hpPerLevelBonus = allMods
-    .filter(m => m.type === "bonus" && m.subType === "hit-points-per-level")
+    .filter(m => isBonusMod(m) && m.subType === "hit-points-per-level")
     .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
   // When the player rolls for HP (or manually edits their max), DDB stores the
   // final value in `overrideHitPoints`. This already includes CON mod and any
@@ -106,10 +106,10 @@ function computeSpeed(core: CoreStats): string[] {
     // The bare "speed" subType is a walking-default bonus only; never applies to fly/swim/climb/burrow.
     if (axis === "walking") subTypes.add("speed");
     const override = allMods
-      .filter(m => m.type === "set" && typeof m.subType === "string" && subTypes.has(m.subType) && num(m.value ?? m.fixedValue) > 0 && isApplicable(m))
+      .filter(m => isSetMod(m) && subTypes.has(m.subType) && num(m.value ?? m.fixedValue) > 0 && isApplicable(m))
       .reduce((max, m) => Math.max(max, num(m.value ?? m.fixedValue)), 0);
     const bonus = allMods
-      .filter(m => m.type === "bonus" && typeof m.subType === "string" && subTypes.has(m.subType) && isApplicable(m))
+      .filter(m => isBonusMod(m) && subTypes.has(m.subType) && isApplicable(m))
       .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
     return (override || base || fallback) + bonus;
   };
@@ -125,7 +125,7 @@ function computeSpeed(core: CoreStats): string[] {
   const unarmoredMoveBonus = hasEquippedArmorOrShield
     ? 0
     : allMods
-        .filter(m => m.type === "bonus" && m.subType === "unarmored-movement" && isApplicable(m))
+        .filter(m => isBonusMod(m) && m.subType === "unarmored-movement" && isApplicable(m))
         .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
   const walkSpeed = speedCalc("walking", num(weightSpeeds.walk), 30) + unarmoredMoveBonus;
   const flySpeed = speedCalc("flying", num(weightSpeeds.fly));
@@ -145,7 +145,7 @@ function computeInitiative(core: CoreStats): number {
   const { allMods, statMods, classes, profBonus } = core;
   const dexMod = statMods[1];
   const initiativeBonus = allMods
-    .filter(m => m.subType === "initiative" && m.type === "bonus")
+    .filter(m => isBonusMod(m) && m.subType === "initiative")
     .reduce((s: number, m: Mod) => {
       // bonusTypes [1] means the bonus value is the proficiency bonus, not a fixed number
       const usesProfBonus = arr<number>(m.bonusTypes).includes(1) && (m.fixedValue == null && m.value == null);
@@ -170,7 +170,7 @@ function computeInitiative(core: CoreStats): number {
   // alone — the DDB website doesn't. If a character has both JoAT and RA
   // somehow (Bard 2 / Champion 7 multiclass), take the max rather than
   // double-stacking.
-  const joatInit = allMods.some(m => m.type === "half-proficiency" && m.subType === "initiative")
+  const joatInit = allMods.some(m => isHalfProficiencyMod(m) && m.subType === "initiative")
     ? Math.floor(profBonus / 2)
     : 0;
   const raInit = hasRemarkableAthlete(classes) ? Math.ceil(profBonus / 2) : 0;
