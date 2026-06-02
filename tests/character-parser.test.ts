@@ -2140,6 +2140,103 @@ describe("parseCharacterData — 2024 race variant in header", () => {
   });
 });
 
+// ── 2014 Half-Elf: chosen +1 ability bonuses ─────────────────────────────────
+// The 2014 Half-Elf grants +2 CHA (fixed) plus +1 to two ability scores of
+// the player's choice. DDB emits BOTH the fixed +2 and the two chosen +1s as
+// `modifiers.race` entries, but the chosen ones carry `isGranted: false` —
+// the same flag DDB uses on 2024-rule race ASIs (which the website moves to
+// the background origin feat and our parser correctly ignores). Discriminator:
+// for 2014 Half-Elf the player has explicit `choices.race` entries with
+// optionValue in 3520..3525 (STR..CHA) pointing at the same race component.
+// Confirmed against Ael Varris (166265317), Lysander (162797600),
+// Shadowheart (107609898), and Danyr (39715128) — all four were missing one
+// or two +1 race bonuses before this fix.
+describe("parseCharacterData — 2014 Half-Elf chosen ability bonuses", () => {
+  const FIGHTER_BASE = (FIGHTER_5.data) as Record<string, unknown>;
+  // FIGHTER_5 base stats: STR 16, DEX 12, CON 14, INT 10, WIS 13, CHA 8.
+  // Apply Half-Elf shape: +2 CHA (fixed), player picks +1 STR + +1 INT.
+  // Expected: STR 17 (+3), INT 11 (+0), CHA 10 (+0). Others unchanged.
+  const halfElfShape: Record<string, unknown> = {
+    data: {
+      ...FIGHTER_BASE,
+      race: { fullName: "Half-Elf", baseName: "Elf", weightSpeeds: { normal: { walk: 30, fly: 0, swim: 0, climb: 0, burrow: 0 } }, racialTraits: [] },
+      modifiers: {
+        ...(FIGHTER_BASE.modifiers as Record<string, unknown>),
+        race: [
+          { type: "bonus", subType: "charisma-score",     fixedValue: 2, value: 2, isGranted: true,  componentId: 93 },
+          { type: "bonus", subType: "strength-score",     fixedValue: 1, value: 1, isGranted: false, componentId: 93 },
+          { type: "bonus", subType: "intelligence-score", fixedValue: 1, value: 1, isGranted: false, componentId: 93 },
+        ],
+      },
+      choices: {
+        race: [
+          { type: 2, componentId: 93, optionValue: 3520, label: "Choose an Ability Score" }, // STR
+          { type: 2, componentId: 93, optionValue: 3523, label: "Choose an Ability Score" }, // INT
+        ],
+      },
+    },
+  };
+
+  it("applies the fixed +2 CHA AND both player-chosen +1 ability bonuses", () => {
+    const out = parseCharacterData(halfElfShape);
+    expect(out).toContain("STR 17 (+3)"); // 16 + 1 chosen
+    expect(out).toContain("DEX 12 (+1)"); // unchanged
+    expect(out).toContain("CON 14 (+2)"); // unchanged
+    expect(out).toContain("INT 11 (+0)"); // 10 + 1 chosen
+    expect(out).toContain("WIS 13 (+1)"); // unchanged
+    expect(out).toContain("CHA 10 (+0)"); // 8 + 2 fixed
+  });
+
+  it("still ignores 2024-style race ASIs that have no matching player pick", () => {
+    // Same shape as a Half-Elf, BUT no choices.race entries → the +1 mods
+    // are a 2024-style declined emission and should remain skipped.
+    const twentyTwentyFourShape: Record<string, unknown> = {
+      data: {
+        ...FIGHTER_BASE,
+        race: { fullName: "Aasimar", baseName: "Aasimar", weightSpeeds: { normal: { walk: 30 } }, racialTraits: [] },
+        modifiers: {
+          ...(FIGHTER_BASE.modifiers as Record<string, unknown>),
+          race: [
+            { type: "bonus", subType: "strength-score",     fixedValue: 1, value: 1, isGranted: false, componentId: 999 },
+            { type: "bonus", subType: "intelligence-score", fixedValue: 1, value: 1, isGranted: false, componentId: 999 },
+          ],
+        },
+        choices: { race: [] },
+      },
+    };
+    const out = parseCharacterData(twentyTwentyFourShape);
+    expect(out).toContain("STR 16 (+3)"); // unchanged (declined)
+    expect(out).toContain("INT 10 (+0)"); // unchanged (declined)
+  });
+
+  it("supports duplicate ability picks (Danyr case: STR chosen twice)", () => {
+    // Half-Elf can in principle stack two picks on the same ability; DDB
+    // saves whatever the player chose. Danyr (39715128) picked STR twice.
+    const stackedShape: Record<string, unknown> = {
+      data: {
+        ...FIGHTER_BASE,
+        race: { fullName: "Half-Elf", baseName: "Elf", weightSpeeds: { normal: { walk: 30 } }, racialTraits: [] },
+        modifiers: {
+          ...(FIGHTER_BASE.modifiers as Record<string, unknown>),
+          race: [
+            { type: "bonus", subType: "charisma-score", fixedValue: 2, value: 2, isGranted: true,  componentId: 93 },
+            { type: "bonus", subType: "strength-score", fixedValue: 1, value: 1, isGranted: false, componentId: 93 },
+            { type: "bonus", subType: "strength-score", fixedValue: 1, value: 1, isGranted: false, componentId: 93 },
+          ],
+        },
+        choices: {
+          race: [
+            { type: 2, componentId: 93, optionValue: 3520, label: "Choose an Ability Score" }, // STR
+            { type: 2, componentId: 93, optionValue: 3520, label: "Choose an Ability Score" }, // STR again
+          ],
+        },
+      },
+    };
+    const out = parseCharacterData(stackedShape);
+    expect(out).toContain("STR 18 (+4)"); // 16 + 1 + 1
+  });
+});
+
 // ── Multiclass: save proficiencies come only from the starting class ────────
 // PHB Multiclass table: only your *first* class grants saving-throw
 // proficiencies. Additional classes contribute armor/weapons/tools/skills only.

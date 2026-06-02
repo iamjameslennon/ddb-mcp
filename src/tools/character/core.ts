@@ -67,17 +67,45 @@ export function computeCoreStats(char: CharData): CoreStats {
   // them. We must too, or the race ASI gets double-counted against
   // char.stats (which already includes it).
   //
-  // 2014-era race ASIs always have `isGranted: true` (or no flag at all
-  // on hand-built fixtures), so the gate is backwards-compatible: a
-  // missing flag is treated as granted.
+  // EXCEPTION: 2014 Half-Elf grants +2 CHA fixed plus two player-chosen +1s.
+  // The chosen ones are ALSO emitted as race mods with `isGranted: false` —
+  // same flag the 2024 declined-ASIs use. Discriminator: 2014 Half-Elf pairs
+  // each chosen +1 with a `choices.race` entry whose `optionValue` is in the
+  // 3520..3525 range (STR..CHA) and whose `componentId` matches the mod's.
+  // Build a multiset of (componentId, abilityIdx) picks and consume one per
+  // matching mod so duplicate picks (Danyr's STR+STR) stack correctly.
+  const ABILITY_OPTION_BASE = 3520;
+  const playerRaceAbilityPicks: Array<{ componentId: number; abilityIdx: number }> = [];
+  for (const ch of arr<Record<string, unknown>>(obj(char.choices).race)) {
+    const opt = num(ch.optionValue);
+    if (opt < ABILITY_OPTION_BASE || opt > ABILITY_OPTION_BASE + 5) continue;
+    playerRaceAbilityPicks.push({
+      componentId: num(ch.componentId),
+      abilityIdx: opt - ABILITY_OPTION_BASE,
+    });
+  }
+  const consumeMatchingRacePick = (componentId: number, abilityIdx: number): boolean => {
+    const i = playerRaceAbilityPicks.findIndex(
+      p => p.componentId === componentId && p.abilityIdx === abilityIdx
+    );
+    if (i < 0) return false;
+    playerRaceAbilityPicks.splice(i, 1);
+    return true;
+  };
+
   const scoreBonuses: Record<number, number> = {};
   for (const [source, list] of Object.entries(obj(char.modifiers))) {
     for (const m of arr<Mod>(list)) {
       if (!isBonusMod(m)) continue;
       if (!m.subType.endsWith("-score")) continue;
-      if (source === "race" && m.isGranted === false) continue;
       const idx = statKeys.indexOf(m.subType.replace("-score", ""));
-      if (idx >= 0) scoreBonuses[idx + 1] = (scoreBonuses[idx + 1] ?? 0) + num(m.fixedValue);
+      if (idx < 0) continue;
+      if (source === "race" && m.isGranted === false) {
+        // Allow through only if the player has a matching race-ability pick
+        // (2014 Half-Elf shape). Otherwise this is a declined 2024-style ASI.
+        if (!consumeMatchingRacePick(num(m.componentId), idx)) continue;
+      }
+      scoreBonuses[idx + 1] = (scoreBonuses[idx + 1] ?? 0) + num(m.fixedValue);
     }
   }
 

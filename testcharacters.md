@@ -68,12 +68,13 @@ ddb_parse_character { character_id: "<ID>", sections: "summary" }
 | 17931478 | Harry the Wizard | Human | Wizard | 1 | https://www.dndbeyond.com/characters/17931478/7JtVFf |
 | 15888722 | Hizar | Half-Orc | Wizard | 2 | https://www.dndbeyond.com/characters/15888722/nCbMhF |
 | 40046334 | Caikrana Qualanthri | High Elf | Sorcerer (Draconic Bloodline) | 1 | https://www.dndbeyond.com/characters/40046334/KnvFvi |
+| 166265317 | Ael Varris | Half-Elf | Bard | 1 | https://www.dndbeyond.com/characters/166265317/FM7rMo |
 
 ---
 
 ## Coverage Notes
 
-- **Levels:** 1 (×26), 2 (×10), 3 (×3), 5 (×3), 9 (×7), 10 (×3), 12, 20 — solid spread across all tiers
+- **Levels:** 1 (×27), 2 (×10), 3 (×3), 5 (×3), 9 (×7), 10 (×3), 12, 20 — solid spread across all tiers
 - **Classes:** All 13 PHB classes covered — Artificer (Vi), Barbarian, Bard, Cleric, Druid, Fighter, Monk, Paladin, Ranger, Rogue, Sorcerer, Warlock, Wizard
 - **Subclasses:** Champion (Ethelrede), Life Domain (Cathartic, Dwarf Cleric Hill), Trickery Domain (Sister Baronessa, Shadowheart), Assassin (Dunil), Way of the Open Hand (Flemin), Evocation (Rustle Berrydust), Wild Magic (Spurt), The Fiend (Wyll, Weslocke), Gloom Stalker (Aerin), Artillerist (Vi), Draconic Bloodline (Caikrana)
 - **Multiclass:** Xarius (Barbarian/Rogue 10)
