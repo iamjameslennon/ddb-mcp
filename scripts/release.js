@@ -16,25 +16,43 @@ import { join } from "node:path";
 
 // ── Argument validation ────────────────────────────────────────────────────────
 
-const bumpType = process.argv[2];
+const args = process.argv.slice(2);
+const dryRun = args.includes("--dry-run");
+const bumpType = args.find(a => !a.startsWith("--"));
 if (!["patch", "minor", "major"].includes(bumpType)) {
-  console.error("Usage: node scripts/release.js <patch|minor|major>");
+  console.error("Usage: node scripts/release.js <patch|minor|major> [--dry-run]");
   process.exit(1);
 }
 
+if (dryRun) {
+  console.log("\n[dry-run] No commits, tags, pushes, or GitHub releases will be created.");
+  console.log("[dry-run] Files WILL be mutated locally — run `git restore .` after to revert.\n");
+}
+
 // ── Guard: clean working tree on main ─────────────────────────────────────────
+// In --dry-run we warn but don't fail, so the script can be exercised from a
+// feature branch with uncommitted edits (the whole point of the dry run).
 
 const gitStatus = execSync("git status --porcelain", { encoding: "utf8" }).trim();
 if (gitStatus) {
-  console.error("\nERROR: Working tree is not clean. Commit or stash your changes before releasing.\n");
-  console.error(gitStatus);
-  process.exit(1);
+  if (dryRun) {
+    console.log("[dry-run] Working tree is dirty — proceeding anyway:");
+    console.log(gitStatus + "\n");
+  } else {
+    console.error("\nERROR: Working tree is not clean. Commit or stash your changes before releasing.\n");
+    console.error(gitStatus);
+    process.exit(1);
+  }
 }
 
 const currentBranch = execSync("git branch --show-current", { encoding: "utf8" }).trim();
 if (currentBranch !== "main") {
-  console.error(`\nERROR: Releases must be cut from 'main'. Currently on '${currentBranch}'.\n`);
-  process.exit(1);
+  if (dryRun) {
+    console.log(`[dry-run] Not on 'main' (current: '${currentBranch}') — proceeding anyway.\n`);
+  } else {
+    console.error(`\nERROR: Releases must be cut from 'main'. Currently on '${currentBranch}'.\n`);
+    process.exit(1);
+  }
 }
 
 // ── Check required tools ───────────────────────────────────────────────────────
@@ -188,25 +206,31 @@ const prompt = [
   diffStat,
 ].join("\n");
 
-console.log("\nGenerating release notes with Claude...\n");
-// Pipe the prompt via stdin rather than passing it as an argv. Multi-line
-// strings with shell metacharacters are unsafe through cmd.exe (which we need
-// for .cmd shims on Windows); stdin sidesteps the escaping problem entirely.
-// Requires a Claude CLI that accepts the prompt on stdin when no positional
-// arg is given (true since Claude Code 0.2.x).
-const claudeResult = spawnExecutable(
-  claudePath, ["-p"],
-  {
-    encoding: "utf8",
-    maxBuffer: 4 * 1024 * 1024,
-    input: prompt,
+let releaseNotes;
+if (dryRun) {
+  console.log("[dry-run] Skipping Claude release-notes generation (would call `claude -p` with the commit log).");
+  releaseNotes = `[dry-run placeholder release notes for v${"NEW_VERSION_PLACEHOLDER"}]`;
+} else {
+  console.log("\nGenerating release notes with Claude...\n");
+  // Pipe the prompt via stdin rather than passing it as an argv. Multi-line
+  // strings with shell metacharacters are unsafe through cmd.exe (which we need
+  // for .cmd shims on Windows); stdin sidesteps the escaping problem entirely.
+  // Requires a Claude CLI that accepts the prompt on stdin when no positional
+  // arg is given (true since Claude Code 0.2.x).
+  const claudeResult = spawnExecutable(
+    claudePath, ["-p"],
+    {
+      encoding: "utf8",
+      maxBuffer: 4 * 1024 * 1024,
+      input: prompt,
+    }
+  );
+  if (claudeResult.status !== 0) {
+    console.error("Claude failed:", claudeResult.stderr || "(no output)");
+    process.exit(1);
   }
-);
-if (claudeResult.status !== 0) {
-  console.error("Claude failed:", claudeResult.stderr || "(no output)");
-  process.exit(1);
+  releaseNotes = claudeResult.stdout.trim();
 }
-const releaseNotes = claudeResult.stdout.trim();
 
 // ── Review and confirm ─────────────────────────────────────────────────────────
 
@@ -215,18 +239,25 @@ console.log(releaseNotes);
 console.log("─".repeat(60));
 console.log(`\nReady to release: v${pkg.version} → v${newVersion} (${bumpType} bump)`);
 
-const rl = createInterface({ input: process.stdin, output: process.stdout });
-await new Promise((resolve) => {
-  rl.question("\nPress Enter to continue or Ctrl+C to abort: ", () => {
-    rl.close();
-    resolve();
+if (!dryRun) {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  await new Promise((resolve) => {
+    rl.question("\nPress Enter to continue or Ctrl+C to abort: ", () => {
+      rl.close();
+      resolve();
+    });
   });
-});
+}
 
-// ── Update version in package.json and package-lock.json ─────────────────────
+// ── Update version in package.json, package-lock.json, and README.md ─────────
 // Direct JSON manipulation avoids triggering the preinstall guard that blocks
 // `npm install`. For a pure version bump the only fields that change are
 // `version` (top-level) and `packages[""].version` in the lock file.
+//
+// README.md has two kinds of version pin to keep in sync:
+//   - the @iamjameslennon/ddb-mcp@X.Y.Z install/config examples
+//   - any version strings in the install instructions
+// Single regex replace covers both.
 
 pkg.version = newVersion;
 writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
@@ -237,9 +268,36 @@ lock.version = newVersion;
 if (lock.packages?.[""] !== undefined) lock.packages[""].version = newVersion;
 writeFileSync("package-lock.json", JSON.stringify(lock, null, 2) + "\n");
 
+const readmePath = "README.md";
+const readmeBefore = readFileSync(readmePath, "utf8");
+const readmeAfter = readmeBefore.replace(
+  /@iamjameslennon\/ddb-mcp@\d+\.\d+\.\d+/g,
+  `@iamjameslennon/ddb-mcp@${newVersion}`
+);
+const readmeChanged = readmeAfter !== readmeBefore;
+if (readmeChanged) {
+  writeFileSync(readmePath, readmeAfter);
+  console.log(`\nUpdated README.md version pins → ${newVersion}`);
+} else {
+  console.log("\nNo README.md version pins needed updating.");
+}
+
 // ── Commit, tag, push ─────────────────────────────────────────────────────────
 
-execSync("git add package.json package-lock.json", { stdio: "inherit" });
+if (dryRun) {
+  console.log(`\n[dry-run] Would run:`);
+  console.log(`  git add package.json package-lock.json${readmeChanged ? " README.md" : ""}`);
+  console.log(`  git commit -m "chore: release v${newVersion}"`);
+  console.log(`  git tag -a v${newVersion} -m "Release v${newVersion}"`);
+  console.log(`  git push origin HEAD --follow-tags`);
+  console.log(`  gh release create v${newVersion} --title "v${newVersion}" --notes-file -`);
+  console.log(`\n[dry-run] Inspect the file changes with \`git diff\`, then revert with \`git restore .\``);
+  console.log(`[dry-run] ✓ Dry run complete (would release v${newVersion}).`);
+  process.exit(0);
+}
+
+const filesToAdd = ["package.json", "package-lock.json", ...(readmeChanged ? [readmePath] : [])];
+execSync(`git add ${filesToAdd.join(" ")}`, { stdio: "inherit" });
 execSync(`git commit -m "chore: release v${newVersion}"`, { stdio: "inherit" });
 execSync(`git tag -a v${newVersion} -m "Release v${newVersion}"`, { stdio: "inherit" });
 execSync("git push origin HEAD --follow-tags", { stdio: "inherit" });
