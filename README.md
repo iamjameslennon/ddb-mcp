@@ -258,7 +258,7 @@ On first launch, `npx` fetches the package itself (small — under 200 kB unpack
 
 Configure the path to your client's config file in the [Connecting to your MCP client](#connecting-to-your-mcp-client) section below.
 
-To pin a version (recommended for production setups), change the args to `["-y", "@iamjameslennon/ddb-mcp@2.9.2"]`.
+To pin a version (recommended for production setups), change the args to `["-y", "@iamjameslennon/ddb-mcp@2.10.0"]`.
 
 ### Alternative: install globally
 
@@ -287,7 +287,7 @@ Then use `"command": "ddb-mcp"` (no args) in your client config. The browser is 
   - Screenshots (opt-in): `~/Downloads` only
 - **Transport**: stdio only — the server opens no HTTP listeners and no ports.
 - **Untrusted content**: tools that return D&D Beyond page text (`ddb_navigate`, `ddb_get_page`) wrap the scraped output in `<untrusted_dndbeyond_content>` tags. Character notes, campaign descriptions, party-member backstories, and book content can be authored by other DDB users (DMs, party members, forum posters) and may contain prompt-injection attempts — treat them as untrusted input, never as instructions. The `confirm_click` / `confirm_fill` gates on `ddb_interact` exist for exactly this reason.
-- **Recommendation**: pin the version in your MCP client config — `"@iamjameslennon/ddb-mcp@2.9.2"` — rather than letting `npx` auto-update on every launch.
+- **Recommendation**: pin the version in your MCP client config — `"@iamjameslennon/ddb-mcp@2.10.0"` — rather than letting `npx` auto-update on every launch.
 
 ---
 
