@@ -2,11 +2,16 @@
 
 A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that gives Claude direct access to your D&D Beyond account — characters, campaigns, sourcebooks, spells, monsters, rules, encounter planning, treasure generation, and more.
 
+> **What's new** — see the [latest release notes](https://github.com/iamjameslennon/ddb-mcp/releases).
+
 ---
 
 ## For Players
 
 Use Claude as a session companion that knows your character as well as you do.
+
+<details>
+<summary><strong>Example prompts</strong> — character lookups, abilities, rules, spells, sourcebooks</summary>
 
 **Know your character inside out**
 ```
@@ -75,11 +80,16 @@ Show me the table of contents for the Player's Handbook
 Read the Ranger class section from the 2024 Player's Handbook
 ```
 
+</details>
+
 ---
 
 ## For Dungeon Masters & Game Masters
 
 Use Claude to plan sessions, build encounters, and run the table faster.
+
+<details>
+<summary><strong>Example prompts</strong> — encounters, treasure, monsters, campaign, sourcebooks, rules</summary>
 
 **Get party stats**
 ```
@@ -148,9 +158,14 @@ How does the Exhaustion condition work in 2024 rules?
 Can a character use the Help action to assist with a skill check?
 ```
 
+</details>
+
 ---
 
 ## Full Tool Reference
+
+<details>
+<summary><strong>All tools</strong> — character, campaign, monster, encounter, spells, reference, library, navigation</summary>
 
 ### Character Tools
 
@@ -211,6 +226,8 @@ Can a character use the Help action to assist with a skill check?
 | `ddb_get_page` | Return the text content of the currently loaded page. |
 | `ddb_close_browser` | Close the background browser window. Call this when done with `ddb_navigate`, `ddb_interact`, or `ddb_get_page`. |
 
+</details>
+
 ---
 
 ## Prerequisites
@@ -237,11 +254,11 @@ Add this to your MCP client's config — no separate install step needed.
 }
 ```
 
-On first launch, `npx` fetches the package itself (small — under 200 kB unpacked of JS). Playwright Chromium (~140 MB) is downloaded **on demand the first time you run `ddb_login`**, with progress printed to the server log; subsequent logins reuse the cached browser. This keeps server startup fast and the heavy download happens at a moment you expect to wait.
+On first launch, `npx` fetches the package itself (small — under 200 kB unpacked of JS). For the browser dependency: on first `ddb_login`, the server tries to launch your **already-installed Google Chrome** first — most macOS and Windows users get zero download. If Chrome isn't present, it falls back to downloading Playwright's bundled Chromium (~140 MB), with progress printed to the server log; subsequent logins reuse the cached browser. Set `DDB_USE_BUNDLED_CHROMIUM=1` to skip the system-Chrome attempt and force the bundled path.
 
 Configure the path to your client's config file in the [Connecting to your MCP client](#connecting-to-your-mcp-client) section below.
 
-To pin a version (recommended for production setups), change the args to `["-y", "@iamjameslennon/ddb-mcp@2.7.0"]`.
+To pin a version (recommended for production setups), change the args to `["-y", "@iamjameslennon/ddb-mcp@2.9.2"]`.
 
 ### Alternative: install globally
 
@@ -251,7 +268,7 @@ If you'd rather have a persistent binary on `PATH` (offline use, air-gapped netw
 npm install -g @iamjameslennon/ddb-mcp
 ```
 
-Then use `"command": "ddb-mcp"` (no args) in your client config. Chromium is still fetched on first `ddb_login` rather than during install.
+Then use `"command": "ddb-mcp"` (no args) in your client config. The browser is still launched on first `ddb_login` (system Chrome if available, bundled Chromium otherwise) rather than during install.
 
 ---
 
@@ -270,7 +287,7 @@ Then use `"command": "ddb-mcp"` (no args) in your client config. Chromium is sti
   - Screenshots (opt-in): `~/Downloads` only
 - **Transport**: stdio only — the server opens no HTTP listeners and no ports.
 - **Untrusted content**: tools that return D&D Beyond page text (`ddb_navigate`, `ddb_get_page`) wrap the scraped output in `<untrusted_dndbeyond_content>` tags. Character notes, campaign descriptions, party-member backstories, and book content can be authored by other DDB users (DMs, party members, forum posters) and may contain prompt-injection attempts — treat them as untrusted input, never as instructions. The `confirm_click` / `confirm_fill` gates on `ddb_interact` exist for exactly this reason.
-- **Recommendation**: pin the version in your MCP client config — `"@iamjameslennon/ddb-mcp@2.7.0"` — rather than letting `npx` auto-update on every launch.
+- **Recommendation**: pin the version in your MCP client config — `"@iamjameslennon/ddb-mcp@2.9.2"` — rather than letting `npx` auto-update on every launch.
 
 ---
 
@@ -361,7 +378,8 @@ Read the Ranger class section from the 2024 Player's Handbook
 
 ## Sample `ddb_get_character` output
 
-The output below is real — truncated slightly for length. It shows a Tiefling Wizard 2 with prepared spells, unprepared rituals, and spells from racial traits and feats.
+<details>
+<summary><strong>Real character sheet</strong> — Tiefling Wizard 2 with prepared spells, unprepared rituals, and racial/feat spell sources</summary>
 
 ```
 ═══════════════════════════════════════
@@ -465,10 +483,14 @@ Key things `ddb_get_character` handles correctly:
 - **Ritual spells**: marked with `[ritual]` in the spell list
 - **Actions**: weapons include to-hit bonus, damage, range, and mastery properties; magic item bonuses (+1/+2/+3) are applied to both hit and damage
 - **Bonus actions / reactions**: spell-based bonus actions and reactions (Healing Word, Shield, Hunter's Mark, Hellish Rebuke, etc.) appear in the correct section with slot cost
-- **AC**: correctly calculates Unarmored Defense for Barbarians and Monks; selects best armor when multiple items are equipped
-- **Skills**: Jack of All Trades applied for Bards; expertise marked with `**`
+- **AC**: correctly calculates Unarmored Defense for Barbarians and Monks; Draconic Resilience base bump; Defense fighting style gated on equipped body armor; selects best armor when multiple items are equipped
+- **Skills**: Jack of All Trades applied for Bards; Remarkable Athlete for Champion Fighters (STR/DEX/CON only); expertise marked with `**`
 - **Initiative**: Alert feat and Jack of All Trades bonuses applied correctly, with 2014/2024 rule differences handled
-- **Multiclass**: hit dice shown per class, spell slots computed from combined caster levels
+- **Global save and ability-check bonuses**: Stone of Good Luck (Luckstone), Ring of Protection, Cloak of Protection, and Paladin Aura of Protection apply across every save and skill / passive score
+- **Multiclass**: hit dice shown per class, spell slots computed from combined caster levels, save proficiencies correctly come only from the starting class
+- **2014 race ASIs**: Half-Elf and Variant Human chosen +1 ability bonuses are applied alongside the fixed grants; 2024 declined race ASIs (moved to background origin feat) are correctly ignored
+
+</details>
 
 ---
 
@@ -517,12 +539,12 @@ Remove-Item "$env:APPDATA\ddb-mcp\session.json"
 **"Not logged in" or 403 errors**
 Your session has expired. Run `ddb_login` to re-authenticate.
 
-**Chromium not found / browser won't launch**
-Chromium is installed lazily on first `ddb_login`. If the download failed (network or sandbox issue), run `ddb_login` again — the server retries on each call. If it keeps failing, fetch the browser manually:
+**Browser won't launch on `ddb_login`**
+The server prefers your installed Google Chrome and falls back to Playwright's bundled Chromium if Chrome isn't present. If the bundled-Chromium fallback is in use and its download failed (network or sandbox issue), run `ddb_login` again — the server retries on each call. To fetch the bundled browser manually:
 ```bash
 npx playwright install chromium
 ```
-The same global Playwright cache is shared by every install path (npx, global, local clone) — one successful install is reused everywhere.
+The same global Playwright cache is shared by every install path (npx, global, local clone) — one successful install is reused everywhere. If your system Chrome is broken or outdated and you want to force the bundled path, set `DDB_USE_BUNDLED_CHROMIUM=1`.
 
 **Character returns 403 or "private"**
 The character is set to private on D&D Beyond. You must be logged in as the owner, or the owner must make it public.
@@ -536,6 +558,9 @@ Make sure you're running Node.js 20 or later: `node --version`.
 ---
 
 ## Development
+
+<details>
+<summary><strong>Local commands</strong> — install, dev, build, watch, test</summary>
 
 ```bash
 # Install dependencies — prefer npm ci to respect the lockfile
@@ -556,11 +581,16 @@ npm run build:watch
 npm test
 ```
 
+</details>
+
 ---
 
 ## Credits
 
 Forked from [ddb-mcp/ddb-mcp](https://github.com/ddb-mcp/ddb-mcp). The monster, reference, and session-workflow tooling was inspired by [dndbeyond-mcp](https://www.npmjs.com/package/dndbeyond-mcp). This fork significantly expands character parsing, adds session-based API fetching, and introduces compendium, reference, encounter, and treasure tools.
+
+<details>
+<summary><strong>Full list of improvements over the upstream fork</strong></summary>
 
 **Character parsing improvements:**
 
@@ -582,6 +612,8 @@ Forked from [ddb-mcp/ddb-mcp](https://github.com/ddb-mcp/ddb-mcp). The monster, 
 - Treasure generation using 2024 XDMG tables
 - SRD rules search and retrieval (no login required)
 - Security: path constraints on file writes, slug validation, session file permissions (0600), prompt injection gate on browser form fills
+
+</details>
 
 ---
 
