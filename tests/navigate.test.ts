@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isAllowedPageUrl } from "../src/tools/navigate.js";
+import { isAllowedPageUrl, assertSafeSelector } from "../src/tools/navigate.js";
 
 describe("isAllowedPageUrl", () => {
   it("allows https URLs on www.dndbeyond.com", () => {
@@ -39,5 +39,46 @@ describe("isAllowedPageUrl", () => {
     expect(isAllowedPageUrl("chrome-error://chromewebdata/")).toBe(false);
     expect(isAllowedPageUrl("not a url")).toBe(false);
     expect(isAllowedPageUrl("")).toBe(false);
+  });
+});
+
+describe("assertSafeSelector", () => {
+  it("allows ordinary CSS and text-locator selectors", () => {
+    for (const sel of [
+      'button:has-text("Spells")',
+      '[data-testid="signedInUserButton"]',
+      '[role="tab"]:has-text("Inventory")',
+      ".c-site-header a.nav-link",
+      "#content > div.page",
+      'input[name="search"]',
+    ]) {
+      expect(() => assertSafeSelector(sel)).not.toThrow();
+    }
+  });
+
+  it("rejects XPath engine prefixes", () => {
+    expect(() => assertSafeSelector("xpath=//button")).toThrow(/disallowed syntax/);
+    expect(() => assertSafeSelector("xpath/html/body")).toThrow(/disallowed syntax/);
+    // case-insensitive
+    expect(() => assertSafeSelector("XPath=//a")).toThrow(/disallowed syntax/);
+  });
+
+  it("rejects Playwright non-CSS engine prefixes", () => {
+    expect(() => assertSafeSelector("id=submit")).toThrow(/disallowed syntax/);
+    expect(() => assertSafeSelector("data-testid=submit")).toThrow(/disallowed syntax/);
+    expect(() => assertSafeSelector("internal:role=button")).toThrow(/disallowed syntax/);
+  });
+
+  it("rejects frame-piercing / chaining via >>", () => {
+    expect(() => assertSafeSelector("div >> button")).toThrow(/disallowed syntax/);
+    expect(() => assertSafeSelector(">>button")).toThrow(/disallowed syntax/);
+  });
+
+  it("rejects javascript: and Playwright-internal hooks", () => {
+    expect(() => assertSafeSelector('a[href="javascript:alert(1)"]')).toThrow(/disallowed syntax/);
+    expect(() => assertSafeSelector("__playwright_target__")).toThrow(/disallowed syntax/);
+    expect(() => assertSafeSelector("button >> internal:control=enter-frame >> _evaluate")).toThrow(
+      /disallowed syntax/
+    );
   });
 });

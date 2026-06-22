@@ -62,7 +62,7 @@ async function ensureNavigationGuard(context: BrowserContext): Promise<void> {
 // regular-language we can't easily white-list; we instead exclude every
 // known engine prefix that introduces non-CSS behavior. Engine prefixes are
 // `<name>=` at the start of a selector chunk, plus `>>` for chaining.
-function assertSafeSelector(selector: string): void {
+export function assertSafeSelector(selector: string): void {
   const lower = selector.toLowerCase();
   if (
     lower.startsWith("xpath=") ||
