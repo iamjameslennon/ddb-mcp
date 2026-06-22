@@ -258,7 +258,7 @@ On first launch, `npx` fetches the package itself (small — under 200 kB unpack
 
 Configure the path to your client's config file in the [Connecting to your MCP client](#connecting-to-your-mcp-client) section below.
 
-To pin a version (recommended for production setups), change the args to `["-y", "@iamjameslennon/ddb-mcp@2.10.0"]`.
+To pin a version (recommended for production setups), change the args to `["-y", "@iamjameslennon/ddb-mcp@2.10.1"]`.
 
 ### Alternative: install globally
 
@@ -289,7 +289,7 @@ Then use `"command": "ddb-mcp"` (no args) in your client config. The browser is 
 - **Browser navigation allowlist**: the browser tools are pinned to `dndbeyond.com`. `ddb_navigate` validates the URL up front, a network-layer guard blocks in-page escapes (link clicks, JS redirects, popups) to any other origin, and `ddb_get_page` refuses to return content from any page outside the allowlist.
 - **Untrusted content**: free text authored by D&D Beyond users is wrapped in `<untrusted_dndbeyond_content>` tags — scraped page text (`ddb_navigate`, `ddb_get_page`), book content (`ddb_read_book`), character notes/backstories (`ddb_get_character`, `ddb_get_party`), and homebrew monster stat blocks (`ddb_get_monster`). Embedded delimiter tags in the content are neutralized so it can't break out of the block. Party-member backstories and campaign notes are written by *other people* and may contain prompt-injection attempts — treat everything inside the tags as data, never as instructions. The `confirm_click` / `confirm_fill` gates on `ddb_interact` exist for exactly this reason.
 - **Tool annotations & client permissions**: every tool declares MCP behavior hints (`readOnlyHint`, `destructiveHint`, `openWorldHint`) so your MCP client can scope its permission prompts. The read-only tools (searches, lookups, character/campaign reads) are safe to auto-approve. **Never auto-approve `ddb_interact`**: its `confirm_click`/`confirm_fill` gates are set by the calling model, not by you, so your client's per-call permission prompt is the only human-in-the-loop check standing between a prompt-injected page and a click or form submission on your logged-in D&D Beyond session. `ddb_login` (writes credentials) and `ddb_download_character` (writes/overwrites local files) also warrant per-call approval.
-- **Recommendation**: pin the version in your MCP client config — `"@iamjameslennon/ddb-mcp@2.10.0"` — rather than letting `npx` auto-update on every launch.
+- **Recommendation**: pin the version in your MCP client config — `"@iamjameslennon/ddb-mcp@2.10.1"` — rather than letting `npx` auto-update on every launch.
 
 ---
 

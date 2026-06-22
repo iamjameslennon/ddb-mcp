@@ -1,6 +1,6 @@
 {
   "name": "@iamjameslennon/ddb-mcp",
-  "version": "2.10.0",
+  "version": "2.10.1",
   "description": "D&D Beyond MCP Server with Google Auth",
   "license": "MIT",
   "type": "module",
