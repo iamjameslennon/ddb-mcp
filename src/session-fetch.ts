@@ -9,7 +9,7 @@
  * the OAuth flow) and then reused for all subsequent API calls.
  */
 
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, chmodSync } from "fs";
 import { isAbsolute, join } from "path";
 import { homedir } from "os";
 
@@ -91,6 +91,21 @@ export function invalidateSessionCache(): void {
 }
 
 /**
+ * Best-effort permission hardening for installs that pre-date the 0700/0600
+ * defaults: mkdirSync's `mode` and open()'s create-mode only apply when the
+ * directory/file is first created, so a session dir created by an old release
+ * keeps its original (typically 0755) mode forever. POSIX only — Windows
+ * relies on %APPDATA% ACL inheritance instead of POSIX modes.
+ */
+export function tightenSessionPermissions(): void {
+  if (process.platform === "win32") return;
+  // Each chmod is independently best-effort — a failure (ENOENT before first
+  // login, EPERM on an unusual setup) must never break session access.
+  try { chmodSync(SESSION_DIR, 0o700); } catch { /* best-effort */ }
+  try { chmodSync(SESSION_PATH, 0o600); } catch { /* best-effort */ }
+}
+
+/**
  * Load cookies from disk into the in-memory cache (if not already loaded).
  * Throws if the session file does not exist.
  */
@@ -99,6 +114,9 @@ function loadSessionCookies(): PlaywrightCookie[] {
   if (!existsSync(SESSION_PATH)) {
     throw new Error("No session found. Please run ddb_login first to authenticate.");
   }
+  // Runs at most once per process (the cookie cache short-circuits above) —
+  // converges legacy installs to 0700/0600 on first credential access.
+  tightenSessionPermissions();
   const session = JSON.parse(readFileSync(SESSION_PATH, "utf8"));
   const loaded = session.cookies ?? [];
   cookieCache = loaded;

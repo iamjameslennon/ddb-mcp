@@ -3,6 +3,7 @@ import { mkdirSync } from "fs";
 import { homedir } from "os";
 import { dirname, join } from "path";
 import { getPage } from "../browser.js";
+import { wrapUntrusted } from "../utils.js";
 
 // Hosts the browser tools are allowed to navigate to. The wildcard form
 // `*.dndbeyond.com` is intentionally NOT used here: every code path that
@@ -13,6 +14,46 @@ const ALLOWED_NAVIGATE_HOSTS = new Set<string>([
   "www.dndbeyond.com",
   "dndbeyond.com", // apex redirects to www; accept so users can pass either form
 ]);
+
+/**
+ * True when `url` is an https page on an allowlisted D&D Beyond host.
+ * Exported for unit testing.
+ */
+export function isAllowedPageUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" && ALLOWED_NAVIGATE_HOSTS.has(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
+// The ddb_navigate allowlist only checks the URL passed to that tool — without
+// this guard, a click on a prompt-injected DDB page could follow an off-site
+// link and ddb_get_page would then scrape an arbitrary origin. Abort top-level
+// navigations to non-allowlisted hosts at the network layer (covers link
+// clicks, JS redirects, and popups). Subresources (CDN assets, images) are
+// unaffected. Context-level so popups are covered too; the ddb_login context
+// never passes through here, so the Wizards SSO redirect flow stays unguarded.
+const guardedContexts = new WeakSet<BrowserContext>();
+async function ensureNavigationGuard(context: BrowserContext): Promise<void> {
+  if (guardedContexts.has(context)) return;
+  guardedContexts.add(context);
+  await context.route("**/*", (route) => {
+    const req = route.request();
+    let isTopLevelNav = false;
+    try {
+      isTopLevelNav = req.isNavigationRequest() && req.frame().parentFrame() === null;
+    } catch {
+      // frame() throws for service-worker requests and detached frames —
+      // neither can change the page the tools scrape, so let them through.
+    }
+    if (isTopLevelNav && !isAllowedPageUrl(req.url())) {
+      return route.abort("blockedbyclient");
+    }
+    return route.continue();
+  });
+}
 
 // Reject Playwright selector forms that go beyond CSS / text-locator matching.
 // A prompt-injected DDB page could otherwise craft a selector that runs
@@ -41,6 +82,7 @@ function assertSafeSelector(selector: string): void {
 
 export async function navigate(context: BrowserContext, url: string): Promise<string> {
   const page = await getPage(context);
+  await ensureNavigationGuard(context);
 
   // Only allow D&D Beyond URLs — validate the actual hostname.
   let validatedUrl: URL;
@@ -75,7 +117,7 @@ export async function navigate(context: BrowserContext, url: string): Promise<st
   // trusted tool output from untrusted page content (potential prompt-
   // injection surface). The page may contain user-authored text from DMs,
   // forum posts, or campaign notes.
-  return `URL: ${url}\n\n<untrusted_dndbeyond_content>\n${truncated}\n</untrusted_dndbeyond_content>`;
+  return `URL: ${url}\n\n${wrapUntrusted(truncated)}`;
 }
 
 export async function interact(
@@ -86,6 +128,7 @@ export async function interact(
 ): Promise<string> {
   assertSafeSelector(selector);
   const page = await getPage(context);
+  await ensureNavigationGuard(context);
 
   switch (action) {
     case "click": {
@@ -95,6 +138,17 @@ export async function interact(
       await locator.waitFor({ state: "visible", timeout: 10000 });
       await locator.click();
       await page.waitForTimeout(1000);
+      // Defense in depth alongside the navigation guard: if the click somehow
+      // landed the page off-allowlist (e.g. the blocked navigation committed
+      // an error page carrying the target URL), say so instead of letting a
+      // follow-up ddb_get_page scrape a cross-origin page.
+      if (!isAllowedPageUrl(page.url())) {
+        throw new Error(
+          `Click triggered a navigation away from dndbeyond.com (to ${page.url()}) — ` +
+          `it was blocked and no cross-origin content will be returned. ` +
+          `Use ddb_navigate to load a D&D Beyond page.`
+        );
+      }
       return `Clicked element: ${selector}`;
     }
 
@@ -128,7 +182,20 @@ export async function interact(
 
 export async function getCurrentPageContent(context: BrowserContext): Promise<string> {
   const page = await getPage(context);
+  await ensureNavigationGuard(context);
   const url = page.url();
+  if (url === "about:blank") {
+    throw new Error("No page is loaded yet — call ddb_navigate first.");
+  }
+  // The page can only leave the allowlist through paths the guard doesn't
+  // cover (e.g. a data: URL navigation, which never hits the network layer).
+  // Refuse to scrape anything that isn't an allowlisted DDB page.
+  if (!isAllowedPageUrl(url)) {
+    throw new Error(
+      `Current page (${url}) is outside the dndbeyond.com allowlist — refusing to return its content. ` +
+      `Use ddb_navigate to load a D&D Beyond page.`
+    );
+  }
   const content = await page.evaluate(() => {
     document.querySelectorAll("script, style, nav, footer, .ad-container").forEach((el) => el.remove());
     const main =
@@ -139,5 +206,5 @@ export async function getCurrentPageContent(context: BrowserContext): Promise<st
   const truncated = content.length > 8000 ? content.slice(0, 8000) + "\n[truncated]" : content;
   // See note in navigate() — wrap scraped content so untrusted page text is
   // visibly separated from trusted tool output.
-  return `Current URL: ${url}\n\n<untrusted_dndbeyond_content>\n${truncated}\n</untrusted_dndbeyond_content>`;
+  return `Current URL: ${url}\n\n${wrapUntrusted(truncated)}`;
 }

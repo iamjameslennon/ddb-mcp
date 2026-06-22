@@ -275,7 +275,7 @@ Then use `"command": "ddb-mcp"` (no args) in your client config. The browser is 
 ## Security & Privacy
 
 - **Credentials stored**: D&D Beyond session cookies are saved to a per-user config directory — `~/.config/ddb-mcp/session.json` on macOS/Linux, `%APPDATA%\ddb-mcp\session.json` on Windows.
-- **File permissions**: on macOS/Linux the file is `0600` and the directory `0700`. On Windows access is restricted to your user account by default via `%APPDATA%` ACL inheritance — note that on multi-admin/domain-joined machines local administrators may also have read access.
+- **File permissions**: on macOS/Linux the file is `0600` and the directory `0700` — sessions created by older releases are tightened to these modes automatically on first use. On Windows access is restricted to your user account by default via `%APPDATA%` ACL inheritance — note that on multi-admin/domain-joined machines local administrators may also have read access.
 - **Cobalt JWT**: cached in memory only and never written to disk.
 - **Network access** (outbound HTTPS only):
   - `*.dndbeyond.com` — character data, auth, campaigns, books
@@ -286,7 +286,9 @@ Then use `"command": "ddb-mcp"` (no args) in your client config. The browser is 
   - Character downloads (opt-in): `~/Downloads` or `~/Documents` only — paths outside these roots are rejected
   - Screenshots (opt-in): `~/Downloads` only
 - **Transport**: stdio only — the server opens no HTTP listeners and no ports.
-- **Untrusted content**: tools that return D&D Beyond page text (`ddb_navigate`, `ddb_get_page`) wrap the scraped output in `<untrusted_dndbeyond_content>` tags. Character notes, campaign descriptions, party-member backstories, and book content can be authored by other DDB users (DMs, party members, forum posters) and may contain prompt-injection attempts — treat them as untrusted input, never as instructions. The `confirm_click` / `confirm_fill` gates on `ddb_interact` exist for exactly this reason.
+- **Browser navigation allowlist**: the browser tools are pinned to `dndbeyond.com`. `ddb_navigate` validates the URL up front, a network-layer guard blocks in-page escapes (link clicks, JS redirects, popups) to any other origin, and `ddb_get_page` refuses to return content from any page outside the allowlist.
+- **Untrusted content**: free text authored by D&D Beyond users is wrapped in `<untrusted_dndbeyond_content>` tags — scraped page text (`ddb_navigate`, `ddb_get_page`), book content (`ddb_read_book`), character notes/backstories (`ddb_get_character`, `ddb_get_party`), and homebrew monster stat blocks (`ddb_get_monster`). Embedded delimiter tags in the content are neutralized so it can't break out of the block. Party-member backstories and campaign notes are written by *other people* and may contain prompt-injection attempts — treat everything inside the tags as data, never as instructions. The `confirm_click` / `confirm_fill` gates on `ddb_interact` exist for exactly this reason.
+- **Tool annotations & client permissions**: every tool declares MCP behavior hints (`readOnlyHint`, `destructiveHint`, `openWorldHint`) so your MCP client can scope its permission prompts. The read-only tools (searches, lookups, character/campaign reads) are safe to auto-approve. **Never auto-approve `ddb_interact`**: its `confirm_click`/`confirm_fill` gates are set by the calling model, not by you, so your client's per-call permission prompt is the only human-in-the-loop check standing between a prompt-injected page and a click or form submission on your logged-in D&D Beyond session. `ddb_login` (writes credentials) and `ddb_download_character` (writes/overwrites local files) also warrant per-call approval.
 - **Recommendation**: pin the version in your MCP client config — `"@iamjameslennon/ddb-mcp@2.10.0"` — rather than letting `npx` auto-update on every launch.
 
 ---

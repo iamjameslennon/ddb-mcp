@@ -10,7 +10,7 @@
 
 import { sessionFetch, hasValidSession, getCobaltToken } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
-import { writeFileSync, mkdirSync } from "fs";
+import { writeFileSync, mkdirSync, realpathSync } from "fs";
 import { join, resolve, relative, basename, dirname, isAbsolute } from "path";
 import { homedir } from "os";
 import type { ParseSection } from "./character/types.js";
@@ -124,6 +124,60 @@ export async function getCharacter(
   throw new Error(`DnD Beyond API returned ${resp.status}: ${resp.statusText}`);
 }
 
+/**
+ * Realpath the nearest existing ancestor of `p`, then re-attach the
+ * non-existent tail. The target file usually doesn't exist yet, so we can't
+ * realpath it directly — but resolving symlinks in the existing portion of the
+ * path is what matters: it collapses a planted symlink to its real location.
+ */
+function realpathNearestAncestor(p: string): string {
+  const tail: string[] = [];
+  let current = p;
+  for (;;) {
+    try {
+      const real = realpathSync(current);
+      return tail.length ? join(real, ...tail.reverse()) : real;
+    } catch {
+      const parent = dirname(current);
+      if (parent === current) return p; // hit the filesystem root; nothing resolved
+      tail.push(basename(current));
+      current = parent;
+    }
+  }
+}
+
+/**
+ * Resolve `outputPath` and verify it lands strictly inside one of
+ * `allowedDirs`, returning the symlink-resolved absolute path to write to.
+ *
+ * Symlinks are resolved on BOTH sides before the containment check: a symlink
+ * planted inside an allowed dir (e.g. ~/Documents/x → /etc) can't redirect the
+ * write outside the allowlist, and a legitimately symlinked allowed dir (e.g.
+ * ~/Downloads → an external volume) still validates. Throws on escape.
+ *
+ * Exported for unit testing.
+ */
+export function resolveSafeSavePath(outputPath: string, allowedDirs: string[]): string {
+  const resolved = resolve(outputPath);
+  if (resolved.includes("\0")) throw new Error("Output path contains invalid characters.");
+
+  const realTarget = realpathNearestAncestor(resolved);
+  const realAllowed = allowedDirs.map(d => {
+    try { return realpathSync(d); } catch { return resolve(d); }
+  });
+
+  // rel must be non-empty (rejects the allowed dir itself, which would later
+  // EISDIR), not escape with .., and not be absolute (cross-drive on Windows).
+  const isAllowed = realAllowed.some(dir => {
+    const rel = relative(dir, realTarget);
+    return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+  });
+  if (!isAllowed) {
+    throw new Error("Output path must be a file under ~/Downloads or ~/Documents.");
+  }
+  return realTarget;
+}
+
 export async function downloadCharacter(
   characterId: string,
   outputPath?: string
@@ -145,23 +199,10 @@ export async function downloadCharacter(
 
   let savePath: string;
   if (outputPath) {
-    const resolved = resolve(outputPath);
-    if (resolved.includes("\0")) throw new Error("Output path contains invalid characters.");
-    const allowedDirs = [
+    savePath = resolveSafeSavePath(outputPath, [
       join(homedir(), "Downloads"),
       join(homedir(), "Documents"),
-    ];
-    // Require resolved to be a strict child of an allowed dir — rel must be
-    // non-empty (rejects passing the root itself, which would later EISDIR),
-    // not escape with .., and not be absolute (cross-drive on Windows).
-    const isAllowed = allowedDirs.some(dir => {
-      const rel = relative(dir, resolved);
-      return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
-    });
-    if (!isAllowed) {
-      throw new Error("Output path must be a file under ~/Downloads or ~/Documents.");
-    }
-    savePath = resolved;
+    ]);
   } else {
     savePath = defaultPath;
   }

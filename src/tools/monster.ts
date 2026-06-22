@@ -11,6 +11,7 @@
 
 import { sessionFetch, getCobaltToken, hasValidSession } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
+import { wrapUntrusted } from "../utils.js";
 import { o5SearchMonsters, o5GetMonster } from "../open5e.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -406,7 +407,9 @@ export async function getMonster(monsterName: string): Promise<string> {
       if (o5Result) return o5Result;
     }
 
-    return statBlock;
+    // Homebrew stat blocks are user-authored free text (trait/action
+    // descriptions) — delimit as untrusted. Official WotC content is not.
+    return detail.data.isHomebrew ? wrapUntrusted(statBlock) : statBlock;
   } catch {
     const o5Result = await o5GetMonster(monsterName).catch(() => null);
     if (o5Result) return o5Result;

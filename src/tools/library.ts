@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 import type { AnyNode } from "domhandler";
 import { sessionFetch, hasValidSession } from "../session-fetch.js";
+import { wrapUntrusted } from "../utils.js";
 
 const LIBRARY_URL =
   "https://www.dndbeyond.com/en/library?type=sourcebooks&ownership=owned-shared";
@@ -255,10 +256,14 @@ export async function readBook(
     if (bestPos >= 0) contentToReturn = content.slice(bestPos);
   }
 
-  const truncated = contentToReturn.length > maxChars
-    ? contentToReturn.slice(0, maxChars) +
-      `\n\n[Truncated at ${maxChars} chars. Use a larger max_chars or specify query/chapter_slug to narrow scope.]`
-    : contentToReturn;
+  const wasTruncated = contentToReturn.length > maxChars;
+  const body = wasTruncated ? contentToReturn.slice(0, maxChars) : contentToReturn;
+  const truncNote = wasTruncated
+    ? `\n\n[Truncated at ${maxChars} chars. Use a larger max_chars or specify query/chapter_slug to narrow scope.]`
+    : "";
 
-  return `# ${resolvedSlug}${chapterSlug ? ` / ${chapterSlug}` : ""}\nURL: ${url}\n\n${truncated}`;
+  // Book text is DDB-served page content — keep it inside untrusted
+  // delimiters (and the tool-generated truncation note outside them), same
+  // as the ddb_navigate / ddb_get_page scrapers.
+  return `# ${resolvedSlug}${chapterSlug ? ` / ${chapterSlug}` : ""}\nURL: ${url}\n\n${wrapUntrusted(body)}${truncNote}`;
 }

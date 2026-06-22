@@ -9,7 +9,7 @@
  * traits frequently contain entities like `&rsquo;` and `&mdash;`.
  */
 
-import { stripHtml } from "../../utils.js";
+import { stripHtml, wrapUntrusted } from "../../utils.js";
 import { obj, str } from "./helpers.js";
 import type { CoreStats } from "./types.js";
 
@@ -71,5 +71,8 @@ export function formatNotesBlock(n: Notes): string[] {
   if (n.backstoryText)     out.push("BACKSTORY", `  ${n.backstoryText}`, "");
   if (n.allyLines.length)  out.push("ALLIES & ORGANISATIONS", ...n.allyLines, "");
   if (n.extraLines.length) out.push("ADDITIONAL NOTES", ...n.extraLines, "");
-  return out;
+  // Notes are free text written by the character's player — who, for
+  // ddb_get_party and shared-campaign lookups, is not the user running this
+  // server. Delimit so a backstory can't pose as instructions.
+  return [wrapUntrusted(out.join("\n").trimEnd()), ""];
 }

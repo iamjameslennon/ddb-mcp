@@ -48,7 +48,7 @@ The central architectural split is between tools that need a Playwright browser 
 | `src/auth.ts` | Login flow — navigates to DDB login, polls until redirect, saves session |
 | `src/cache.ts` | Generic in-memory TTL cache (`TtlCache<T>`) with FIFO eviction |
 | `src/open5e.ts` | Open5e SRD fallback — no auth required. Used when DDB is down or returns empty results. 1 h TTL cache. Stores parsed objects (not JSON strings). |
-| `src/utils.ts` | Shared `stripHtml()` utility — strips tags and decodes HTML entities. Imported by `character.ts` and `reference.ts`. |
+| `src/utils.ts` | Shared `stripHtml()` (strips tags, decodes HTML entities) and `wrapUntrusted()` (delimits user-authored free text in `<untrusted_dndbeyond_content>` tags, neutralizing embedded delimiters). Wrap any new tool output containing DDB user-authored text: page scrapes, book content, character notes, homebrew descriptions. |
 | `src/tools/character.ts` | Public API surface — network/IO (`getCharacter`, `downloadCharacter`, `listCharacters`, fuzzy `findCharacterByName`), JSON cache, plus re-exports of `parseCharacterData` and `getDefinition` from the per-domain modules in `src/tools/character/` |
 | `src/tools/character/parse.ts` | `parseCharacterData(raw, sections)` orchestrator (sections: summary/combat/spells/inventory/features/notes/concentration/full) — delegates to the per-domain modules |
 | `src/tools/character/definition.ts` | `getDefinition` — searches a character's spells/feats/class features/racial traits/background/equipped items for name matches |
@@ -81,6 +81,7 @@ The central architectural split is between tools that need a Playwright browser 
 - `ddb_roll_treasure` accepts `type: "individual" | "hoard"` and `cr` of the monster(s)
 - `ddb_interact` requires `confirm_fill: true` when `action` is `"fill"` — safety gate against prompt-injection-triggered form submissions
 - `ddb_download_character` `output_path` must be under `~/Downloads` or `~/Documents`
+- Every tool registration passes an MCP annotations object (`READ_ONLY_NET` / `READ_ONLY_LOCAL` consts in `index.ts`, or an inline object for mutating tools) so clients can scope permission prompts. `ddb_interact` and `ddb_download_character` are the only `destructiveHint: true` tools. Keep annotations accurate when adding tools
 
 ### parseCharacterData notes
 
@@ -125,3 +126,5 @@ Releases are automated via `scripts/release.js` (ES module, Node built-ins only)
 All content tools are now browserless. `ddb_search_site` ([search.ts](src/tools/search.ts)) delegates to the cached compendia in `reference.ts` / `monster.ts`. `ddb_list_library` ([library.ts](src/tools/library.ts)) parses the library page's embedded RSC payload (`self.__next_f.push(…)` chunks) from `sessionFetch` HTML. `ddb_read_book` fetches sourcebook pages via `sessionFetch` and walks the `<article>` tree with cheerio — DDB book chapters are server-rendered, so no JS execution is needed.
 
 The only tools that still drive a browser are `ddb_login`, `ddb_navigate`, `ddb_interact`, and `ddb_get_page` — all inherently browser-bound (OAuth flow / live page interaction).
+
+Browser contexts used by navigate/interact/get_page carry a navigation guard (`ensureNavigationGuard` in [navigate.ts](src/tools/navigate.ts)): top-level navigations to non-allowlisted hosts are aborted at the network layer, `interact` re-checks `page.url()` after every click, and `getCurrentPageContent` refuses to scrape any page outside the allowlist (covers data:-URL navigations, which never hit the network layer). The `ddb_login` context never passes through these functions, so the Wizards SSO redirect flow stays unguarded.

@@ -6,9 +6,20 @@ import {
 import { spawn } from "child_process";
 import { createRequire } from "module";
 import { dirname, join } from "path";
-import { invalidateSessionCache, SESSION_DIR, SESSION_PATH } from "./session-fetch.js";
+import { invalidateSessionCache, tightenSessionPermissions, SESSION_DIR, SESSION_PATH } from "./session-fetch.js";
 
 export { SESSION_DIR, SESSION_PATH };
+
+function ensureSessionDir(): void {
+  if (!existsSync(SESSION_DIR)) {
+    // mode is honored on POSIX (0700) and silently ignored on Windows, where
+    // %APPDATA%\ddb-mcp inherits the user-profile ACL instead.
+    mkdirSync(SESSION_DIR, { recursive: true, mode: 0o700 });
+    return;
+  }
+  // Dir already exists — it may pre-date the 0700 default; tighten it.
+  tightenSessionPermissions();
+}
 
 let browserInstance: Browser | null = null;
 let browserHeadless: boolean | null = null;
@@ -106,11 +117,7 @@ export async function getBrowser(headless = true): Promise<Browser> {
 export async function getContext(browser: Browser): Promise<BrowserContext> {
   if (contextInstance) return contextInstance;
 
-  if (!existsSync(SESSION_DIR)) {
-    // mode is honored on POSIX (0700) and silently ignored on Windows, where
-    // %APPDATA%\ddb-mcp inherits the user-profile ACL instead.
-    mkdirSync(SESSION_DIR, { recursive: true, mode: 0o700 });
-  }
+  ensureSessionDir();
 
   const contextOptions = {
     userAgent:
@@ -125,10 +132,7 @@ export async function getContext(browser: Browser): Promise<BrowserContext> {
 }
 
 export async function saveSession(context: BrowserContext): Promise<void> {
-  if (!existsSync(SESSION_DIR)) {
-    // See note in getContext() — mode is a POSIX-only hint.
-    mkdirSync(SESSION_DIR, { recursive: true, mode: 0o700 });
-  }
+  ensureSessionDir();
   // Capture state in memory and write it atomically:
   //   (1) write to a tempfile in the same directory, then renameSync into
   //       place — readers always see either the previous file or the new one,

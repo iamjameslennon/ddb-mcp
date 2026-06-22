@@ -9,8 +9,8 @@ vi.mock("fs", () => ({
   chmodSync: vi.fn(),
 }));
 
-import { existsSync, readFileSync } from "fs";
-import { hasValidSession, invalidateSessionCache } from "../src/session-fetch.js";
+import { existsSync, readFileSync, chmodSync } from "fs";
+import { hasValidSession, invalidateSessionCache, SESSION_DIR, SESSION_PATH } from "../src/session-fetch.js";
 
 const mockExistsSync = vi.mocked(existsSync);
 const mockReadFileSync = readFileSync as unknown as { mockReturnValue: (v: string) => void };
@@ -93,4 +93,21 @@ describe("hasValidSession", () => {
     mockExistsSync.mockReturnValue(false);
     expect(hasValidSession()).toBe(false);
   });
+
+  // tightenSessionPermissions is POSIX-only — on Windows the dir relies on
+  // %APPDATA% ACL inheritance and no chmod is attempted.
+  it.skipIf(process.platform === "win32")(
+    "tightens session dir/file permissions on first read (legacy installs)",
+    () => {
+      setSessionFile([makeCookie()]);
+      hasValidSession();
+      expect(vi.mocked(chmodSync)).toHaveBeenCalledWith(SESSION_DIR, 0o700);
+      expect(vi.mocked(chmodSync)).toHaveBeenCalledWith(SESSION_PATH, 0o600);
+
+      // Cached reads must not re-stat the disk
+      vi.clearAllMocks();
+      hasValidSession();
+      expect(vi.mocked(chmodSync)).not.toHaveBeenCalled();
+    }
+  );
 });

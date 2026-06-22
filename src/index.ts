@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 import { getBrowser, getContext, closeBrowser } from "./browser.js";
@@ -23,6 +24,15 @@ const server = new McpServer({
   version: "1.0.0",
 });
 
+// ─── Tool annotations ─────────────────────────────────────────────────────────
+// MCP behavior hints so clients can render appropriate permission UX — e.g.
+// auto-approve read-only tools but always prompt on ddb_interact, whose
+// confirm_click/confirm_fill gates are set by the calling model and therefore
+// can't substitute for a human-in-the-loop check. Hints only: clients must
+// not treat them as a security boundary.
+const READ_ONLY_NET: ToolAnnotations = { readOnlyHint: true, openWorldHint: true };
+const READ_ONLY_LOCAL: ToolAnnotations = { readOnlyHint: true, openWorldHint: false };
+
 // Lazy-initialized shared browser context (headless by default)
 async function getSharedContext() {
   const browser = await getBrowser();
@@ -42,6 +52,8 @@ server.tool(
   "ddb_login",
   "Launch a browser and log into D&D Beyond. A Chrome window will open for you to complete login — it closes automatically once your session is saved. After that, character tools work without any browser.",
   {},
+  // Writes session cookies to disk; re-running just refreshes the same session.
+  { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   async () => {
     try {
       const context = await getLoginContext();
@@ -65,6 +77,7 @@ server.tool(
   "ddb_close_browser",
   "Close the background browser window if one is open. Useful after running ddb_navigate, ddb_interact, or ddb_get_page.",
   {},
+  { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   async () => {
     try {
       await closeBrowser();
@@ -87,6 +100,7 @@ server.tool(
       .default("spells")
       .describe("Which cache to clear. 'spells' (default) — the spell / equipment / races / classes / feats compendium. 'characters' — character JSON cache. 'monsters' — monster stat-block cache. 'all' — everything, including campaigns and Open5e responses."),
   },
+  { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   async ({ cache }) => {
     const cleared: string[] = [];
     if (cache === "spells" || cache === "all") {
@@ -115,6 +129,7 @@ server.tool(
   "ddb_list_characters",
   "List all characters in your D&D Beyond account, including their ID, level, race, and class. Requires login — run ddb_login first if you haven't already.",
   {},
+  READ_ONLY_NET,
   async () => {
     try {
       const result = await listCharacters();
@@ -136,6 +151,7 @@ server.tool(
     character_name: z.string().min(1).optional().describe("Character name to look up (fuzzy matched against your account)"),
     confirm_large_response: z.literal(true).describe("Must be true to proceed — acknowledges this call returns 300–500 KB."),
   },
+  READ_ONLY_NET,
   async ({ character_id, character_name }) => {
     try {
       let resolvedId = character_id;
@@ -170,6 +186,9 @@ server.tool(
       .optional()
       .describe("Full file path to save to (defaults to ~/Downloads/{name}-{id}.json). Must be a path under ~/Downloads or ~/Documents."),
   },
+  // destructiveHint: a user-supplied output_path can overwrite an existing
+  // file under ~/Downloads or ~/Documents.
+  { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
   async ({ character_id, output_path }) => {
     try {
       // No browser needed — uses saved session cookies directly
@@ -194,6 +213,7 @@ server.tool(
       .default("full")
       .describe("Which sections to return. Default: full. Use summary for a quick overview."),
   },
+  READ_ONLY_NET,
   async ({ character_id, character_name, sections }) => {
     try {
       let resolvedId = character_id;
@@ -226,6 +246,7 @@ server.tool(
     character_name: z.string().min(1).optional().describe("Character name (fuzzy matched against your account)"),
     name: z.string().min(1).describe("Name to search for — partial match, e.g. 'hunter' finds Hunter's Mark"),
   },
+  READ_ONLY_NET,
   async ({ character_id, character_name, name }) => {
     try {
       let resolvedId = character_id;
@@ -259,6 +280,7 @@ server.tool(
     type: z.string().optional().describe("Monster type filter (e.g. 'undead', 'fiend', 'beast')"),
     size: z.string().optional().describe("Size filter (e.g. 'large', 'tiny')"),
   },
+  READ_ONLY_NET,
   async ({ name, cr, type, size }) => {
     try {
       const result = await searchMonsters({ name, cr, type, size });
@@ -278,6 +300,7 @@ server.tool(
   {
     name: z.string().min(1).describe("Monster name (e.g. 'Beholder', 'Adult Red Dragon')"),
   },
+  READ_ONLY_NET,
   async ({ name }) => {
     try {
       const result = await getMonster(name);
@@ -297,6 +320,7 @@ server.tool(
   {
     campaign_id: z.string().regex(/^\d+$/, "campaign_id must be numeric").describe("The D&D Beyond campaign ID (found in the campaign URL)"),
   },
+  READ_ONLY_NET,
   async ({ campaign_id }) => {
     try {
       const data = await getCampaign(campaign_id);
@@ -314,6 +338,7 @@ server.tool(
   "ddb_list_campaigns",
   "List all D&D Beyond campaigns you are part of (as DM or player). Requires login — run ddb_login first if you haven't already.",
   {},
+  READ_ONLY_NET,
   async () => {
     try {
       const data = await listMyCampaigns();
@@ -333,6 +358,7 @@ server.tool(
   {
     campaign_id: z.string().regex(/^\d+$/, "campaign_id must be numeric").describe("The D&D Beyond campaign ID (found in the campaign URL)"),
   },
+  READ_ONLY_NET,
   async ({ campaign_id }) => {
     try {
       const data = await getParty(campaign_id);
@@ -355,6 +381,7 @@ server.tool(
       .min(1)
       .describe("Full D&D Beyond URL to navigate to (must start with https://www.dndbeyond.com/)"),
   },
+  READ_ONLY_NET,
   async ({ url }) => {
     try {
       const context = await getSharedContext();
@@ -390,6 +417,12 @@ server.tool(
       .optional()
       .describe("Must be true when action is 'fill'. Verify the selector and value are correct before setting this."),
   },
+  // destructiveHint: click/fill act on the logged-in DDB session and can
+  // change account state (delete a character, leave a campaign, post to a
+  // forum). The confirm_* gates are set by the calling model, so the client's
+  // permission prompt is the only human-in-the-loop check — clients should
+  // never auto-approve this tool.
+  { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
   async ({ action, selector, value, confirm_click, confirm_fill }) => {
     if (action === "click" && confirm_click !== true) {
       return {
@@ -420,6 +453,7 @@ server.tool(
   "ddb_get_page",
   "Return the text content of the currently loaded page in the browser. The browser stays open — call ddb_close_browser when finished.",
   {},
+  READ_ONLY_NET,
   async () => {
     try {
       const context = await getSharedContext();
@@ -444,6 +478,7 @@ server.tool(
       .optional()
       .describe("Category to search within (defaults to 'all')"),
   },
+  READ_ONLY_NET,
   async ({ query, category }) => {
     try {
       const results = await search(query, category ?? "all");
@@ -461,6 +496,7 @@ server.tool(
   "ddb_list_library",
   "List all books and sourcebooks you own in your D&D Beyond library. Requires login — run ddb_login first if you haven't already.",
   {},
+  READ_ONLY_NET,
   async () => {
     try {
       const books = await listLibrary();
@@ -496,6 +532,7 @@ server.tool(
     query: z.string().optional()
       .describe("Jump to the first heading containing this text (e.g. 'spell slots', 'wild shape')."),
   },
+  READ_ONLY_NET,
   async ({ book_slug, chapter_slug, max_chars, query }) => {
     try {
       const content = await readBook(book_slug, chapter_slug, max_chars, query);
@@ -516,6 +553,7 @@ server.tool(
   {
     name: z.string().min(1).describe("Condition name (e.g. 'frightened', 'grappled')"),
   },
+  READ_ONLY_LOCAL,
   async ({ name }) => {
     const result = getCondition(name);
     return { content: [{ type: "text", text: result }] };
@@ -534,6 +572,7 @@ server.tool(
     limit: z.number().int().min(1).max(100).default(20).describe("Max results to return (default 20)"),
     offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
   },
+  READ_ONLY_NET,
   async ({ name, level, school, concentration, ritual, limit, offset }) => {
     try {
       const result = await searchSpells({ name, level, school, concentration, ritual, limit, offset });
@@ -552,6 +591,7 @@ server.tool(
   {
     name: z.string().min(1).describe("Spell name (e.g. 'Fireball', 'Hunter\\'s Mark')"),
   },
+  READ_ONLY_NET,
   async ({ name }) => {
     try {
       const result = await getSpell(name);
@@ -573,6 +613,7 @@ server.tool(
     rarity: z.string().optional().describe("Rarity filter (e.g. 'rare', 'legendary', 'uncommon')"),
     type: z.string().optional().describe("Item type filter (e.g. 'weapon', 'armor', 'wondrous')"),
   },
+  READ_ONLY_NET,
   async ({ name, rarity, type }) => {
     try {
       const result = await searchItems({ name, rarity, type });
@@ -592,6 +633,7 @@ server.tool(
   {
     name: z.string().min(1).describe("Item name (e.g. 'Bag of Holding', 'Flame Tongue')"),
   },
+  READ_ONLY_NET,
   async ({ name }) => {
     try {
       const result = await getItem(name);
@@ -612,6 +654,7 @@ server.tool(
     limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
     offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
   },
+  READ_ONLY_NET,
   async ({ name, limit, offset }) => {
     try {
       const result = await searchRaces(name, limit, offset);
@@ -632,6 +675,7 @@ server.tool(
     limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
     offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
   },
+  READ_ONLY_NET,
   async ({ name, limit, offset }) => {
     try {
       const result = await searchClasses(name, limit, offset);
@@ -652,6 +696,7 @@ server.tool(
     limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
     offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
   },
+  READ_ONLY_NET,
   async ({ name, limit, offset }) => {
     try {
       const result = await searchBackgrounds(name, limit, offset);
@@ -673,6 +718,7 @@ server.tool(
     limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
     offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
   },
+  READ_ONLY_NET,
   async ({ name, prerequisite, limit, offset }) => {
     try {
       const result = await searchFeats({ name, prerequisite, limit, offset });
@@ -695,6 +741,7 @@ server.tool(
     limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
     offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
   },
+  READ_ONLY_NET,
   async ({ name, class_name, level, limit, offset }) => {
     try {
       const result = await searchClassFeatures({ name, className: class_name, level, limit, offset });
@@ -716,6 +763,7 @@ server.tool(
     limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
     offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
   },
+  READ_ONLY_NET,
   async ({ name, race_name, limit, offset }) => {
     try {
       const result = await searchRacialTraits({ name, raceName: race_name, limit, offset });
@@ -737,6 +785,7 @@ server.tool(
       "Keyword to search for (e.g. 'grapple', 'concentration', 'death saving throw'). Omit to list all 45 available sections."
     ),
   },
+  READ_ONLY_NET,
   async ({ query }) => {
     try {
       const result = await searchRules(query);
@@ -764,6 +813,7 @@ server.tool(
       "Jump to the first occurrence of this keyword within the section (e.g. 'concentration', 'death saving throw')."
     ),
   },
+  READ_ONLY_NET,
   async ({ name, max_chars, query }) => {
     try {
       const result = await getRule(name, max_chars, query);
@@ -802,6 +852,7 @@ server.tool(
     rules_edition: z.enum(["2024", "2014"]).default("2024")
       .describe("Rules edition. '2024' (default) uses XDMG XP budgets with Low/Moderate/High difficulty — no encounter multiplier. '2014' uses DMG XP thresholds with Easy/Medium/Hard/Deadly and a monster count multiplier."),
   },
+  READ_ONLY_NET,
   async ({ party, monsters, rules_edition }) => {
     try {
       const result = await rateEncounter(party, monsters, rules_edition);
@@ -830,6 +881,7 @@ server.tool(
     rules_edition: z.enum(["2024", "2014"]).default("2024")
       .describe("Rules edition. '2024' (default) uses XDMG XP budgets, no multiplier. '2014' uses DMG XP thresholds with encounter multiplier."),
   },
+  READ_ONLY_LOCAL,
   async ({ party, difficulty, monster_count, rules_edition }) => {
     try {
       const result = await targetEncounterCr(party, difficulty as Difficulty, monster_count, rules_edition);
@@ -859,6 +911,7 @@ server.tool(
     character_level: z.number().int().min(1).max(20).optional()
       .describe("Character level (1–20). Required for hoard treasure to determine which magic item table to use. If omitted, magic items are skipped."),
   },
+  READ_ONLY_NET,
   async ({ cr, monsters, treasure_type, character_level }) => {
     try {
       const result = await generateTreasure({ cr, monsters, treasureType: treasure_type, characterLevel: character_level });
