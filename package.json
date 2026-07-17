@@ -28,7 +28,7 @@
     "url": "git+https://github.com/iamjameslennon/ddb-mcp.git"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
@@ -37,7 +37,7 @@
     "zod": "^3.25 || ^4.0"
   },
   "devDependencies": {
-    "@types/node": "^26.1.1",
+    "@types/node": "^22.20.1",
     "@typescript-eslint/eslint-plugin": "^8.60.1",
     "@typescript-eslint/parser": "^8.60.1",
     "eslint": "^10.0.1",

@@ -110,13 +110,14 @@ Releases are automated via `scripts/release.js` (ES module, Node built-ins only)
 
 ### CI / CD
 
-- `.github/workflows/ci.yml` — runs on push/PR to `main`: typecheck → lint → build → test (matrix: Node 20/22/24) → audit
+- `.github/workflows/ci.yml` — runs on push/PR to `main`: typecheck → lint → build → test (matrix: Node 22/24/26) → audit
 - `.github/workflows/npm-publish.yml` — triggers on GitHub release published: verifies CI passed → build → upgrades npm to latest → `npm publish --access public --provenance --registry https://registry.npmjs.org/`
-- Both workflows use `actions/checkout@v6` / `actions/setup-node@v6`; CI matrix tests Node 20–24, publish job pins Node 24
+- Both workflows use `actions/checkout@v7` / `actions/setup-node@v6`; CI matrix tests every live Node line (22 maintenance LTS, 24 active LTS, 26 current), publish job pins Node 24
 
 ### Package metadata
 
 - Published as `@iamjameslennon/ddb-mcp` on npm (MIT licence)
+- **`@types/node` is pinned to `^22`** to match the `engines: { node: ">=22" }` floor — deliberately not the latest. Types newer than the oldest supported runtime make `tsc` accept APIs that don't exist there, so a green typecheck would no longer prove the package runs on Node 22. Dependabot is configured to ignore its major bumps (`.github/dependabot.yml`). These three move together: the `engines` floor, this pin, and the CI matrix in `ci.yml` (which tests every live Node line). Node 22 is maintenance LTS until 2027-04-30 — bump all three when it goes EOL.
 - `"files"` in `package.json` limits the published tarball to `dist/` and `README.md`
 - `"bin": { "ddb-mcp": "dist/index.js" }` exposes `ddb-mcp` as a CLI on PATH for global installs; the entry has a `#!/usr/bin/env node` shebang preserved through `tsc`
 - **No postinstall** — `getBrowser()` in `src/browser.ts` tries `chromium.launch({ channel: 'chrome' })` first, using the user's system Chrome if present (zero download for most users). On any error it falls back to bundled Chromium, which is itself lazy-fetched by `ensureChromiumInstalled()` only on first miss. The lazy installer resolves Playwright's CLI via `createRequire(import.meta.url).resolve("playwright/package.json")` (the `cli.js` neighbour) regardless of install path (npx-cache / global / local clone), then spawns `node <cli.js> install chromium` with **child stdout piped to parent stderr** so install progress doesn't corrupt the MCP JSON-RPC stream. Singleton `chromiumInstallPromise` deduplicates concurrent callers; cleared on failure so the next call retries. Set `DDB_USE_BUNDLED_CHROMIUM=1` to skip the system-Chrome attempt (escape hatch for users with broken/outdated Chrome installs)

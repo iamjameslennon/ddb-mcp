@@ -9,6 +9,12 @@ updates:
       prefix: "chore"
     labels:
       - dependencies
+    ignore:
+      # @types/node must track the oldest Node in `engines`, not the newest
+      # release. Newer types let tsc accept APIs absent from that runtime.
+      - dependency-name: "@types/node"
+        update-types:
+          - version-update:semver-major
 
   - package-ecosystem: github-actions
     directory: /

@@ -232,7 +232,7 @@ Can a character use the Help action to assist with a skill check?
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org) 20 or later
+- [Node.js](https://nodejs.org) 22 or later
 - [Claude Code](https://claude.ai/claude-code) CLI
 
 ---
