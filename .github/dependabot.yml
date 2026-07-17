@@ -15,6 +15,14 @@ updates:
       - dependency-name: "@types/node"
         update-types:
           - version-update:semver-major
+      # TypeScript 7 is the native Go port and drops the classic JS compiler
+      # API (`require("typescript")` exposes only `version`). typescript-eslint
+      # is built on that API and peer-caps TS at <6.1.0, so a TS 7 bump fails
+      # `npm ci` and breaks lint if forced. Unpin once typescript-eslint
+      # supports TS 7 — our own source already typechecks and builds clean on it.
+      - dependency-name: "typescript"
+        update-types:
+          - version-update:semver-major
 
   - package-ecosystem: github-actions
     directory: /
