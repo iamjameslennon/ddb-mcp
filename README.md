@@ -254,6 +254,12 @@ Add this to your MCP client's config — no separate install step needed.
 }
 ```
 
+> ⚠️ **Merge, don't append.** These config files usually already exist and already have content (Claude Desktop writes its own `"preferences"` there on first launch). A JSON file holds exactly one top-level `{ … }` object, so pasting this block at the end of the file produces a parse error. If the file already has an `"mcpServers"` key, add only the `"dndbeyond": { … }` entry inside it, comma-separated from its neighbours; if it doesn't, add `"mcpServers"` as a new key inside the existing outer braces. Verify before restarting your client:
+>
+> ```bash
+> python3 -m json.tool /path/to/your/config.json > /dev/null && echo "JSON OK"
+> ```
+
 On first launch, `npx` fetches the package itself (small — under 200 kB unpacked of JS). For the browser dependency: on first `ddb_login`, the server tries to launch your **already-installed Google Chrome** first — most macOS and Windows users get zero download. If Chrome isn't present, it falls back to downloading Playwright's bundled Chromium (~140 MB), with progress printed to the server log; subsequent logins reuse the cached browser. Set `DDB_USE_BUNDLED_CHROMIUM=1` to skip the system-Chrome attempt and force the bundled path.
 
 Configure the path to your client's config file in the [Connecting to your MCP client](#connecting-to-your-mcp-client) section below.
@@ -297,7 +303,7 @@ Then use `"command": "ddb-mcp"` (no args) in your client config. The browser is 
 
 This server was built and tested with Claude — it will work with any MCP-compatible client, but response quality for D&D-specific reasoning will vary depending on the model used.
 
-All clients below use the same JSON config from the [Installation](#installation) section. Drop it into your client's config file (paths below), then restart the client.
+All clients below use the same JSON config from the [Installation](#installation) section. Merge it into your client's config file (paths below) — see the merge warning there if the file isn't empty — then restart the client.
 
 ### Claude Desktop (recommended)
 

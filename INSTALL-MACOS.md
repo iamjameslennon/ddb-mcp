@@ -32,7 +32,7 @@ This takes a minute or two. Check it worked:
 ```bash
 node --version
 ```
-You should see `v20.x.x` or higher.
+You should see `v22.x.x` or higher. (ddb-mcp requires Node 22+.)
 
 ## 3. Install Claude Desktop
 
@@ -45,7 +45,7 @@ Once it's running, **fully quit it**: press `Cmd` + `Q` (clicking the red close 
 
 ## 4. Tell Claude Desktop about ddb-mcp
 
-You're going to create a small config file. In Terminal, run these three lines one at a time:
+You're going to edit Claude Desktop's config file. In Terminal, run these three lines one at a time:
 
 ```bash
 mkdir -p ~/Library/Application\ Support/Claude
@@ -59,11 +59,13 @@ touch ~/Library/Application\ Support/Claude/claude_desktop_config.json
 open -e ~/Library/Application\ Support/Claude/claude_desktop_config.json
 ```
 
-The third command opens the file in TextEdit.
+The `touch` creates the file only if it doesn't exist yet; if Claude Desktop already made one, it leaves the contents alone. The third command opens it in TextEdit. **It is probably not empty** — signing in during step 3 makes Claude Desktop write its own settings (`"preferences"`, and possibly an `"mcpServers"` block) into this file.
 
 > ⚠️ **Important:** before you type anything, click **Format** in the menu bar and choose **Make Plain Text**. TextEdit's default mode replaces straight quotes (`"`) with curly ones (`"`), which breaks JSON.
 
-Paste this exactly as shown:
+> ⚠️ **Do not paste at the end of the file.** A JSON file holds exactly one `{ … }` object. Adding a second one at the bottom is the single most common cause of "format error". Follow whichever case below matches what you see.
+
+**Case A — the file is completely empty.** Paste this exactly as shown:
 
 ```json
 {
@@ -76,11 +78,46 @@ Paste this exactly as shown:
 }
 ```
 
+**Case B — the file already has content but no `"mcpServers"` anywhere.** Add `"mcpServers"` as a new key *inside* the existing outer `{ }`, right after the opening brace, with a comma after its closing `}`:
+
+```json
+{
+  "mcpServers": {
+    "dndbeyond": {
+      "command": "npx",
+      "args": ["-y", "@iamjameslennon/ddb-mcp"]
+    }
+  },
+  "preferences": { ... leave whatever was already here untouched ... }
+}
+```
+
+**Case C — the file already has an `"mcpServers"` block.** Add only the `"dndbeyond"` entry *inside* it, separated from its neighbours by a comma. There is still only one `"mcpServers"` key and one outer `{ }`:
+
+```json
+{
+  "mcpServers": {
+    "Context7": { ... whatever was already here ... },
+    "dndbeyond": {
+      "command": "npx",
+      "args": ["-y", "@iamjameslennon/ddb-mcp"]
+    }
+  },
+  "preferences": { ... leave this alone ... }
+}
+```
+
 Save the file: `Cmd` + `S`. Close TextEdit: `Cmd` + `Q`.
 
 > If TextEdit complains about saving as `.txt`, click **Don't Add** to keep the `.json` extension.
 
-> **Already have other MCP servers configured?** Add the `"dndbeyond": { ... }` block *inside* your existing `"mcpServers"` block, separated by a comma. The whole `mcpServers` object should still have just one set of `{ }` around it.
+Now check the file is still valid JSON before restarting Claude:
+
+```bash
+python3 -m json.tool ~/Library/Application\ Support/Claude/claude_desktop_config.json > /dev/null && echo "JSON OK"
+```
+
+If you see `JSON OK`, continue. If you get an error instead, it names the line and column of the problem — reopen the file and fix it there. Common causes: a second `{ }` object pasted at the end, a missing comma between blocks, a trailing comma before a `}`, or curly quotes from TextEdit.
 
 ## 5. Restart Claude Desktop
 
@@ -131,13 +168,16 @@ Ask Claude any of these:
 **`brew: command not found` after step 1**
 You skipped running the `eval` commands the installer told you to run. Scroll back in Terminal, find the "Next steps:" block, and run the two `eval` lines.
 
+**Claude Desktop shows a config / JSON format error after step 4**
+Almost always a second `{ … }` object pasted at the bottom of a file that already had one. A JSON file holds exactly one top-level object — the `"dndbeyond"` entry has to go *inside* the existing braces (see cases B and C in step 4). Run the `python3 -m json.tool` check from step 4 to find the exact line.
+
 **Claude doesn't list dndbeyond tools in step 5**
 1. Fully quit Claude: `Cmd` + `Q`. Reopen.
 2. Check your JSON is valid. In Terminal:
    ```bash
-   cat ~/Library/Application\ Support/Claude/claude_desktop_config.json
+   python3 -m json.tool ~/Library/Application\ Support/Claude/claude_desktop_config.json
    ```
-   Compare to the example above — every `"` should be straight, not curly. If unsure, paste the output into [jsonlint.com](https://jsonlint.com).
+   That prints the parsed file if it's valid, or the line and column of the error if it isn't. Compare to the example above — every `"` should be straight, not curly, and there should be exactly one outer `{ }` and one `"mcpServers"` key.
 3. Check the logs:
    ```bash
    ls -lt ~/Library/Logs/Claude/ | head -5
