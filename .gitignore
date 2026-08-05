@@ -1,6 +1,8 @@
 node_modules/
 dist/
 *.js.map
+# Build artifact — regenerate with `npm run lobehub:manifest` before publishing.
+lhm.plugin.json
 .claude/
 .DS_Store
 .env

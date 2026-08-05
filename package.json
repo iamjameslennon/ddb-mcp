@@ -21,7 +21,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "release": "node scripts/release.js"
+    "release": "node scripts/release.js",
+    "lobehub:manifest": "node scripts/generate-lobehub-manifest.mjs"
   },
   "repository": {
     "type": "git",

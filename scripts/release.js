@@ -356,6 +356,8 @@ if (dryRun) {
   console.log(`  git tag -a v${newVersion} -m "Release v${newVersion}"`);
   console.log(`  git push origin HEAD --follow-tags`);
   console.log(`  gh release create v${newVersion} --title "v${newVersion}" --notes-file -`);
+  console.log(`  node scripts/generate-lobehub-manifest.mjs`);
+  console.log(`  npx -y @lobehub/market-cli plugin publish --dir .`);
   console.log(`\n[dry-run] Inspect the file changes with \`git diff\`, then revert with \`git restore .\``);
   console.log(`[dry-run] ✓ Dry run complete (would release v${newVersion}).`);
   process.exit(0);
@@ -385,3 +387,48 @@ if (ghResult.status !== 0) {
 }
 
 console.log(`\n✓ Released v${newVersion}`);
+
+// ── Publish to the LobeHub Marketplace ────────────────────────────────────────
+// Best effort, and deliberately last. The tag, the GitHub release, and with it
+// the npm publish workflow have all succeeded by this point — a marketplace
+// hiccup (not logged in, LobeHub down) must not turn a good release into a
+// failed one. Both steps are idempotent and re-runnable at any time, so a
+// warning with the manual commands is the right failure mode.
+//
+// Regenerating the manifest first is not optional: it is gitignored, and its
+// `version` has to match the bump we just made. Publishing a stale `version`
+// merges into the *existing* version rather than creating a new one, which
+// fails silently — the listing would simply never show this release.
+
+const lobehubCommands = [
+  "  node scripts/generate-lobehub-manifest.mjs",
+  "  npx -y @lobehub/market-cli plugin publish --dir .",
+].join("\n");
+
+console.log("\nPublishing to the LobeHub Marketplace...");
+
+const manifestResult = spawnSync(process.execPath, ["scripts/generate-lobehub-manifest.mjs"], {
+  stdio: "inherit",
+});
+
+if (manifestResult.status !== 0) {
+  console.warn(
+    `\nWARNING: could not generate lhm.plugin.json — the LobeHub listing still shows the previous version.`,
+    `\nFix the error above, then re-run:\n${lobehubCommands}\n`
+  );
+} else {
+  const lobehubResult = spawnExecutable(
+    "npx",
+    ["-y", "@lobehub/market-cli", "plugin", "publish", "--dir", "."],
+    { stdio: "inherit" }
+  );
+  if (lobehubResult.status !== 0) {
+    console.warn(
+      `\nWARNING: LobeHub publish failed — the listing still shows the previous version.`,
+      `\nIf this was an auth failure, \`npx -y @lobehub/market-cli login\` needs a human with a browser.`,
+      `\nThen re-run:\n${lobehubCommands}\n`
+    );
+  } else {
+    console.log(`\n✓ LobeHub listing updated to v${newVersion}`);
+  }
+}
