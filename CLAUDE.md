@@ -11,10 +11,12 @@ npm ci               # Install dependencies (prefer ci over install — respects
 npm run dev          # Run in development mode (no build step, uses tsx)
 npm run build        # Compile TypeScript to dist/
 npm run build:watch  # Watch mode
-npm run lint         # ESLint on src/
+npm run lint         # ESLint on the whole repo (src/, tests/, scripts/, root configs)
 npm run typecheck    # Type-check without emitting
 npm test             # Run all tests (vitest)
 npm run release      # Bump version, generate release notes, publish (patch|minor|major)
+                     #   accepts --dry-run (mutate files only, no commit/tag/push)
+                     #   and --skip-verify (skip the `npm ci && npm test` gate)
 npx vitest run tests/character-parser.test.ts  # Run a single test file
 ```
 
@@ -102,17 +104,21 @@ The central architectural split is between tools that need a Playwright browser 
 
 Releases are automated via `scripts/release.js` (ES module, Node built-ins only):
 
-1. Resolves the `claude` binary by scanning `~/.local/share/mise/installs/node/*/bin/claude` — no shim needed
-2. Collects git log and diff since last tag; calls `claude -p` to generate plain-English release notes for DMs/players
-3. Prompts for confirmation, then bumps `version` in `package.json` and `package-lock.json` directly
-4. Commits as `chore: release vX.Y.Z`, pushes tag, creates GitHub release via `gh`
-5. The `npm-publish.yml` workflow triggers on GitHub release and publishes to npm using OIDC Trusted Publishing (`--provenance`, no `NPM_TOKEN` secret required)
+1. Guards: clean tree, on `main`, and not behind `origin/main` (a failed `git fetch` downgrades to a warning). Each guard warns instead of exiting under `--dry-run`
+2. Resolves the `claude` binary by scanning `~/.local/share/mise/installs/node/*/bin/claude` — no shim needed
+3. Runs `npm ci && npm test` before anything is written, so a broken tree can't earn a permanent tag and a public release. `npm ci` runs `prepare` (= `npm run build`), so this compiles `dist/` too. Skipped by `--dry-run`, or by `--skip-verify` when you've just run it yourself
+4. Collects git log and diff since last tag; calls `claude -p` to generate plain-English release notes for DMs/players
+5. Prompts for confirmation, then bumps `version` in `package.json` and `package-lock.json` directly, and rewrites the `@iamjameslennon/ddb-mcp@X.Y.Z` pins in `README.md`
+6. Commits as `chore: release vX.Y.Z`, pushes tag, creates GitHub release via `gh`
+7. The `npm-publish.yml` workflow triggers on GitHub release and publishes to npm using OIDC Trusted Publishing (`--provenance`, no `NPM_TOKEN` secret required)
 
 ### CI / CD
 
-- `.github/workflows/ci.yml` — runs on push/PR to `main`: typecheck → lint → build → test (matrix: Node 22/24/26) → audit
-- `.github/workflows/npm-publish.yml` — triggers on GitHub release published: verifies CI passed → build → upgrades npm to latest → `npm publish --access public --provenance --registry https://registry.npmjs.org/`
-- Both workflows use `actions/checkout@v7` / `actions/setup-node@v6`; CI matrix tests every live Node line (22 maintenance LTS, 24 active LTS, 26 current), publish job pins Node 24
+- `.github/workflows/ci.yml` — runs on push/PR to `main`, three jobs: **Type Check, Lint & Build** (matrix: Node 22/24/26 — `npm ci` runs `prepare` so the install *is* the build; then typecheck → lint → test), **Security Audit** (`--omit=dev` gates the release; a second dev-inclusive audit is informational and never fails), and **Lint Workflows** (actionlint, pinned by version + SHA256, with a hard precondition that `shellcheck` is present — actionlint skips shell linting *silently* without it)
+- `.github/workflows/npm-publish.yml` — triggers on GitHub release published: waits for the **whole ci.yml run** on the release commit to conclude `success` (not individual check-run names — that filter silently skipped the audit job) → `npm ci` → test → asserts npm ≥ 11.5.1 → `npm publish --access public --provenance --registry https://registry.npmjs.org/`. No `npm install -g npm@latest`: Node 24 already ships npm past the trusted-publishing floor, and pulling an unpinned npm into the only job holding `id-token: write` is the thing worth avoiding
+- Both workflows pin every action to a full commit SHA with a `# v7` comment, set `permissions: contents: read` at workflow level, use `persist-credentials: false`, and set `timeout-minutes`. CI matrix tests every live Node line (22 maintenance LTS, 24 active LTS, 26 current), publish job pins Node 24
+- ci.yml sets `cancel-in-progress` for every ref **except `main`** — cancelling a run on `main` would make the publish gate read `cancelled` as failure and strand a tag with nothing published
+- `.github/dependabot.yml` groups npm minor/patch bumps (dev and production separately) and all GitHub Actions bumps into one PR each; majors stay ungrouped so a breaking change is never buried in a batch
 
 ### Package metadata
 

@@ -18,9 +18,10 @@ import { join } from "node:path";
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
+const skipVerify = args.includes("--skip-verify");
 const bumpType = args.find(a => !a.startsWith("--"));
 if (!["patch", "minor", "major"].includes(bumpType)) {
-  console.error("Usage: node scripts/release.js <patch|minor|major> [--dry-run]");
+  console.error("Usage: node scripts/release.js <patch|minor|major> [--dry-run] [--skip-verify]");
   process.exit(1);
 }
 
@@ -52,6 +53,44 @@ if (currentBranch !== "main") {
   } else {
     console.error(`\nERROR: Releases must be cut from 'main'. Currently on '${currentBranch}'.\n`);
     process.exit(1);
+  }
+}
+
+// ── Guard: local main must not be behind origin ───────────────────────────────
+// Releasing from a stale main used to fail at `git push` (non-fast-forward) —
+// but only *after* the version bump, commit and tag already existed locally,
+// leaving them to unpick by hand. Catch it before anything is written.
+// A failed fetch (offline, no remote) downgrades to a warning rather than
+// blocking the release.
+
+let fetchedOrigin = true;
+try {
+  execSync("git fetch origin main --quiet", { stdio: ["ignore", "ignore", "pipe"] });
+} catch {
+  fetchedOrigin = false;
+  console.warn("\nWARNING: could not fetch origin/main — skipping the staleness check.\n");
+}
+
+if (fetchedOrigin) {
+  // Counts commits on either side of the fork point. `git fetch` succeeding
+  // does not guarantee refs/remotes/origin/main exists (a remote with no `main`
+  // yet, or a non-standard fetch refspec), so a throw here means "nothing to
+  // compare against" rather than "stale" — warn and carry on.
+  let behind = null;
+  try {
+    [behind] = execSync("git rev-list --left-right --count origin/main...HEAD", { encoding: "utf8" })
+      .trim().split(/\s+/).map(Number);
+  } catch {
+    console.warn("\nWARNING: could not compare against origin/main — skipping the staleness check.\n");
+  }
+  if (behind > 0) {
+    const message = `HEAD is ${behind} commit(s) behind origin/main — pull before releasing.`;
+    if (dryRun) {
+      console.log(`[dry-run] ${message} Proceeding anyway.\n`);
+    } else {
+      console.error(`\nERROR: ${message}\n`);
+      process.exit(1);
+    }
   }
 }
 
@@ -144,6 +183,32 @@ const claudePath = findClaude();
 if (!claudePath) {
   console.error("\nERROR: 'claude' not found. Install Claude Code: https://claude.ai/code\n");
   process.exit(1);
+}
+
+// ── Verify the tree builds and passes tests ───────────────────────────────────
+// This script pushes a tag and creates a GitHub release, and that release event
+// is what triggers the npm publish workflow. Without this gate a broken tree
+// still earns a permanent tag and a public GitHub release, and only fails once
+// it reaches CI — leaving a published release pointing at something unshippable.
+// Runs before the Claude call so a failure costs nothing.
+//
+// `npm ci` runs `prepare` (= npm run build), so this compiles dist/ too; there
+// is no separate build step for the same reason CI dropped one.
+
+if (dryRun || skipVerify) {
+  const why = dryRun ? "[dry-run]" : "[--skip-verify]";
+  console.log(`${why} Skipping verification (\`npm ci && npm test\`).\n`);
+} else {
+  for (const command of ["npm ci", "npm test"]) {
+    console.log(`\nVerifying: ${command}`);
+    try {
+      execSync(command, { stdio: "inherit" });
+    } catch {
+      console.error(`\nERROR: \`${command}\` failed — fix it before releasing.\n`);
+      process.exit(1);
+    }
+  }
+  console.log("\nVerification passed.");
 }
 
 // ── Get last tag (fall back to full history if none) ──────────────────────────
@@ -250,14 +315,14 @@ if (!dryRun) {
 }
 
 // ── Update version in package.json, package-lock.json, and README.md ─────────
-// Direct JSON manipulation avoids triggering the preinstall guard that blocks
-// `npm install`. For a pure version bump the only fields that change are
-// `version` (top-level) and `packages[""].version` in the lock file.
+// Edited as JSON rather than via `npm version`, which would also create its own
+// commit and tag (this script does both itself, with a tag message) and would
+// re-run the `prepare` build as a side effect. For a pure version bump the only
+// fields that change are `version` (top-level) and `packages[""].version` in
+// the lock file.
 //
-// README.md has two kinds of version pin to keep in sync:
-//   - the @iamjameslennon/ddb-mcp@X.Y.Z install/config examples
-//   - any version strings in the install instructions
-// Single regex replace covers both.
+// README.md pins the package as @iamjameslennon/ddb-mcp@X.Y.Z in the install
+// and client-config examples; one regex covers every occurrence.
 
 pkg.version = newVersion;
 writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");

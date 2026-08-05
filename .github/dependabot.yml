@@ -9,6 +9,22 @@ updates:
       prefix: "chore"
     labels:
       - dependencies
+    # Every npm bump so far has been lockfile-only, so five separate PRs all
+    # edit the same file: merging one invalidates the other four and forces a
+    # rebase plus a full 4-job matrix re-run each. Grouping collapses that into
+    # one PR per week. Majors stay ungrouped (anything not matched by a group
+    # still gets its own PR) so a breaking change is never buried in a batch.
+    groups:
+      dev-dependencies:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+      production-minor-patch:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
     ignore:
       # @types/node must track the oldest Node in `engines`, not the newest
       # release. Newer types let tsc accept APIs absent from that runtime.
@@ -33,3 +49,12 @@ updates:
       prefix: "chore"
     labels:
       - dependencies
+    # Actions are pinned to major tags (actions/checkout@v7), so nearly every
+    # bump here is a major — excluding majors the way the npm groups do would
+    # leave grouping doing nothing. Batching all of them is safe because these
+    # bumps only affect CI itself: a bad one fails the group PR's own checks
+    # before it can reach main.
+    groups:
+      github-actions:
+        patterns:
+          - "*"

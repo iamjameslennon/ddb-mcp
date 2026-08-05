@@ -6,24 +6,49 @@ on:
   pull_request:
     branches: [main]
 
+# Pinned at the workflow level rather than inherited from the repo-wide default
+# (Settings -> Actions -> Workflow permissions). That default is currently
+# "read", but it is a setting an admin can flip; nothing in this workflow writes
+# to the repo, so state the floor here where it is reviewable in the diff.
+permissions:
+  contents: read
+
+# Supersede in-flight runs for the same ref. Without this a quick follow-up push
+# runs the whole matrix twice, and the older run's result is meaningless.
+#
+# Never on `main`, though: npm-publish.yml gates the publish on the CI run for
+# the exact release commit, and reads a `cancelled` conclusion as failure. An
+# unrelated push to main during the release window would otherwise cancel that
+# run and strand a tag and GitHub release with nothing published.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   ci:
     name: Type Check, Lint & Build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     strategy:
       matrix:
         node-version: [22, 24, 26]
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
 
-      - name: Install dependencies
+      # `prepare` is `npm run build`, and npm runs `prepare` as part of `npm ci`
+      # -- so this step already compiles dist/ and fails the job on a broken
+      # build. A separate `npm run build` step just ran tsc a second time
+      # (`npm run typecheck` is the same compiler with --noEmit).
+      - name: Install dependencies (runs the build via `prepare`)
         run: npm ci
 
       - name: Type check
@@ -32,20 +57,20 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Build
-        run: npm run build
-
       - name: Test
         run: npm test
 
   audit:
     name: Security Audit
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
           cache: npm
@@ -53,5 +78,60 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Audit dependencies (production only)
+      # Gating: only runtime dependencies reach users, so only these block a
+      # release. npm-publish.yml waits on this job's workflow run.
+      - name: Audit production dependencies
         run: npm audit --audit-level=moderate --omit=dev
+
+      # Informational. Dev-only advisories cannot reach users, but --omit=dev
+      # hides them completely -- which is how a high-severity brace-expansion
+      # advisory (via eslint -> minimatch) sat in the lockfile behind a green
+      # CI. Reported here, never fails the build.
+      - name: Audit dev dependencies (informational)
+        if: always()
+        run: npm audit --audit-level=high || true
+
+  workflows:
+    name: Lint Workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    # Pinned release verified by checksum rather than a third-party action.
+    # Everything else this repo runs is pinned; a linter is no reason to make
+    # an exception. Dependabot does not track this pair -- bump both together.
+    env:
+      ACTIONLINT_VERSION: 1.7.12
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # actionlint pipes every `run:` block through shellcheck -- but when
+      # shellcheck is absent it skips that pass *silently*, reporting success
+      # while checking strictly less. That is the whole failure mode this job
+      # exists to prevent, so assert the dependency instead of trusting the
+      # runner image to keep shipping it.
+      - name: Require shellcheck
+        run: |
+          set -euo pipefail
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            echo "::error::shellcheck not found - actionlint would skip shell linting silently. Add: sudo apt-get install -y shellcheck"
+            exit 1
+          fi
+          shellcheck --version
+
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL -o "$archive" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}"
+          echo "${ACTIONLINT_SHA256}  ${archive}" | sha256sum -c -
+          tar -xzf "$archive" actionlint
+
+      # No arguments: actionlint discovers .github/workflows itself, so new
+      # workflow files are covered without touching this job.
+      - name: Lint workflows
+        run: ./actionlint -color

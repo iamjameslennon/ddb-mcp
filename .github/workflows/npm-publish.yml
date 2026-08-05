@@ -4,69 +4,136 @@ on:
   release:
     types: [published]
 
+# Least privilege by default; the publish job widens it to mint an OIDC token.
+permissions:
+  contents: read
+
 jobs:
   check-ci:
     name: Verify CI passed on release commit
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
-      checks: read
+      actions: read # list CI workflow runs
+      contents: read # resolve the release tag to a commit
     steps:
-      - name: Wait for CI to pass on release commit
+      - name: Wait for the CI workflow to succeed on the release commit
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
         run: |
-          # Use tag_name (always a concrete ref) rather than target_commitish
-          # (which GitHub sets to the branch name when the tag is at the branch tip).
-          # The CI job uses a matrix so its check-runs are named
-          # "Type Check, Lint & Build (20)", "(22)", "(24)" — match by prefix.
-          tag="${{ github.event.release.tag_name }}"
-          for i in $(seq 1 20); do
-            conclusion=$(gh api "repos/${{ github.repository }}/commits/$tag/check-runs" \
-              --jq '
-                [.check_runs[] | select(.name | startswith("Type Check, Lint & Build")) | .conclusion] as $c |
-                if ($c | length) == 0 then "pending"
-                elif ($c | all(. == "success")) then "success"
-                elif ($c | any(. == null or . == "")) then "pending"
-                else "failed"
-                end
-              ')
-            if [ "$conclusion" = "success" ]; then
-              echo "CI passed."; exit 0
-            elif [ -z "$conclusion" ] || [ "$conclusion" = "pending" ]; then
-              echo "CI still running (attempt $i/20), waiting 30s..."
-              sleep 30
-            else
-              echo "CI did not pass (conclusion: $conclusion)"; exit 1
-            fi
+          set -uo pipefail
+
+          # Resolve the tag to a concrete commit. `target_commitish` is unusable
+          # here -- GitHub sets it to the branch name when the tag sits at the
+          # branch tip. The commits endpoint also dereferences annotated tags,
+          # which is what scripts/release.js creates (`git tag -a`).
+          sha=$(gh api "repos/$REPO/commits/$TAG" --jq '.sha')
+          if [ -z "$sha" ]; then
+            echo "Could not resolve tag '$TAG' to a commit"
+            exit 1
+          fi
+          echo "Release commit: $sha"
+
+          # Poll the CI *workflow run*, not individual check-run names. The run
+          # conclusion covers every job in ci.yml -- including Security Audit,
+          # which the previous filter (names starting "Type Check, Lint &
+          # Build") silently skipped, so a failing production audit could not
+          # block a publish. This also survives job renames and matrix changes.
+          for i in $(seq 1 30); do
+            result=$(gh api \
+              "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$sha&per_page=1" \
+              --jq '.workflow_runs[0] | "\(.status) \(.conclusion // "none")"' 2>/dev/null || true)
+            # Not `status` -- that name is read-only in some shells, and this
+            # block should stay portable if it is ever run outside Actions.
+            run_status=${result%% *}
+            run_conclusion=${result##* }
+
+            case "$run_status" in
+              completed)
+                if [ "$run_conclusion" = "success" ]; then
+                  echo "CI passed."
+                  exit 0
+                fi
+                echo "CI did not pass (conclusion: $run_conclusion)"
+                exit 1
+                ;;
+              ""|null)
+                echo "No CI run for $sha yet (attempt $i/30), waiting 20s..."
+                ;;
+              *)
+                echo "CI is $run_status (attempt $i/30), waiting 20s..."
+                ;;
+            esac
+            sleep 20
           done
-          echo "Timed out waiting for CI (10 minutes)"; exit 1
+
+          echo "Timed out after 10 minutes waiting for CI on $sha"
+          exit 1
 
   publish:
     needs: check-ci
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
-      id-token: write
+      id-token: write # mint the OIDC token for npm trusted publishing
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # Don't leave the workflow token in .git/config for the rest of the
+          # job -- this is the one job that can mint an npm publish token.
+          persist-credentials: false
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
-          cache: npm
+          # npm's trusted-publishing docs annotate this "never use caching in
+          # release builds": this job's working tree becomes the published
+          # tarball, so it is restored from as few external inputs as possible.
+          package-manager-cache: false
 
-      - name: Install dependencies
+      # `prepare` (= npm run build) runs on `npm ci` and again on `npm publish`,
+      # so dist/ is compiled from this checkout without a separate build step.
+      - name: Install dependencies (runs the build via `prepare`)
         run: npm ci
 
       - name: Run tests
         run: npm test
 
-      - name: Build
-        run: npm run build
+      # Node 24 ships npm 11.13+, comfortably past the 11.5.1 floor that trusted
+      # publishing requires -- so there is deliberately no `npm install -g
+      # npm@latest` here. That pulled an unpinned, newest-available npm into the
+      # only job holding id-token: write, moments before publishing. Assert the
+      # floor instead of reaching for the network to guarantee it.
+      - name: Verify npm meets the trusted-publishing floor (>= 11.5.1)
+        run: |
+          set -euo pipefail
+          version=$(npm --version)
+          echo "npm $version"
+          # The JS below must stay single-quoted so the shell leaves it alone.
+          # It deliberately uses string concatenation rather than a template
+          # literal: a `${...}` inside these quotes is valid JS but reads as an
+          # unexpanded shell variable to both shellcheck (SC2016) and to humans.
+          node -e '
+            const have = process.argv[1].split(".").map(Number);
+            const need = [11, 5, 1];
+            for (let i = 0; i < 3; i++) {
+              if (have[i] > need[i]) process.exit(0);
+              if (have[i] < need[i]) {
+                console.error("npm " + process.argv[1] + " is below the "
+                  + need.join(".") + " trusted-publishing floor");
+                process.exit(1);
+              }
+            }
+          ' "$version"
 
-      - name: Upgrade npm
-        run: npm install -g npm@latest
-
+      # --provenance is technically redundant under trusted publishing (npm
+      # generates attestations automatically for public repos), but it is kept
+      # deliberately: it makes provenance a hard requirement rather than a
+      # default, so the publish fails loudly instead of silently shipping
+      # unattested if the OIDC path ever degrades.
       - name: Publish to npm
         run: npm publish --access public --provenance --registry https://registry.npmjs.org/
