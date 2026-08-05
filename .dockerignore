@@ -1,0 +1,16 @@
+# Keep the build context small and prevent host build artefacts from leaking
+# into the image — dist/ must come from the container's own `tsc` run.
+node_modules/
+dist/
+.git/
+.github/
+.claude/
+docs/
+tests/
+scripts/
+*.md
+!README.md
+.DS_Store
+.env
+npm-debug.log*
+*.js.map
