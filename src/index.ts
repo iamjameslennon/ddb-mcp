@@ -313,17 +313,20 @@ server.tool(
 // ─── ddb_search_monsters ──────────────────────────────────────────────────────
 server.tool(
   "ddb_search_monsters",
-  "Search the D&D Beyond monster compendium by name, CR, type, or size. Returns a summary list. Use ddb_get_monster for the full stat block. Requires login.",
+  "Search the D&D Beyond monster compendium by name, CR, type, size, or source. Returns a summary list with each entry's source and a Legacy tag where relevant — useful for telling apart same-named 2014 and 2024 versions. Use ddb_get_monster for the full stat block. Requires login.",
   {
     name: z.string().optional().describe("Partial name to search for (e.g. 'goblin', 'dragon')"),
     cr: z.number().optional().describe("Challenge Rating filter (e.g. 0.25, 1, 5, 20)"),
     type: z.string().optional().describe("Monster type filter (e.g. 'undead', 'fiend', 'beast')"),
     size: z.string().optional().describe("Size filter (e.g. 'large', 'tiny')"),
+    source: z.string().optional()
+      .describe("Restrict to a sourcebook, e.g. 'mm-2024', 'mm-2014', 'cos', 'rthw'. " +
+                "Omit to see all editions/sources."),
   },
   READ_ONLY_NET,
-  async ({ name, cr, type, size }) => {
+  async ({ name, cr, type, size, source }) => {
     try {
-      const result = await searchMonsters({ name, cr, type, size });
+      const result = await searchMonsters({ name, cr, type, size, source });
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -336,14 +339,17 @@ server.tool(
 // ─── ddb_get_monster ──────────────────────────────────────────────────────────
 server.tool(
   "ddb_get_monster",
-  "Get the full stat block for a specific monster from the D&D Beyond compendium. Searches by name (partial match). Requires login.",
+  "Get the full stat block for a specific monster from the D&D Beyond compendium. Searches by name (partial match). Defaults to the 2024 version where both exist; pass source to force a specific book. Requires login.",
   {
     name: z.string().min(1).describe("Monster name (e.g. 'Beholder', 'Adult Red Dragon')"),
+    source: z.string().optional()
+      .describe("Restrict to a sourcebook, e.g. 'mm-2024', 'mm-2014', 'cos', 'rthw'. " +
+                "When omitted, the 2024 version is preferred over Legacy (2014) content."),
   },
   READ_ONLY_NET,
-  async ({ name }) => {
+  async ({ name, source }) => {
     try {
-      const result = await getMonster(name);
+      const result = await getMonster(name, source);
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

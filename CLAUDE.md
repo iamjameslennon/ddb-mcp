@@ -94,6 +94,7 @@ Owns the single authoritative answer to "which account are we, right now?" and s
 - `ddb_read_book` defaults to 3000 chars; use `query` to jump to a specific heading
 - `ddb_rate_encounter` accepts `edition: "2024" | "2014"` (default `"2024"`) for XDMG vs. classic DMG rules
 - `ddb_roll_treasure` accepts `type: "individual" | "hoard"` and `cr` of the monster(s)
+- `ddb_get_monster` / `ddb_search_monsters` accept an optional `source` (e.g. `mm-2024`, `mm-2014`, `cos`) to disambiguate same-named monsters that exist in both editions. `ddb_get_monster` defaults to the 2024 version when both exist, only falling back to Legacy (2014) content when no 2024 version is available; `ddb_search_monsters` tags Legacy results and shows each entry's source
 - `ddb_interact` requires `confirm_fill: true` when `action` is `"fill"` — safety gate against prompt-injection-triggered form submissions
 - `ddb_download_character` `output_path` must be under `~/Downloads` or `~/Documents`
 - `ddb_logout` takes no input, routes through `revokeSession()` in `session-state.ts`, and is a local-only revoke — it never calls a D&D Beyond endpoint. Repeated calls are idempotent. On a cleanup failure (file unlink or browser close) it reports the failure and stays locally revoked rather than claiming a clean logout or falling back to the old session
