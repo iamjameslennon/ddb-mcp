@@ -13,6 +13,7 @@ import { readFileSync, writeFileSync, readdirSync, existsSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { collectReleaseHistory } from "./release-history.mjs";
 
 // ── Argument validation ────────────────────────────────────────────────────────
 
@@ -212,6 +213,11 @@ if (dryRun || skipVerify) {
 }
 
 // ── Get last tag (fall back to full history if none) ──────────────────────────
+// `lastTag` is kept only as *display* text from here on (the prompt, log
+// messages). The actual log/diff ranges are built by collectReleaseHistory
+// from a resolved commit object ID, never by interpolating this string into
+// a shell command — see scripts/release-history.mjs for why that matters
+// (a tag such as `v2.10.2$(id)` used to reach `execSync` verbatim).
 
 let lastTag = null;
 try {
@@ -223,20 +229,23 @@ try {
 }
 
 // ── Gather git log and diff stat ──────────────────────────────────────────────
+// Shell-free: collectReleaseHistory resolves `lastTag` to a commit ID via
+// `git rev-parse --end-of-options` (execFileSync, shell: false) before it is
+// used to build any revision range, so a tag with shell metacharacters
+// cannot run an extra command. Same helper for normal and --dry-run runs.
 
-const logCmd = lastTag
-  ? `git log ${lastTag}..HEAD --pretty=format:"%h %s (%an)"`
-  : `git log --pretty=format:"%h %s (%an)"`;
-const gitLog = execSync(logCmd, { encoding: "utf8" }).trim();
+let gitLog, diffStat;
+try {
+  ({ gitLog, diffStat } = collectReleaseHistory(lastTag));
+} catch (err) {
+  console.error(`\nERROR: could not collect release history: ${err.message}\n`);
+  process.exit(1);
+}
 
 if (!gitLog) {
   console.error("No commits found since last release. Nothing to release.");
   process.exit(1);
 }
-
-const diffBase = lastTag
-  ?? execSync("git rev-list --max-parents=0 HEAD", { encoding: "utf8" }).trim();
-const diffStat = execSync(`git diff --stat ${diffBase}..HEAD`, { encoding: "utf8" }).trim();
 
 // ── Compute new version ────────────────────────────────────────────────────────
 
