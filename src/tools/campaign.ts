@@ -1,4 +1,4 @@
-import { sessionFetch, getCobaltToken, hasValidSession } from "../session-fetch.js";
+import { beginAuthenticatedSession, hasValidSession, type AuthenticatedSession } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
 
 const CAMPAIGN_API = "https://www.dndbeyond.com/api/campaign/stt";
@@ -21,9 +21,10 @@ interface CampaignSummary {
 
 // Always send the cobalt Bearer token — the API returns a 200 HTML redirect
 // (not a 401) when auth is missing, so cookies-only detection is unreliable.
-async function campaignFetch(url: string): Promise<Response> {
-  const { token } = await getCobaltToken();
-  return sessionFetch(url, { headers: { Authorization: `Bearer ${token}` } });
+// The request is bound to the caller's snapshot so the account-ID lookup and
+// the request share one authority.
+function campaignFetch(session: AuthenticatedSession, url: string): Promise<Response> {
+  return session.fetch(url);
 }
 
 function assertJson(resp: Response): void {
@@ -33,12 +34,12 @@ function assertJson(resp: Response): void {
   }
 }
 
-async function fetchActiveCampaigns(): Promise<CampaignSummary[]> {
+async function fetchActiveCampaigns(session: AuthenticatedSession): Promise<CampaignSummary[]> {
   const cacheKey = "user-campaigns";
   const cached = campaignCache.get(cacheKey);
   if (cached) return JSON.parse(cached) as CampaignSummary[];
 
-  const resp = await campaignFetch(`${CAMPAIGN_API}/user-campaigns`);
+  const resp = await campaignFetch(session, `${CAMPAIGN_API}/user-campaigns`);
   if (!resp.ok) throw new Error(`Campaign API returned ${resp.status}`);
   assertJson(resp);
   const json = await resp.json() as { status: string; data: CampaignSummary[] };
@@ -50,7 +51,11 @@ async function fetchActiveCampaigns(): Promise<CampaignSummary[]> {
 export async function listMyCampaigns(): Promise<string> {
   if (!hasValidSession()) throw new Error("Not logged in. Please run ddb_login first.");
 
-  const [campaigns, { userId }] = await Promise.all([fetchActiveCampaigns(), getCobaltToken()]);
+  // One snapshot: the account id used for role assignment and the campaign
+  // request share the same authority.
+  const session = await beginAuthenticatedSession();
+  const campaigns = await fetchActiveCampaigns(session);
+  const userId = session.userId;
 
   const mapped = campaigns.map(c => ({
     name: c.name,
@@ -67,7 +72,8 @@ export async function listMyCampaigns(): Promise<string> {
 export async function getCampaign(campaignId: string): Promise<string> {
   if (!hasValidSession()) throw new Error("Not logged in. Please run ddb_login first.");
 
-  const campaigns = await fetchActiveCampaigns();
+  const session = await beginAuthenticatedSession();
+  const campaigns = await fetchActiveCampaigns(session);
   const campaign = campaigns.find(c => String(c.id) === campaignId);
   if (!campaign) {
     throw new Error(
@@ -76,7 +82,7 @@ export async function getCampaign(campaignId: string): Promise<string> {
     );
   }
 
-  const resp = await campaignFetch(`${CAMPAIGN_API}/active-short-characters/${encodeURIComponent(campaignId)}`);
+  const resp = await campaignFetch(session, `${CAMPAIGN_API}/active-short-characters/${encodeURIComponent(campaignId)}`);
   if (!resp.ok) throw new Error(`Characters API returned ${resp.status}`);
   assertJson(resp);
   type CharEntry = { id: number; name: string; userName: string; characterStatus: string };

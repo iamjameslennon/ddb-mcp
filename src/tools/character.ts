@@ -8,7 +8,7 @@
  * thin re-exports of the moved entry points.
  */
 
-import { sessionFetch, hasValidSession, getCobaltToken } from "../session-fetch.js";
+import { sessionFetch, hasValidSession, beginAuthenticatedSession } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
 import { writeFileSync, mkdirSync, realpathSync } from "fs";
 import { join, resolve, relative, basename, dirname, isAbsolute } from "path";
@@ -52,10 +52,10 @@ export async function findCharacterByName(name: string): Promise<{ id: string; n
   if (!hasValidSession()) {
     throw new Error("No session found. Please run ddb_login first to authenticate.");
   }
-  const { token, userId } = await getCobaltToken();
-  const resp = await sessionFetch(
-    `https://character-service.dndbeyond.com/character/v5/characters/list?userId=${userId}`,
-    { headers: { Authorization: `Bearer ${token}` } }
+  // One snapshot binds the account-ID lookup and the request together.
+  const session = await beginAuthenticatedSession();
+  const resp = await session.fetch(
+    `https://character-service.dndbeyond.com/character/v5/characters/list?userId=${session.userId}`
   );
   if (!resp.ok) return null;
   const result = await resp.json() as {
@@ -228,10 +228,10 @@ export async function listCharacters(): Promise<string> {
     throw new Error("No session found. Please run ddb_login first.");
   }
 
-  const { token, userId } = await getCobaltToken();
-  const resp = await sessionFetch(
-    `https://character-service.dndbeyond.com/character/v5/characters/list?userId=${userId}`,
-    { headers: { Authorization: `Bearer ${token}` } }
+  // One snapshot binds the account-ID lookup and the request together.
+  const session = await beginAuthenticatedSession();
+  const resp = await session.fetch(
+    `https://character-service.dndbeyond.com/character/v5/characters/list?userId=${session.userId}`
   );
   if (!resp.ok) throw new Error(`Character list API returned ${resp.status}: ${resp.statusText}`);
 

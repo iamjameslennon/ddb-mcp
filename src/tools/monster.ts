@@ -9,7 +9,7 @@
  * https://www.dndbeyond.com/api/config/json and cached for 24 h.
  */
 
-import { sessionFetch, getCobaltToken, hasValidSession } from "../session-fetch.js";
+import { sessionFetch, beginAuthenticatedSession, hasValidSession } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
 import { wrapUntrusted } from "../utils.js";
 import { o5SearchMonsters, o5GetMonster } from "../open5e.js";
@@ -145,10 +145,9 @@ interface MonsterSingleResponse {
 // ── Fetch helpers ─────────────────────────────────────────────────────────────
 
 async function monsterFetch(url: string): Promise<Response> {
-  const { token } = await getCobaltToken();
-  return sessionFetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  // Single authenticated-fetch path: token + request bound to one snapshot.
+  const session = await beginAuthenticatedSession();
+  return session.fetch(url);
 }
 
 // ── Formatter ─────────────────────────────────────────────────────────────────

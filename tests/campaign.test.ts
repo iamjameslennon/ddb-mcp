@@ -2,15 +2,27 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Module mocks ──────────────────────────────────────────────────────────────
 // Must be declared before importing the module under test so vitest hoists them.
+// campaign.ts now uses the single authenticated-fetch path
+// (beginAuthenticatedSession): one snapshot yields the account id AND a bound
+// `fetch`. We mock that surface; the fetch mock stands in for `session.fetch`.
+
+const sessionMocks = vi.hoisted(() => ({
+  fetch: vi.fn(),
+}));
 
 vi.mock("../src/session-fetch.js", () => ({
   hasValidSession: vi.fn(() => true),
-  getCobaltToken: vi.fn(async () => ({ token: "tok", userId: "99" })),
-  sessionFetch: vi.fn(),
+  beginAuthenticatedSession: vi.fn(async () => ({
+    token: "tok",
+    userId: "99",
+    generation: 1,
+    fetch: sessionMocks.fetch,
+  })),
 }));
 
 import { listMyCampaigns, getCampaign, invalidateCampaignCache } from "../src/tools/campaign.js";
-import { sessionFetch, getCobaltToken } from "../src/session-fetch.js";
+
+const boundFetch = sessionMocks.fetch;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -42,11 +54,10 @@ describe("listMyCampaigns", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     invalidateCampaignCache();
-    vi.mocked(getCobaltToken).mockResolvedValue({ token: "tok", userId: "99" });
   });
 
   it("returns a list of campaigns with correct role assignment", async () => {
-    vi.mocked(sessionFetch).mockResolvedValue(mockResponse(CAMPAIGNS_RESPONSE));
+    boundFetch.mockResolvedValue(mockResponse(CAMPAIGNS_RESPONSE));
 
     const result = JSON.parse(await listMyCampaigns());
 
@@ -57,22 +68,21 @@ describe("listMyCampaigns", () => {
     expect(result[1]).toMatchObject({ name: "Lost Mine of Phandelver", id: "1002", role: "Player" });
   });
 
-  it("always sends Bearer token (single request, no cookie-only attempt)", async () => {
-    vi.mocked(sessionFetch).mockResolvedValue(mockResponse(CAMPAIGNS_RESPONSE));
+  it("issues a single bound request (account id + request share one snapshot)", async () => {
+    boundFetch.mockResolvedValue(mockResponse(CAMPAIGNS_RESPONSE));
 
     await listMyCampaigns();
-    expect(vi.mocked(sessionFetch)).toHaveBeenCalledTimes(1);
-    const callArgs = vi.mocked(sessionFetch).mock.calls[0];
-    expect((callArgs[1] as RequestInit).headers).toMatchObject({ Authorization: "Bearer tok" });
+    expect(boundFetch).toHaveBeenCalledTimes(1);
+    expect(boundFetch.mock.calls[0][0]).toContain("/user-campaigns");
   });
 
   it("throws a descriptive error when the API returns HTML (session expired)", async () => {
-    vi.mocked(sessionFetch).mockResolvedValue(mockResponse("<html>login</html>", 200, "text/html"));
+    boundFetch.mockResolvedValue(mockResponse("<html>login</html>", 200, "text/html"));
     await expect(listMyCampaigns()).rejects.toThrow("non-JSON response");
   });
 
   it("returns a descriptive message when user has no campaigns", async () => {
-    vi.mocked(sessionFetch).mockResolvedValue(mockResponse({ status: "success", data: [] }));
+    boundFetch.mockResolvedValue(mockResponse({ status: "success", data: [] }));
     const result = await listMyCampaigns();
     expect(result).toBe("You are not currently a member of any campaigns on D&D Beyond.");
   });
@@ -82,11 +92,10 @@ describe("getCampaign", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     invalidateCampaignCache();
-    vi.mocked(getCobaltToken).mockResolvedValue({ token: "tok", userId: "99" });
   });
 
   it("returns campaign details with characters", async () => {
-    vi.mocked(sessionFetch)
+    boundFetch
       .mockResolvedValueOnce(mockResponse(CAMPAIGNS_RESPONSE))    // active-campaigns
       .mockResolvedValueOnce(mockResponse(CHARACTERS_RESPONSE));  // active-short-characters
 
@@ -108,13 +117,13 @@ describe("getCampaign", () => {
   });
 
   it("throws a descriptive error when campaign ID is not in the active list", async () => {
-    vi.mocked(sessionFetch).mockResolvedValue(mockResponse(CAMPAIGNS_RESPONSE));
+    boundFetch.mockResolvedValue(mockResponse(CAMPAIGNS_RESPONSE));
 
     await expect(getCampaign("9999")).rejects.toThrow("Campaign 9999 not found");
   });
 
   it("handles a campaign with no characters", async () => {
-    vi.mocked(sessionFetch)
+    boundFetch
       .mockResolvedValueOnce(mockResponse(CAMPAIGNS_RESPONSE))
       .mockResolvedValueOnce(mockResponse([]));
 

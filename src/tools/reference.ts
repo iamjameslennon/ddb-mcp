@@ -9,7 +9,7 @@
  * All character-service endpoints use the cobalt Bearer token.
  */
 
-import { sessionFetch, getCobaltToken } from "../session-fetch.js";
+import { beginAuthenticatedSession } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
 import { stripHtml } from "../utils.js";
 import {
@@ -31,8 +31,9 @@ const referenceCache = new TtlCache<string>(AUTHORITATIVE_TTL_MS, 50);
 // ── Auth helper ───────────────────────────────────────────────────────────────
 
 async function refFetch(url: string): Promise<Response> {
-  const { token } = await getCobaltToken();
-  return sessionFetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  // Single authenticated-fetch path: token + request bound to one snapshot.
+  const session = await beginAuthenticatedSession();
+  return session.fetch(url);
 }
 
 // ── HTML strip — imported from src/utils.ts ───────────────────────────────────
