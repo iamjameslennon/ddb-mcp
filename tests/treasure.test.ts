@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { generateTreasure } from "../src/tools/treasure.js";
+import { MAX_TREASURE_OUTPUT_CHARS } from "../src/treasure-limits.js";
 
 vi.mock("../src/tools/monster.js", () => ({
   getMonsterStats: vi.fn(),
@@ -264,5 +265,190 @@ describe("validation", () => {
       treasureType: "hoard",
     });
     expect(result).toContain("Error:");
+  });
+});
+
+// ── 16. Work-budget rejections (rejected before any lookup or roll) ─────────
+//
+// All just-over-limit values here are small (101, 21 entries, 201 chars) so
+// the pre-guard implementation cannot exhaust the test process while these
+// are RED.
+
+describe("treasure work-budget rejections", () => {
+  it("rejects excess individual work before monster lookup", async () => {
+    const result = await generateTreasure({
+      monsters: [{ name: "Goblin", count: 101 }],
+      treasureType: "individual",
+    });
+    expect(result).toMatch(/^Error: /);
+    expect(mockGetMonsterStats).not.toHaveBeenCalled();
+  });
+
+  it("rejects 20 entries whose aggregate count is 101", async () => {
+    const monsters = Array.from({ length: 20 }, (_, i) => ({
+      name: `Monster${i}`,
+      count: i < 19 ? 5 : 6, // 19*5 + 6 = 101
+    }));
+    const result = await generateTreasure({ monsters, treasureType: "individual" });
+    expect(result).toMatch(/^Error: /);
+    expect(mockGetMonsterStats).not.toHaveBeenCalled();
+  });
+
+  it("rejects 21 monster entries", async () => {
+    const monsters = Array.from({ length: 21 }, (_, i) => ({ name: `Monster${i}`, count: 1 }));
+    const result = await generateTreasure({ monsters, treasureType: "individual" });
+    expect(result).toMatch(/^Error: /);
+    expect(mockGetMonsterStats).not.toHaveBeenCalled();
+  });
+
+  it("rejects an overlong monster name", async () => {
+    const result = await generateTreasure({
+      monsters: [{ name: "X".repeat(201), count: 1 }],
+      treasureType: "individual",
+    });
+    expect(result).toMatch(/^Error: /);
+    expect(mockGetMonsterStats).not.toHaveBeenCalled();
+  });
+
+  it("rejects zero, negative, fractional, and unsafe-integer counts", async () => {
+    // Routed through generateTreasure only because its early guard now
+    // exists — these values would be unsafe to loop over otherwise.
+    for (const count of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      const result = await generateTreasure({
+        monsters: [{ name: "Goblin", count }],
+        treasureType: "individual",
+      });
+      expect(result).toMatch(/^Error: /);
+    }
+    expect(mockGetMonsterStats).not.toHaveBeenCalled();
+  });
+
+  it("rejects an empty monster list before any lookup", async () => {
+    const result = await generateTreasure({ monsters: [], treasureType: "individual" });
+    expect(result).toMatch(/^Error: /);
+    expect(mockGetMonsterStats).not.toHaveBeenCalled();
+  });
+
+  it("rejects duplicate-name aggregate overflow before deduplication", async () => {
+    // 60 + 60 = 120 raw rolls requested, even though both entries share a
+    // name and would dedupe to a single lookup.
+    const result = await generateTreasure({
+      monsters: [
+        { name: "Goblin", count: 60 },
+        { name: "Goblin", count: 60 },
+      ],
+      treasureType: "individual",
+    });
+    expect(result).toMatch(/^Error: /);
+    expect(mockGetMonsterStats).not.toHaveBeenCalled();
+  });
+
+  it("does not apply the aggregate roll budget to hoard requests", async () => {
+    mockGetMonsterStats
+      .mockResolvedValueOnce({ name: "Goblin", crValue: 0.25, xp: 50 })
+      .mockResolvedValueOnce({ name: "Hobgoblin", crValue: 1, xp: 200 });
+    const result = await generateTreasure({
+      monsters: [
+        { name: "Goblin", count: 60 },
+        { name: "Hobgoblin", count: 60 },
+      ],
+      treasureType: "hoard",
+    });
+    expect(result).toContain("TREASURE HOARD");
+    expect(mockGetMonsterStats).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ── 17. Accepted at-budget requests ──────────────────────────────────────────
+
+describe("treasure at exactly the roll budget", () => {
+  it("performs exactly 100 rolls and stays within the output budget", async () => {
+    mockGetMonsterStats.mockResolvedValueOnce({ name: "Goblin", crValue: 0.25, xp: 50 });
+    const result = await generateTreasure({
+      monsters: [{ name: "Goblin", count: 100 }],
+      treasureType: "individual",
+    });
+    expect(result).toContain("INDIVIDUAL TREASURE");
+    const rollLines = result.match(/Roll \d+:/g) ?? [];
+    expect(rollLines.length).toBe(100);
+    expect(result.length).toBeLessThanOrEqual(MAX_TREASURE_OUTPUT_CHARS);
+  });
+
+  it("accepts mixed entries whose counts sum to exactly 100", async () => {
+    mockGetMonsterStats
+      .mockResolvedValueOnce({ name: "Goblin", crValue: 0.25, xp: 50 })
+      .mockResolvedValueOnce({ name: "Hobgoblin", crValue: 1, xp: 200 })
+      .mockResolvedValueOnce({ name: "Bugbear", crValue: 1, xp: 200 });
+
+    const result = await generateTreasure({
+      monsters: [
+        { name: "Goblin", count: 40 },
+        { name: "Hobgoblin", count: 35 },
+        { name: "Bugbear", count: 25 },
+      ],
+      treasureType: "individual",
+    });
+
+    expect(result).toContain("INDIVIDUAL TREASURE");
+    const rollLines = result.match(/Roll \d+:/g) ?? [];
+    expect(rollLines.length).toBe(100);
+    expect(mockGetMonsterStats).toHaveBeenCalledTimes(3);
+    expect(result.length).toBeLessThanOrEqual(MAX_TREASURE_OUTPUT_CHARS);
+  });
+});
+
+// ── 18. Repeated / unresolved names within budget ────────────────────────────
+
+describe("repeated and unresolved names within budget", () => {
+  it("resolves once per unique name via lookup, but budgets on raw entry counts", async () => {
+    mockGetMonsterStats.mockImplementation(async (name: string) => {
+      if (name === "Goblin") return { name: "Goblin", crValue: 0.25, xp: 50 };
+      return null;
+    });
+
+    const result = await generateTreasure({
+      monsters: [
+        { name: "Goblin", count: 3 },
+        { name: "Goblin", count: 2 },
+        { name: "Nonexistent Beast", count: 1 },
+      ],
+      treasureType: "individual",
+    });
+
+    expect(result).toContain("INDIVIDUAL TREASURE");
+    expect(result).toContain("Nonexistent Beast");
+    expect(mockGetMonsterStats).toHaveBeenCalledTimes(2); // unique names only
+    const rollLines = result.match(/Roll \d+:/g) ?? [];
+    expect(rollLines.length).toBe(5); // 3 + 2 goblin rolls; unresolved contributes 0
+  });
+});
+
+// ── 19. Oversized upstream display name cannot defeat the output cap ────────
+
+describe("oversized upstream monster name", () => {
+  it("truncates a huge resolved name and keeps output within the character budget", async () => {
+    const hugeName = "X".repeat(5000);
+    mockGetMonsterStats.mockResolvedValueOnce({ name: hugeName, crValue: 1, xp: 200 });
+
+    const result = await generateTreasure({
+      monsters: [{ name: "Goblin", count: 2 }],
+      treasureType: "individual",
+    });
+
+    expect(result.length).toBeLessThanOrEqual(MAX_TREASURE_OUTPUT_CHARS);
+    expect(result).not.toContain(hugeName);
+  });
+
+  it("truncates a huge resolved name in hoard source descriptions too", async () => {
+    const hugeName = "Y".repeat(5000);
+    mockGetMonsterStats.mockResolvedValueOnce({ name: hugeName, crValue: 3, xp: 700 });
+
+    const result = await generateTreasure({
+      monsters: [{ name: "Ogre", count: 1 }],
+      treasureType: "hoard",
+    });
+
+    expect(result.length).toBeLessThanOrEqual(MAX_TREASURE_OUTPUT_CHARS);
+    expect(result).not.toContain(hugeName);
   });
 });
