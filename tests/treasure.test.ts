@@ -425,6 +425,105 @@ describe("repeated and unresolved names within budget", () => {
 
 // ── 19. Oversized upstream display name cannot defeat the output cap ────────
 
+// ── 20. Forced output truncation (small injected budget) ────────────────────
+//
+// A maximal *real* request (≤20 entries, ≤100 rolls, ≤200-char names) only
+// ever produces ~10-15K characters of output — far under the 32,000-char
+// cap — so `result.length <= MAX_TREASURE_OUTPUT_CHARS` alone never proves
+// the BoundedAccumulator/omission mechanism actually does anything; it
+// would pass even if that mechanism were deleted entirely. generateTreasure()
+// accepts a second, options-object parameter with a `maxOutputChars`
+// override — test-only, production callers (src/index.ts) never pass it —
+// so these tests can force the same accumulator logic to actually omit
+// content on a small, cheap fixture instead of a giant real payload.
+
+describe("forced output truncation — individual", () => {
+  it("omits roll detail but always keeps full, correct coin totals within budget", async () => {
+    mockGetMonsterStats.mockResolvedValueOnce({ name: "Goblin", crValue: 0.25, xp: 50 });
+    vi.spyOn(Math, "random").mockReturnValue(0.5); // 3d6 -> 4 per die -> 12 gp per roll
+    const maxOutputChars = 300;
+
+    const result = await generateTreasure(
+      { monsters: [{ name: "Goblin", count: 10 }], treasureType: "individual" },
+      { maxOutputChars }
+    );
+
+    expect(result.length).toBeLessThanOrEqual(maxOutputChars);
+    expect(result).toMatch(/omitted/i);
+    expect(result).toContain("COINS (combined)");
+    // 10 rolls x 12 gp = 120 gp — the aggregate total must survive truncation intact.
+    expect(result).toContain("  120 gp");
+    expect(result).toContain("TOTAL VALUE  ~120 gp");
+  });
+});
+
+describe("forced output truncation — hoard", () => {
+  it("omits source/magic-item detail but always keeps full, correct coin totals within budget", async () => {
+    mockGetMonsterStats
+      .mockResolvedValueOnce({ name: "Ancient Red Dragon (Extremely Long Upstream Display Name For Testing Purposes Only)", crValue: 20, xp: 25000 })
+      .mockResolvedValueOnce({ name: "Adult Blue Dragon (Also A Rather Long Upstream Display Name For Testing)", crValue: 16, xp: 15000 });
+    vi.spyOn(Math, "random").mockReturnValue(0.5); // deterministic coin/item rolls
+    const maxOutputChars = 250;
+
+    const result = await generateTreasure(
+      {
+        monsters: [{ name: "Dragon A", count: 1 }, { name: "Dragon B", count: 1 }],
+        treasureType: "hoard",
+        characterLevel: 18,
+      },
+      { maxOutputChars }
+    );
+
+    expect(result.length).toBeLessThanOrEqual(maxOutputChars);
+    expect(result).toMatch(/omitted/i);
+    // Tier 17+: 6d10x10000 gp, each d10 = floor(0.5*10)+1 = 6 -> 6*6*10000 = 360,000 gp.
+    // The coin total must survive even though the Source/magic-item detail is dropped.
+    expect(result).toContain("360,000 gp");
+    expect(result).toContain("TOTAL VALUE  ~360,000 gp");
+  });
+});
+
+describe("forced output truncation — unresolved monster listing", () => {
+  it("omits unresolved-name detail but always keeps the closing message within budget", async () => {
+    mockGetMonsterStats.mockResolvedValue(null);
+    const monsters = Array.from({ length: 20 }, (_, i) => ({ name: `Fake Monster Number ${i}`, count: 1 }));
+    const maxOutputChars = 200;
+
+    const result = await generateTreasure(
+      { monsters, treasureType: "hoard" },
+      { maxOutputChars }
+    );
+
+    expect(result.length).toBeLessThanOrEqual(maxOutputChars);
+    expect(result).toMatch(/omitted/i);
+    expect(result).toContain("No treasure rolled");
+  });
+});
+
+describe("forced output truncation — partial resolution status block", () => {
+  it("omits resolution-status detail while still rolling treasure, within budget", async () => {
+    mockGetMonsterStats.mockImplementation(async (name: string) => {
+      if (name.startsWith("Found")) return { name, crValue: 1, xp: 200 };
+      return null;
+    });
+    const monsters = [
+      ...Array.from({ length: 10 }, (_, i) => ({ name: `Found Monster ${i}`, count: 1 })),
+      ...Array.from({ length: 10 }, (_, i) => ({ name: `Missing Monster ${i}`, count: 1 })),
+    ];
+    const maxOutputChars = 400;
+
+    const result = await generateTreasure(
+      { monsters, treasureType: "hoard" },
+      { maxOutputChars }
+    );
+
+    expect(result.length).toBeLessThanOrEqual(maxOutputChars);
+    expect(result).toMatch(/omitted/i);
+    expect(result).toContain("TREASURE HOARD");
+    expect(result).toContain("TOTAL VALUE");
+  });
+});
+
 describe("oversized upstream monster name", () => {
   it("truncates a huge resolved name and keeps output within the character budget", async () => {
     const hugeName = "X".repeat(5000);

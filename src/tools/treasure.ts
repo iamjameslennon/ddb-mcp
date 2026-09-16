@@ -454,8 +454,16 @@ export interface TreasureInput {
 
 // ── Main function ─────────────────────────────────────────────────────────────
 
-export async function generateTreasure(input: TreasureInput): Promise<string> {
+export async function generateTreasure(
+  input: TreasureInput,
+  options: { maxOutputChars?: number } = {}
+): Promise<string> {
   const { cr, monsters, treasureType, characterLevel } = input;
+  // maxOutputChars defaults to the real limit; it's overridable only so
+  // tests can force the omission/truncation paths deterministically with a
+  // small, cheap fixture instead of allocating a genuinely oversized
+  // request. Production callers (src/index.ts) never pass it.
+  const outputBudget = options.maxOutputChars ?? MAX_TREASURE_OUTPUT_CHARS;
 
   if (cr === undefined && (!monsters || monsters.length === 0)) {
     return "Error: provide either cr or a monsters list.";
@@ -481,7 +489,7 @@ export async function generateTreasure(input: TreasureInput): Promise<string> {
         ? rollMagicItems(itemCount, characterLevel)
         : [];
       const totalGp = Math.round(coinsGp(coins) * 100) / 100;
-      return formatHoardOutput(crStr, tier, undefined, coins, itemCount, itemDiceExpr, items, characterLevel, totalGp);
+      return formatHoardOutput(crStr, tier, undefined, coins, itemCount, itemDiceExpr, items, characterLevel, totalGp, outputBudget);
     } else {
       const coins = rollIndividualCoins(tier);
       const totalGp = Math.round(coinsGp(coins) * 100) / 100;
@@ -489,7 +497,8 @@ export async function generateTreasure(input: TreasureInput): Promise<string> {
         [{ label: `CR ${crStr}`, tier, count: 1 }],
         [coins],
         totalGp,
-        1
+        1,
+        outputBudget
       );
     }
   }
@@ -516,30 +525,46 @@ export async function generateTreasure(input: TreasureInput): Promise<string> {
   }
 
   if (found.length === 0) {
-    // Reserve room for the closing "No treasure rolled" message so it's
-    // never the casualty of a long unresolved-name list.
+    // Reserve room for the closing "No treasure rolled" message AND a
+    // worst-case omission note — sized against monsterList.length, which we
+    // already know, so the actual note (whose count can only be ≤ that
+    // worst case) is guaranteed to fit rather than being squeezed out by
+    // the very entries it's reporting on.
     const closing = [``, `No treasure rolled — no monsters could be resolved. Provide cr directly.`];
-    const acc = new BoundedAccumulator(MAX_TREASURE_OUTPUT_CHARS - closing.join("\n").length - 1);
+    const worstCaseNote = `  … ${monsterList.length} more unresolved name${monsterList.length !== 1 ? "s" : ""} omitted to stay under the ${outputBudget.toLocaleString()}-character output limit`;
+    const reserved = closing.join("\n").length + 1 + worstCaseNote.length + 1;
+    const acc = new BoundedAccumulator(Math.max(0, outputBudget - reserved));
     acc.push(`TREASURE — could not resolve all monsters`);
     acc.push(``);
     let omitted = 0;
     for (const entry of monsterList) {
       if (!acc.push(`  ✗ "${displayName(entry.name)}" — not found in DDB or Open5e`)) omitted++;
     }
+    const lines = [...acc.items];
     if (omitted > 0) {
-      acc.push(`  … ${omitted} more unresolved name${omitted !== 1 ? "s" : ""} omitted to stay under the ${MAX_TREASURE_OUTPUT_CHARS.toLocaleString()}-character output limit`);
+      lines.push(`  … ${omitted} more unresolved name${omitted !== 1 ? "s" : ""} omitted to stay under the ${outputBudget.toLocaleString()}-character output limit`);
     }
-    return [...acc.items, ...closing].join("\n");
+    return [...lines, ...closing].join("\n");
   }
 
   // Resolution status block (only shown when some names didn't resolve).
   // Bounded independently of the treasure body below — its size is
   // subtracted from the body's own budget so the combined output never
-  // exceeds MAX_TREASURE_OUTPUT_CHARS.
-  const STATUS_SECTION_BUDGET = 8_000;
+  // exceeds outputBudget. BODY_MIN_RESERVE guarantees the body formatter
+  // always gets enough room for its own mandatory coin-total trailer (plus
+  // a header and omission-note allowance), even when outputBudget is small
+  // enough that the status block alone could otherwise consume all of it.
+  const BODY_MIN_RESERVE = 600;
+  const STATUS_SECTION_BUDGET = Math.min(8_000, Math.max(0, outputBudget - BODY_MIN_RESERVE));
   const statusLines: string[] = [];
   if (notFound.length > 0) {
-    const acc = new BoundedAccumulator(STATUS_SECTION_BUDGET);
+    // Same worst-case-reservation technique as above: the resolution-note
+    // count can be at most found.length + notFound.length, which we
+    // already know, so the note is reserved room up front rather than
+    // attempted last and possibly squeezed out.
+    const maxNoteCount = found.length + notFound.length;
+    const worstCaseNote = `  … ${maxNoteCount} more resolution note${maxNoteCount !== 1 ? "s" : ""} omitted to stay under the output limit`;
+    const acc = new BoundedAccumulator(Math.max(0, STATUS_SECTION_BUDGET - worstCaseNote.length - 1));
     acc.push(`TREASURE — could not resolve all monsters`);
     acc.push(``);
     let omitted = 0;
@@ -549,13 +574,14 @@ export async function generateTreasure(input: TreasureInput): Promise<string> {
     for (const n of notFound) {
       if (!acc.push(`  ✗ "${displayName(n)}" — not found in DDB or Open5e`)) omitted++;
     }
+    const lines = [...acc.items];
     if (omitted > 0) {
-      acc.push(`  … ${omitted} more resolution note${omitted !== 1 ? "s" : ""} omitted to stay under the output limit`);
+      lines.push(`  … ${omitted} more resolution note${omitted !== 1 ? "s" : ""} omitted to stay under the output limit`);
     }
-    acc.push(``);
-    statusLines.push(...acc.items);
+    lines.push(``);
+    statusLines.push(...lines);
   }
-  const bodyBudget = Math.max(0, MAX_TREASURE_OUTPUT_CHARS - (statusLines.length > 0 ? statusLines.join("\n").length + 1 : 0));
+  const bodyBudget = Math.max(0, outputBudget - (statusLines.length > 0 ? statusLines.join("\n").length + 1 : 0));
 
   if (treasureType === "hoard") {
     const highestCr = Math.max(...found.map(f => f.crValue));
@@ -566,7 +592,7 @@ export async function generateTreasure(input: TreasureInput): Promise<string> {
       : [];
     const totalGp = Math.round(coinsGp(coins) * 100) / 100;
 
-    const sourceAcc = new BoundedAccumulator(4_000, ", ");
+    const sourceAcc = new BoundedAccumulator(Math.min(4_000, bodyBudget), ", ");
     let sourceOmitted = 0;
     for (const f of found) {
       const seg = `${f.count > 1 ? f.count + " × " : ""}${displayName(f.name)} (CR ${crDisplay(f.crValue)})`;
@@ -617,58 +643,67 @@ function formatHoardOutput(
   totalGp: number,
   outputBudget: number = MAX_TREASURE_OUTPUT_CHARS
 ): string {
-  const lines: string[] = [];
-  lines.push(`TREASURE HOARD — CR ${crStr} (tier ${tier})`);
-  // sourceDesc is pre-bounded by the caller (a BoundedAccumulator over the
-  // found-monster segments), so it can't itself be unbounded, but it can
-  // still be a few thousand characters — account for its actual length
-  // below rather than assuming a fixed small reserve.
-  if (sourceDesc) lines.push(`Source: ${sourceDesc} — using highest CR`);
-  lines.push(``);
-  lines.push(`COINS`);
-  lines.push(`  ${formatCoins(coins)}`);
-  lines.push(``);
+  // Mandatory trailer: the coin total and the closing TOTAL VALUE line are
+  // the hoard's aggregate value and must always be shown in full,
+  // regardless of how much "detail" (source description, magic-item list)
+  // gets truncated above them — mirrors formatIndividualOutput's
+  // combined-coins trailer. Reserving this up front (rather than assuming
+  // a fixed small constant covers everything before it) is what makes the
+  // 32,000-character bound a property of this function itself, not an
+  // accident of the caller's own sourceDesc/status-section limits.
+  const trailer = [``, `COINS`, `  ${formatCoins(coins)}`, ``, `TOTAL VALUE  ~${totalGp.toLocaleString()} gp`];
+  const trailerText = trailer.join("\n");
+  // Reserve room for whichever omission note might end up being shown,
+  // sized against known upper bounds (items.length is known up front) with
+  // a small safety margin — not a flat guess — so the note that's actually
+  // chosen below is guaranteed to fit rather than assumed to.
+  const itemsNoteWorst = `  … ${items.length} more item${items.length !== 1 ? "s" : ""} omitted to stay under the ${outputBudget.toLocaleString()}-character output limit`;
+  const detailNoteWorst = `  … some hoard details (source description and/or magic items) omitted to stay under the ${outputBudget.toLocaleString()}-character output limit`;
+  const omissionReserve = Math.max(itemsNoteWorst.length, detailNoteWorst.length) + 8;
+  const bodyBudget = Math.max(0, outputBudget - trailerText.length - 1 - omissionReserve);
 
-  const totalLine = `TOTAL VALUE  ~${totalGp.toLocaleString()} gp`;
+  // Everything else — the header, the (variable-length, network-sourced)
+  // Source description, and the magic-item section — is "detail" and
+  // flows through the same bounded accumulator, exactly like
+  // formatIndividualOutput's roll-detail loop.
+  const acc = new BoundedAccumulator(bodyBudget);
+  acc.push(`TREASURE HOARD — CR ${crStr} (tier ${tier})`);
+
+  let detailOmitted = false;
+  if (sourceDesc) {
+    if (!acc.push(`Source: ${sourceDesc} — using highest CR`)) detailOmitted = true;
+  }
+
+  let itemsOmitted = 0;
 
   if (characterLevel !== undefined) {
     const levelRange = charLevelToRange(characterLevel);
+    acc.push(``);
     if (itemCount === 0) {
-      lines.push(`MAGIC ITEMS — ${itemDiceExpr} = 0 rolled (no items this hoard)`);
+      if (!acc.push(`MAGIC ITEMS — ${itemDiceExpr} = 0 rolled (no items this hoard)`)) detailOmitted = true;
     } else {
-      lines.push(`MAGIC ITEMS — ${itemDiceExpr} = ${itemCount} rolled (character level ${characterLevel}, table: levels ${levelRange})`);
-
-      // Item count is dice-bounded (at most 1d6 = 6), but stay consistent
-      // with the rest of the formatter and never build an unbounded list.
-      // Reserve room for everything already written (including the
-      // variable-length sourceDesc line), the trailing blank + TOTAL VALUE
-      // line, and a worst-case omission note.
-      const trailer = [``, totalLine];
-      const omissionReserve = 120;
-      const fixedLength = lines.join("\n").length
-        + 1 /* nl connecting the item-header line to the first item line */
-        + 1 /* nl connecting the last item line to the trailer block */
-        + trailer.join("\n").length;
-      const itemBudget = Math.max(0, outputBudget - fixedLength - omissionReserve);
-
-      const itemAcc = new BoundedAccumulator(itemBudget);
-      let itemsOmitted = 0;
-      for (let i = 0; i < items.length; i++) {
-        const { category, rarity, name } = items[i];
-        if (!itemAcc.push(`  ${i + 1}. ${displayName(name)}  [${itemLabel(category, rarity)}]`)) itemsOmitted++;
-      }
-      lines.push(...itemAcc.items);
-      if (itemsOmitted > 0) {
-        lines.push(`  … ${itemsOmitted} more item${itemsOmitted !== 1 ? "s" : ""} omitted to stay under the output limit`);
+      const itemHeader = `MAGIC ITEMS — ${itemDiceExpr} = ${itemCount} rolled (character level ${characterLevel}, table: levels ${levelRange})`;
+      if (!acc.push(itemHeader)) {
+        detailOmitted = true;
+      } else {
+        for (let i = 0; i < items.length; i++) {
+          const { category, rarity, name } = items[i];
+          if (!acc.push(`  ${i + 1}. ${displayName(name)}  [${itemLabel(category, rarity)}]`)) itemsOmitted++;
+        }
       }
     }
-    lines.push(``);
   } else {
-    lines.push(`(provide character_level to include magic items)`);
-    lines.push(``);
+    acc.push(``);
+    if (!acc.push(`(provide character_level to include magic items)`)) detailOmitted = true;
   }
 
-  lines.push(totalLine);
+  const lines = [...acc.items];
+  if (itemsOmitted > 0) {
+    lines.push(`  … ${itemsOmitted} more item${itemsOmitted !== 1 ? "s" : ""} omitted to stay under the ${outputBudget.toLocaleString()}-character output limit`);
+  } else if (detailOmitted) {
+    lines.push(`  … some hoard details (source description and/or magic items) omitted to stay under the ${outputBudget.toLocaleString()}-character output limit`);
+  }
+  lines.push(...trailer);
   return lines.join("\n");
 }
 
@@ -729,7 +764,7 @@ function formatIndividualOutput(
 
   const lines = [...acc.items];
   if (truncated) {
-    lines.push(``, `  … ${omittedRolls} roll line${omittedRolls !== 1 ? "s" : ""} omitted to stay under the ${MAX_TREASURE_OUTPUT_CHARS.toLocaleString()}-character output limit (coin totals below include every roll)`);
+    lines.push(``, `  … ${omittedRolls} roll line${omittedRolls !== 1 ? "s" : ""} omitted to stay under the ${outputBudget.toLocaleString()}-character output limit (coin totals below include every roll)`);
   }
   lines.push(...trailer);
   return lines.join("\n");
