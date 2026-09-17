@@ -3,6 +3,7 @@ import { mkdirSync } from "fs";
 import { homedir } from "os";
 import { dirname, join } from "path";
 import { getPage } from "../browser.js";
+import { captureSession, assertSessionCurrent } from "../session-fetch.js";
 import { wrapUntrusted } from "../utils.js";
 
 // Hosts the browser tools are allowed to navigate to. The wildcard form
@@ -81,6 +82,9 @@ export function assertSafeSelector(selector: string): void {
 }
 
 export async function navigate(context: BrowserContext, url: string): Promise<string> {
+  // Bind this authenticated browser action to the current generation so a
+  // logout/replacement mid-navigation refuses to return account-derived content.
+  const snapshot = captureSession();
   const page = await getPage(context);
   await ensureNavigationGuard(context);
 
@@ -113,6 +117,9 @@ export async function navigate(context: BrowserContext, url: string): Promise<st
 
   const truncated = content.length > 8000 ? content.slice(0, 8000) + "\n\n[Content truncated — use ddb_read_book or a more specific URL to get full content]" : content;
 
+  // Refresh authority before returning account-derived scraped content.
+  assertSessionCurrent(snapshot);
+
   // Wrap scraped content in delimiters so callers can clearly separate
   // trusted tool output from untrusted page content (potential prompt-
   // injection surface). The page may contain user-authored text from DMs,
@@ -127,6 +134,7 @@ export async function interact(
   value?: string
 ): Promise<string> {
   assertSafeSelector(selector);
+  const snapshot = captureSession();
   const page = await getPage(context);
   await ensureNavigationGuard(context);
 
@@ -149,6 +157,8 @@ export async function interact(
           `Use ddb_navigate to load a D&D Beyond page.`
         );
       }
+      // Refresh authority before reporting an authenticated action complete.
+      assertSessionCurrent(snapshot);
       return `Clicked element: ${selector}`;
     }
 
@@ -156,6 +166,7 @@ export async function interact(
       if (value === undefined) throw new Error("'value' is required for fill action.");
       await page.locator(selector).first().fill(value);
       await page.waitForTimeout(500);
+      assertSessionCurrent(snapshot);
       return `Filled '${selector}'.`;
     }
 
@@ -181,6 +192,7 @@ export async function interact(
 }
 
 export async function getCurrentPageContent(context: BrowserContext): Promise<string> {
+  const snapshot = captureSession();
   const page = await getPage(context);
   await ensureNavigationGuard(context);
   const url = page.url();
@@ -204,6 +216,8 @@ export async function getCurrentPageContent(context: BrowserContext): Promise<st
   });
 
   const truncated = content.length > 8000 ? content.slice(0, 8000) + "\n[truncated]" : content;
+  // Refresh authority before returning account-derived scraped content.
+  assertSessionCurrent(snapshot);
   // See note in navigate() — wrap scraped content so untrusted page text is
   // visibly separated from trusted tool output.
   return `Current URL: ${url}\n\n${wrapUntrusted(truncated)}`;

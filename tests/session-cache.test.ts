@@ -67,12 +67,16 @@ describe("hasValidSession", () => {
     expect(hasValidSession()).toBe(true);
   });
 
-  it("reads session file only once across multiple calls (in-memory cache)", () => {
+  it("re-reads the file on every call (authority boundary check) but returns a stable result", () => {
+    // The file is the local authority: to detect a logout/replacement between
+    // calls we must re-read and compare its content each time. Parsed cookies
+    // are reused when the content is unchanged, but the disk read itself is the
+    // revocation check and is therefore never skipped.
     setSessionFile([makeCookie()]);
-    hasValidSession();
-    hasValidSession();
-    hasValidSession();
-    expect(vi.mocked(readFileSync)).toHaveBeenCalledTimes(1);
+    expect(hasValidSession()).toBe(true);
+    expect(hasValidSession()).toBe(true);
+    expect(hasValidSession()).toBe(true);
+    expect(vi.mocked(readFileSync)).toHaveBeenCalledTimes(3);
   });
 
   it("re-reads session file after invalidateSessionCache()", () => {

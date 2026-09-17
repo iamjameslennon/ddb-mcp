@@ -4,8 +4,9 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
-import { getBrowser, getContext, closeBrowser } from "./browser.js";
+import { getBrowser, getContext, closeBrowser, beginLoginSession, endLoginSession } from "./browser.js";
 import { login } from "./auth.js";
+import { revokeSession } from "./session-state.js";
 import { getCharacter, downloadCharacter, listCharacters, parseCharacter, findCharacterByName, getDefinition, clearCharacterCache } from "./tools/character.js";
 import { getCampaign, listMyCampaigns, invalidateCampaignCache } from "./tools/campaign.js";
 import { getParty } from "./tools/party.js";
@@ -16,6 +17,7 @@ import { searchMonsters, getMonster, clearMonsterCache } from "./tools/monster.j
 import { rateEncounter, targetEncounterCr } from "./tools/encounter.js";
 import type { Difficulty } from "./tools/encounter.js";
 import { generateTreasure } from "./tools/treasure.js";
+import { MAX_TREASURE_ENTRIES, MAX_MONSTER_COUNT, MAX_INDIVIDUAL_ROLLS, MAX_MONSTER_NAME_CHARS } from "./treasure-limits.js";
 import { getCondition, searchSpells, getSpell, searchItems, getItem, searchRaces, searchClasses, searchBackgrounds, searchFeats, searchClassFeatures, searchRacialTraits, searchRules, getRule, clearReferenceCache } from "./tools/reference.js";
 import { clearOpen5eCache } from "./open5e.js";
 
@@ -40,12 +42,6 @@ async function getSharedContext() {
   return context;
 }
 
-// Login-specific context — opens a visible window for the OAuth flow
-async function getLoginContext() {
-  const browser = await getBrowser(false);
-  const context = await getContext(browser);
-  return context;
-}
 
 // ─── ddb_login ────────────────────────────────────────────────────────────────
 server.tool(
@@ -56,18 +52,20 @@ server.tool(
   { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   async () => {
     try {
-      const context = await getLoginContext();
+      // Login gets its own deliberately-owned context (never the shared,
+      // possibly revoked, authenticated one). endLoginSession() closes it in the
+      // finally below — the session cookies are saved to disk, so no browser is
+      // needed for future API-based tool calls.
+      const context = await beginLoginSession();
       const result = await login(context);
-      // Close the browser immediately after saving the session — no need to
-      // keep it open since all API-based tools use the saved cookies directly.
-      await closeBrowser();
       return { content: [{ type: "text", text: `${result}\nBrowser closed. Session saved to disk — no browser needed for future requests.` }] };
     } catch (err) {
-      // Still try to close the browser even if login failed
-      await closeBrowser().catch(() => {});
       const msg = err instanceof Error ? err.message : String(err);
       process.stderr.write(`[ddb-mcp] ddb_login error: ${msg}\n`);
       return { content: [{ type: "text", text: `Login failed: ${msg}` }], isError: true };
+    } finally {
+      // Always tear down the login browser and release the login lock.
+      await endLoginSession().catch(() => {});
     }
   }
 );
@@ -86,6 +84,48 @@ server.tool(
       const msg = err instanceof Error ? err.message : String(err);
       process.stderr.write(`[ddb-mcp] ddb_close_browser error: ${msg}\n`);
       return { content: [{ type: "text", text: `Failed to close browser: ${msg}` }], isError: true };
+    }
+  }
+);
+
+// ─── ddb_logout ───────────────────────────────────────────────────────────────
+server.tool(
+  "ddb_logout",
+  "Revoke this server's local access to D&D Beyond: blocks any further authenticated tool call immediately, deletes the saved session file on disk, and closes any open browser context. Safe to call repeatedly, including when you were never logged in. This is a LOCAL logout only — it does NOT log your account out on the D&D Beyond website, and it does not call any D&D Beyond endpoint. Run ddb_login again afterward to establish a fresh session.",
+  {},
+  // destructiveHint: deletes the local session file and closes open browser
+  // state. idempotentHint: repeated calls are safe and converge on the same
+  // revoked outcome. openWorldHint: false — this never talks to D&D Beyond.
+  { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  async () => {
+    try {
+      await revokeSession();
+      return {
+        content: [{
+          type: "text",
+          text:
+            "Logged out locally. New authenticated requests are blocked immediately; the saved " +
+            "session file has been deleted and any open browser context has been closed. This does " +
+            "not log your account out on the D&D Beyond website — only this server's local copy of " +
+            "your session was removed. Run ddb_login to authenticate again.",
+        }],
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[ddb-mcp] ddb_logout error: ${msg}\n`);
+      return {
+        content: [{
+          type: "text",
+          text:
+            "Local access is revoked and no further tool call will use the previous credentials, " +
+            `but logout did not fully complete: ${msg}. The saved session file and/or an open ` +
+            "browser context may still be present — this is NOT a clean, fully-deleted logout. If " +
+            "immediate termination of all background activity is required, stop the MCP server " +
+            "process. This does not affect your D&D Beyond account on the website either way. Run " +
+            "ddb_login when you're ready to establish a fresh session.",
+        }],
+        isError: true,
+      };
     }
   }
 );
@@ -897,15 +937,15 @@ server.tool(
 // ─── ddb_roll_treasure ───────────────────────────────────────────────────────
 server.tool(
   "ddb_roll_treasure",
-  "Generate a treasure reward using the 2024 XDMG treasure tables (default). Provide either a CR directly or a list of monster names — CR is resolved automatically via fuzzy name matching. treasure_type 'hoard' makes one roll using the highest CR and includes magic items (requires character_level); 'individual' rolls once per monster and sums the results.",
+  `Generate a treasure reward using the 2024 XDMG treasure tables (default). Provide either a CR directly or a list of monster names — CR is resolved automatically via fuzzy name matching. treasure_type 'hoard' makes one roll using the highest CR and includes magic items (requires character_level); 'individual' rolls once per monster and sums the results. Limits (rejected requests return an error, never silently truncated): at most ${MAX_TREASURE_ENTRIES} monster entries, at most ${MAX_MONSTER_COUNT} per entry, and at most ${MAX_MONSTER_NAME_CHARS} characters per monster name — these per-entry restrictions apply to hoard requests too, not just individual. 'individual' additionally caps the total rolls (sum of all entry counts) at ${MAX_INDIVIDUAL_ROLLS}.`,
   {
     cr: z.number().min(0).max(30).optional()
       .describe("Challenge rating (0–30). Use instead of monsters for a direct CR lookup."),
     monsters: z.array(z.object({
-      name: z.string().describe("Monster name — fuzzy matched, DDB with Open5e fallback"),
-      count: z.number().int().min(1).default(1).describe("Number of this monster (default 1)"),
-    })).optional()
-      .describe("Monsters from the encounter. Highest CR determines the treasure tier for hoards."),
+      name: z.string().min(1).max(MAX_MONSTER_NAME_CHARS).describe(`Monster name — fuzzy matched, DDB with Open5e fallback. Max ${MAX_MONSTER_NAME_CHARS} characters.`),
+      count: z.number().int().min(1).max(MAX_MONSTER_COUNT).default(1).describe(`Number of this monster (default 1, max ${MAX_MONSTER_COUNT} per entry — applies to both individual and hoard).`),
+    })).max(MAX_TREASURE_ENTRIES).optional()
+      .describe(`Monsters from the encounter. Highest CR determines the treasure tier for hoards. At most ${MAX_TREASURE_ENTRIES} entries; for treasure_type 'individual' the total count across all entries is capped at ${MAX_INDIVIDUAL_ROLLS} rolls.`),
     treasure_type: z.enum(["individual", "hoard"]).default("hoard")
       .describe("individual = one roll per monster. hoard = one roll using the highest CR."),
     character_level: z.number().int().min(1).max(20).optional()

@@ -1,5 +1,17 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { isAllowedPageUrl, assertSafeSelector } from "../src/tools/navigate.js";
+
+// Stable fs mock so the transition tests below can flip the session file and
+// drive a REAL session-state transition through navigate()'s authority checks.
+const fsMock = vi.hoisted(() => ({
+  existsSync: vi.fn(() => false),
+  readFileSync: vi.fn(() => ""),
+  chmodSync: vi.fn(),
+  rmSync: vi.fn(),
+  mkdirSync: vi.fn(),
+  writeFileSync: vi.fn(),
+}));
+vi.mock("fs", () => fsMock);
 
 describe("isAllowedPageUrl", () => {
   it("allows https URLs on www.dndbeyond.com", () => {
@@ -80,5 +92,77 @@ describe("assertSafeSelector", () => {
     expect(() => assertSafeSelector("button >> internal:control=enter-frame >> _evaluate")).toThrow(
       /disallowed syntax/
     );
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// navigate()/getCurrentPageContent() refresh authority before returning
+// account-derived scraped content: a session change mid-scrape must throw.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("navigate refuses scraped content across a session transition", () => {
+  let nav: typeof import("../src/tools/navigate.js");
+  let sf: typeof import("../src/session-fetch.js");
+
+  function sessionJson(v: string): string {
+    return JSON.stringify({
+      cookies: [{
+        name: "CobaltSession", value: v, domain: ".dndbeyond.com", path: "/",
+        expires: Date.now() / 1000 + 3600, httpOnly: true, secure: true,
+      }],
+    });
+  }
+  function setSessionFile(content: string | null): void {
+    if (content === null) { fsMock.existsSync.mockReturnValue(false); return; }
+    fsMock.existsSync.mockReturnValue(true);
+    fsMock.readFileSync.mockReturnValue(content);
+  }
+
+  // A fake Playwright context whose page.evaluate() flips the session file to a
+  // different account mid-scrape (simulating a concurrent logout/replacement).
+  function makeFake(url: string, onEvaluate: () => void) {
+    const page = {
+      url: () => url,
+      goto: async () => {},
+      evaluate: async () => { onEvaluate(); return "SECRET_SCRAPE"; },
+      waitForTimeout: async () => {},
+      locator: () => ({ filter: () => page.locator(), first: () => page.locator() }),
+    };
+    const context = { pages: () => [page], newPage: async () => page, route: async () => {} };
+    return context as unknown as Parameters<typeof nav.navigate>[0];
+  }
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    fsMock.existsSync.mockReset();
+    fsMock.readFileSync.mockReset();
+    vi.resetModules();
+    nav = await import("../src/tools/navigate.js");
+    sf = await import("../src/session-fetch.js");
+  });
+
+  it("throws SessionChangedError when the account changes during navigate()", async () => {
+    setSessionFile(sessionJson("SECRET_A"));
+    sf.hasValidSession(); // establish account A as the observed baseline
+
+    const context = makeFake(
+      "https://www.dndbeyond.com/characters/1",
+      () => setSessionFile(sessionJson("SECRET_B")),
+    );
+
+    await expect(
+      nav.navigate(context, "https://www.dndbeyond.com/characters/1"),
+    ).rejects.toThrow(sf.SessionChangedError);
+  });
+
+  it("throws SessionChangedError when the account changes during getCurrentPageContent()", async () => {
+    setSessionFile(sessionJson("SECRET_A"));
+    sf.hasValidSession();
+
+    const context = makeFake(
+      "https://www.dndbeyond.com/characters/1",
+      () => setSessionFile(null),
+    );
+
+    await expect(nav.getCurrentPageContent(context)).rejects.toThrow(sf.SessionChangedError);
   });
 });

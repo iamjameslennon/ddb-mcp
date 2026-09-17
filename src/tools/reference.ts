@@ -9,7 +9,10 @@
  * All character-service endpoints use the cobalt Bearer token.
  */
 
-import { sessionFetch, getCobaltToken } from "../session-fetch.js";
+import {
+  beginAuthenticatedSession,
+  captureSession, assertSessionCurrent, onSessionInvalidated, SessionChangedError,
+} from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
 import { stripHtml } from "../utils.js";
 import {
@@ -31,8 +34,9 @@ const referenceCache = new TtlCache<string>(AUTHORITATIVE_TTL_MS, 50);
 // ── Auth helper ───────────────────────────────────────────────────────────────
 
 async function refFetch(url: string): Promise<Response> {
-  const { token } = await getCobaltToken();
-  return sessionFetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  // Single authenticated-fetch path: token + request bound to one snapshot.
+  const session = await beginAuthenticatedSession();
+  return session.fetch(url);
 }
 
 // ── HTML strip — imported from src/utils.ts ───────────────────────────────────
@@ -243,18 +247,44 @@ export function getCompendiumSource(): CompendiumSource | null {
   return compendiumSource;
 }
 
-/** Wipe the spell/items/reference cache and in-memory compendium state. */
+/**
+ * Wipe the spell/items/reference cache and ALL in-memory compendium state.
+ *
+ * This clears `characterSpellBuffer` and `itemCompendium` in addition to the
+ * reference cache + spell compendium. TEMPORARY: the buffer reset here exists
+ * only because `characterSpellBuffer` is module-level mutable state seeded from
+ * a specific character's JSON. When the future stateless compendium design
+ * removes the buffer, delete its reset from this function (and from the
+ * invalidation hook below).
+ */
 export function clearReferenceCache(): void {
   referenceCache.clear();
   spellCompendium = null;
   compendiumSource = null;
+  characterSpellBuffer.clear();
+  itemCompendium = null;
 }
+
+// Retire all account-derived compendium state on every session transition
+// (logout, account replacement, revoke). The item compendium and the
+// character-seeded spell buffer are account-scoped (game-data endpoints are
+// gated by the cobalt token / character JSON), so they must not survive into a
+// new generation. Registered once per module lifetime.
+onSessionInvalidated(() => {
+  clearReferenceCache();
+});
 
 // Spells extracted from character JSON (Warlock invocations, racial cantrip
 // grants, etc.) that may not appear in the per-class /game-data/spells lists.
 const characterSpellBuffer = new Map<string, DdbSpell>();
 
 async function loadSpellCompendium(): Promise<DdbSpell[]> {
+  // Observe the on-disk authority BEFORE any early singleton/cache return, so a
+  // pending logout/replacement fires the invalidation hook (which clears the
+  // compendium + reference cache) before we hand back stale account state. Also
+  // binds the whole parallel build to one generation.
+  const snapshot = captureSession();
+
   if (spellCompendium) return spellCompendium;
 
   const cached = referenceCache.get("spell-compendium");
@@ -305,11 +335,20 @@ async function loadSpellCompendium(): Promise<DdbSpell[]> {
           allSpells.set(name, spell);
         }
       }
-    } catch {
-      // Continue — partial compendium is still useful
+    } catch (e) {
+      // A session transition mid-build is NOT an ordinary failed class lookup:
+      // abandon the entire build so no old-account (or mixed) class list is
+      // merged into a new-account compendium. Rethrow to reject Promise.all.
+      if (e instanceof SessionChangedError) throw e;
+      // Otherwise continue — a partial compendium is still useful.
       failedTasks++;
     }
   }));
+
+  // Even if every individual request succeeded, the account may have changed
+  // during an async body parse. Refuse to cache a compendium assembled across a
+  // generation boundary.
+  assertSessionCurrent(snapshot);
 
   if (allSpells.size === 0) {
     // Deliberately don't cache this case — the catch in searchSpells/getSpell
@@ -578,6 +617,9 @@ interface DdbItem {
 let itemCompendium: DdbItem[] | null = null;
 
 async function loadItemCompendium(): Promise<DdbItem[]> {
+  // Boundary check before the early singleton/cache return (see loadSpellCompendium).
+  const snapshot = captureSession();
+
   if (itemCompendium) return itemCompendium;
 
   const cached = referenceCache.get("item-compendium");
@@ -593,6 +635,8 @@ async function loadItemCompendium(): Promise<DdbItem[]> {
   const json = await resp.json() as { data?: DdbItem[] } | DdbItem[];
   const items = (Array.isArray(json) ? json : json.data) ?? [];
 
+  // Don't cache one account's item list into another account's generation.
+  assertSessionCurrent(snapshot);
   itemCompendium = items;
   referenceCache.set("item-compendium", JSON.stringify(items));
   return items;

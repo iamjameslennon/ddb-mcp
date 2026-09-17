@@ -1,10 +1,11 @@
 // Fetch rule-data and emit every language with rpgSourceId != null,
 // formatted as TypeScript Record<number, string> entries ready to paste.
-import { sessionFetch, getCobaltToken } from "../src/session-fetch.js";
+import { beginAuthenticatedSession } from "../src/session-fetch.js";
 
-const { token } = await getCobaltToken();
+// Single authenticated-fetch path: token + request bound to one snapshot.
+const session = await beginAuthenticatedSession();
 const url = "https://character-service.dndbeyond.com/character/v5/rule-data?v=%40dndbeyond%2Fcharacter-app%401.70.129";
-const resp = await sessionFetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+const resp = await session.fetch(url, { headers: { Accept: "application/json" } });
 const body = await resp.json() as Record<string, unknown>;
 
 type Lang = { id: number; name: string; rpgSourceId: number | null };
