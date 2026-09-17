@@ -8,16 +8,31 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const sessionMocks = vi.hoisted(() => ({
   fetch: vi.fn(),
+  // Records the Authorization header the bound `session.fetch` would carry, so
+  // we can assert the campaign request rides the Bearer minted from its bound
+  // snapshot (regression: this direct assertion was lost when campaign.ts moved
+  // to the single authenticated-fetch path).
+  boundCalls: [] as Array<{ url: string; auth: string }>,
 }));
 
 vi.mock("../src/session-fetch.js", () => ({
   hasValidSession: vi.fn(() => true),
-  beginAuthenticatedSession: vi.fn(async () => ({
-    token: "tok",
-    userId: "99",
-    generation: 1,
-    fetch: sessionMocks.fetch,
-  })),
+  beginAuthenticatedSession: vi.fn(async () => {
+    const token = "tok";
+    // Mirror the real bound fetch: attach `Authorization: Bearer <token>` from
+    // the snapshot's cobalt token, then delegate to the response mock.
+    const fetch = (url: string, opts?: RequestInit) => {
+      sessionMocks.boundCalls.push({ url, auth: `Bearer ${token}` });
+      return sessionMocks.fetch(url, opts);
+    };
+    return { token, userId: "99", generation: 1, fetch };
+  }),
+  // Lifecycle primitives used by campaign.ts's invalidation hook + cache-write
+  // guard. No-ops here; the real cross-module lifecycle is exercised in
+  // tests/session-consumers.test.ts.
+  onSessionInvalidated: vi.fn(() => () => {}),
+  captureSession: vi.fn(() => ({ generation: 1, state: { kind: "authenticated" }, signal: { aborted: false } })),
+  assertSessionCurrent: vi.fn(),
 }));
 
 import { listMyCampaigns, getCampaign, invalidateCampaignCache } from "../src/tools/campaign.js";
@@ -53,7 +68,18 @@ const CHARACTERS_RESPONSE = [
 describe("listMyCampaigns", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionMocks.boundCalls.length = 0;
     invalidateCampaignCache();
+  });
+
+  it("carries the Bearer from its bound snapshot on the campaign request", async () => {
+    boundFetch.mockResolvedValue(mockResponse(CAMPAIGNS_RESPONSE));
+
+    await listMyCampaigns();
+
+    const campaignCall = sessionMocks.boundCalls.find(c => c.url.includes("/user-campaigns"));
+    expect(campaignCall).toBeDefined();
+    expect(campaignCall!.auth).toBe("Bearer tok");
   });
 
   it("returns a list of campaigns with correct role assignment", async () => {

@@ -4,7 +4,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
-import { getBrowser, getContext, closeBrowser } from "./browser.js";
+import { getBrowser, getContext, closeBrowser, beginLoginSession, endLoginSession } from "./browser.js";
 import { login } from "./auth.js";
 import { getCharacter, downloadCharacter, listCharacters, parseCharacter, findCharacterByName, getDefinition, clearCharacterCache } from "./tools/character.js";
 import { getCampaign, listMyCampaigns, invalidateCampaignCache } from "./tools/campaign.js";
@@ -41,12 +41,6 @@ async function getSharedContext() {
   return context;
 }
 
-// Login-specific context — opens a visible window for the OAuth flow
-async function getLoginContext() {
-  const browser = await getBrowser(false);
-  const context = await getContext(browser);
-  return context;
-}
 
 // ─── ddb_login ────────────────────────────────────────────────────────────────
 server.tool(
@@ -57,18 +51,20 @@ server.tool(
   { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   async () => {
     try {
-      const context = await getLoginContext();
+      // Login gets its own deliberately-owned context (never the shared,
+      // possibly revoked, authenticated one). endLoginSession() closes it in the
+      // finally below — the session cookies are saved to disk, so no browser is
+      // needed for future API-based tool calls.
+      const context = await beginLoginSession();
       const result = await login(context);
-      // Close the browser immediately after saving the session — no need to
-      // keep it open since all API-based tools use the saved cookies directly.
-      await closeBrowser();
       return { content: [{ type: "text", text: `${result}\nBrowser closed. Session saved to disk — no browser needed for future requests.` }] };
     } catch (err) {
-      // Still try to close the browser even if login failed
-      await closeBrowser().catch(() => {});
       const msg = err instanceof Error ? err.message : String(err);
       process.stderr.write(`[ddb-mcp] ddb_login error: ${msg}\n`);
       return { content: [{ type: "text", text: `Login failed: ${msg}` }], isError: true };
+    } finally {
+      // Always tear down the login browser and release the login lock.
+      await endLoginSession().catch(() => {});
     }
   }
 );

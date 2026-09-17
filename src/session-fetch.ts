@@ -35,12 +35,20 @@ import {
 } from "./session-state.js";
 
 // Re-export the session-file location + permission helper + typed error so
-// existing importers (browser.ts, tools, tests) keep working unchanged.
+// existing importers (browser.ts, tools, tests) keep working unchanged. The
+// lifecycle primitives (onSessionInvalidated / captureSession /
+// assertSessionCurrent) are re-exported too so consumer + browser modules bind
+// their account-derived state to a generation through this single import
+// surface rather than reaching into session-state directly.
 export {
   SESSION_DIR,
   SESSION_PATH,
   tightenSessionPermissions,
   SessionChangedError,
+  onSessionInvalidated,
+  captureSession,
+  assertSessionCurrent,
+  type SessionSnapshot,
 } from "./session-state.js";
 
 // One-time Windows migration notice. Releases up to v2.6.4 wrote the session

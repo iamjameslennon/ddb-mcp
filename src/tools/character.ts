@@ -8,7 +8,10 @@
  * thin re-exports of the moved entry points.
  */
 
-import { sessionFetch, hasValidSession, beginAuthenticatedSession } from "../session-fetch.js";
+import {
+  sessionFetch, hasValidSession, beginAuthenticatedSession,
+  captureSession, assertSessionCurrent, onSessionInvalidated,
+} from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
 import { writeFileSync, mkdirSync, realpathSync } from "fs";
 import { join, resolve, relative, basename, dirname, isAbsolute } from "path";
@@ -37,6 +40,16 @@ const characterCache = new TtlCache<string>(CHARACTER_CACHE_TTL_MS, 50);
 export function clearCharacterCache(): void {
   characterCache.clear();
 }
+
+// Detach account-derived character JSON on every session transition (logout,
+// account replacement, revoke). Registered once per module lifetime. This is
+// the conservative option permitted by the brief: we clear the WHOLE character
+// cache — including any anonymous public-character entries — rather than
+// partition it by generation. The public Open5e cache lives in open5e.ts and is
+// intentionally left untouched here.
+onSessionInvalidated(() => {
+  characterCache.clear();
+});
 
 /**
  * Resolve a character name to a numeric ID using the character list API.
@@ -99,6 +112,15 @@ export async function getCharacter(
   characterId: string
 ): Promise<string> {
   const cacheKey = `character:${characterId}`;
+
+  // Observe the on-disk authority BEFORE the early cache return. captureSession
+  // runs the boundary check, so a pending logout/replacement fires the
+  // invalidation hook (which clears this cache) before we read it. Without this,
+  // an early cache hit could hand back account A's PRIVATE character after A was
+  // revoked, having never re-read the authority.
+  const snapshot = captureSession();
+  const loggedIn = snapshot.state.kind === "authenticated" && hasValidSession();
+
   const cached = characterCache.get(cacheKey);
   if (cached !== undefined) return cached;
 
@@ -106,13 +128,18 @@ export async function getCharacter(
 
   // Public characters work without auth. Use session cookies if available so
   // private/campaign-only characters owned by the logged-in user also work.
-  const resp = hasValidSession()
+  const resp = loggedIn
     ? await sessionFetch(url)
     : await fetch(url, { headers: { Accept: "application/json" } });
 
   if (resp.ok) {
     const result = await resp.json();
     const json = JSON.stringify(result);
+    // The body parse is async: an account change could have landed while it was
+    // in flight. For the authenticated path, refuse to cache A's private
+    // character into a new generation. (The anonymous public path has no
+    // account-bound data to protect, so it isn't guarded.)
+    if (loggedIn) assertSessionCurrent(snapshot);
     characterCache.set(cacheKey, json);
     return json;
   }

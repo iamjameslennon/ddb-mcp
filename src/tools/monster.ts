@@ -9,7 +9,10 @@
  * https://www.dndbeyond.com/api/config/json and cached for 24 h.
  */
 
-import { sessionFetch, beginAuthenticatedSession, hasValidSession } from "../session-fetch.js";
+import {
+  sessionFetch, beginAuthenticatedSession, hasValidSession,
+  captureSession, assertSessionCurrent, onSessionInvalidated,
+} from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
 import { wrapUntrusted } from "../utils.js";
 import { o5SearchMonsters, o5GetMonster } from "../open5e.js";
@@ -40,6 +43,15 @@ export function clearMonsterCache(): void {
   monsterCache.clear();
 }
 
+// Drop account-derived monster + game-config state on every session transition.
+// The monster service is gated by the cobalt token, and the game config is
+// fetched with session cookies; `configCache` is cleared conservatively until
+// its account independence is established. Registered once per module lifetime.
+onSessionInvalidated(() => {
+  monsterCache.clear();
+  configCache = null;
+});
+
 // ── Game config ───────────────────────────────────────────────────────────────
 
 interface GameConfig {
@@ -52,6 +64,9 @@ interface GameConfig {
 let configCache: GameConfig | null = null;
 
 async function getGameConfig(): Promise<GameConfig | null> {
+  // Boundary check before the early singleton return, so a pending transition
+  // fires the invalidation hook (which nulls configCache) before we reuse it.
+  const snapshot = captureSession();
   if (configCache) return configCache;
   try {
     const resp = await sessionFetch(CONFIG_URL);
@@ -59,6 +74,8 @@ async function getGameConfig(): Promise<GameConfig | null> {
     const json = await resp.json() as { data?: GameConfig } | GameConfig;
     const cfg = (json as { data?: GameConfig }).data ?? (json as GameConfig);
     if (cfg.challengeRatings) {
+      // Don't cache one account's config into another account's generation.
+      assertSessionCurrent(snapshot);
       configCache = cfg;
       return cfg;
     }
@@ -299,10 +316,12 @@ export async function searchMonsters(params: {
   if (cached !== undefined) {
     response = JSON.parse(cached) as MonsterListResponse;
   } else {
+    const snapshot = captureSession();
     const url = `${MONSTER_SERVICE}/v1/Monster?search=${encodeURIComponent(searchTerm)}&skip=0&take=${take}`;
     const resp = await monsterFetch(url);
     if (!resp.ok) throw new Error(`Monster search failed: ${resp.status} ${resp.statusText}`);
     response = await resp.json() as MonsterListResponse;
+    assertSessionCurrent(snapshot);
     monsterCache.set(cacheKey, JSON.stringify(response));
   }
 
@@ -367,9 +386,11 @@ export async function getMonster(monsterName: string): Promise<string> {
     if (cachedSearch !== undefined) {
       searchResp = JSON.parse(cachedSearch) as MonsterListResponse;
     } else {
+      const snapshot = captureSession();
       const resp = await monsterFetch(searchUrl);
       if (!resp.ok) throw new Error(`Monster search failed: ${resp.status} ${resp.statusText}`);
       searchResp = await resp.json() as MonsterListResponse;
+      assertSessionCurrent(snapshot);
       monsterCache.set(searchCacheKey, JSON.stringify(searchResp));
     }
 
@@ -391,9 +412,11 @@ export async function getMonster(monsterName: string): Promise<string> {
     if (cachedDetail !== undefined) {
       detail = JSON.parse(cachedDetail) as MonsterSingleResponse;
     } else {
+      const snapshot = captureSession();
       const resp = await monsterFetch(detailUrl);
       if (!resp.ok) throw new Error(`Monster fetch failed: ${resp.status} ${resp.statusText}`);
       detail = await resp.json() as MonsterSingleResponse;
+      assertSessionCurrent(snapshot);
       monsterCache.set(detailCacheKey, JSON.stringify(detail));
     }
 

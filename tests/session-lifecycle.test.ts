@@ -239,6 +239,31 @@ describe("late token responses cannot resurrect old authority", () => {
   });
 });
 
+describe("re-exported onSessionInvalidated wires consumer hooks to real transitions", () => {
+  it("fires a registered hook on an unobserved deletion and on a login (invalidateSessionCache)", async () => {
+    setSessionFile(sessionJson("SECRET_A"));
+
+    const hook = vi.fn();
+    const unsubscribe = sf.onSessionInvalidated(hook);
+
+    // Observe account A as the baseline, then delete the file. The next boundary
+    // check must fire the consumer hook (this is exactly how character.ts,
+    // reference.ts, monster.ts and campaign.ts clear their account caches).
+    sf.hasValidSession();
+    setSessionFile(null);
+    sf.hasValidSession();
+    expect(hook).toHaveBeenCalledTimes(1);
+
+    // A login publishes one transition too.
+    sf.invalidateSessionCache();
+    expect(hook).toHaveBeenCalledTimes(2);
+
+    unsubscribe();
+    sf.invalidateSessionCache();
+    expect(hook).toHaveBeenCalledTimes(2); // no further calls after unsubscribe
+  });
+});
+
 describe("unchanged valid session reuses credentials but never skips the check", () => {
   it("reuses the cached JWT across calls while the file is unchanged", async () => {
     setSessionFile(sessionJson("SECRET_A"));

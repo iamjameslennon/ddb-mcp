@@ -1,4 +1,8 @@
-import { beginAuthenticatedSession, hasValidSession, type AuthenticatedSession } from "../session-fetch.js";
+import {
+  beginAuthenticatedSession, hasValidSession,
+  captureSession, assertSessionCurrent, onSessionInvalidated,
+  type AuthenticatedSession,
+} from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
 
 const CAMPAIGN_API = "https://www.dndbeyond.com/api/campaign/stt";
@@ -9,6 +13,12 @@ const campaignCache = new TtlCache<string>(5 * 60_000, 20);
 export function invalidateCampaignCache(): void {
   campaignCache.clear();
 }
+
+// The campaign list is the current account's private membership — drop it on
+// every session transition. Registered once per module lifetime.
+onSessionInvalidated(() => {
+  campaignCache.clear();
+});
 
 interface CampaignSummary {
   id: number;
@@ -39,11 +49,15 @@ async function fetchActiveCampaigns(session: AuthenticatedSession): Promise<Camp
   const cached = campaignCache.get(cacheKey);
   if (cached) return JSON.parse(cached) as CampaignSummary[];
 
+  const snapshot = captureSession();
   const resp = await campaignFetch(session, `${CAMPAIGN_API}/user-campaigns`);
   if (!resp.ok) throw new Error(`Campaign API returned ${resp.status}`);
   assertJson(resp);
   const json = await resp.json() as { status: string; data: CampaignSummary[] };
   const campaigns = json.data ?? [];
+  // The body parse is async: refuse to cache (or return) account A's campaign
+  // list if the account was replaced while it was in flight.
+  assertSessionCurrent(snapshot);
   campaignCache.set(cacheKey, JSON.stringify(campaigns));
   return campaigns;
 }
