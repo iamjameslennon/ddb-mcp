@@ -34,19 +34,30 @@ The central architectural split is between tools that need a Playwright browser 
 - Exchanges cookies for a short-lived cobalt JWT via `getCobaltToken()`
 - All character, monster, spell, item, and condition tools use this path
 - `sessionFetch()` injects the cookie header into native Node `fetch`
+- Every credential access binds to a `SessionSnapshot` from `src/session-state.ts` (see **Revocable session lifecycle** below) and re-checks on-disk authority before dispatch — a deleted/replaced session file, or a `ddb_logout` revoke, stops the old account's credentials at the next protected operation with no explicit invalidation call required
 
 **Browser-based (Playwright)** — `src/browser.ts`
 - Required for: `ddb_login` (OAuth flow, visible window), `ddb_navigate`, `ddb_interact`, `ddb_get_page`, `ddb_search_site`, `ddb_list_campaigns`, `ddb_get_campaign`, `ddb_list_library`, `ddb_read_book`
-- Singleton browser/context (`getBrowser` / `getContext`) — lazy-initialized, shared across calls
+- Singleton browser/context (`getBrowser` / `getContext`) — lazy-initialized, shared across calls, bound to the generation they were opened under (an `onSessionInvalidated` hook closes and detaches the shared context/browser on every session transition, including a `ddb_logout` revoke — `revokeSession()` awaits that close and reports if it fails)
 - `ddb_login` forces `headless: false`; all other browser tools use `headless: true`
 - Tools that auto-close the browser call `closeBrowser()` at the end; navigate/interact tools leave it open intentionally
+- Login uses a deliberately separate browser/context (`beginLoginSession()`/`endLoginSession()`) from the shared authenticated one, so a login can't reuse a possibly-revoked context and a revoke mid-login can't be raced into recreating a just-deleted session (`saveSession()` re-checks the generation it began under)
+
+### Revocable session lifecycle — `src/session-state.ts`
+
+Owns the single authoritative answer to "which account are we, right now?" and sits below every other module (never imports a tool module). A "generation" is an opaque, process-local, monotonically-increasing token; two `SessionSnapshot`s share a generation iff they describe the same on-disk session-file content. `captureSession()` re-reads the file on every call — this re-read, not a file watcher or mtime check, is what makes deletion/replacement/corruption observed at the next protected operation. Any observed change advances the generation, aborts in-flight work (via `AbortSignal`), detaches cached state, and fires every callback registered with `onSessionInvalidated()` (session-fetch's cobalt-JWT cache, `browser.ts`'s shared context/browser, and each tool module's account-derived cache all register one).
+
+`revokeSession()` — the primitive behind `ddb_logout` — blocks new authenticated operations immediately (`revoked` flag, checked before any file read), invalidates in-memory state, deletes the saved session file (`rmSync(..., { force: true })`, ENOENT-safe), then `Promise.allSettled`s every registered async cleanup hook (currently just the browser close) before resolving. Repeated calls are idempotent. If file deletion or a cleanup hook throws, `revokeSession()` still leaves the process-local `revoked` flag set — no old-file reload, no silent "logout succeeded" — and rejects with an `Error` naming which step failed. A subsequent `ddb_login` clears the flag via `invalidateSessionCache() → clearRevoked()`, establishing fresh authority. See [README's Logging out section](README.md#logging-out) for the user-facing guarantee and its limits (detection is at the next protected operation, not instantaneous; stop the process for immediate termination).
+
+**Future design note:** any later stateless-safe/browser-factory redesign must adopt this same lifecycle rather than reinvent it — factory-created browsers need to bind each created context to a captured `SessionSnapshot` and register the same kind of `onSessionInvalidated` revocation hook `browser.ts` uses today, and any future on-disk cache (e.g. a persisted spell compendium) needs a durable per-account/session key plus validation at read time, not the in-memory `generation` counter alone — it's process-local and resets on restart, so it cannot identify which account a given disk-cache entry belongs to across process restarts.
 
 ### Key modules
 
 | File | Role |
 |------|------|
 | `src/index.ts` | MCP server setup, all tool registrations |
-| `src/session-fetch.ts` | Cookie loading, cobalt JWT exchange, `sessionFetch()`, retry logic. Module-level singleton state — intentional for single-user MCP server. |
+| `src/session-state.ts` | The revocable session lifecycle owner — `captureSession()`/`assertSessionCurrent()` (generation boundary check), `onSessionInvalidated()` (consumer cleanup hooks), `revokeSession()` (full revocation, behind `ddb_logout`). Session-file path resolution (`SESSION_DIR`/`SESSION_PATH`) lives here too; re-exported from `session-fetch.ts` for import compatibility. |
+| `src/session-fetch.ts` | Cookie loading, cobalt JWT exchange, `sessionFetch()`, retry logic — all bound to a `SessionSnapshot` from `session-state.ts`. Module-level singleton state — intentional for single-user MCP server. Deliberately does NOT re-export `revokeSession()`; `index.ts` imports it straight from `session-state.ts`. |
 | `src/browser.ts` | Playwright browser/context lifecycle, `saveSession()`. Sandbox enabled by default; set `DDB_NO_SANDBOX=1` for containers. |
 | `src/auth.ts` | Login flow — navigates to DDB login, polls until redirect, saves session |
 | `src/cache.ts` | Generic in-memory TTL cache (`TtlCache<T>`) with FIFO eviction |
@@ -69,8 +80,9 @@ The central architectural split is between tools that need a Playwright browser 
 - **Character JSON**: 60 s TTL in `character.ts`
 - **Spells/items/compendium**: 24 h TTL in `reference.ts` (5 min when build was partial) — first spell call builds the full compendium by firing 8 parallel `/game-data/spells?classId=X&classLevel=20` requests, one per spellcasting class; cantrips and leveled spells come back in one response
 - **Open5e responses**: 1 h TTL in `open5e.ts`
-- **Cobalt JWT**: cached in-memory until 60 s before expiry (`session-fetch.ts`)
-- **Session cookies**: in-memory after first disk read; invalidated by `invalidateSessionCache()` when a new session is saved
+- **Cobalt JWT**: cached in-memory until 60 s before expiry, stamped with the generation it was minted under (`session-fetch.ts`)
+- **Session cookies**: in-memory after first disk read; invalidated by `invalidateSessionCache()` when a new session is saved, and by `revokeSession()` (`ddb_logout`)
+- **Every account-derived cache** (character JSON, spells/compendium, monster stat blocks, campaigns) registers an `onSessionInvalidated()` hook and is dropped on any session transition — login, account swap, or `ddb_logout` — not just on its own TTL expiry
 
 ### Tool notes
 
@@ -84,7 +96,8 @@ The central architectural split is between tools that need a Playwright browser 
 - `ddb_roll_treasure` accepts `type: "individual" | "hoard"` and `cr` of the monster(s)
 - `ddb_interact` requires `confirm_fill: true` when `action` is `"fill"` — safety gate against prompt-injection-triggered form submissions
 - `ddb_download_character` `output_path` must be under `~/Downloads` or `~/Documents`
-- Every tool registration passes an MCP annotations object (`READ_ONLY_NET` / `READ_ONLY_LOCAL` consts in `index.ts`, or an inline object for mutating tools) so clients can scope permission prompts. `ddb_interact` and `ddb_download_character` are the only `destructiveHint: true` tools. Keep annotations accurate when adding tools
+- `ddb_logout` takes no input, routes through `revokeSession()` in `session-state.ts`, and is a local-only revoke — it never calls a D&D Beyond endpoint. Repeated calls are idempotent. On a cleanup failure (file unlink or browser close) it reports the failure and stays locally revoked rather than claiming a clean logout or falling back to the old session
+- Every tool registration passes an MCP annotations object (`READ_ONLY_NET` / `READ_ONLY_LOCAL` consts in `index.ts`, or an inline object for mutating tools) so clients can scope permission prompts. `ddb_interact`, `ddb_download_character`, and `ddb_logout` are the only `destructiveHint: true` tools (36 tools total). Keep annotations accurate when adding tools
 
 ### parseCharacterData notes
 

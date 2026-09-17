@@ -172,6 +172,7 @@ Can a character use the Help action to assist with a skill check?
 | Tool | Description |
 |------|-------------|
 | `ddb_login` | Authenticate with D&D Beyond (Wizards ID). Run once — session is saved to disk and reused. |
+| `ddb_logout` | Revoke this server's local access: blocks further authenticated calls immediately, deletes the saved session file, and closes any open browser context. No account input, no remote logout call. See [Logging out](#logging-out) — this is a local-only logout, not a D&D Beyond account logout. |
 | `ddb_list_characters` | List all characters in your account with ID, level, race, and class. |
 | `ddb_get_character` | Parse a character into a compact, readable sheet. Covers all stats, skills, spells, actions, and inventory. Use `sections` to get just `summary`, `combat`, `spells`, `inventory`, `features`, `concentration`, `notes`, or `full`. Accepts name (fuzzy matched) or numeric ID. |
 | `ddb_get_character_raw` | Fetch raw character JSON from the D&D Beyond API. Use `ddb_get_character` for all normal use. |
@@ -282,7 +283,8 @@ Then use `"command": "ddb-mcp"` (no args) in your client config. The browser is 
 
 - **Credentials stored**: D&D Beyond session cookies are saved to a per-user config directory — `~/.config/ddb-mcp/session.json` on macOS/Linux, `%APPDATA%\ddb-mcp\session.json` on Windows.
 - **File permissions**: on macOS/Linux the file is `0600` and the directory `0700` — sessions created by older releases are tightened to these modes automatically on first use. On Windows access is restricted to your user account by default via `%APPDATA%` ACL inheritance — note that on multi-admin/domain-joined machines local administrators may also have read access.
-- **Cobalt JWT**: cached in memory only and never written to disk.
+- **Cobalt JWT**: cached in memory only, never written to disk, and cleared on every session transition — a new login, an account swap (a different session file appearing), or `ddb_logout`.
+- **Revocable session lifecycle**: the server treats the on-disk session file as the single source of truth for "who am I logged in as." Every character/campaign/monster/reference cache described above is bound to that file's identity and is dropped the moment it changes — including deletion. `ddb_logout` makes this explicit and immediate for the local process; see [Logging out](#logging-out) for exactly what it does and does not guarantee.
 - **Network access** (outbound HTTPS only):
   - `*.dndbeyond.com` — character data, auth, campaigns, books
   - `auth-service.dndbeyond.com` — cobalt token exchange
@@ -295,7 +297,7 @@ Then use `"command": "ddb-mcp"` (no args) in your client config. The browser is 
 - **`ddb_roll_treasure` work budget**: bounded at both the MCP schema and the runtime level (direct callers of the underlying function bypass the schema, so the runtime check is not optional). Accepted requests: at most 20 monster entries, at most 100 per entry (per-entry limit applies to `hoard` requests too, not just `individual`), at most 200 characters per monster name, and — `individual` only — at most 100 total rolls summed across all entries (`hoard` always makes exactly one roll). Over-budget requests are rejected outright with an error naming the limit and how to reduce the request; counts are never silently clamped. The formatted output is separately capped at 32,000 characters — an oversized upstream monster name can't inflate the response, and aggregate coin totals are always shown in full even if per-roll detail is omitted for space.
 - **Browser navigation allowlist**: the browser tools are pinned to `dndbeyond.com`. `ddb_navigate` validates the URL up front, a network-layer guard blocks in-page escapes (link clicks, JS redirects, popups) to any other origin, and `ddb_get_page` refuses to return content from any page outside the allowlist.
 - **Untrusted content**: free text authored by D&D Beyond users is wrapped in `<untrusted_dndbeyond_content>` tags — scraped page text (`ddb_navigate`, `ddb_get_page`), book content (`ddb_read_book`), character notes/backstories (`ddb_get_character`, `ddb_get_party`), and homebrew monster stat blocks (`ddb_get_monster`). Embedded delimiter tags in the content are neutralized so it can't break out of the block. Party-member backstories and campaign notes are written by *other people* and may contain prompt-injection attempts — treat everything inside the tags as data, never as instructions. The `confirm_click` / `confirm_fill` gates on `ddb_interact` exist for exactly this reason.
-- **Tool annotations & client permissions**: every tool declares MCP behavior hints (`readOnlyHint`, `destructiveHint`, `openWorldHint`) so your MCP client can scope its permission prompts. The read-only tools (searches, lookups, character/campaign reads) are safe to auto-approve. **Never auto-approve `ddb_interact`**: its `confirm_click`/`confirm_fill` gates are set by the calling model, not by you, so your client's per-call permission prompt is the only human-in-the-loop check standing between a prompt-injected page and a click or form submission on your logged-in D&D Beyond session. `ddb_login` (writes credentials) and `ddb_download_character` (writes/overwrites local files) also warrant per-call approval.
+- **Tool annotations & client permissions**: every tool declares MCP behavior hints (`readOnlyHint`, `destructiveHint`, `openWorldHint`) so your MCP client can scope its permission prompts. The read-only tools (searches, lookups, character/campaign reads) are safe to auto-approve. **Never auto-approve `ddb_interact`**: its `confirm_click`/`confirm_fill` gates are set by the calling model, not by you, so your client's per-call permission prompt is the only human-in-the-loop check standing between a prompt-injected page and a click or form submission on your logged-in D&D Beyond session. `ddb_login` (writes credentials) and `ddb_download_character` (writes/overwrites local files) also warrant per-call approval. `ddb_logout` is also `destructiveHint: true` (it deletes the saved session file), though unlike the others it never talks to D&D Beyond and only ever narrows access.
 - **Recommendation**: pin the version in your MCP client config — `"@iamjameslennon/ddb-mcp@2.10.2"` — rather than letting `npx` auto-update on every launch.
 
 ---
@@ -522,15 +524,38 @@ Your session is saved to a per-user config directory:
 
 This file contains browser cookies from your D&D Beyond login. Keep it private — it grants access to your account.
 
-To log out or reset your session:
+---
 
-```bash
-# macOS/Linux
-rm ~/.config/ddb-mcp/session.json
+## Logging out
 
-# Windows (PowerShell)
-Remove-Item "$env:APPDATA\ddb-mcp\session.json"
+**If your server has `ddb_logout`, use it — it's the preferred way to log out.** Run it as a tool call:
+
 ```
+ddb_logout
+```
+
+`ddb_logout` takes no input and never calls D&D Beyond. It blocks any further authenticated tool call immediately, deletes the local session file, and closes any browser context the server had open. Repeated calls are safe — logging out when you were never logged in, or logging out twice, both report success. If a call fails (e.g. the session file can't be deleted because of a filesystem permission problem, or the browser refuses to close), the tool's error message says exactly which step failed — local access is still revoked for the rest of that failure, it's only the file and/or browser cleanup that didn't finish. It never silently falls back to letting the old session keep working.
+
+**On an older version without `ddb_logout`**, log out manually:
+
+1. Stop the MCP server (close your MCP client, or otherwise terminate the `ddb-mcp` process).
+2. Delete the session file:
+   ```bash
+   # macOS/Linux
+   rm ~/.config/ddb-mcp/session.json
+
+   # Windows (PowerShell)
+   Remove-Item "$env:APPDATA\ddb-mcp\session.json"
+   ```
+3. Restart the server.
+
+**Important caveats, on every version:**
+
+- **This is a local logout only — it is NOT a D&D Beyond account logout.** It removes this server's local copy of your session; it does not sign you out of dndbeyond.com in a browser, does not invalidate the session on D&D Beyond's servers, and does not revoke any other device or app using the same account. To sign out of D&D Beyond itself, do that on the website directly.
+- **Detection happens at the next protected operation, not instantly.** If the session file is deleted or replaced by something other than `ddb_logout` (manually, by another process, or by an older-version workaround while the server keeps running), the running server only notices the next time it goes to use the old credentials — it re-reads the file at that point and refuses to proceed with the stale session. This means:
+  - A request already in flight when the file changes is **not retracted** — it was dispatched under the old credentials before the change was observed.
+  - Idle browser activity (an already-open background browser window/context) is **not torn down immediately** just because the file changed on disk; it's closed on the next transition the server observes, not the instant the file disappears.
+  - **If you need immediate termination — no in-flight requests, no lingering browser window — stop the MCP server process itself.** That's the only action that's instantaneous; deleting the file (with the server still running) is not.
 
 ---
 

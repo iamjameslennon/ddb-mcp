@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { getBrowser, getContext, closeBrowser, beginLoginSession, endLoginSession } from "./browser.js";
 import { login } from "./auth.js";
+import { revokeSession } from "./session-state.js";
 import { getCharacter, downloadCharacter, listCharacters, parseCharacter, findCharacterByName, getDefinition, clearCharacterCache } from "./tools/character.js";
 import { getCampaign, listMyCampaigns, invalidateCampaignCache } from "./tools/campaign.js";
 import { getParty } from "./tools/party.js";
@@ -83,6 +84,48 @@ server.tool(
       const msg = err instanceof Error ? err.message : String(err);
       process.stderr.write(`[ddb-mcp] ddb_close_browser error: ${msg}\n`);
       return { content: [{ type: "text", text: `Failed to close browser: ${msg}` }], isError: true };
+    }
+  }
+);
+
+// ─── ddb_logout ───────────────────────────────────────────────────────────────
+server.tool(
+  "ddb_logout",
+  "Revoke this server's local access to D&D Beyond: blocks any further authenticated tool call immediately, deletes the saved session file on disk, and closes any open browser context. Safe to call repeatedly, including when you were never logged in. This is a LOCAL logout only — it does NOT log your account out on the D&D Beyond website, and it does not call any D&D Beyond endpoint. Run ddb_login again afterward to establish a fresh session.",
+  {},
+  // destructiveHint: deletes the local session file and closes open browser
+  // state. idempotentHint: repeated calls are safe and converge on the same
+  // revoked outcome. openWorldHint: false — this never talks to D&D Beyond.
+  { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  async () => {
+    try {
+      await revokeSession();
+      return {
+        content: [{
+          type: "text",
+          text:
+            "Logged out locally. New authenticated requests are blocked immediately; the saved " +
+            "session file has been deleted and any open browser context has been closed. This does " +
+            "not log your account out on the D&D Beyond website — only this server's local copy of " +
+            "your session was removed. Run ddb_login to authenticate again.",
+        }],
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[ddb-mcp] ddb_logout error: ${msg}\n`);
+      return {
+        content: [{
+          type: "text",
+          text:
+            "Local access is revoked and no further tool call will use the previous credentials, " +
+            `but logout did not fully complete: ${msg}. The saved session file and/or an open ` +
+            "browser context may still be present — this is NOT a clean, fully-deleted logout. If " +
+            "immediate termination of all background activity is required, stop the MCP server " +
+            "process. This does not affect your D&D Beyond account on the website either way. Run " +
+            "ddb_login when you're ready to establish a fresh session.",
+        }],
+        isError: true,
+      };
     }
   }
 );
