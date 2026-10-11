@@ -269,12 +269,23 @@ describe("character delayed body parse cannot cache A into B", () => {
 
     let releaseBody!: (v: unknown) => void;
     const body = new Promise((r) => { releaseBody = r; });
+    // Resolves once getCharacter is awaiting the body — i.e. past the token
+    // exchange AND every pre-parse authority check (snapshotFetch re-checks
+    // after the response arrives, so "request dispatched" is too early: a swap
+    // there is caught before the parse and never reaches the cache guard).
+    let parseStarted!: () => void;
+    const awaitingBody = new Promise<void>((r) => { parseStarted = r; });
     fetchMock.mockImplementation(characterServiceMock(charUrl, () =>
-      ({ ok: true, status: 200, statusText: "", headers: { get: () => "application/json" }, json: () => body } as unknown as Response)
+      ({
+        ok: true, status: 200, statusText: "", headers: { get: () => "application/json" },
+        json: () => { parseStarted(); return body; },
+      } as unknown as Response)
     ));
 
     const pending = character.getCharacter("55").catch((e) => e);
-    // Replace the account while the body is in flight, then release account A's body.
+    // Replace the account while the body is in flight, then release account A's
+    // body: only the post-parse guard stands between it and the cache.
+    await awaitingBody;
     setSessionFile(sessionJson("SECRET_B"));
     releaseBody({ data: { name: "PRIVATE_A" } });
 
@@ -343,7 +354,7 @@ describe("character fetch authenticates with a snapshot-bound Bearer token", () 
     expect(authOf(charCalls()[0])).toBe("");
   });
 
-  it("explains a 403 after a failed token exchange as an auth problem, not a private character", async () => {
+  it("says to re-login when auth-service rejects the session (401) and the character then needs auth", async () => {
     setSessionFile(sessionJson("SECRET_A"));
     fetchMock.mockImplementation(async (url: string) => {
       if (url === COBALT_URL) return jsonResponse({}, 401);
@@ -351,10 +362,42 @@ describe("character fetch authenticates with a snapshot-bound Bearer token", () 
       return jsonResponse({});
     });
 
-    await expect(character.getCharacter("77")).rejects.toThrow(/authentication failed.*cobalt-token request failed: 401.*ddb_login/s);
+    const err = await character.getCharacter("77").catch((e) => e as Error);
+    expect(err.message).toMatch(/rejected the saved session \(cobalt-token request failed: 401\).*run ddb_login again/);
+    expect(err.message).not.toMatch(/is private/);
   });
 
-  it("never pairs account A's token with account B's cookies across a swap during the token exchange", async () => {
+  it("says to retry, not re-login, when auth-service is unreachable (network error)", async () => {
+    setSessionFile(sessionJson("SECRET_A"));
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === COBALT_URL) throw new TypeError("fetch failed");
+      if (url === charUrl) return jsonResponse({}, 403);
+      return jsonResponse({});
+    });
+
+    const err = await character.getCharacter("77").catch((e) => e as Error);
+    expect(err.message).toMatch(/auth service could not be reached \(fetch failed\).*Try again in a moment/);
+    expect(err.message).not.toMatch(/ddb_login/);
+  });
+
+  it("says to retry, not re-login, when auth-service keeps returning 5xx after retries", async () => {
+    vi.useFakeTimers();
+    setSessionFile(sessionJson("SECRET_A"));
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === COBALT_URL) return jsonResponse({}, 503);
+      if (url === charUrl) return jsonResponse({}, 403);
+      return jsonResponse({});
+    });
+
+    const pending = character.getCharacter("77").catch((e) => e as Error);
+    await vi.runAllTimersAsync(); // skip fetchWithRetry's backoff sleeps
+    const err = await pending;
+    expect(fetchMock.mock.calls.filter((c) => c[0] === COBALT_URL)).toHaveLength(4);
+    expect(err.message).toMatch(/auth service could not be reached \(cobalt-token request failed: 503\).*Try again in a moment/);
+    expect(err.message).not.toMatch(/ddb_login/);
+  });
+
+  it("refuses the request when the account changes during the token exchange", async () => {
     setSessionFile(sessionJson("SECRET_A"));
     privateCharacterMock();
     const realImpl = fetchMock.getMockImplementation()!;
@@ -373,8 +416,47 @@ describe("character fetch authenticates with a snapshot-bound Bearer token", () 
     releaseCobalt();
 
     expect(await pending).toBeInstanceOf(sf.SessionChangedError);
-    // The stale account-A token was never sent anywhere — let alone with B's cookies.
     expect(charCalls()).toHaveLength(0);
+  });
+
+  it("never sends account A's token with account B's cookies when the account changes after the token is issued", async () => {
+    // The swap lands AFTER the token exchange has fully returned and BEFORE the
+    // character request is dispatched — the window a separate getCobaltToken()
+    // + sessionFetch() pair leaves open, since sessionFetch would capture a
+    // fresh (account B) snapshot and attach B's cookies next to A's token.
+    privateCharacterMock();
+    const realImpl = fetchMock.getMockImplementation()!;
+    let tokenIssued = false;
+    fetchMock.mockImplementation(async (url: string, opts?: RequestInit) => {
+      const resp = await realImpl(url, opts);
+      if (url !== COBALT_URL) return resp;
+      return { ...resp, json: async () => { const b = await resp.json(); tokenIssued = true; return b; } } as Response;
+    });
+
+    // Flip the on-disk session on the first authority read made outside every
+    // token-exchange frame once the token has been issued — i.e. the first read
+    // after beginAuthenticatedSession() (or getCobaltToken()) has returned.
+    const sessionA = sessionJson("SECRET_A");
+    const sessionB = sessionJson("SECRET_B");
+    let swapped = false;
+    fsMock.existsSync.mockReturnValue(true);
+    fsMock.readFileSync.mockImplementation(() => {
+      if (!swapped && tokenIssued) {
+        const limit = Error.stackTraceLimit;
+        Error.stackTraceLimit = Infinity;
+        const stack = new Error().stack ?? "";
+        Error.stackTraceLimit = limit;
+        if (!/getCobaltToken|beginAuthenticatedSession/.test(stack)) swapped = true;
+      }
+      return swapped ? sessionB : sessionA;
+    });
+
+    const result = await character.getCharacter("77").catch((e) => e);
+
+    expect(swapped).toBe(true); // the window was actually exercised
+    expect(result).toBeInstanceOf(sf.SessionChangedError);
+    const mixed = charCalls().filter((c) => /^Bearer /.test(authOf(c)) && cookieOf(c).includes("SECRET_B"));
+    expect(mixed).toHaveLength(0);
   });
 
   it("is 403 for a private character when only cookies are sent (why the Bearer token is needed)", async () => {

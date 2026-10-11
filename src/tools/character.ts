@@ -9,7 +9,7 @@
  */
 
 import {
-  hasValidSession, beginAuthenticatedSession, SessionChangedError,
+  hasValidSession, beginAuthenticatedSession, SessionChangedError, CobaltTokenError,
   captureSession, assertSessionCurrent, onSessionInvalidated,
 } from "../session-fetch.js";
 import type { AuthenticatedSession } from "../session-fetch.js";
@@ -136,6 +136,8 @@ export async function getCharacter(
   // listCharacters(): a separate getCobaltToken() + sessionFetch() pair could
   // send account A's token with account B's cookies across an account swap.
   let resp: Response;
+  // Set only when the token exchange failed and we fell back to anonymous: the
+  // explanation to give if the character then turns out to need auth.
   let authFailure: string | undefined;
   if (loggedIn) {
     let session: AuthenticatedSession | undefined;
@@ -146,11 +148,17 @@ export async function getCharacter(
       // that showed up as an aborted token request rather than the error itself.
       if (e instanceof SessionChangedError) throw e;
       assertSessionCurrent(snapshot);
-      // Token exchange failed (e.g. the server-side session expired). Public
-      // characters don't need auth, so degrade to the anonymous request —
-      // what this path effectively was before — and explain any 401/403 below.
-      authFailure = e instanceof Error ? e.message : String(e);
-      process.stderr.write(`[ddb-mcp] ${authFailure} — fetching character ${characterId} anonymously\n`);
+      // Token exchange failed. Public characters don't need auth, so degrade to
+      // the anonymous request — what this path effectively was before — and
+      // explain any 401/403 below. Only a 401/403 from auth-service means the
+      // saved session itself was rejected; anything else (network error, 5xx
+      // after retries) is an outage that a later retry can get past.
+      const detail = e instanceof Error ? e.message : String(e);
+      const rejected = e instanceof CobaltTokenError && (e.status === 401 || e.status === 403);
+      authFailure = rejected
+        ? `D&D Beyond rejected the saved session (${detail}). Your session may have expired — run ddb_login again.`
+        : `D&D Beyond's auth service could not be reached (${detail}), so the request was sent without authentication. Try again in a moment.`;
+      process.stderr.write(`[ddb-mcp] ${detail} — fetching character ${characterId} anonymously\n`);
     }
     resp = session
       ? await session.fetch(url)
@@ -175,10 +183,7 @@ export async function getCharacter(
 
   // 404 = character doesn't exist; 403 = private
   if (authFailure && (resp.status === 401 || resp.status === 403)) {
-    throw new Error(
-      `Character ${characterId} could not be accessed: authentication failed (${authFailure}). ` +
-      `Your D&D Beyond session may have expired — run ddb_login again.`
-    );
+    throw new Error(`Character ${characterId} could not be accessed: ${authFailure}`);
   }
   if (resp.status === 403) {
     throw new Error(`Character ${characterId} is private and cannot be accessed.`);

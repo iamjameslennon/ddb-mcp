@@ -33,7 +33,8 @@ The central architectural split is between tools that need a Playwright browser 
 - Reads cookies from a per-user config dir — `~/.config/ddb-mcp/session.json` on macOS/Linux, `%APPDATA%\ddb-mcp\session.json` on Windows (written by `ddb_login`)
 - Exchanges cookies for a short-lived cobalt JWT via `getCobaltToken()`
 - All character, monster, spell, item, and condition tools use this path
-- `sessionFetch()` injects the cookie header into native Node `fetch`
+- `sessionFetch()` injects the cookie header into native Node `fetch` — cookies only, no Bearer token
+- character-service (`/character/v5/character/{id}`, `/characters/list`) ignores cookies and requires the cobalt Bearer token — use `beginAuthenticatedSession()`, whose bound `fetch` sends the token and cookies from one snapshot. Never pair a separate `getCobaltToken()` with `sessionFetch()`: each captures its own snapshot, so an account swap between them can send one account's token with another's cookies
 - Every credential access binds to a `SessionSnapshot` from `src/session-state.ts` (see **Revocable session lifecycle** below) and re-checks on-disk authority before dispatch — a deleted/replaced session file, or a `ddb_logout` revoke, stops the old account's credentials at the next protected operation with no explicit invalidation call required
 
 **Browser-based (Playwright)** — `src/browser.ts`
