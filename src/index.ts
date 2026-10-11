@@ -340,14 +340,14 @@ server.tool(
 // ─── ddb_get_monster ──────────────────────────────────────────────────────────
 server.tool(
   "ddb_get_monster",
-  "Get the full stat block for a specific monster from the D&D Beyond compendium. Searches by name (partial match). Defaults to the 2024 version where both editions exist, falling back to Legacy (2014) only when no 2024 version does; pass source to force a specific book. Requires login.",
+  "Get the full stat block for a specific monster from the D&D Beyond compendium. Matches by name: exact, then partial, then D&D Beyond's closest hit (with source, only an exact name in that book counts). Defaults to the official, non-Legacy (2024) entry, falling back to Legacy (2014) only when no non-Legacy one exists; pass source to force a specific book. Requires login.",
   {
     name: z.string().min(1).describe("Monster name (e.g. 'Beholder', 'Adult Red Dragon')"),
     source: z.string().optional()
       .describe("Restrict to one sourcebook — its short code (e.g. 'mm-2024', 'cos', 'rthw', as shown in " +
                 "brackets in ddb_search_monsters results), short name, or full title. Matches reprints too. " +
                 "Many 2014 core monsters (e.g. Zombie) are filed under 'basic-rules-2014', not 'mm-2014'. " +
-                "When omitted, the 2024 version is preferred over Legacy (2014) content."),
+                "When omitted, the official non-Legacy (2024) entry is preferred over Legacy (2014) content."),
   },
   READ_ONLY_NET,
   async ({ name, source }) => {
