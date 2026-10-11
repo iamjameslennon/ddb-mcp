@@ -173,7 +173,20 @@ const CR21_TARGET = monster({ id: 2_000_001, name: "Filler Titan", sourceId: 147
 const WOLF_2014 = monster({ id: 100, name: "Wolf", typeId: 1, isLegacy: true, sourceId: 1, sources: sources(1), armorClass: 13, averageHitPoints: 11 });
 const WOLF_2024 = monster({ id: 101, name: "Wolf", typeId: 1, sourceId: 147, sources: sources(147), armorClass: 12, averageHitPoints: 11 });
 
+// Trait/action markup as the live detail endpoint returns it for the 2024 Giant Shark.
+const GIANT_SHARK_2024 = monster({
+  id: 4776000, name: "Giant Shark", typeId: 1, sourceId: 147, sources: sources(147), averageHitPoints: 92,
+  specialTraitsDescription: "<p><em><strong>Water Breathing.</strong></em> The shark can breathe only underwater.</p>",
+  actionsDescription:
+    "<p><em><strong>Multiattack.</strong></em> The shark makes two Bite attacks.</p>\n" +
+    "<p><em><strong>Bite.</strong> Melee Attack Roll:</em>&#160;<span data-dicenotation=\"1d20+9\">+9</span> " +
+    "(with <a href=\"/sources/dnd/free-rules/rules-glossary#Advantage\">Advantage</a> if the target doesn&rsquo;t " +
+    "have all its Hit Points), reach 5 ft. <em>Hit:</em>&#xA0;22 (3d10 + 6) Piercing damage.</p>\n<p>Fish &amp;#160; chips.</p>",
+  reactionsDescription: "<p><strong>Snap.</strong> It bites back.</p>",
+});
+
 const ALL_MONSTERS = [
+  GIANT_SHARK_2024,
   ZOMBIE_2014, ZOMBIE_2024, ZOMBIE_HOMEBREW, STRAHD_ZOMBIE, ZOMBIE_CLOT_2014, ZOMBIE_CLOT_2024,
   OOZE_CORE, OOZE_ADVENTURE, OOZE_2014, BUGBEAR_2014, BUGBEAR_ADVENTURE, WOLF_2014, WOLF_2024,
   BEHOLDER_2014, BEHOLDER_2024, VAMPIRE_SPAWN_COS, HOMEBREW_IN_BOOK,
@@ -299,6 +312,35 @@ it("rateEncounter with 2014 rules uses the Legacy CR; 2024 rules use the 2024 CR
 });
 
 // ── getMonster with source ────────────────────────────────────────────────────
+
+describe("stat block formatting", () => {
+  it("decodes numeric and named entities, turning non-breaking spaces into plain spaces", async () => {
+    const result = await getMonster("Giant Shark", "mm-2024");
+    expect(result).toContain("Melee Attack Roll: +9 (with Advantage if the target doesn’t have all its Hit Points)");
+    expect(result).toContain("Hit: 22 (3d10 + 6)");
+    const bite = result.split("\n").find(l => l.startsWith("**Bite.**")) ?? "";
+    expect(bite).not.toMatch(/&#|&rsquo;|\u00a0/);
+    expect(bite).toContain("Hit: 22 (3d10 + 6) Piercing damage.");
+    // Decoded once: an escaped entity stays literal text instead of being decoded twice.
+    expect(result).toContain("Fish &#160; chips.");
+  });
+
+  it("names the source book near the header, tagging Legacy entries", async () => {
+    const shark = await getMonster("Giant Shark", "mm-2024");
+    expect(shark.split("\n").slice(0, 3)).toContain("**Source** Monster Manual [mm-2024]");
+    expect(shark).not.toContain("[Legacy]");
+    const zombie2014 = await getMonster("Zombie", "basic-rules-2014");
+    expect(zombie2014).toContain("**Source** Basic Rules (2014) [basic-rules-2014] [Legacy]");
+  });
+
+  it("bolds trait, action, and reaction names", async () => {
+    const result = await getMonster("Giant Shark", "mm-2024");
+    expect(result).toContain("**Water Breathing.** The shark can breathe only underwater.");
+    expect(result).toContain("**Multiattack.** The shark makes two Bite attacks.");
+    expect(result).toContain("**Bite.** Melee Attack Roll:");
+    expect(result).toContain("**Snap.** It bites back.");
+  });
+});
 
 describe("getMonster source filter", () => {
   it("filters server-side with every ID the slug resolves to", async () => {

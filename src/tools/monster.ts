@@ -97,22 +97,49 @@ async function getGameConfig(): Promise<GameConfig | null> {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+const NAMED_ENTITIES: Record<string, string> = {
+  nbsp: " ", amp: "&", lt: "<", gt: ">", quot: '"', apos: "'",
+  ndash: "–", mdash: "—", lsquo: "‘", rsquo: "’", ldquo: "“", rdquo: "”",
+  hellip: "…", times: "×", minus: "−",
+};
+
+/**
+ * Decode HTML entities in one pass (so "&amp;#160;" stays "&#160;"). DDB stat
+ * blocks use numeric entities such as "&#160;" — non-breaking spaces become
+ * plain spaces. Unknown named entities are left as-is.
+ */
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (match, ref: string) => {
+      if (ref[0] !== "#") return NAMED_ENTITIES[ref.toLowerCase()] ?? match;
+      const code = ref[1] === "x" || ref[1] === "X" ? parseInt(ref.slice(2), 16) : parseInt(ref.slice(1), 10);
+      return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
+    })
+    .replace(/\u00a0/g, " ");
+}
+
 function stripHtml(html: string | null | undefined): string {
   if (!html) return "";
-  return html
+  return decodeEntities(html
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n")
     .replace(/<\/li>/gi, "\n")
     .replace(/<li>/gi, "• ")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
+    .replace(/<[^>]+>/g, ""))
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+/**
+ * Stat-block prose (traits, actions, reactions…): like stripHtml, but keeps
+ * DDB's <strong> feature names ("Bite.", "Multiattack.") as Markdown bold.
+ */
+function statBlockText(html: string | null | undefined): string {
+  if (!html) return "";
+  return stripHtml(html.replace(/<(strong|b)\b[^>]*>([\s\S]*?)<\/\1>/gi, (_m, _tag, inner: string) =>
+    inner.replace(/<[^>]+>/g, "").trim()
+      ? inner.replace(/^(\s*)([\s\S]*?)(\s*)$/, "$1**$2**$3")
+      : inner));
 }
 
 function abilityMod(score: number): string {
@@ -370,7 +397,10 @@ function formatStatBlock(m: DdbMonster, accessType: number, config: GameConfig |
 
   const lines: string[] = [];
   lines.push(`# ${m.name}`);
-  lines.push(`*${sizeName} ${typeName}, ${alignment}*\n`);
+  lines.push(`*${sizeName} ${typeName}, ${alignment}*`);
+  // Name the book (as ddb_search_monsters does) so same-named 2014/2024 blocks are distinguishable.
+  if (m.sourceId) lines.push(`**Source** ${sourceLabel(config, m.sourceId)}${m.isLegacy ? " [Legacy]" : ""}`);
+  lines.push("");
   lines.push(`**Armor Class** ${m.armorClass}${m.armorClassDescription ? " " + m.armorClassDescription.trim() : ""}`);
   lines.push(`**Hit Points** ${m.averageHitPoints}${m.hitPointDice?.diceString ? " (" + m.hitPointDice.diceString + ")" : ""}`);
 
@@ -432,27 +462,27 @@ function formatStatBlock(m: DdbMonster, accessType: number, config: GameConfig |
 
   if (m.specialTraitsDescription) {
     lines.push("\n---\n");
-    lines.push(stripHtml(m.specialTraitsDescription));
+    lines.push(statBlockText(m.specialTraitsDescription));
   }
   if (m.actionsDescription) {
     lines.push("\n## Actions\n");
-    lines.push(stripHtml(m.actionsDescription));
+    lines.push(statBlockText(m.actionsDescription));
   }
   if (m.bonusActionsDescription) {
     lines.push("\n## Bonus Actions\n");
-    lines.push(stripHtml(m.bonusActionsDescription));
+    lines.push(statBlockText(m.bonusActionsDescription));
   }
   if (m.reactionsDescription) {
     lines.push("\n## Reactions\n");
-    lines.push(stripHtml(m.reactionsDescription));
+    lines.push(statBlockText(m.reactionsDescription));
   }
   if (m.legendaryActionsDescription) {
     lines.push("\n## Legendary Actions\n");
-    lines.push(stripHtml(m.legendaryActionsDescription));
+    lines.push(statBlockText(m.legendaryActionsDescription));
   }
   if (m.mythicActionsDescription) {
     lines.push("\n## Mythic Actions\n");
-    lines.push(stripHtml(m.mythicActionsDescription));
+    lines.push(statBlockText(m.mythicActionsDescription));
   }
 
   // accessType 4 = restricted — basic stats returned but ability scores and actions may be empty.
