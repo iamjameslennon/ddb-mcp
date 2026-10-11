@@ -238,7 +238,7 @@ export async function rateEncounter(
     }
   }
 
-  // 2. Resolve monsters (identical for both editions)
+  // 2. Resolve monsters — 2014 rules prefer the Legacy stat block when a name exists in both editions
   let totalRawXp = 0;
   let totalMonsterCount = 0;
   const monsterLines: string[] = [];
@@ -259,7 +259,7 @@ export async function rateEncounter(
       );
       xpEach = CR_XP[crKey] ?? 0;
     } else if (m.name) {
-      const stats = await getMonsterStats(m.name);
+      const stats = await getMonsterStats(m.name, { preferLegacy: rulesEdition === "2014" });
       if (!stats) {
         notFound.push(m.name);
         continue;

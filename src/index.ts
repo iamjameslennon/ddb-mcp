@@ -320,8 +320,9 @@ server.tool(
     type: z.string().optional().describe("Monster type filter (e.g. 'undead', 'fiend', 'beast')"),
     size: z.string().optional().describe("Size filter (e.g. 'large', 'tiny')"),
     source: z.string().optional()
-      .describe("Restrict to a sourcebook, e.g. 'mm-2024', 'mm-2014', 'cos', 'rthw'. " +
-                "Omit to see all editions/sources."),
+      .describe("Restrict to one sourcebook — its short code (e.g. 'mm-2024', 'cos', 'rthw', as shown in " +
+                "brackets in results), short name, or full title. Matches reprints too. An unknown or " +
+                "non-matching book returns an error naming the alternatives. Omit to see all editions/sources."),
   },
   READ_ONLY_NET,
   async ({ name, cr, type, size, source }) => {
@@ -339,11 +340,13 @@ server.tool(
 // ─── ddb_get_monster ──────────────────────────────────────────────────────────
 server.tool(
   "ddb_get_monster",
-  "Get the full stat block for a specific monster from the D&D Beyond compendium. Searches by name (partial match). Defaults to the 2024 version where both exist; pass source to force a specific book. Requires login.",
+  "Get the full stat block for a specific monster from the D&D Beyond compendium. Searches by name (partial match). Defaults to the 2024 version where both editions exist, falling back to Legacy (2014) only when no 2024 version does; pass source to force a specific book. Requires login.",
   {
     name: z.string().min(1).describe("Monster name (e.g. 'Beholder', 'Adult Red Dragon')"),
     source: z.string().optional()
-      .describe("Restrict to a sourcebook, e.g. 'mm-2024', 'mm-2014', 'cos', 'rthw'. " +
+      .describe("Restrict to one sourcebook — its short code (e.g. 'mm-2024', 'cos', 'rthw', as shown in " +
+                "brackets in ddb_search_monsters results), short name, or full title. Matches reprints too. " +
+                "Many 2014 core monsters (e.g. Zombie) are filed under 'basic-rules-2014', not 'mm-2014'. " +
                 "When omitted, the 2024 version is preferred over Legacy (2014) content."),
   },
   READ_ONLY_NET,
@@ -896,7 +899,7 @@ server.tool(
       "Monsters in the encounter. Each entry needs at least a name or cr."
     ),
     rules_edition: z.enum(["2024", "2014"]).default("2024")
-      .describe("Rules edition. '2024' (default) uses XDMG XP budgets with Low/Moderate/High difficulty — no encounter multiplier. '2014' uses DMG XP thresholds with Easy/Medium/Hard/Deadly and a monster count multiplier."),
+      .describe("Rules edition. '2024' (default) uses XDMG XP budgets with Low/Moderate/High difficulty — no encounter multiplier. '2014' uses DMG XP thresholds with Easy/Medium/Hard/Deadly and a monster count multiplier, and looks up the Legacy (2014) stat block's CR when a monster exists in both editions."),
   },
   READ_ONLY_NET,
   async ({ party, monsters, rules_edition }) => {

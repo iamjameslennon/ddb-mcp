@@ -59,7 +59,16 @@ interface GameConfig {
   monsterTypes: Array<{ id: number; name: string }>;
   alignments: Array<{ id: number; name: string }>;
   senses: Array<{ id: number; name: string }>;
-  sources: Array<{ id: number; name: string; description: string; sourceURL: string }>;
+  sources?: GameSource[];
+  sourceCategories?: Array<{ id: number; name: string }>;
+}
+
+interface GameSource {
+  id: number;
+  name: string;
+  description: string | null;
+  sourceURL: string | null;
+  sourceCategoryId?: number;
 }
 
 let configCache: GameConfig | null = null;
@@ -119,76 +128,120 @@ function crDisplay(crValue: number): string {
 }
 
 /** Loosely normalize a source string for comparison — case- and punctuation-insensitive. */
-function normalizeSourceQuery(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+function normalizeSourceQuery(s: string | null | undefined): string {
+  return stripHtml(s).toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/** The book's URL slug ("sources/dnd/mm-2024" → "mm-2024") — the form users and labels quote. */
+function sourceSlug(s: GameSource): string {
+  return (s.sourceURL ?? "").replace(/\/+$/, "").split("/").pop() ?? "";
 }
 
 /**
- * Resolve a user-supplied source string (e.g. "mm-2024", "MM-2024", "Monster
- * Manual") to a game-config source ID. Tries the URL slug first (most
+ * Resolve a user-supplied source string (e.g. "mm-2024", "MM-2024", "Curse of
+ * Strahd") to game-config source IDs. Tries the URL slug first (most
  * unambiguous — e.g. "mm-2024" vs "mm-2014"), then the short name, then the
- * full description. Never hardcoded — always resolved through the live config.
+ * full title, stopping at the first tier that matches. Returns every ID in that
+ * tier — slugs are not unique (four sources share "basic-rules-2014"), and the
+ * monster service accepts several `sources` at once. Never hardcoded — always
+ * resolved through the live config.
  */
-function resolveSourceId(config: GameConfig | null, query: string): number | undefined {
-  if (!config?.sources) return undefined;
+function resolveSourceIds(config: GameConfig | null, query: string): number[] {
+  const sources = config?.sources ?? [];
   const norm = normalizeSourceQuery(query);
-  const bySlug = config.sources.find(s => normalizeSourceQuery(s.sourceURL.split("/").pop() ?? "") === norm);
-  if (bySlug) return bySlug.id;
-  const byName = config.sources.find(s => normalizeSourceQuery(s.name) === norm);
-  if (byName) return byName.id;
-  const byDescription = config.sources.find(s => normalizeSourceQuery(s.description) === norm);
-  if (byDescription) return byDescription.id;
-  return undefined;
+  if (!norm) return [];
+  const tiers: Array<(s: GameSource) => string> = [
+    s => normalizeSourceQuery(sourceSlug(s)),
+    s => normalizeSourceQuery(s.name),
+    s => normalizeSourceQuery(s.description),
+  ];
+  for (const key of tiers) {
+    const ids = sources.filter(s => key(s) === norm).map(s => s.id);
+    if (ids.length) return ids;
+  }
+  return [];
 }
 
-/** Human-readable label for a source ID, for tags and error messages. */
+/** Human-readable label for a source ID, with the slug to pass back as `source`. */
 function sourceLabel(config: GameConfig | null, sourceId: number): string {
-  const s = config?.sources.find(x => x.id === sourceId);
-  return s?.description || s?.name || `source ${sourceId}`;
+  const s = config?.sources?.find(x => x.id === sourceId);
+  if (!s) return `source ${sourceId}`;
+  const title = stripHtml(s.description) || stripHtml(s.name);
+  const slug = sourceSlug(s);
+  return slug ? `${title} [${slug}]` : title;
 }
 
-type SelectResult =
-  | { ok: true; monster: DdbMonster }
-  | { ok: false; error: string };
+/** Sources whose slug, short name, or title loosely contains (or is contained by) the query. */
+function suggestSources(config: GameConfig | null, query: string): string[] {
+  const norm = normalizeSourceQuery(query);
+  if (norm.length < 2) return [];
+  return (config?.sources ?? [])
+    .filter(s => [sourceSlug(s), s.name, s.description]
+      .map(normalizeSourceQuery)
+      .some(v => v.length >= 2 && (v.includes(norm) || norm.includes(v))))
+    .slice(0, 8)
+    .map(s => sourceLabel(config, s.id));
+}
+
+function unknownSourceError(config: GameConfig | null, source: string): string {
+  const suggestions = suggestSources(config, source);
+  return `Unknown source "${source}". ` + (suggestions.length
+    ? `Did you mean: ${suggestions.join(", ")}?`
+    : "Pass a book's short code as shown in brackets in ddb_search_monsters results (e.g. mm-2024, cos).");
+}
+
+/** IDs of the "Core Rules" source categories (5e and 5.5e) — resolved by name, not hardcoded. */
+function coreCategoryIds(config: GameConfig | null): Set<number> {
+  return new Set((config?.sourceCategories ?? [])
+    .filter(c => /core\s*rules/i.test(stripHtml(c.name)))
+    .map(c => c.id));
+}
 
 /**
- * Pick the right monster from a candidate list fetched by name.
- * - Exact (case-insensitive) name matches only, falling back to partial.
- * - With a `source`, keeps only candidates whose primary source resolves to
- *   it; if none match, returns an error listing the sources that *were*
- *   available rather than silently falling back to another edition.
- * - Without a `source`, prefers the non-Legacy (2024) candidate, falling
- *   back to Legacy only when that's all there is.
+ * Order same-named candidates deterministically. The monster service returns
+ * them in a different order from one request to the next, so "first match"
+ * is not a stable choice. Ranking: official before homebrew → preferred
+ * edition (2024 by default, Legacy when `preferLegacy`) → a Core Rules book
+ * (MM/BR) before an adventure or third-party reprint → lowest ID.
+ */
+function rankCandidates(candidates: DdbMonster[], config: GameConfig | null, preferLegacy: boolean): DdbMonster[] {
+  const core = coreCategoryIds(config);
+  const isCore = (m: DdbMonster) => {
+    const cat = config?.sources?.find(s => s.id === m.sourceId)?.sourceCategoryId;
+    return cat !== undefined && core.has(cat);
+  };
+  const score = (m: DdbMonster) => [
+    m.isHomebrew ? 1 : 0,
+    Boolean(m.isLegacy) === preferLegacy ? 0 : 1,
+    isCore(m) ? 0 : 1,
+    m.id,
+  ];
+  return [...candidates].sort((a, b) => {
+    const sa = score(a), sb = score(b);
+    for (let i = 0; i < sa.length; i++) if (sa[i] !== sb[i]) return sa[i] - sb[i];
+    return 0;
+  });
+}
+
+/**
+ * Pick the right monster from a candidate list fetched by name: exact
+ * (case-insensitive) name matches, falling back to partial, then ranked by
+ * rankCandidates(). Source filtering happens server-side before this.
  */
 function selectMonster(
   candidates: DdbMonster[],
   name: string,
-  source: string | undefined,
-  config: GameConfig | null
-): SelectResult {
+  config: GameConfig | null,
+  preferLegacy = false
+): DdbMonster | undefined {
+  const named = namedCandidates(candidates, name);
+  return rankCandidates(named, config, preferLegacy)[0];
+}
+
+function namedCandidates(candidates: DdbMonster[], name: string): DdbMonster[] {
   const nameLower = name.toLowerCase();
-  let named = candidates.filter(m => m.name.toLowerCase() === nameLower);
-  if (named.length === 0) {
-    named = candidates.filter(m => m.name.toLowerCase().includes(nameLower));
-  }
-  if (named.length === 0) {
-    return { ok: false, error: `Monster "${name}" not found among search results.` };
-  }
-
-  if (source) {
-    const sourceId = resolveSourceId(config, source);
-    const matches = sourceId !== undefined ? named.filter(m => m.sourceId === sourceId) : [];
-    if (matches.length === 0) {
-      const available = [...new Set(named.map(m => sourceLabel(config, m.sourceId)))];
-      return {
-        ok: false,
-        error: `No "${name}" entry found in source "${source}". Available sources for "${name}": ${available.join(", ")}.`,
-      };
-    }
-    return { ok: true, monster: matches[0] };
-  }
-
-  return { ok: true, monster: named.find(m => !m.isLegacy) ?? named[0] };
+  const exact = candidates.filter(m => m.name.toLowerCase() === nameLower);
+  return exact.length ? exact : candidates.filter(m => m.name.toLowerCase().includes(nameLower));
 }
 
 // ── API types ─────────────────────────────────────────────────────────────────
@@ -242,6 +295,34 @@ async function monsterFetch(url: string): Promise<Response> {
   // Single authenticated-fetch path: token + request bound to one snapshot.
   const session = await beginAuthenticatedSession();
   return session.fetch(url);
+}
+
+/**
+ * Fetch (or serve from cache) one page of `/v1/Monster` search results.
+ * `sourceIds` filters server-side via repeated `sources=` params, which match
+ * an entry's primary *or* reprint sources and keep `pagination.total` honest.
+ */
+async function fetchMonsterList(search: string, take: number, sourceIds: number[] = []): Promise<MonsterListResponse> {
+  const sourceQs = sourceIds.map(id => `&sources=${id}`).join("");
+  const url = `${MONSTER_SERVICE}/v1/Monster?search=${encodeURIComponent(search)}&skip=0&take=${take}${sourceQs}`;
+  const cacheKey = `monsters:list:${search.toLowerCase()}:take${take}:src${sourceIds.join(",")}`;
+  const cached = monsterCache.get(cacheKey);
+  if (cached !== undefined) return JSON.parse(cached) as MonsterListResponse;
+
+  const snapshot = captureSession();
+  const resp = await monsterFetch(url);
+  if (!resp.ok) throw new Error(`Monster search failed: ${resp.status} ${resp.statusText}`);
+  const list = await resp.json() as MonsterListResponse;
+  assertSessionCurrent(snapshot);
+  monsterCache.set(cacheKey, JSON.stringify(list));
+  return list;
+}
+
+/** The distinct sources a name appears in (unfiltered search), for "not in that book" errors. */
+async function availableSourcesFor(name: string, config: GameConfig | null): Promise<string[]> {
+  const all = await fetchMonsterList(name, 20);
+  const named = rankCandidates(namedCandidates(all.data ?? [], name), config, false);
+  return [...new Set(named.map(m => sourceLabel(config, m.sourceId)))];
 }
 
 // ── Formatter ─────────────────────────────────────────────────────────────────
@@ -359,7 +440,7 @@ export async function searchMonsters(params: {
   source?: string;
 }): Promise<string> {
   if (!hasValidSession()) {
-    return await o5SearchMonsters(params).catch(
+    return await o5SearchMonsters(params).then(r => withSourceCaveat(r, params.source)).catch(
       () => "Monster search requires login. Run ddb_login first."
     );
   }
@@ -375,35 +456,20 @@ export async function searchMonsters(params: {
   const targetCrId = params.cr !== undefined
     ? config?.challengeRatings.find(cr => cr.value === params.cr)?.id
     : undefined;
-  const targetTypeId = params.type
-    ? config?.monsterTypes.find(t => t.name.toLowerCase().includes(params.type!.toLowerCase()))?.id
-    : undefined;
-  const targetSizeId = params.size
-    ? Object.entries(SIZE_MAP).find(([, name]) => name.toLowerCase().includes(params.size!.toLowerCase()))?.[0]
-    : undefined;
-  const targetSourceId = params.source ? resolveSourceId(config, params.source) : undefined;
+  let sourceIds: number[] = [];
+  if (params.source) {
+    // No config means DDB is unreachable — the catch below falls back to Open5e with a caveat.
+    if (!config) throw new Error("Game config unavailable");
+    sourceIds = resolveSourceIds(config, params.source);
+    if (!sourceIds.length) return unknownSourceError(config, params.source);
+  }
 
-  // When filtering without a name term, fetch more results since the API
-  // only sorts/filters by name — CR/type/size/source filtering is client-side.
+  // Source filters server-side. CR/type/size are client-side, so when those
+  // are the only filters fetch more results to filter from.
   const hasFiltersOnly = !params.name && (params.cr !== undefined || params.type || params.size || params.source);
   const take = hasFiltersOnly ? 100 : 20;
 
-  const cacheKey = `monsters:search:${searchTerm.toLowerCase()}:cr${targetCrId ?? ""}:type${targetTypeId ?? ""}:size${targetSizeId ?? ""}:source${targetSourceId ?? params.source?.toLowerCase() ?? ""}:take${take}`;
-  const cached = monsterCache.get(cacheKey);
-  let response: MonsterListResponse;
-
-  if (cached !== undefined) {
-    response = JSON.parse(cached) as MonsterListResponse;
-  } else {
-    const snapshot = captureSession();
-    const url = `${MONSTER_SERVICE}/v1/Monster?search=${encodeURIComponent(searchTerm)}&skip=0&take=${take}`;
-    const resp = await monsterFetch(url);
-    if (!resp.ok) throw new Error(`Monster search failed: ${resp.status} ${resp.statusText}`);
-    response = await resp.json() as MonsterListResponse;
-    assertSessionCurrent(snapshot);
-    monsterCache.set(cacheKey, JSON.stringify(response));
-  }
-
+  const response = await fetchMonsterList(searchTerm, take, sourceIds);
   let monsters = response.data ?? [];
 
   if (targetCrId !== undefined) {
@@ -417,15 +483,23 @@ export async function searchMonsters(params: {
     const searchSize = params.size.toLowerCase();
     monsters = monsters.filter(m => (SIZE_MAP[m.sizeId] ?? "").toLowerCase().includes(searchSize));
   }
-  if (params.source) {
-    monsters = targetSourceId !== undefined ? monsters.filter(m => m.sourceId === targetSourceId) : [];
-  }
 
   if (monsters.length === 0) {
+    if (params.source) {
+      // Open5e only carries the SRD — never substitute it for a requested book.
+      const where = sourceLabel(config, sourceIds[0]);
+      let msg = `No monsters matching the search criteria in ${where}.`;
+      if (params.name) {
+        const available = await availableSourcesFor(params.name, config);
+        if (available.length) msg += ` "${params.name}" appears in: ${available.join(", ")}.`;
+      }
+      return msg;
+    }
     return await o5SearchMonsters(params).catch(() => "No monsters found matching the search criteria.");
   }
 
-  const lines = [`**Monster Search** (${monsters.length} shown, ${response.pagination.total} total matched by name)\n`];
+  const matchedBy = params.source ? "name and source" : "name";
+  const lines = [`**Monster Search** (${monsters.length} shown, ${response.pagination.total} total matched by ${matchedBy})\n`];
   for (const m of monsters) {
     const cr = crMap.get(m.challengeRatingId);
     const crStr = cr ? crDisplay(cr.value) : "?";
@@ -447,7 +521,7 @@ export async function searchMonsters(params: {
 
   return lines.join("\n");
   } catch {
-    return await o5SearchMonsters(params).catch(
+    return await o5SearchMonsters(params).then(r => withSourceCaveat(r, params.source)).catch(
       () => "Monster search unavailable — DnD Beyond and Open5e both failed."
     );
   }
@@ -468,38 +542,42 @@ export async function getMonster(monsterName: string, source?: string): Promise<
   }
 
   try {
+    const config = await getGameConfig();
+    let sourceIds: number[] = [];
+    if (source) {
+      // No config means DDB is unreachable — the catch below falls back to Open5e with a caveat.
+      if (!config) throw new Error("Game config unavailable");
+      sourceIds = resolveSourceIds(config, source);
+      if (!sourceIds.length) return unknownSourceError(config, source);
+    }
+
     // 20 slots so a crowded name (e.g. "Zombie" has Ash/Beholder/Girallon/
     // Greater/Ogre/Strahd/Yellow Musk/plain across both editions) doesn't
     // miss the intended entry.
-    const take = 20;
-    const searchUrl = `${MONSTER_SERVICE}/v1/Monster?search=${encodeURIComponent(monsterName)}&skip=0&take=${take}`;
-    const searchCacheKey = `monsters:search:${monsterName.toLowerCase()}:${source?.toLowerCase() ?? ""}:${take}`;
-    const cachedSearch = monsterCache.get(searchCacheKey);
+    const searchResp = await fetchMonsterList(monsterName, 20, sourceIds);
+    const candidates = searchResp.data ?? [];
+    // With a source, require an exact name: a partial match would quietly turn
+    // "Zombie" in mm-2014 into Beholder Zombie. Near names are offered instead.
+    const best = source
+      ? rankCandidates(candidates.filter(m => m.name.toLowerCase() === monsterName.toLowerCase()), config, false)[0]
+      : selectMonster(candidates, monsterName, config);
 
-    let searchResp: MonsterListResponse;
-    if (cachedSearch !== undefined) {
-      searchResp = JSON.parse(cachedSearch) as MonsterListResponse;
-    } else {
-      const snapshot = captureSession();
-      const resp = await monsterFetch(searchUrl);
-      if (!resp.ok) throw new Error(`Monster search failed: ${resp.status} ${resp.statusText}`);
-      searchResp = await resp.json() as MonsterListResponse;
-      assertSessionCurrent(snapshot);
-      monsterCache.set(searchCacheKey, JSON.stringify(searchResp));
-    }
-
-    if (!searchResp.data?.length) {
+    if (!best) {
+      if (source) {
+        // A requested book is never silently swapped for another edition or the SRD.
+        const similar = [...new Set(namedCandidates(candidates, monsterName).map(m => m.name))].slice(0, 5);
+        const available = await availableSourcesFor(monsterName, config);
+        let msg = `No "${monsterName}" entry found in source "${source}".`;
+        if (similar.length) msg += ` Similar names in that source: ${similar.join(", ")}.`;
+        msg += available.length
+          ? ` Available sources for "${monsterName}": ${available.join(", ")}.`
+          : ` Try ddb_search_monsters with a partial name.`;
+        return msg;
+      }
       const o5Result = await o5GetMonster(monsterName).catch(() => null);
-      if (o5Result) return withSourceCaveat(o5Result, source);
+      if (o5Result) return o5Result;
       return `Monster "${monsterName}" not found. Try ddb_search_monsters with a partial name.`;
     }
-
-    const config = await getGameConfig();
-    const selection = selectMonster(searchResp.data, monsterName, source, config);
-    if (!selection.ok) {
-      return selection.error;
-    }
-    const best = selection.monster;
 
     const detailUrl = `${MONSTER_SERVICE}/v1/Monster/${best.id}`;
     const detailCacheKey = `monster:${best.id}`;
@@ -550,10 +628,12 @@ const CR_VALUE_O5: Record<string, number> = {
 };
 
 /**
- * Returns CR and XP for a named monster. Used by the encounter difficulty rater.
- * Tries the DDB monster service first, then falls back to Open5e.
+ * Returns CR and XP for a named monster. Used by the encounter difficulty rater
+ * and treasure generator. Tries the DDB monster service first, then falls back
+ * to Open5e. `preferLegacy` picks the 2014 entry when a name exists in both
+ * editions (the encounter rater sets it for 2014 rules).
  */
-export async function getMonsterStats(name: string): Promise<{
+export async function getMonsterStats(name: string, opts: { preferLegacy?: boolean } = {}): Promise<{
   name: string;
   crValue: number;
   xp: number;
@@ -562,18 +642,12 @@ export async function getMonsterStats(name: string): Promise<{
   if (hasValidSession()) {
     try {
       const config = await getGameConfig();
-      const resp = await monsterFetch(
-        `${MONSTER_SERVICE}/v1/Monster?search=${encodeURIComponent(name)}&skip=0&take=20`
-      );
-      if (resp.ok) {
-        const json = await resp.json() as MonsterListResponse;
-        const selection = json.data.length ? selectMonster(json.data, name, undefined, config) : null;
-        const match = selection?.ok ? selection.monster : undefined;
-        if (match && config) {
-          const crEntry = config.challengeRatings.find(cr => cr.id === match.challengeRatingId);
-          if (crEntry) {
-            return { name: match.name, crValue: crEntry.value, xp: crEntry.xp };
-          }
+      const list = await fetchMonsterList(name, 20);
+      const match = selectMonster(list.data ?? [], name, config, opts.preferLegacy ?? false);
+      if (match && config) {
+        const crEntry = config.challengeRatings.find(cr => cr.id === match.challengeRatingId);
+        if (crEntry) {
+          return { name: match.name, crValue: crEntry.value, xp: crEntry.xp };
         }
       }
     } catch {
