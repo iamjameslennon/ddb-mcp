@@ -102,6 +102,35 @@ function authOf(call: unknown[]): string {
   return h.Authorization ?? "";
 }
 
+/**
+ * Model character-service as it really behaves: the cobalt-token exchange is
+ * keyed by the session cookie (SECRET_A → user 99, SECRET_B → user 77), and the
+ * character endpoint authorizes ONLY by Bearer token — cookies are ignored, so a
+ * cookie-only request is answered exactly like an anonymous one. `respond`
+ * receives "A"/"B" for the account whose token was sent, or null when none was.
+ */
+function characterServiceMock(
+  charUrl: string,
+  respond: (who: "A" | "B" | null) => Response | Promise<Response>
+) {
+  const tokenA = makeJwt("99");
+  const tokenB = makeJwt("77");
+  return async (url: string, opts?: RequestInit) => {
+    const call = [url, opts];
+    if (url === COBALT_URL) {
+      const cookie = cookieOf(call);
+      if (cookie.includes("SECRET_A")) return jsonResponse({ token: tokenA });
+      if (cookie.includes("SECRET_B")) return jsonResponse({ token: tokenB });
+      return jsonResponse({}, 401);
+    }
+    if (url === charUrl) {
+      const auth = authOf(call);
+      return respond(auth === `Bearer ${tokenA}` ? "A" : auth === `Bearer ${tokenB}` ? "B" : null);
+    }
+    return jsonResponse({});
+  };
+}
+
 async function loadModules(): Promise<void> {
   vi.resetModules();
   // Import all consumers from ONE post-reset module graph so their module-load
@@ -146,15 +175,9 @@ describe("warm private character cache does not survive a session transition", (
   const charUrl = `${CHAR_SERVICE}/character/v5/character/123?includeCustomItems=true`;
 
   function characterFetch() {
-    fetchMock.mockImplementation(async (url: string, opts?: RequestInit) => {
-      const cookie = ((opts?.headers ?? {}) as Record<string, string>).Cookie ?? "";
-      if (url === charUrl) {
-        if (cookie.includes("SECRET_A")) return jsonResponse({ data: { name: "PRIVATE_A" } });
-        if (cookie.includes("SECRET_B")) return jsonResponse({ data: { name: "PRIVATE_B" } });
-        return jsonResponse({ data: { name: "PUBLIC" } });
-      }
-      return jsonResponse({});
-    });
+    fetchMock.mockImplementation(characterServiceMock(charUrl, (who) =>
+      jsonResponse({ data: { name: who ? `PRIVATE_${who}` : "PUBLIC" } })
+    ));
   }
 
   it("returns fresh (non-private-A) data after the session file is deleted", async () => {
@@ -246,12 +269,9 @@ describe("character delayed body parse cannot cache A into B", () => {
 
     let releaseBody!: (v: unknown) => void;
     const body = new Promise((r) => { releaseBody = r; });
-    fetchMock.mockImplementation(async (url: string) => {
-      if (url === charUrl) {
-        return { ok: true, status: 200, statusText: "", headers: { get: () => "application/json" }, json: () => body } as unknown as Response;
-      }
-      return jsonResponse({ data: { name: "PUBLIC" } });
-    });
+    fetchMock.mockImplementation(characterServiceMock(charUrl, () =>
+      ({ ok: true, status: 200, statusText: "", headers: { get: () => "application/json" }, json: () => body } as unknown as Response)
+    ));
 
     const pending = character.getCharacter("55").catch((e) => e);
     // Replace the account while the body is in flight, then release account A's body.
@@ -262,14 +282,107 @@ describe("character delayed body parse cannot cache A into B", () => {
     expect(result).toBeInstanceOf(sf.SessionChangedError);
 
     // Nothing was cached: a fresh read for account B fetches anew (PRIVATE_B).
-    fetchMock.mockImplementation(async (url: string, opts?: RequestInit) => {
-      const cookie = ((opts?.headers ?? {}) as Record<string, string>).Cookie ?? "";
-      if (url === charUrl) return jsonResponse({ data: { name: cookie.includes("SECRET_B") ? "PRIVATE_B" : "PRIVATE_A" } });
-      return jsonResponse({});
-    });
+    fetchMock.mockImplementation(characterServiceMock(charUrl, (who) =>
+      jsonResponse({ data: { name: who ? `PRIVATE_${who}` : "PUBLIC" } })
+    ));
     const second = await character.getCharacter("55");
     expect(second).toContain("PRIVATE_B");
     expect(second).not.toContain("PRIVATE_A");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Character: authenticated fetches carry the cobalt Bearer token (character-
+// service ignores cookies), bound to the same snapshot as the cookies.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("character fetch authenticates with a snapshot-bound Bearer token", () => {
+  const charUrl = `${CHAR_SERVICE}/character/v5/character/77?includeCustomItems=true`;
+  const charCalls = () => fetchMock.mock.calls.filter((c) => c[0] === charUrl);
+
+  function privateCharacterMock() {
+    // A private character: only its owner's (account A's) token gets a 200.
+    fetchMock.mockImplementation(characterServiceMock(charUrl, (who) =>
+      who === "A" ? jsonResponse({ data: { name: "PRIVATE_A" } }) : jsonResponse({}, 403)
+    ));
+  }
+
+  it("sends Authorization: Bearer with the same account's cookies when logged in", async () => {
+    setSessionFile(sessionJson("SECRET_A"));
+    privateCharacterMock();
+
+    expect(await character.getCharacter("77")).toContain("PRIVATE_A");
+
+    expect(charCalls()).toHaveLength(1);
+    const call = charCalls()[0];
+    // PRIVATE_A above is only served for account A's token; check it was a Bearer.
+    expect(authOf(call)).toMatch(/^Bearer /);
+    expect(cookieOf(call)).toContain("SECRET_A");
+  });
+
+  it("sends neither Authorization nor Cookie when anonymous", async () => {
+    setSessionFile(null);
+    fetchMock.mockImplementation(characterServiceMock(charUrl, () => jsonResponse({ data: { name: "PUBLIC" } })));
+
+    expect(await character.getCharacter("77")).toContain("PUBLIC");
+
+    expect(fetchMock.mock.calls.some((c) => c[0] === COBALT_URL)).toBe(false);
+    expect(charCalls()).toHaveLength(1);
+    expect(authOf(charCalls()[0])).toBe("");
+    expect(cookieOf(charCalls()[0])).toBe("");
+  });
+
+  it("falls back to an anonymous request when the token exchange fails, so public characters still load", async () => {
+    setSessionFile(sessionJson("SECRET_A"));
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === COBALT_URL) return jsonResponse({}, 401);
+      if (url === charUrl) return jsonResponse({ data: { name: "PUBLIC" } });
+      return jsonResponse({});
+    });
+
+    expect(await character.getCharacter("77")).toContain("PUBLIC");
+    expect(authOf(charCalls()[0])).toBe("");
+  });
+
+  it("explains a 403 after a failed token exchange as an auth problem, not a private character", async () => {
+    setSessionFile(sessionJson("SECRET_A"));
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === COBALT_URL) return jsonResponse({}, 401);
+      if (url === charUrl) return jsonResponse({}, 403);
+      return jsonResponse({});
+    });
+
+    await expect(character.getCharacter("77")).rejects.toThrow(/authentication failed.*cobalt-token request failed: 401.*ddb_login/s);
+  });
+
+  it("never pairs account A's token with account B's cookies across a swap during the token exchange", async () => {
+    setSessionFile(sessionJson("SECRET_A"));
+    privateCharacterMock();
+    const realImpl = fetchMock.getMockImplementation()!;
+
+    // Hold account A's token exchange open, swap to account B, then release it.
+    let releaseCobalt!: () => void;
+    const cobaltGate = new Promise<void>((r) => { releaseCobalt = r; });
+    fetchMock.mockImplementation(async (url: string, opts?: RequestInit) => {
+      if (url === COBALT_URL) await cobaltGate;
+      return realImpl(url, opts);
+    });
+
+    const pending = character.getCharacter("77").catch((e) => e);
+    await new Promise((r) => setTimeout(r, 0));
+    setSessionFile(sessionJson("SECRET_B"));
+    releaseCobalt();
+
+    expect(await pending).toBeInstanceOf(sf.SessionChangedError);
+    // The stale account-A token was never sent anywhere — let alone with B's cookies.
+    expect(charCalls()).toHaveLength(0);
+  });
+
+  it("is 403 for a private character when only cookies are sent (why the Bearer token is needed)", async () => {
+    // Guards the mock itself: if character-service honoured cookies, this
+    // whole block would prove nothing.
+    privateCharacterMock();
+    const resp = await fetchMock(charUrl, { headers: { Cookie: "CobaltSession=SECRET_A" } });
+    expect(resp.status).toBe(403);
   });
 });
 

@@ -326,8 +326,9 @@ export async function getCobaltToken(): Promise<{ token: string; userId: string 
 
 /**
  * Plain cookie-only authenticated fetch (no Bearer token) — for endpoints that
- * only need session cookies (game config, library pages, public character JSON
- * for the logged-in owner). Still goes through the authority check: it captures
+ * only need session cookies (game config, library pages). character-service
+ * ignores cookies — use `beginAuthenticatedSession()` there. Still goes through
+ * the authority check: it captures
  * a fresh snapshot, refuses when anonymous, and binds the request to it.
  */
 export async function sessionFetch(url: string, options: RequestInit = {}): Promise<Response> {
