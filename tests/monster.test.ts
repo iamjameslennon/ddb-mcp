@@ -52,6 +52,13 @@ const CONFIG = {
     monsterTypes: [{ id: 16, name: "Undead" }, { id: 1, name: "Beast" }, { id: 11, name: "Ooze" }, { id: 8, name: "Humanoid" }],
     alignments: [{ id: 8, name: "Neutral Evil" }],
     senses: [{ id: 2, name: "Darkvision" }],
+    creatureSizes: [
+      { id: 2, name: "Tiny" }, { id: 3, name: "Small" }, { id: 4, name: "Medium" }, { id: 5, name: "Large" },
+      { id: 6, name: "Huge" }, { id: 7, name: "Gargantuan" }, { id: 10, name: "Medium or Small" },
+    ],
+    languages: [
+      { id: 1, name: "Common" }, { id: 12, name: "Deep Speech" }, { id: 18, name: "Telepathy" }, { id: 46, name: "Thieves' Cant" },
+    ],
     sourceCategories: [
       { id: 1, name: "5e Expanded Rules" },
       { id: 24, name: "5.5e Core Rules" },
@@ -185,8 +192,27 @@ const GIANT_SHARK_2024 = monster({
   reactionsDescription: "<p><strong>Snap.</strong> It bites back.</p>",
 });
 
+// Language/size shapes as the live detail endpoint returns them (Oct 2026).
+const BANDIT_CAPTAIN_2024 = monster({
+  id: 4776100, name: "Bandit Captain", typeId: 8, sizeId: 10, sourceId: 147, sources: sources(147),
+  languages: [{ languageId: 1, notes: "" }, { languageId: 46, notes: "" }], languageDescription: null, languageNote: "",
+});
+const BANDIT_CAPTAIN_2014 = monster({
+  id: 16810, name: "Bandit Captain", typeId: 8, isLegacy: true, sourceId: 1, sources: sources(1),
+  languages: [], languageDescription: " any two languages  ", languageNote: " Any two languages  ",
+});
+const MIND_FLAYER_2024 = monster({
+  id: 4776200, name: "Mind Flayer", typeId: 8, sourceId: 147, sources: sources(147), languageDescription: null, languageNote: "",
+  languages: [{ languageId: 12, notes: "" }, { languageId: 18, notes: "120 ft." }, { languageId: 999, notes: null }],
+});
+const NOTE_ONLY_LANGUAGES = monster({
+  id: 4776300, name: "Lexicon Husk", sourceId: 147, sources: sources(147),
+  languages: [], languageDescription: null, languageNote: " Understands Common plus one other language but can’t speak",
+});
+const ODD_SIZE = monster({ id: 4776400, name: "Oddly Sized Thing", sizeId: 99, sourceId: 147, sources: sources(147) });
+
 const ALL_MONSTERS = [
-  GIANT_SHARK_2024,
+  GIANT_SHARK_2024, BANDIT_CAPTAIN_2024, BANDIT_CAPTAIN_2014, MIND_FLAYER_2024, NOTE_ONLY_LANGUAGES, ODD_SIZE,
   ZOMBIE_2014, ZOMBIE_2024, ZOMBIE_HOMEBREW, STRAHD_ZOMBIE, ZOMBIE_CLOT_2014, ZOMBIE_CLOT_2024,
   OOZE_CORE, OOZE_ADVENTURE, OOZE_2014, BUGBEAR_2014, BUGBEAR_ADVENTURE, WOLF_2014, WOLF_2024,
   BEHOLDER_2014, BEHOLDER_2024, VAMPIRE_SPAWN_COS, HOMEBREW_IN_BOOK,
@@ -331,6 +357,41 @@ describe("stat block formatting", () => {
     expect(shark).not.toContain("[Legacy]");
     const zombie2014 = await getMonster("Zombie", "basic-rules-2014");
     expect(zombie2014).toContain("**Source** Basic Rules (2014) [basic-rules-2014] [Legacy]");
+  });
+
+  it("resolves size IDs through the game config, including combined sizes", async () => {
+    const result = await getMonster("Bandit Captain");
+    expect(result).toContain("*Medium or Small Humanoid, Neutral Evil*");
+    expect(result).not.toContain("size 10");
+  });
+
+  it("reads an unknown size ID as Unknown size, not a raw number", async () => {
+    const result = await getMonster("Oddly Sized Thing");
+    expect(result).toContain("*Unknown size Undead");
+    expect(result).not.toContain("size 99");
+  });
+
+  it("resolves 2024 language IDs through the game config", async () => {
+    expect(await getMonster("Bandit Captain")).toContain("**Languages** Common, Thieves' Cant");
+  });
+
+  it("keeps per-language notes and falls back to an ID label for unknown languages", async () => {
+    expect(await getMonster("Mind Flayer")).toContain("**Languages** Deep Speech, Telepathy 120 ft., Language #999");
+  });
+
+  it("renders a Languages line carried only in languageNote", async () => {
+    expect(await getMonster("Lexicon Husk")).toContain("**Languages** Understands Common plus one other language but can’t speak");
+  });
+
+  it("does not repeat a languageNote that duplicates the 2014 languageDescription", async () => {
+    const result = await getMonster("Bandit Captain", "basic-rules-2014");
+    expect(result).toContain("**Languages** any two languages\n");
+    expect(result).not.toMatch(/any two languages,? Any two languages/i);
+  });
+
+  it("search listings use the config size names and size filter", async () => {
+    const result = await searchMonsters({ name: "Bandit Captain", size: "small" });
+    expect(result).toContain("**Bandit Captain** — Monster Manual [mm-2024] — CR 1/4, Medium or Small Humanoid");
   });
 
   it("bolds trait, action, and reaction names", async () => {

@@ -61,6 +61,8 @@ interface GameConfig {
   senses: Array<{ id: number; name: string }>;
   sources?: GameSource[];
   sourceCategories?: Array<{ id: number; name: string }>;
+  creatureSizes?: Array<{ id: number; name: string }>;
+  languages?: Array<{ id: number; name: string }>;
 }
 
 interface GameSource {
@@ -278,6 +280,36 @@ function namedCandidates(candidates: DdbMonster[], name: string): DdbMonster[] {
   return top ? candidates.filter(m => m.name.toLowerCase() === top) : [];
 }
 
+/**
+ * Size name from the live game config (which has combined sizes such as
+ * 10 = "Medium or Small" on 2024 entries), falling back to the built-in map.
+ */
+function sizeName(config: GameConfig | null, sizeId: number): string | undefined {
+  const name = config?.creatureSizes?.find(s => s.id === sizeId)?.name ?? SIZE_MAP[sizeId];
+  return name ? stripHtml(name) : undefined;
+}
+
+/**
+ * The Languages line. 2014 entries carry free text in languageDescription;
+ * 2024 entries leave it null and list language IDs (resolved through the game
+ * config) with per-language notes such as telepathy range. languageNote holds
+ * extra text — on some entries the whole line ("Understands Common … but
+ * can't speak"), on others a repeat of languageDescription, which is dropped.
+ */
+function languagesLine(m: DdbMonster, config: GameConfig | null): string {
+  const description = stripHtml(m.languageDescription);
+  const listed = description || (m.languages ?? [])
+    .map(l => {
+      const name = stripHtml(config?.languages?.find(c => c.id === l.languageId)?.name) || `Language #${l.languageId}`;
+      const notes = stripHtml(l.notes);
+      return notes ? `${name} ${notes}` : name;
+    })
+    .join(", ");
+  const note = stripHtml(m.languageNote);
+  const extra = note && note.toLowerCase() !== listed.toLowerCase() ? note : "";
+  return [listed, extra].filter(Boolean).join(", ");
+}
+
 // ── API types ─────────────────────────────────────────────────────────────────
 
 interface DdbMonster {
@@ -302,8 +334,9 @@ interface DdbMonster {
   savingThrows: Array<{ statId: number; bonusModifier: number }>;
   senses: Array<{ senseId: number; notes: string }>;
   movements: Array<{ movementId: number; speed: number; notes: string | null }>;
-  languageDescription: string;
-  languageNote: string;
+  languages?: Array<{ languageId: number; notes: string | null }>;
+  languageDescription: string | null;
+  languageNote: string | null;
   skillsHtml: string;
   specialTraitsDescription: string;
   actionsDescription: string;
@@ -392,12 +425,12 @@ function formatStatBlock(m: DdbMonster, accessType: number, config: GameConfig |
   const crStr = crEntry ? crDisplay(crEntry.value) : `(id:${m.challengeRatingId})`;
   const xpStr = crEntry?.xp ? ` (${crEntry.xp.toLocaleString()} XP)` : "";
   const typeName = config?.monsterTypes.find(t => t.id === m.typeId)?.name ?? `type ${m.typeId}`;
-  const sizeName = SIZE_MAP[m.sizeId] ?? `size ${m.sizeId}`;
+  const size = sizeName(config, m.sizeId) ?? "Unknown size";
   const alignment = config?.alignments.find(a => a.id === m.alignmentId)?.name ?? "Unaligned";
 
   const lines: string[] = [];
   lines.push(`# ${m.name}`);
-  lines.push(`*${sizeName} ${typeName}, ${alignment}*`);
+  lines.push(`*${size} ${typeName}, ${alignment}*`);
   // Name the book (as ddb_search_monsters does) so same-named 2014/2024 blocks are distinguishable.
   if (m.sourceId) lines.push(`**Source** ${sourceLabel(config, m.sourceId)}${m.isLegacy ? " [Legacy]" : ""}`);
   lines.push("");
@@ -454,8 +487,9 @@ function formatStatBlock(m: DdbMonster, accessType: number, config: GameConfig |
     lines.push(`**Senses** passive Perception ${m.passivePerception}`);
   }
 
-  if (m.languageDescription) {
-    lines.push(`**Languages** ${m.languageDescription}${m.languageNote ? " " + m.languageNote : ""}`);
+  const languages = languagesLine(m, config);
+  if (languages) {
+    lines.push(`**Languages** ${languages}`);
   }
 
   lines.push(`**Challenge** ${crStr}${xpStr}`);
@@ -556,7 +590,7 @@ export async function searchMonsters(params: {
   }
   if (params.size) {
     const searchSize = params.size.toLowerCase();
-    monsters = monsters.filter(m => (SIZE_MAP[m.sizeId] ?? "").toLowerCase().includes(searchSize));
+    monsters = monsters.filter(m => (sizeName(config, m.sizeId) ?? "").toLowerCase().includes(searchSize));
   }
 
   if (monsters.length === 0) {
@@ -584,7 +618,7 @@ export async function searchMonsters(params: {
     const cr = crMap.get(m.challengeRatingId);
     const crStr = cr ? crDisplay(cr.value) : "?";
     const typeName = typeMap.get(m.typeId) ?? "Unknown";
-    const sizeName = SIZE_MAP[m.sizeId] ?? "Unknown";
+    const size = sizeName(config, m.sizeId) ?? "Unknown size";
     const tags: string[] = [];
     if (m.isLegendary) tags.push("Legendary");
     if (m.isMythic) tags.push("Mythic");
@@ -597,7 +631,7 @@ export async function searchMonsters(params: {
       const via = m.sources?.find(s => sourceIds.includes(s.sourceId))?.sourceId ?? sourceIds[0];
       sourceStr += `, reprinted in ${sourceLabel(config, via)}`;
     }
-    lines.push(`- **${m.name}**${tagStr} — ${sourceStr} — CR ${crStr}, ${sizeName} ${typeName}, AC ${m.armorClass}, ${m.averageHitPoints} HP`);
+    lines.push(`- **${m.name}**${tagStr} — ${sourceStr} — CR ${crStr}, ${size} ${typeName}, AC ${m.armorClass}, ${m.averageHitPoints} HP`);
   }
 
   if (shown.length < monsters.length) {
