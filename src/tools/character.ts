@@ -9,9 +9,10 @@
  */
 
 import {
-  sessionFetch, hasValidSession, beginAuthenticatedSession,
+  hasValidSession, beginAuthenticatedSession, SessionChangedError, CobaltTokenError,
   captureSession, assertSessionCurrent, onSessionInvalidated,
 } from "../session-fetch.js";
+import type { AuthenticatedSession } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
 import { writeFileSync, mkdirSync, realpathSync } from "fs";
 import { join, resolve, relative, basename, dirname, isAbsolute } from "path";
@@ -106,7 +107,8 @@ export async function parseCharacter(
 
 /**
  * Fetch raw character JSON from the DnD Beyond API.
- * Uses saved session cookies — no browser needed after initial login.
+ * Uses the saved session's cobalt Bearer token — no browser needed after
+ * initial login.
  */
 export async function getCharacter(
   characterId: string
@@ -126,11 +128,44 @@ export async function getCharacter(
 
   const url = `https://character-service.dndbeyond.com/character/v5/character/${encodeURIComponent(characterId)}?includeCustomItems=true`;
 
-  // Public characters work without auth. Use session cookies if available so
-  // private/campaign-only characters owned by the logged-in user also work.
-  const resp = loggedIn
-    ? await sessionFetch(url)
-    : await fetch(url, { headers: { Accept: "application/json" } });
+  // Public characters work without auth. When logged in, send the cobalt
+  // Bearer token so private/campaign characters visible to the user also work —
+  // character-service ignores session cookies on this endpoint, so a
+  // cookie-only request is treated exactly like an anonymous one (403 for
+  // private characters). One snapshot binds the token and the request, as in
+  // listCharacters(): a separate getCobaltToken() + sessionFetch() pair could
+  // send account A's token with account B's cookies across an account swap.
+  let resp: Response;
+  // Set only when the token exchange failed and we fell back to anonymous: the
+  // explanation to give if the character then turns out to need auth.
+  let authFailure: string | undefined;
+  if (loggedIn) {
+    let session: AuthenticatedSession | undefined;
+    try {
+      session = await beginAuthenticatedSession();
+    } catch (e) {
+      // An account change must surface, never be papered over — including one
+      // that showed up as an aborted token request rather than the error itself.
+      if (e instanceof SessionChangedError) throw e;
+      assertSessionCurrent(snapshot);
+      // Token exchange failed. Public characters don't need auth, so degrade to
+      // the anonymous request — what this path effectively was before — and
+      // explain any 401/403 below. Only a 401/403 from auth-service means the
+      // saved session itself was rejected; anything else (network error, 5xx
+      // after retries) is an outage that a later retry can get past.
+      const detail = e instanceof Error ? e.message : String(e);
+      const rejected = e instanceof CobaltTokenError && (e.status === 401 || e.status === 403);
+      authFailure = rejected
+        ? `D&D Beyond rejected the saved session (${detail}). Your session may have expired — run ddb_login again.`
+        : `D&D Beyond's auth service could not be reached (${detail}), so the request was sent without authentication. Try again in a moment.`;
+      process.stderr.write(`[ddb-mcp] ${detail} — fetching character ${characterId} anonymously\n`);
+    }
+    resp = session
+      ? await session.fetch(url)
+      : await fetch(url, { headers: { Accept: "application/json" } });
+  } else {
+    resp = await fetch(url, { headers: { Accept: "application/json" } });
+  }
 
   if (resp.ok) {
     const result = await resp.json();
@@ -138,13 +173,18 @@ export async function getCharacter(
     // The body parse is async: an account change could have landed while it was
     // in flight. For the authenticated path, refuse to cache A's private
     // character into a new generation. (The anonymous public path has no
-    // account-bound data to protect, so it isn't guarded.)
+    // account-bound data to protect, so it isn't guarded.) The session above
+    // captured its own snapshot after this one; generations only advance, so
+    // passing this check also proves the token came from this same generation.
     if (loggedIn) assertSessionCurrent(snapshot);
     characterCache.set(cacheKey, json);
     return json;
   }
 
   // 404 = character doesn't exist; 403 = private
+  if (authFailure && (resp.status === 401 || resp.status === 403)) {
+    throw new Error(`Character ${characterId} could not be accessed: ${authFailure}`);
+  }
   if (resp.status === 403) {
     throw new Error(`Character ${characterId} is private and cannot be accessed.`);
   }

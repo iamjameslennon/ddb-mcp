@@ -70,6 +70,18 @@ if (process.platform === "win32") {
   }
 }
 
+/**
+ * The cobalt-token exchange got a non-OK HTTP response. `status` lets callers
+ * tell a rejected session (401/403 — re-login) from an auth-service outage
+ * (5xx after retries — try again later).
+ */
+export class CobaltTokenError extends Error {
+  constructor(readonly status: number) {
+    super(`cobalt-token request failed: ${status}`);
+    this.name = "CobaltTokenError";
+  }
+}
+
 // ── In-memory token cache ─────────────────────────────────────────────────────
 // Module-level singleton state — intentional for a single-user MCP server.
 // The cobalt JWT is short-lived but reusable across requests until near-expiry.
@@ -242,7 +254,7 @@ async function getCobaltTokenForSnapshot(
     "https://auth-service.dndbeyond.com/v1/cobalt-token",
     { method: "POST" }
   );
-  if (!resp.ok) throw new Error(`cobalt-token request failed: ${resp.status}`);
+  if (!resp.ok) throw new CobaltTokenError(resp.status);
   const { token } = (await resp.json()) as { token: string };
 
   // The response body parse is async: an account change could have landed
@@ -326,8 +338,9 @@ export async function getCobaltToken(): Promise<{ token: string; userId: string 
 
 /**
  * Plain cookie-only authenticated fetch (no Bearer token) — for endpoints that
- * only need session cookies (game config, library pages, public character JSON
- * for the logged-in owner). Still goes through the authority check: it captures
+ * only need session cookies (game config, library pages). character-service
+ * ignores cookies — use `beginAuthenticatedSession()` there. Still goes through
+ * the authority check: it captures
  * a fresh snapshot, refuses when anonymous, and binds the request to it.
  */
 export async function sessionFetch(url: string, options: RequestInit = {}): Promise<Response> {
