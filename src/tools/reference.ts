@@ -2,8 +2,9 @@
  * reference.ts — Game reference tools: conditions, spells, items
  *
  * Conditions: hardcoded lookup table, no API required.
- * Spells: built from character-service always-known/prepared endpoints
- *         across all 8 spellcasting classes; cached 24 h.
+ * Spells: built from character-service game-data/spells (cantrips) and
+ *         game-data/always-known-spells (leveled) across all 8 spellcasting
+ *         classes; cached 24 h.
  * Items: single game-data/items endpoint; cached 24 h.
  *
  * All character-service endpoints use the cobalt Bearer token.
@@ -231,7 +232,7 @@ interface DdbSpell {
 let spellCompendium: DdbSpell[] | null = null;
 
 // Provenance of the currently-loaded compendium. "ddb-authoritative" means all
-// 32 DDB game-data requests succeeded; "ddb-partial" means at least one failed
+// 16 DDB game-data requests succeeded; "ddb-partial" means at least one failed
 // and the result is missing content (commonly happens when the cobalt token is
 // rejected for some endpoints but not others, or DDB is mid-deploy).
 export type CompendiumSource = "ddb-authoritative" | "ddb-partial";
@@ -275,7 +276,7 @@ onSessionInvalidated(() => {
 });
 
 // Spells extracted from character JSON (Warlock invocations, racial cantrip
-// grants, etc.) that may not appear in the per-class /game-data/spells lists.
+// grants, etc.) that may not appear in the per-class game-data spell lists.
 const characterSpellBuffer = new Map<string, DdbSpell>();
 
 async function loadSpellCompendium(): Promise<DdbSpell[]> {
@@ -303,38 +304,36 @@ async function loadSpellCompendium(): Promise<DdbSpell[]> {
     return spellCompendium;
   }
 
-  const allSpells = new Map<string, DdbSpell>();
   let failedTasks = 0;
 
-  // One request per spellcasting class against the /game-data/spells endpoint
-  // at classLevel=20. This returns every spell (cantrips + levels 1–9) the
-  // class can know at max level — which is what we want for a compendium.
+  // Two requests per spellcasting class, both at classLevel=20:
   //
-  // Earlier versions of this code queried always-known-spells/always-prepared-
-  // spells at L1/L20, but those endpoints return *leveled spells only* — they
-  // explicitly exclude cantrips, so the previous compendium was always cantrip-
-  // empty and silently fell back to the Open5e SRD cantrip list. The /spells
-  // endpoint returns the full class spell list including cantrips, identified
-  // experimentally via scripts/diagnose-compendium.mjs.
+  //   /game-data/spells             — known casters (Bard, Ranger, Sorcerer,
+  //                                   Warlock, Wizard): cantrips + leveled.
+  //                                   Prepared casters (Cleric, Druid,
+  //                                   Paladin): cantrips ONLY.
+  //   /game-data/always-known-spells — every class: leveled spells, never
+  //                                   cantrips. The only source of Cleric,
+  //                                   Druid and Paladin leveled spells.
   //
-  // JS is single-threaded so Map writes between await points are race-free.
-  const tasks = SPELLCASTING_CLASS_IDS.map(classId => ({ classId }));
-  await Promise.all(tasks.map(async ({ classId }) => {
+  // Neither endpoint alone is complete. Querying only /spells (2.7.x–2.10.x)
+  // silently dropped every leveled Cleric/Druid/Paladin spell; querying only
+  // always-known/always-prepared (pre-2.7) dropped every cantrip. Both were
+  // HTTP 200 throughout, so provenance looked authoritative.
+  const SPELL_LIST_ENDPOINTS = ["spells", "always-known-spells"] as const;
+  const tasks = SPELL_LIST_ENDPOINTS.flatMap(endpoint =>
+    SPELLCASTING_CLASS_IDS.map(classId => ({ endpoint, classId })),
+  );
+  const lists = await Promise.all(tasks.map(async ({ endpoint, classId }): Promise<DdbSpell[]> => {
     try {
-      const url = `${CHARACTER_SERVICE}/character/v5/game-data/spells?classId=${classId}&classLevel=20&sharingSetting=2`;
+      const url = `${CHARACTER_SERVICE}/character/v5/game-data/${endpoint}?classId=${classId}&classLevel=20&sharingSetting=2`;
       const resp = await refFetch(url);
       if (!resp.ok) {
         failedTasks++;
-        return;
+        return [];
       }
       const json = await resp.json() as { data?: DdbSpell[] } | DdbSpell[];
-      const spells = (Array.isArray(json) ? json : json.data) ?? [];
-      for (const spell of spells) {
-        const name = spell.definition?.name;
-        if (name && !allSpells.has(name)) {
-          allSpells.set(name, spell);
-        }
-      }
+      return (Array.isArray(json) ? json : json.data) ?? [];
     } catch (e) {
       // A session transition mid-build is NOT an ordinary failed class lookup:
       // abandon the entire build so no old-account (or mixed) class list is
@@ -342,13 +341,24 @@ async function loadSpellCompendium(): Promise<DdbSpell[]> {
       if (e instanceof SessionChangedError) throw e;
       // Otherwise continue — a partial compendium is still useful.
       failedTasks++;
+      return [];
     }
   }));
 
   // Even if every individual request succeeded, the account may have changed
-  // during an async body parse. Refuse to cache a compendium assembled across a
-  // generation boundary.
+  // during an async body parse. Refuse to merge or cache a compendium
+  // assembled across a generation boundary.
   assertSessionCurrent(snapshot);
+
+  // Merge in task order (not response-completion order) so the same responses
+  // always produce the same compendium. First occurrence of a name wins.
+  const allSpells = new Map<string, DdbSpell>();
+  for (const spells of lists) {
+    for (const spell of spells) {
+      const name = spell.definition?.name;
+      if (name && !allSpells.has(name)) allSpells.set(name, spell);
+    }
+  }
 
   if (allSpells.size === 0) {
     // Deliberately don't cache this case — the catch in searchSpells/getSpell
@@ -360,7 +370,7 @@ async function loadSpellCompendium(): Promise<DdbSpell[]> {
   }
 
   // Merge character-sourced spells (Warlock-style invocations, racial cantrip
-  // grants, etc.). The /game-data/spells endpoint covers the canonical class
+  // grants, etc.). The per-class game-data lists cover the canonical class
   // spell lists; characterSpellBuffer fills in anything else a character knows.
   for (const [name, spell] of characterSpellBuffer) {
     if (!allSpells.has(name)) allSpells.set(name, spell);
