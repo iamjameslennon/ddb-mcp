@@ -6,13 +6,13 @@
  * Phase 9 of the character.ts refactor — see docs/character-refactor.md.
  *
  * `getDefinition` is the public entry point (re-exported from character.ts).
- * It depends on `getCharacter` from the network/IO layer in character.ts
+ * It depends on `fetchCharacter` from the network/IO layer in character.ts
  * — that import is intentionally one-way (definition consumes IO, not
  * the other way around).
  */
 
 import { stripHtml as stripHtmlFull } from "../../utils.js";
-import { getCharacter } from "../character.js";
+import { fetchCharacter, withNotice } from "../character.js";
 import { levenshteinDistance } from "./helpers.js";
 
 function matchesDefinitionQuery(name: string, query: string): boolean {
@@ -220,12 +220,14 @@ export async function getDefinition(
   characterId: string,
   query: string,
 ): Promise<string> {
-  const jsonData = await getCharacter(characterId);
-  const raw = JSON.parse(jsonData) as Record<string, unknown>;
+  const { json, notice } = await fetchCharacter(characterId);
+  const raw = JSON.parse(json) as Record<string, unknown>;
   const char = (raw?.data ?? raw) as Record<string, unknown>;
 
-  const hits = searchDefinitions(char, query);
+  return withNotice(formatDefinitionHits(searchDefinitions(char, query), query), notice);
+}
 
+function formatDefinitionHits(hits: ReturnType<typeof searchDefinitions>, query: string): string {
   if (hits.length === 0) {
     return `No definition found matching "${query}" on this character. Try a partial name like "hunter" for Hunter's Mark.`;
   }

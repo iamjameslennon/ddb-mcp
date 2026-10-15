@@ -7,7 +7,7 @@ import { z } from "zod";
 import { getBrowser, getContext, closeBrowser, beginLoginSession, endLoginSession } from "./browser.js";
 import { login } from "./auth.js";
 import { revokeSession } from "./session-state.js";
-import { getCharacter, downloadCharacter, listCharacters, parseCharacter, findCharacterByName, getDefinition, clearCharacterCache } from "./tools/character.js";
+import { fetchCharacter, downloadCharacter, listCharacters, parseCharacter, findCharacterByName, getDefinition, clearCharacterCache } from "./tools/character.js";
 import { getCampaign, listMyCampaigns, invalidateCampaignCache } from "./tools/campaign.js";
 import { getParty } from "./tools/party.js";
 import { navigate, interact, getCurrentPageContent } from "./tools/navigate.js";
@@ -205,8 +205,13 @@ server.tool(
         }
         resolvedId = found.id;
       }
-      const data = await getCharacter(resolvedId);
-      return { content: [{ type: "text", text: data }] };
+      // The notice goes in its own content block so the JSON block stays parseable.
+      const { json, notice } = await fetchCharacter(resolvedId);
+      return {
+        content: notice
+          ? [{ type: "text", text: `⚠️ ${notice}` }, { type: "text", text: json }]
+          : [{ type: "text", text: json }],
+      };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       process.stderr.write(`[ddb-mcp] ddb_get_character_raw error: ${msg}\n`);

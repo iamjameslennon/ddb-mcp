@@ -1,5 +1,5 @@
 import { getCampaign } from "./campaign.js";
-import { getCharacter, parseCharacterData } from "./character.js";
+import { fetchCharacter, parseCharacterData, withNotice } from "./character.js";
 
 export async function getParty(campaignId: string): Promise<string> {
   // 1. Get campaign to retrieve character IDs
@@ -25,9 +25,9 @@ export async function getParty(campaignId: string): Promise<string> {
     const fetched = await Promise.all(
       batch.map(async id => {
         try {
-          const json = await getCharacter(id);
+          const { json, notice } = await fetchCharacter(id);
           const raw = JSON.parse(json) as Record<string, unknown>;
-          return parseCharacterData(raw, "summary");
+          return withNotice(parseCharacterData(raw, "summary"), notice);
         } catch (err) {
           return `[Could not load character ${id}: ${err instanceof Error ? err.message : String(err)}]`;
         }

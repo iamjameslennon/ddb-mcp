@@ -82,6 +82,18 @@ export class CobaltTokenError extends Error {
   }
 }
 
+/**
+ * The cobalt-token exchange returned 200 but the token can't be used (body not
+ * JSON, no token, not a JWT, no userId claim). Distinct from CobaltTokenError so
+ * callers don't report it as an outage or as a rejected session.
+ */
+export class MalformedCobaltTokenError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MalformedCobaltTokenError";
+  }
+}
+
 // ── In-memory token cache ─────────────────────────────────────────────────────
 // Module-level singleton state — intentional for a single-user MCP server.
 // The cobalt JWT is short-lived but reusable across requests until near-expiry.
@@ -255,12 +267,24 @@ async function getCobaltTokenForSnapshot(
     { method: "POST" }
   );
   if (!resp.ok) throw new CobaltTokenError(resp.status);
-  const { token } = (await resp.json()) as { token: string };
+  let body: { token?: unknown };
+  try {
+    body = (await resp.json()) as { token?: unknown };
+  } catch (e) {
+    // Only a parse failure means the token is unusable; anything else (an abort
+    // from an account change mid-read) propagates for the checks below to name.
+    if (!(e instanceof SyntaxError)) throw e;
+    assertSessionCurrent(snapshot);
+    throw new MalformedCobaltTokenError(`cobalt-token response is not JSON: ${e.message}`);
+  }
 
   // The response body parse is async: an account change could have landed
   // while it was in flight. Reject BEFORE decoding/caching so a stale token is
   // never written into the (new) generation's cache.
   assertSessionCurrent(snapshot);
+
+  const token = body?.token;
+  if (typeof token !== "string") throw new MalformedCobaltTokenError("cobalt-token response has no token");
 
   // JWT payload is base64url-encoded — decode it to extract the userId claim.
   // We deliberately don't verify the JWT signature: the token came from
@@ -269,17 +293,17 @@ async function getCobaltTokenForSnapshot(
   // APIs — DDB verifies the signature server-side. We're using the payload
   // purely to read our own userId for subsequent API calls.
   const parts = token.split(".");
-  if (parts.length < 3) throw new Error("cobalt-token response is not a valid JWT");
+  if (parts.length < 3) throw new MalformedCobaltTokenError("cobalt-token response is not a valid JWT");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let payload: any;
   try {
     payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
   } catch (e) {
-    throw new Error("Failed to decode cobalt token payload: " + (e instanceof Error ? e.message : String(e)));
+    throw new MalformedCobaltTokenError("Failed to decode cobalt token payload: " + (e instanceof Error ? e.message : String(e)));
   }
   const userId: string =
-    payload["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"] ?? "";
-  if (!userId) throw new Error("Could not extract userId from cobalt token");
+    payload?.["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"] ?? "";
+  if (!userId) throw new MalformedCobaltTokenError("Could not extract userId from cobalt token");
   const expiresAt: number = payload.exp ?? (now + 3600);
 
   // Re-check once more immediately before the cache write (the decode above is

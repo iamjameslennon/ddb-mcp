@@ -419,44 +419,128 @@ describe("character fetch authenticates with a snapshot-bound Bearer token", () 
     expect(charCalls()).toHaveLength(0);
   });
 
-  it("never sends account A's token with account B's cookies when the account changes after the token is issued", async () => {
-    // The swap lands AFTER the token exchange has fully returned and BEFORE the
-    // character request is dispatched — the window a separate getCobaltToken()
-    // + sessionFetch() pair leaves open, since sessionFetch would capture a
-    // fresh (account B) snapshot and attach B's cookies next to A's token.
-    privateCharacterMock();
-    const realImpl = fetchMock.getMockImplementation()!;
-    let tokenIssued = false;
-    fetchMock.mockImplementation(async (url: string, opts?: RequestInit) => {
-      const resp = await realImpl(url, opts);
-      if (url !== COBALT_URL) return resp;
-      return { ...resp, json: async () => { const b = await resp.json(); tokenIssued = true; return b; } } as Response;
-    });
-
-    // Flip the on-disk session on the first authority read made outside every
-    // token-exchange frame once the token has been issued — i.e. the first read
-    // after beginAuthenticatedSession() (or getCobaltToken()) has returned.
+  it("never pairs one account's token with another's cookies, wherever the account changes", async () => {
+    // Swap A → B at each on-disk authority read in turn (read 1, then read 2,
+    // ...) until the swap point lies past the end of the run, so every window is
+    // exercised without depending on how many reads happen or which functions
+    // make them. The window that matters most is after the token is issued and
+    // before the character request goes out: a separate getCobaltToken() +
+    // sessionFetch() pair would capture a fresh (account B) snapshot there and
+    // attach B's cookies next to A's token.
     const sessionA = sessionJson("SECRET_A");
     const sessionB = sessionJson("SECRET_B");
-    let swapped = false;
-    fsMock.existsSync.mockReturnValue(true);
-    fsMock.readFileSync.mockImplementation(() => {
-      if (!swapped && tokenIssued) {
-        const limit = Error.stackTraceLimit;
-        Error.stackTraceLimit = Infinity;
-        const stack = new Error().stack ?? "";
-        Error.stackTraceLimit = limit;
-        if (!/getCobaltToken|beginAuthenticatedSession/.test(stack)) swapped = true;
+    const accountOfCookie = (c: string) => (c.includes("SECRET_A") ? "A" : c.includes("SECRET_B") ? "B" : null);
+    const accountOfToken = (auth: string) => {
+      if (!auth.startsWith("Bearer ")) return null;
+      const payload = JSON.parse(Buffer.from(auth.slice(7).split(".")[1], "base64url").toString("utf8"));
+      return ({ "99": "A", "77": "B" } as Record<string, string>)[
+        payload["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"]
+      ] ?? "?";
+    };
+
+    let swapAfterTokenCaught = false;
+    for (let swapAt = 1; ; swapAt++) {
+      vi.clearAllMocks();
+      fetchMock.mockReset();
+      await loadModules();
+
+      let reads = 0;
+      let tokenIssued = false;
+      let swappedAfterToken = false;
+      const service = characterServiceMock(charUrl, (who) =>
+        who ? jsonResponse({ data: { name: `PRIVATE_${who}` } }) : jsonResponse({}, 403)
+      );
+      fetchMock.mockImplementation(async (url: string, opts?: RequestInit) => {
+        const resp = await service(url, opts);
+        if (url !== COBALT_URL) return resp;
+        return { ...resp, json: async () => { const b = await resp.json(); tokenIssued = true; return b; } } as Response;
+      });
+      fsMock.existsSync.mockReturnValue(true);
+      fsMock.readFileSync.mockImplementation(() => {
+        reads++;
+        if (reads === swapAt && tokenIssued) swappedAfterToken = true;
+        return reads >= swapAt ? sessionB : sessionA;
+      });
+
+      const result = await character.getCharacter("77").catch((e) => e);
+
+      for (const call of charCalls()) {
+        expect(accountOfToken(authOf(call)), `swap at read ${swapAt}`).toBe(accountOfCookie(cookieOf(call)));
       }
-      return swapped ? sessionB : sessionA;
+      if (typeof result !== "string") {
+        expect(result, `swap at read ${swapAt}`).toBeInstanceOf(sf.SessionChangedError);
+      }
+      if (swappedAfterToken && result instanceof sf.SessionChangedError) swapAfterTokenCaught = true;
+      if (reads < swapAt) break; // the swap never happened: every read position is covered
+    }
+
+    // The post-token window was actually reached, and the swap there was refused.
+    expect(swapAfterTokenCaught).toBe(true);
+  });
+
+  it("flags a character loaded without signing in, and doesn't cache that fallback", async () => {
+    setSessionFile(sessionJson("SECRET_A"));
+    let cobaltStatus = 401;
+    const service = characterServiceMock(charUrl, (who) =>
+      jsonResponse({ data: { name: who ? `PRIVATE_${who}` : "PUBLIC" } })
+    );
+    fetchMock.mockImplementation(async (url: string, opts?: RequestInit) =>
+      url === COBALT_URL && cobaltStatus !== 200 ? jsonResponse({}, cobaltStatus) : service(url, opts)
+    );
+
+    const first = await character.fetchCharacter("77");
+    expect(first.json).toContain("PUBLIC");
+    expect(first.notice).toMatch(/rejected the saved session.*without signing in.*run ddb_login again/);
+
+    // The session recovers: the next call must retry with the token, not serve
+    // the anonymous copy from cache.
+    cobaltStatus = 200;
+    const second = await character.fetchCharacter("77");
+    expect(second.json).toContain("PRIVATE_A");
+    expect(second.notice).toBeUndefined();
+    expect(authOf(charCalls()[1])).toMatch(/^Bearer /);
+  });
+
+  it("puts the notice in the tool's output", async () => {
+    setSessionFile(sessionJson("SECRET_A"));
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === COBALT_URL) return jsonResponse({}, 401);
+      if (url === charUrl) return jsonResponse({ data: { name: "PUBLIC" } });
+      return jsonResponse({});
     });
 
-    const result = await character.getCharacter("77").catch((e) => e);
+    const out = await character.downloadCharacter("77");
+    expect(out).toMatch(/rejected the saved session/);
+    expect(out).toMatch(/saved to:/);
+  });
 
-    expect(swapped).toBe(true); // the window was actually exercised
-    expect(result).toBeInstanceOf(sf.SessionChangedError);
-    const mixed = charCalls().filter((c) => /^Bearer /.test(authOf(c)) && cookieOf(c).includes("SECRET_B"));
-    expect(mixed).toHaveLength(0);
+  it("adds no notice when logged out (anonymous is expected) or when the token works", async () => {
+    setSessionFile(null);
+    fetchMock.mockImplementation(characterServiceMock(charUrl, () => jsonResponse({ data: { name: "PUBLIC" } })));
+    expect((await character.fetchCharacter("77")).notice).toBeUndefined();
+
+    await loadModules();
+    setSessionFile(sessionJson("SECRET_A"));
+    privateCharacterMock();
+    expect((await character.fetchCharacter("77")).notice).toBeUndefined();
+  });
+
+  it.each([
+    ["a token that isn't a JWT", () => jsonResponse({ token: "not-a-jwt" })],
+    ["no token field", () => jsonResponse({})],
+    ["a body that isn't JSON", () => ({ ...jsonResponse({}), json: async () => { throw new SyntaxError("Unexpected token '<'"); } }) as Response],
+    ["a JWT with no user id", () => jsonResponse({ token: `e30.${Buffer.from("{}").toString("base64url")}.sig` })],
+  ])("reports an unusable token (%s) as such, not as an outage", async (_label, cobaltResponse) => {
+    setSessionFile(sessionJson("SECRET_A"));
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === COBALT_URL) return cobaltResponse();
+      if (url === charUrl) return jsonResponse({}, 403);
+      return jsonResponse({});
+    });
+
+    const err = await character.getCharacter("77").catch((e) => e as Error);
+    expect(err.message).toMatch(/returned an unusable sign-in token/);
+    expect(err.message).not.toMatch(/could not be reached/);
   });
 
   it("is 403 for a private character when only cookies are sent (why the Bearer token is needed)", async () => {

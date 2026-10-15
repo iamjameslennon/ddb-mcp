@@ -9,7 +9,7 @@
  */
 
 import {
-  hasValidSession, beginAuthenticatedSession, SessionChangedError, CobaltTokenError,
+  hasValidSession, beginAuthenticatedSession, SessionChangedError, CobaltTokenError, MalformedCobaltTokenError,
   captureSession, assertSessionCurrent, onSessionInvalidated,
 } from "../session-fetch.js";
 import type { AuthenticatedSession } from "../session-fetch.js";
@@ -43,11 +43,11 @@ export function clearCharacterCache(): void {
 }
 
 // Detach account-derived character JSON on every session transition (logout,
-// account replacement, revoke). Registered once per module lifetime. This is
-// the conservative option permitted by the brief: we clear the WHOLE character
-// cache — including any anonymous public-character entries — rather than
-// partition it by generation. The public Open5e cache lives in open5e.ts and is
-// intentionally left untouched here.
+// account replacement, revoke). Registered once per module lifetime. We clear
+// the WHOLE character cache — including any anonymous public-character entries.
+// Keys also carry the session generation (see fetchCharacter), so this hook is
+// the first line of defence rather than the only one. The public Open5e cache
+// lives in open5e.ts and is intentionally left untouched here.
 onSessionInvalidated(() => {
   characterCache.clear();
 });
@@ -100,9 +100,46 @@ export async function parseCharacter(
   characterId: string,
   sections: ParseSection = "full"
 ): Promise<string> {
-  const jsonData = await getCharacter(characterId);
-  const raw = JSON.parse(jsonData) as Record<string, unknown>;
-  return parseCharacterData(raw, sections);
+  const { json, notice } = await fetchCharacter(characterId);
+  const raw = JSON.parse(json) as Record<string, unknown>;
+  return withNotice(parseCharacterData(raw, sections), notice);
+}
+
+/** Character JSON, plus a notice when a logged-in fetch had to go out anonymously. */
+export interface CharacterFetch {
+  json: string;
+  /** Set only when the token exchange failed and the character loaded anyway. */
+  notice?: string;
+}
+
+/** Prefix tool output with a fetch's notice, if it has one. */
+export function withNotice(text: string, notice: string | undefined): string {
+  return notice ? `⚠️ ${notice}\n\n${text}` : text;
+}
+
+/**
+ * Explain a failed token exchange: what went wrong, and what the user should do.
+ * Only a 401/403 from auth-service means the saved session itself was rejected;
+ * a network error or 5xx after retries is an outage a later retry can get past.
+ */
+function describeTokenFailure(e: unknown): { cause: string; advice: string } {
+  const detail = e instanceof Error ? e.message : String(e);
+  if (e instanceof CobaltTokenError && (e.status === 401 || e.status === 403)) {
+    return {
+      cause: `D&D Beyond rejected the saved session (${detail})`,
+      advice: "Your session may have expired — run ddb_login again.",
+    };
+  }
+  if (e instanceof MalformedCobaltTokenError) {
+    return {
+      cause: `D&D Beyond's auth service returned an unusable sign-in token (${detail})`,
+      advice: "Try again in a moment; if it keeps happening, run ddb_login again.",
+    };
+  }
+  return {
+    cause: `D&D Beyond's auth service could not be reached (${detail})`,
+    advice: "Try again in a moment.",
+  };
 }
 
 /**
@@ -110,11 +147,17 @@ export async function parseCharacter(
  * Uses the saved session's cobalt Bearer token — no browser needed after
  * initial login.
  */
-export async function getCharacter(
-  characterId: string
-): Promise<string> {
-  const cacheKey = `character:${characterId}`;
+export async function getCharacter(characterId: string): Promise<string> {
+  return (await fetchCharacter(characterId)).json;
+}
 
+/**
+ * getCharacter(), plus a notice for tool output when the token exchange failed
+ * and the character was loaded without signing in. Tools that show a character
+ * to the user call this and pass the notice through `withNotice()`, so an
+ * expired session is reported even when the character happens to be public.
+ */
+export async function fetchCharacter(characterId: string): Promise<CharacterFetch> {
   // Observe the on-disk authority BEFORE the early cache return. captureSession
   // runs the boundary check, so a pending logout/replacement fires the
   // invalidation hook (which clears this cache) before we read it. Without this,
@@ -123,8 +166,12 @@ export async function getCharacter(
   const snapshot = captureSession();
   const loggedIn = snapshot.state.kind === "authenticated" && hasValidSession();
 
+  // Keyed by generation as well as cleared by the invalidation hook, so an entry
+  // is only ever served to the account whose request produced it — even if a
+  // future change stopped the hook from firing.
+  const cacheKey = `character:${snapshot.generation}:${characterId}`;
   const cached = characterCache.get(cacheKey);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) return { json: cached };
 
   const url = `https://character-service.dndbeyond.com/character/v5/character/${encodeURIComponent(characterId)}?includeCustomItems=true`;
 
@@ -136,9 +183,9 @@ export async function getCharacter(
   // listCharacters(): a separate getCobaltToken() + sessionFetch() pair could
   // send account A's token with account B's cookies across an account swap.
   let resp: Response;
-  // Set only when the token exchange failed and we fell back to anonymous: the
-  // explanation to give if the character then turns out to need auth.
-  let authFailure: string | undefined;
+  // Set only when the token exchange failed and we fell back to anonymous: used
+  // for the notice on success, or the error if the character needs auth.
+  let authFailure: { cause: string; advice: string } | undefined;
   if (loggedIn) {
     let session: AuthenticatedSession | undefined;
     try {
@@ -150,15 +197,9 @@ export async function getCharacter(
       assertSessionCurrent(snapshot);
       // Token exchange failed. Public characters don't need auth, so degrade to
       // the anonymous request — what this path effectively was before — and
-      // explain any 401/403 below. Only a 401/403 from auth-service means the
-      // saved session itself was rejected; anything else (network error, 5xx
-      // after retries) is an outage that a later retry can get past.
-      const detail = e instanceof Error ? e.message : String(e);
-      const rejected = e instanceof CobaltTokenError && (e.status === 401 || e.status === 403);
-      authFailure = rejected
-        ? `D&D Beyond rejected the saved session (${detail}). Your session may have expired — run ddb_login again.`
-        : `D&D Beyond's auth service could not be reached (${detail}), so the request was sent without authentication. Try again in a moment.`;
-      process.stderr.write(`[ddb-mcp] ${detail} — fetching character ${characterId} anonymously\n`);
+      // say so in the result (success) or the error (401/403) below.
+      authFailure = describeTokenFailure(e);
+      process.stderr.write(`[ddb-mcp] ${authFailure.cause} — fetching character ${characterId} anonymously\n`);
     }
     resp = session
       ? await session.fetch(url)
@@ -177,13 +218,21 @@ export async function getCharacter(
     // captured its own snapshot after this one; generations only advance, so
     // passing this check also proves the token came from this same generation.
     if (loggedIn) assertSessionCurrent(snapshot);
+    if (authFailure) {
+      // Not cached: the next call should retry with the token, not keep serving
+      // the anonymous copy for the rest of the TTL.
+      return {
+        json,
+        notice: `${authFailure.cause}, so this character was loaded without signing in — only publicly shared data is shown. ${authFailure.advice}`,
+      };
+    }
     characterCache.set(cacheKey, json);
-    return json;
+    return { json };
   }
 
   // 404 = character doesn't exist; 403 = private
   if (authFailure && (resp.status === 401 || resp.status === 403)) {
-    throw new Error(`Character ${characterId} could not be accessed: ${authFailure}`);
+    throw new Error(`Character ${characterId} could not be accessed: ${authFailure.cause}. ${authFailure.advice}`);
   }
   if (resp.status === 403) {
     throw new Error(`Character ${characterId} is private and cannot be accessed.`);
@@ -249,7 +298,7 @@ export async function downloadCharacter(
   characterId: string,
   outputPath?: string
 ): Promise<string> {
-  const jsonData = await getCharacter(characterId);
+  const { json: jsonData, notice } = await fetchCharacter(characterId);
   const parsed = JSON.parse(jsonData);
   const charName: string = parsed?.data?.name ?? `character-${characterId}`;
 
@@ -287,7 +336,7 @@ export async function downloadCharacter(
     );
   }
   writeFileSync(savePath, JSON.stringify(parsed, null, 2), "utf8");
-  return `Character data for '${charName}' saved to: ${savePath}`;
+  return withNotice(`Character data for '${charName}' saved to: ${savePath}`, notice);
 }
 
 export async function listCharacters(): Promise<string> {

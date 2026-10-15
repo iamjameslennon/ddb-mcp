@@ -64,7 +64,7 @@ Owns the single authoritative answer to "which account are we, right now?" and s
 | `src/cache.ts` | Generic in-memory TTL cache (`TtlCache<T>`) with FIFO eviction |
 | `src/open5e.ts` | Open5e SRD fallback — no auth required. Used when DDB is down or returns empty results. 1 h TTL cache. Stores parsed objects (not JSON strings). |
 | `src/utils.ts` | Shared `stripHtml()` (strips tags, decodes HTML entities) and `wrapUntrusted()` (delimits user-authored free text in `<untrusted_dndbeyond_content>` tags, neutralizing embedded delimiters). Wrap any new tool output containing DDB user-authored text: page scrapes, book content, character notes, homebrew descriptions. |
-| `src/tools/character.ts` | Public API surface — network/IO (`getCharacter`, `downloadCharacter`, `listCharacters`, fuzzy `findCharacterByName`), JSON cache, plus re-exports of `parseCharacterData` and `getDefinition` from the per-domain modules in `src/tools/character/` |
+| `src/tools/character.ts` | Public API surface — network/IO (`getCharacter`, `fetchCharacter` (JSON + a `notice` when a logged-in fetch fell back to anonymous — tools that show a character pass it through `withNotice()`), `downloadCharacter`, `listCharacters`, fuzzy `findCharacterByName`), JSON cache, plus re-exports of `parseCharacterData` and `getDefinition` from the per-domain modules in `src/tools/character/` |
 | `src/tools/character/parse.ts` | `parseCharacterData(raw, sections)` orchestrator (sections: summary/combat/spells/inventory/features/notes/concentration/full) — delegates to the per-domain modules |
 | `src/tools/character/definition.ts` | `getDefinition` — searches a character's spells/feats/class features/racial traits/background/equipped items for name matches |
 | `src/tools/reference.ts` | Conditions (hardcoded), spells/items/races/classes/backgrounds/feats (DDB character-service `/game-data/spells?classId=X&classLevel=20` — one request per spellcasting class, returns cantrips + leveled spells together). Provenance-tracked cache: 24 h on full success, 5 min on partial. Per-call Open5e fallback when DDB returns nothing. Exports `addCharacterSpellsToCompendium()` to seed cantrips from character JSON. |
@@ -78,7 +78,7 @@ Owns the single authoritative answer to "which account are we, right now?" and s
 
 ### Caching layers
 
-- **Character JSON**: 60 s TTL in `character.ts`
+- **Character JSON**: 60 s TTL in `character.ts`, keyed by session generation as well as cleared on invalidation. Anonymous-fallback results (token exchange failed) are never cached, so the next call retries with the token
 - **Spells/items/compendium**: 24 h TTL in `reference.ts` (5 min when build was partial) — first spell call builds the full compendium by firing 8 parallel `/game-data/spells?classId=X&classLevel=20` requests, one per spellcasting class; cantrips and leveled spells come back in one response
 - **Open5e responses**: 1 h TTL in `open5e.ts`
 - **Cobalt JWT**: cached in-memory until 60 s before expiry, stamped with the generation it was minted under (`session-fetch.ts`)
