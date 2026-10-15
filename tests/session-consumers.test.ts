@@ -217,9 +217,10 @@ describe("spell compendium abandons the whole build on a mid-batch account chang
   it("does not cache account A's class lists when the account is replaced during a body parse", async () => {
     setSessionFile(sessionJson("SECRET_A"));
 
-    // One class list (classId=1) has a DEFERRED body — the other seven resolve
-    // immediately with account A's spells and are merged into the in-progress
-    // build. We flip the account on disk only while class 1's body is pending,
+    // One class list (/spells classId=1) has a DEFERRED body — the other
+    // fifteen requests (seven /spells lists with account A's spells, eight
+    // always-known lists that fall through to an empty body) resolve
+    // immediately. We flip the account on disk only while class 1's body is pending,
     // so nothing observes the change until the batch is done — precisely the
     // "merge old results into a new-account compendium" path.
     let releaseDeferred!: (v: unknown) => void;
@@ -244,7 +245,7 @@ describe("spell compendium abandons the whole build on a mid-batch account chang
 
     const p = reference.searchSpells({ name: "spell" }).catch((e) => `THREW:${(e as Error)?.name}`);
 
-    // Let the seven immediate class lists resolve into the build.
+    // Let the fifteen immediate class-list requests resolve.
     await new Promise((r) => setTimeout(r, 0));
 
     // Replace the account, then release class 1's stale (account A) body.

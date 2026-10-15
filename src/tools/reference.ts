@@ -316,9 +316,9 @@ async function loadSpellCompendium(): Promise<DdbSpell[]> {
   //                                   cantrips. The only source of Cleric,
   //                                   Druid and Paladin leveled spells.
   //
-  // Neither endpoint alone is complete. Querying only /spells (2.7.x–2.10.x)
+  // Neither endpoint alone is complete. Querying only /spells (2.8.0–2.10.x)
   // silently dropped every leveled Cleric/Druid/Paladin spell; querying only
-  // always-known/always-prepared (pre-2.7) dropped every cantrip. Both were
+  // always-known/always-prepared (pre-2.8) dropped every cantrip. Both were
   // HTTP 200 throughout, so provenance looked authoritative.
   const SPELL_LIST_ENDPOINTS = ["spells", "always-known-spells"] as const;
   const tasks = SPELL_LIST_ENDPOINTS.flatMap(endpoint =>
@@ -390,7 +390,7 @@ async function loadSpellCompendium(): Promise<DdbSpell[]> {
 /**
  * Supplements the spell compendium with spells from a parsed character's
  * classSpells array. Captures cantrips and chosen spells absent from the
- * always-known endpoints. Called from parseCharacterData().
+ * per-class game-data spell lists. Called from parseCharacterData().
  */
 export function addCharacterSpellsToCompendium(char: Record<string, unknown>): void {
   const arrOf = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);

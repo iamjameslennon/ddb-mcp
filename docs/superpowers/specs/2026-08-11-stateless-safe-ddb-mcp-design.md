@@ -192,7 +192,8 @@ Homebrew spells and subclasses reach the compendium only through a character's `
 loadSpellCompendium():
 
   Layer 1 — class spell lists           [no change signal available]
-    8× /game-data/spells?classId=…&classLevel=20
+    8× /game-data/spells?classId=…&classLevel=20               (cantrips; + leveled for known casters)
+    8× /game-data/always-known-spells?classId=…&classLevel=20  (leveled; only source for Cleric/Druid/Paladin)
     disk cache, 7-day TTL
 
   Layer 2 — character spells            [exact change signal]

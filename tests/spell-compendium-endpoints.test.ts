@@ -150,7 +150,7 @@ describe("spell compendium queries both class spell-list endpoints", () => {
         spells: { "2": [spell("Sacred Flame", 0)] },
         "always-known-spells": { "2": [spell("Bless", 1)], "3": [spell("Moonbeam", 2)] },
       },
-      // 403, not the brief's 500: it is non-retryable in session-fetch, so it
+      // 403, not 500: it is non-retryable in session-fetch, so it
       // hits the same non-OK → ddb-partial path at once (5xx backoff > 5 s).
       { status: { "always-known-spells:3": 403 } },
     ));
