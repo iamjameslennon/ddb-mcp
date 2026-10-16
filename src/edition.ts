@@ -10,6 +10,7 @@
  */
 
 import { stripHtml } from "./utils.js";
+import { EDITION_RENAMES } from "./edition-renames.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -166,4 +167,210 @@ export function classifyEdition(entry: EditionMarkers, index: SourceIndex): Edit
     if (s) return { ruleset, book: s.book };
   }
   return { ruleset: "unstated", book: firstDescribed() };
+}
+
+// ── Twin names ────────────────────────────────────────────────────────────────
+
+/** Lowercase, curly apostrophes folded to "'", whitespace collapsed, trimmed. */
+export function normalizeName(name: string): string {
+  return name.toLowerCase().replace(/[‘’]/g, "'").replace(/\s+/g, " ").trim();
+}
+
+/** A twin-name function over a rename table: normalizes, then maps a 2014 name to its 2024 name. */
+export function createTwinNamer(pairs: ReadonlyArray<readonly [string, string]>): (name: string) => string {
+  const renames = new Map(pairs.map(([name2014, name2024]) => [normalizeName(name2014), normalizeName(name2024)]));
+  return name => {
+    const n = normalizeName(name);
+    return renames.get(n) ?? n;
+  };
+}
+
+/** The twin key for spells, items, monsters, feats, backgrounds, species and classes. */
+export const twinName = createTwinNamer(EDITION_RENAMES);
+
+/** Class features twin only within one class: Paladin's Extra Attack is not Fighter's. */
+export function classFeatureTwinKey(className: string, featureName: string, namer = twinName): string {
+  return `${namer(className)}/${namer(featureName)}`;
+}
+
+/** Racial traits twin only within one species. */
+export function racialTraitTwinKey(speciesName: string, traitName: string, namer = twinName): string {
+  return `${namer(speciesName)}/${namer(traitName)}`;
+}
+
+// ── Tiebreaks ─────────────────────────────────────────────────────────────────
+
+export interface TiebreakFields { id: number; isHomebrew?: boolean | null }
+export interface MonsterTiebreakFields extends TiebreakFields { sourceId?: number | null }
+
+/** First occurrence of each definition id (one spell arrives from several class lists). */
+export function dedupeById<T extends { id: number }>(entries: readonly T[]): T[] {
+  const seen = new Set<number>();
+  const out: T[] = [];
+  for (const entry of entries) {
+    if (seen.has(entry.id)) continue;
+    seen.add(entry.id);
+    out.push(entry);
+  }
+  return out;
+}
+
+/** Every non-monster type: official before homebrew, then lowest definition id. Dedupe by id first. */
+export function definitionTiebreak(a: TiebreakFields, b: TiebreakFields): number {
+  return (a.isHomebrew ? 1 : 0) - (b.isHomebrew ? 1 : 0) || a.id - b.id;
+}
+
+/**
+ * Monsters (#58's order, minus the edition key): official → a Core Rules
+ * book (category name matches /core rules/, as monster.ts resolves it) → lowest id.
+ */
+export function monsterTiebreak(index: SourceIndex): (a: MonsterTiebreakFields, b: MonsterTiebreakFields) => number {
+  const isCore = (m: MonsterTiebreakFields) => {
+    const cat = m.sourceId != null ? index.sources.get(m.sourceId)?.categoryId : null;
+    return cat != null && /core\s*rules/i.test(index.categories.get(cat) ?? "");
+  };
+  return (a, b) =>
+    (a.isHomebrew ? 1 : 0) - (b.isHomebrew ? 1 : 0)
+    || (isCore(a) ? 0 : 1) - (isCore(b) ? 0 : 1)
+    || a.id - b.id;
+}
+
+// ── Selection ─────────────────────────────────────────────────────────────────
+
+export interface Selection<T> { entry: T; reason?: EditionReason }
+
+/**
+ * Pick one entry from a twin group. The requested edition wins; failing that,
+ * the other edition with a reason. Non-edition entries (third-party, homebrew,
+ * playtest, unstated) are never compared against editions; a group with
+ * none of either edition yields its first entry by tiebreak.
+ */
+export function selectByEdition<T>(
+  group: readonly T[],
+  requested: RulesEdition,
+  info: (c: T) => EditionInfo,
+  tiebreak: (a: T, b: T) => number,
+): Selection<T> | null {
+  if (!group.length) return null;
+  const sorted = [...group].sort(tiebreak);
+  const first = (edition: RulesEdition) => sorted.find(c => info(c).ruleset === edition);
+  const wanted = first(requested);
+  if (wanted) return { entry: wanted };
+  const other = first(requested === "2024" ? "2014" : "2024");
+  if (other) return { entry: other, reason: requested === "2024" ? "no-2024-version" : "no-2014-version" };
+  return { entry: sorted[0] };
+}
+
+export interface LookupOptions<T> {
+  name: (c: T) => string;
+  info: (c: T) => EditionInfo;
+  tiebreak: (a: T, b: T) => number;
+  /** The tool's partial-match order. Default: first entry, in array order, whose normalized name contains the query. */
+  partialMatch?: (all: readonly T[], normalizedQuery: string) => T | undefined;
+  /** Defaults to twinName (the committed rename table). Tests inject their own. */
+  twinName?: (name: string) => string;
+}
+
+export interface LookupResult<T> extends Selection<T> {
+  /** Set when the matched name differs from the returned one within the twin group: print renameLine(). */
+  renamed?: { name2014: string; name2024: string };
+}
+
+/**
+ * Single lookups (get_*). Exact twin-name match first, so a 2014 name reaches
+ * its renamed 2024 group; otherwise the tool's partial match picks an entry and
+ * its whole twin group is the target. Then selectByEdition within the group.
+ */
+export function lookupByName<T>(
+  all: readonly T[],
+  query: string,
+  requested: RulesEdition,
+  opts: LookupOptions<T>,
+): LookupResult<T> | null {
+  const namer = opts.twinName ?? twinName;
+  const normalizedQuery = normalizeName(query);
+  if (!normalizedQuery) return null; // "" is a substring of every name
+  const queryKey = namer(query);
+
+  let key: string;
+  let matched: T | undefined;
+  if (all.some(c => namer(opts.name(c)) === queryKey)) {
+    key = queryKey;
+    matched = all.find(c => normalizeName(opts.name(c)) === normalizedQuery);
+  } else {
+    matched = opts.partialMatch
+      ? opts.partialMatch(all, normalizedQuery)
+      : all.find(c => normalizeName(opts.name(c)).includes(normalizedQuery));
+    if (!matched) return null;
+    key = namer(opts.name(matched));
+  }
+
+  const group = all.filter(c => namer(opts.name(c)) === key);
+  const picked = selectByEdition(group, requested, opts.info, opts.tiebreak);
+  if (!picked) return null;
+
+  const matchedName = matched ? opts.name(matched) : query.trim();
+  const returnedName = opts.name(picked.entry);
+  if (normalizeName(matchedName) === normalizeName(returnedName)) return picked;
+  // The 2024 name is the twin key itself; the other is the 2014 alias.
+  const [name2024, name2014] = normalizeName(returnedName) === key
+    ? [returnedName, matchedName]
+    : [matchedName, returnedName];
+  return { ...picked, renamed: { name2014, name2024 } };
+}
+
+export interface SearchOptions<T> {
+  info: (c: T) => EditionInfo;
+  twinKey: (c: T) => string;
+  tiebreak: (a: T, b: T) => number;
+  /** Step 2: a group matches when ANY of its entries matches. Omit for no name filter. */
+  nameMatches?: (c: T) => boolean;
+  /** Step 4: attribute filters, applied to the selected entry (and to other-edition twins, for the count). */
+  passes?: (c: T) => boolean;
+}
+
+export interface SearchSelection<T> extends Selection<T> { info: EditionInfo }
+
+/**
+ * Search pipeline steps 1–5 over the FULL compendium (dedupe by id first):
+ * group by twin key → name filter per group → one edition entry per group
+ * (non-edition entries pass through) → attribute filters on the selected
+ * entry → count other-edition entries in surviving groups that would also
+ * have passed the attribute filters. The name filter is per group, so a twin
+ * counts as hidden even if only its partner's name matched: the other
+ * rules_edition would list it for the same query. Same-edition duplicates are
+ * not shown and not counted.
+ * Groups keep first-appearance order; sorting and paging are the caller's.
+ */
+export function groupAndSelect<T>(
+  all: readonly T[],
+  requested: RulesEdition,
+  opts: SearchOptions<T>,
+): { selected: SearchSelection<T>[]; hidden: number } {
+  const groups = new Map<string, T[]>();
+  for (const c of all) {
+    const key = opts.twinKey(c);
+    const group = groups.get(key);
+    if (group) group.push(c);
+    else groups.set(key, [c]);
+  }
+
+  const passes = opts.passes ?? (() => true);
+  const selected: SearchSelection<T>[] = [];
+  let hidden = 0;
+  for (const group of groups.values()) {
+    if (opts.nameMatches && !group.some(opts.nameMatches)) continue;
+    const editions = group.filter(x => isEdition(opts.info(x).ruleset));
+    const pick = selectByEdition(editions, requested, opts.info, opts.tiebreak);
+    if (pick && passes(pick.entry)) {
+      const info = opts.info(pick.entry);
+      selected.push({ ...pick, info });
+      hidden += editions.filter(x => opts.info(x).ruleset !== info.ruleset && passes(x)).length;
+    }
+    const nonEdition = group.filter(x => !isEdition(opts.info(x).ruleset)).sort(opts.tiebreak);
+    for (const x of nonEdition) {
+      if (passes(x)) selected.push({ entry: x, info: opts.info(x) });
+    }
+  }
+  return { selected, hidden };
 }

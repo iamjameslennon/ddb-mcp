@@ -1,8 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
   buildSourceIndex, categoryRuleset, classifyEdition, KNOWN_CATEGORY_IDS,
-  type CategoryRecord, type EditionMarkers, type SourceRecord,
+  normalizeName, createTwinNamer, classFeatureTwinKey, racialTraitTwinKey,
+  dedupeById, definitionTiebreak, monsterTiebreak,
+  selectByEdition, lookupByName, groupAndSelect,
+  type CategoryRecord, type EditionInfo, type EditionMarkers, type Ruleset, type SourceRecord,
 } from "../src/edition.js";
+import { EDITION_RENAMES } from "../src/edition-renames.js";
 
 // ── Fixture source index ──────────────────────────────────────────────────────
 // Real IDs, names and categories from the live game config (2026-10-16), except
@@ -191,5 +195,244 @@ describe("classifyEdition", () => {
     expect(classify({ sources: from(145) }).ruleset).toBe("2024");        // PHB-2024
     expect(classify({ sources: from(148, 1) }).ruleset).toBe("2024");     // br-2024 + BR
     expect(classify({ sources: from(193) }).ruleset).toBe("third-party"); // TCMP1
+  });
+});
+
+// ── Twin names ────────────────────────────────────────────────────────────────
+
+describe("twin names", () => {
+  const twin = createTwinNamer([["Acid Arrow", "Melf’s Acid Arrow"]]);
+
+  it("normalizes case, curly apostrophes and whitespace", () => {
+    expect(normalizeName("  Melf’s   ACID\tArrow ")).toBe("melf's acid arrow");
+  });
+
+  it("maps a 2014 name to the normalized 2024 name; the 2024 side is canonical", () => {
+    expect(twin("  ACID   arrow ")).toBe("melf's acid arrow");
+    expect(twin("Melf's Acid Arrow")).toBe("melf's acid arrow");
+    expect(twin("Fireball")).toBe("fireball");
+  });
+
+  it("keys class features and racial traits by owner + name", () => {
+    expect(classFeatureTwinKey("Paladin", "Extra Attack", twin)).not.toBe(classFeatureTwinKey("Fighter", "Extra Attack", twin));
+    expect(classFeatureTwinKey(" fighter", "EXTRA  attack", twin)).toBe("fighter/extra attack");
+    expect(racialTraitTwinKey("Elf", "Darkvision", twin)).not.toBe(racialTraitTwinKey("Dwarf", "Darkvision", twin));
+    expect(racialTraitTwinKey("Elf", "Fey Ancestry", twin)).toBe("elf/fey ancestry");
+  });
+});
+
+describe("EDITION_RENAMES table", () => {
+  const pairs = EDITION_RENAMES.map(([a, b]) => [normalizeName(a), normalizeName(b)] as const);
+
+  it("maps each 2014 name once", () => {
+    expect(new Set(pairs.map(([a]) => a)).size).toBe(pairs.length);
+  });
+
+  it("never maps a name to itself", () => {
+    for (const [a, b] of pairs) expect(a).not.toBe(b);
+  });
+
+  it("has no chains: no 2024 name is also a 2014 name", () => {
+    const olds = new Set(pairs.map(([a]) => a));
+    for (const [, b] of pairs) expect(olds.has(b)).toBe(false);
+  });
+});
+
+// ── Selection fixtures ────────────────────────────────────────────────────────
+
+type E = { id: number; name: string; r: Ruleset; isHomebrew?: boolean; conc?: boolean };
+const e = (id: number, name: string, r: Ruleset, extra: Partial<E> = {}): E => ({ id, name, r, ...extra });
+const infoOf = (c: E): EditionInfo => ({ ruleset: c.r, book: null });
+const ids = (xs: Array<{ entry: E }>) => xs.map(x => x.entry.id);
+
+describe("tiebreaks", () => {
+  it("dedupes by definition id, keeping the first", () => {
+    expect(dedupeById([e(1, "A", "2024"), e(2, "B", "2024"), e(1, "A again", "2024")]).map(x => x.name)).toEqual(["A", "B"]);
+  });
+
+  it("definitions: official before homebrew, then lowest id", () => {
+    const sorted = [e(9, "X", "2024", { isHomebrew: true }), e(7, "X", "2024"), e(3, "X", "2024")].sort(definitionTiebreak);
+    expect(sorted.map(x => x.id)).toEqual([3, 7, 9]);
+  });
+
+  it("monsters: official → Core Rules book → lowest id", () => {
+    const tiebreak = monsterTiebreak(INDEX);
+    const monsters = [
+      { id: 3, sourceId: 147, isHomebrew: true },
+      { id: 9, sourceId: 6 },      // Curse of Strahd — not a Core Rules category
+      { id: 20, sourceId: 147 },   // MM-2024 — "5.5e Core Rules"
+      { id: 12, sourceId: 5 },     // MM 2014 — "5e Core Rules"
+      { id: 1, sourceId: null },
+    ];
+    expect([...monsters].sort(tiebreak).map(m => m.id)).toEqual([12, 20, 1, 9, 3]);
+  });
+});
+
+describe("selectByEdition (spec: selection table)", () => {
+  const S24 = e(1, "Sleep", "2024");
+  const S14 = e(2, "Sleep", "2014");
+
+  it.each([
+    ["2024", [S24, S14], 1, undefined],
+    ["2024", [S24], 1, undefined],
+    ["2024", [S14], 2, "no-2024-version"],
+    ["2014", [S24, S14], 2, undefined],
+    ["2014", [S14], 2, undefined],
+    ["2014", [S24], 1, "no-2014-version"],
+  ] as const)("requested %s from %j → id %i, reason %s", (requested, group, id, reason) => {
+    const picked = selectByEdition(group, requested, infoOf, definitionTiebreak);
+    expect(picked?.entry.id).toBe(id);
+    expect(picked?.reason).toBe(reason);
+  });
+
+  it("an edition entry beats a non-edition one, whatever the ids", () => {
+    expect(selectByEdition([e(1, "Fireball", "homebrew", { isHomebrew: true }), e(5, "Fireball", "2014")], "2024", infoOf, definitionTiebreak))
+      .toEqual({ entry: e(5, "Fireball", "2014"), reason: "no-2024-version" });
+  });
+
+  it("a group with no edition entries yields its first non-edition entry by tiebreak", () => {
+    const picked = selectByEdition([e(1, "Hex Blade", "homebrew", { isHomebrew: true }), e(9, "Hex Blade", "third-party")], "2014", infoOf, definitionTiebreak);
+    expect(picked).toEqual({ entry: e(9, "Hex Blade", "third-party") });
+  });
+
+  it("two same-edition entries resolve by tiebreak", () => {
+    expect(selectByEdition([e(7, "Zombie", "2024"), e(3, "Zombie", "2024")], "2024", infoOf, definitionTiebreak)?.entry.id).toBe(3);
+  });
+
+  it("an empty group yields null", () => {
+    expect(selectByEdition([], "2024", infoOf, definitionTiebreak)).toBeNull();
+  });
+});
+
+// ── Single lookups (spec: gather algorithm) ───────────────────────────────────
+
+describe("lookupByName", () => {
+  const twin = createTwinNamer([["Acid Arrow", "Melf's Acid Arrow"]]);
+  const SPELLS = [
+    e(1, "Acid Arrow", "2014"),
+    e(2, "Melf's Acid Arrow", "2024"),
+    e(3, "Sleep", "2014"),
+    e(4, "Sleep", "2024"),
+    e(5, "Toll the Dead", "2014"),
+    e(6, "Fireball", "2024"),
+    e(7, "Fireball", "2014"),
+    e(8, "Fireball", "homebrew", { isHomebrew: true }),
+  ];
+  const opts = { name: (c: E) => c.name, info: infoOf, tiebreak: definitionTiebreak, twinName: twin };
+  const find = (q: string, requested: "2024" | "2014" = "2024", extra = {}) => lookupByName(SPELLS, q, requested, { ...opts, ...extra });
+
+  it("exact: 2024 by default, 2014 on request", () => {
+    expect(find("sleep")).toEqual({ entry: SPELLS[3] });
+    expect(find("Sleep", "2014")).toEqual({ entry: SPELLS[2] });
+  });
+
+  it("exact: an official edition entry beats a same-named homebrew one", () => {
+    expect(find("Fireball")?.entry.id).toBe(6);
+  });
+
+  it("2014-only entry under the default carries the reason", () => {
+    expect(find("Toll the Dead")).toEqual({ entry: SPELLS[4], reason: "no-2024-version" });
+  });
+
+  it("exact via the rename table reaches the 2024 group and reports the rename", () => {
+    expect(find("acid arrow")).toEqual({ entry: SPELLS[1], renamed: { name2014: "Acid Arrow", name2024: "Melf's Acid Arrow" } });
+    expect(find("Acid Arrow", "2014")).toEqual({ entry: SPELLS[0] });
+    expect(find("Melf's Acid Arrow", "2014")).toEqual({ entry: SPELLS[0], renamed: { name2014: "Acid Arrow", name2024: "Melf's Acid Arrow" } });
+  });
+
+  it("normalizes curly apostrophes and stray whitespace in the query", () => {
+    expect(find("  melf’s   acid arrow ")).toEqual({ entry: SPELLS[1] });
+  });
+
+  it("partial: first match in array order, then its whole group", () => {
+    expect(find("toll")).toEqual({ entry: SPELLS[4], reason: "no-2024-version" });
+    expect(find("fire")?.entry.id).toBe(6);
+    expect(find("acid arr")).toEqual({ entry: SPELLS[1], renamed: { name2014: "Acid Arrow", name2024: "Melf's Acid Arrow" } });
+  });
+
+  it("uses the tool's own partial-match order when given", () => {
+    const fuzzy = { partialMatch: (all: readonly E[]) => all.find(c => c.id === 3) };
+    expect(find("slep", "2024", fuzzy)).toEqual({ entry: SPELLS[3] });
+    expect(find("slep", "2014", fuzzy)).toEqual({ entry: SPELLS[2] });
+  });
+
+  it("an empty or unmatched query yields null", () => {
+    expect(find("")).toBeNull();
+    expect(find("   ")).toBeNull();
+    expect(find("Wish")).toBeNull();
+  });
+});
+
+// ── Searches (spec: search pipeline) ──────────────────────────────────────────
+
+describe("groupAndSelect", () => {
+  const twin = createTwinNamer([["Feeblemind", "Befuddlement"]]);
+  const ALL = [
+    e(10, "Barkskin", "2014", { conc: true }),
+    e(11, "Barkskin", "2024", { conc: false }),
+    e(12, "Bless", "2014", { conc: true }),
+    e(13, "Bless", "2024", { conc: true }),
+    e(14, "Toll the Dead", "2014", { conc: false }),
+    e(15, "Feeblemind", "2014", { conc: false }),
+    e(16, "Befuddlement", "2024", { conc: false }),
+    e(17, "Bless", "homebrew", { isHomebrew: true, conc: true }),
+    e(18, "Moonbeam", "2024", { conc: true }),
+  ];
+  const base = { info: infoOf, twinKey: (c: E) => twin(c.name), tiebreak: definitionTiebreak };
+  const search = (requested: "2024" | "2014", extra: { nameMatches?: (c: E) => boolean; passes?: (c: E) => boolean } = {}) =>
+    groupAndSelect(ALL, requested, { ...base, ...extra });
+
+  it("default: one 2024 entry per twin group, non-edition entries kept, other edition counted", () => {
+    const { selected, hidden } = search("2024");
+    expect(ids(selected)).toEqual([11, 13, 17, 14, 16, 18]);
+    expect(hidden).toBe(3);
+    expect(selected.find(s => s.entry.id === 14)).toMatchObject({ reason: "no-2024-version", info: { ruleset: "2014" } });
+  });
+
+  it("2014 requested: the mirror image", () => {
+    const { selected, hidden } = search("2014");
+    expect(ids(selected)).toEqual([10, 12, 17, 14, 15, 18]);
+    expect(hidden).toBe(3);
+    expect(selected.find(s => s.entry.id === 18)?.reason).toBe("no-2014-version");
+  });
+
+  it("name filter matches a group when any member matches (feeble → Befuddlement)", () => {
+    const { selected, hidden } = search("2024", { nameMatches: c => normalizeName(c.name).includes("feeble") });
+    expect(ids(selected)).toEqual([16]);
+    expect(hidden).toBe(1);
+  });
+
+  it("a twin counts as hidden even when only the other member matches the name: switching editions shows it", () => {
+    // "befud" matches only 2024 Befuddlement, yet rules_edition "2014" would list
+    // Feeblemind for this query (the group matches), so the footer is truthful.
+    expect(search("2024", { nameMatches: c => normalizeName(c.name).includes("befud") })).toMatchObject({ hidden: 1 });
+    expect(ids(search("2014", { nameMatches: c => normalizeName(c.name).includes("befud") }).selected)).toEqual([15]);
+  });
+
+  it("attribute filters apply to the selected entry; a 2014-only match is still hidden and not counted", () => {
+    const { selected, hidden } = search("2024", { passes: c => c.conc === true });
+    expect(ids(selected)).toEqual([13, 17, 18]); // 2024 Barkskin isn't concentration → whole group dropped
+    expect(hidden).toBe(1);                       // only 2014 Bless: it passes and its group survived
+  });
+
+  it("hidden counts only other-edition entries that pass the filters", () => {
+    const { selected, hidden } = search("2014", { passes: c => c.conc === true });
+    expect(ids(selected)).toEqual([10, 12, 17, 18]);
+    expect(hidden).toBe(1); // 2024 Bless; 2024 Barkskin fails the filter
+  });
+
+  it("homebrew/third-party are never hidden and never counted", () => {
+    const only = [e(19, "Blood Curse", "homebrew", { isHomebrew: true }), e(20, "Blood Curse", "third-party")];
+    for (const requested of ["2024", "2014"] as const) {
+      const { selected, hidden } = groupAndSelect(only, requested, base);
+      expect(ids(selected)).toEqual([20, 19]);
+      expect(hidden).toBe(0);
+    }
+  });
+
+  it("same-edition duplicates in one group show once and are not counted as hidden", () => {
+    const { selected, hidden } = groupAndSelect([e(30, "Zombie", "2024"), e(25, "Zombie", "2024")], "2024", base);
+    expect(ids(selected)).toEqual([25]);
+    expect(hidden).toBe(0);
   });
 });
