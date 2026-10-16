@@ -102,6 +102,15 @@ describe("buildSourceIndex", () => {
     expect(classify({ sources: from(802) })).toEqual({ ruleset: "2024", book: "NoDesc-2024" });
   });
 
+  it("leaves an empty label empty, never a year-only label", () => {
+    const local = buildSourceIndex([
+      { id: 901, name: "", description: null, sourceURL: null, sourceCategoryId: 24 },
+      { id: 902, name: "", description: null, sourceURL: null, sourceCategoryId: 26 },
+    ], []);
+    expect(local.sources.get(901)?.book).toBe("");
+    expect(local.sources.get(902)?.book).toBe("");
+  });
+
   it("keeps the raw fields and the category list", () => {
     expect(INDEX.sources.get(145)).toEqual({
       categoryId: 24, name: "PHB-2024", description: "Player’s Handbook",
@@ -173,6 +182,8 @@ describe("classifyEdition", () => {
     expect(classify({ isHomebrew: null, isLegacy: null, sourceId: null, sources: null })).toEqual({ ruleset: "unstated", book: null });
     expect(classify({ sources: [{ sourceId: null }, { sourceId: 2 }] })).toEqual({ ruleset: "2014", book: "Player's Handbook (2014)" });
     expect(classify({ sourceId: 800, sources: from(800, 800) })).toEqual({ ruleset: "unstated", book: "Eberron: Rising from the Last War" });
+    expect(classify({ sources: [null, { sourceId: 2 }] } as unknown as EditionMarkers)).toEqual({ ruleset: "2014", book: "Player's Handbook (2014)" });
+    expect(classify({ sources: [undefined] } as unknown as EditionMarkers)).toEqual({ ruleset: "unstated", book: null });
   });
 
   it("verified live source IDs (spec: named cases)", () => {

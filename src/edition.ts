@@ -109,7 +109,7 @@ export function buildSourceIndex(sources: readonly SourceRecord[], categories: r
   const index = new Map<number, IndexedSource>();
   for (const { s, book, ruleset } of decoded) {
     let label = book;
-    if (isEdition(ruleset) && !YEAR_SUFFIX.test(book)) {
+    if (book && isEdition(ruleset) && !YEAR_SUFFIX.test(book)) {
       const other: RulesEdition = ruleset === "2024" ? "2014" : "2024";
       if (decoded.some(d => d.ruleset === other && stem(d.book) === stem(book))) label = `${book} (${ruleset})`;
     }
@@ -149,7 +149,7 @@ export function classifyEdition(entry: EditionMarkers, index: SourceIndex): Edit
   if (entry.isHomebrew === true) return { ruleset: "homebrew", book: null };
 
   const ids: number[] = [];
-  for (const id of [entry.sourceId, ...(entry.sources ?? []).map(s => s.sourceId)]) {
+  for (const id of [entry.sourceId, ...(entry.sources ?? []).map(s => s?.sourceId)]) {
     if (typeof id === "number" && !ids.includes(id)) ids.push(id);
   }
   const known = ids
