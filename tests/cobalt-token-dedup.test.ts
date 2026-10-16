@@ -68,27 +68,41 @@ function cobaltCalls(): { cookie: string }[] {
     .map((c) => ({ cookie: ((c[1] as RequestInit).headers as Record<string, string>).Cookie ?? "" }));
 }
 
+interface Deferred<T> { promise: Promise<T>; resolve: (v: T) => void }
+function deferred<T>(): Deferred<T> {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((r) => { resolve = r; });
+  return { promise, resolve };
+}
+
 /**
  * A cobalt endpoint whose responses are released manually, in dispatch order:
- * `release(i, resp)` answers the i-th POST.
+ * `release(i, resp)` answers the i-th POST. Like real fetch, a POST rejects
+ * with its signal's reason when the signal aborts — unless `honorAbort` is
+ * false, which models a response that is already on its way back so the
+ * late-settlement paths can be exercised.
  */
-function gatedCobalt() {
-  const gates: ((r: Response) => void)[] = [];
-  const dispatched: Promise<void>[] = [];
-  const signals: (() => void)[] = [];
-  for (let i = 0; i < 8; i++) dispatched.push(new Promise<void>((r) => { signals.push(r); }));
+function gatedCobalt({ honorAbort = true } = {}) {
+  const gates: Deferred<Response>[] = [];
+  const dispatches: Deferred<void>[] = [];
+  const slot = <T>(list: Deferred<T>[], i: number) => (list[i] ??= deferred<T>());
   let count = 0;
-  fetchMock.mockImplementation((url: string) => {
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
     if (url !== COBALT_URL) return Promise.resolve(jsonResponse({}));
     const i = count++;
-    return new Promise<Response>((r) => {
-      gates[i] = r;
-      signals[i]();
+    slot(dispatches, i).resolve();
+    const gate = slot(gates, i).promise;
+    const signal = init?.signal;
+    if (!honorAbort || !signal) return gate;
+    return new Promise<Response>((resolve, reject) => {
+      if (signal.aborted) return reject(signal.reason);
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      void gate.then(resolve);
     });
   });
   return {
-    dispatched: (i: number) => dispatched[i],
-    release: (i: number, resp: Response) => gates[i](resp),
+    dispatched: (i: number) => slot(dispatches, i).promise,
+    release: (i: number, resp: Response) => slot(gates, i).resolve(resp),
   };
 }
 
@@ -148,7 +162,7 @@ describe("concurrent cold-cache callers share one cobalt-token exchange", () => 
     for (const r of results) expect(r).toEqual({ token: jwt, userId: "42" });
   });
 
-  it("joiners still re-check authority after the shared exchange resolves", async () => {
+  it("a revoke mid-exchange rejects every joined caller with SessionChangedError", async () => {
     setSessionFile(sessionJson("SECRET_A"));
     const cobalt = gatedCobalt();
 
@@ -226,7 +240,7 @@ describe("an in-flight exchange never crosses a generation boundary", () => {
    */
   async function runTransition(transition: () => void | Promise<void>, newCookie: string) {
     setSessionFile(sessionJson("SECRET_A"));
-    const cobalt = gatedCobalt();
+    const cobalt = gatedCobalt({ honorAbort: false });
 
     const oldCallers = Array.from({ length: 4 }, () => sf.beginAuthenticatedSession());
     await cobalt.dispatched(0);
@@ -282,7 +296,7 @@ describe("an in-flight exchange never crosses a generation boundary", () => {
 
   it("an old exchange that FAILS after the transition does not disturb the new one", async () => {
     setSessionFile(sessionJson("SECRET_A"));
-    const cobalt = gatedCobalt();
+    const cobalt = gatedCobalt({ honorAbort: false });
 
     const oldCaller = sf.beginAuthenticatedSession();
     await cobalt.dispatched(0);
@@ -291,7 +305,9 @@ describe("an in-flight exchange never crosses a generation boundary", () => {
     await cobalt.dispatched(1);
 
     cobalt.release(0, jsonResponse({}, 401));
-    await expect(oldCaller).rejects.toThrow();
+    // The 401 lands after the swap, so the post-dispatch authority check names
+    // the swap before the status is ever looked at.
+    await expect(oldCaller).rejects.toBeInstanceOf(sf.SessionChangedError);
 
     const lateCaller = sf.beginAuthenticatedSession();
     await Promise.resolve();
@@ -324,5 +340,186 @@ describe("near-expiry refresh is deduplicated too", () => {
 
     expect(cobaltCalls()).toHaveLength(2);
     for (const s of refreshed) expect(s.userId).toBe("U2");
+  });
+});
+
+describe("the starter re-checks authority after the shared exchange, like every joiner", () => {
+  it("an account swap AFTER the mint's last check rejects the starter and every joiner", async () => {
+    // Flip the file on the first read made by getCobaltTokenForSnapshot itself
+    // rather than by the mint inside it: i.e. the first post-resolve re-check,
+    // whichever caller (starter or joiner) runs it. Every check inside the mint
+    // (and every captureSession) sees account A, so the exchange itself
+    // succeeds and the swap lands exactly in the hand-out window.
+    const A = sessionJson("SECRET_A");
+    const B = sessionJson("SECRET_B");
+    let flipped = false;
+    const prevLimit = Error.stackTraceLimit;
+    Error.stackTraceLimit = 200;
+    try {
+      fsMock.existsSync.mockReturnValue(true);
+      fsMock.readFileSync.mockImplementation(() => {
+        if (!flipped) {
+          const stack = new Error().stack ?? "";
+          flipped = stack.includes("getCobaltTokenForSnapshot") && !stack.includes("mintCobaltToken");
+        }
+        return flipped ? B : A;
+      });
+      fetchMock.mockImplementation(async () => jsonResponse({ token: makeJwt("OLD") }));
+
+      const settled = await settleAll(Array.from({ length: 4 }, () => sf.beginAuthenticatedSession()));
+
+      expect(flipped).toBe(true);
+      expect(cobaltCalls()).toHaveLength(1);
+      for (const s of settled) {
+        expect(s.status).toBe("rejected");
+        expect((s as PromiseRejectedResult).reason).toBeInstanceOf(sf.SessionChangedError);
+      }
+    } finally {
+      Error.stackTraceLimit = prevLimit;
+    }
+  });
+});
+
+describe("the shared exchange is bounded by COBALT_TOKEN_TIMEOUT_MS", () => {
+  it("a stalled POST rejects every joined caller with a readable timeout, then the next call mints afresh", async () => {
+    vi.useFakeTimers();
+    setSessionFile(sessionJson("SECRET_A"));
+    const cobalt = gatedCobalt();
+
+    const settled = settleAll(Array.from({ length: N }, () => sf.beginAuthenticatedSession()));
+    await cobalt.dispatched(0);
+
+    let done = false;
+    void settled.then(() => { done = true; });
+    await vi.advanceTimersByTimeAsync(sf.COBALT_TOKEN_TIMEOUT_MS - 1);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+
+    const results = await settled;
+    expect(cobaltCalls()).toHaveLength(1);
+    for (const s of results) {
+      expect(s.status).toBe("rejected");
+      const reason = (s as PromiseRejectedResult).reason as Error;
+      expect(reason).toBeInstanceOf(sf.CobaltTokenTimeoutError);
+      expect(reason.message).toBe(
+        `cobalt-token request timed out after ${sf.COBALT_TOKEN_TIMEOUT_MS / 1000} s`,
+      );
+    }
+
+    // Pending was cleared: the next call sends a fresh POST and succeeds.
+    const next = sf.beginAuthenticatedSession();
+    await cobalt.dispatched(1);
+    expect(cobaltCalls()).toHaveLength(2);
+    cobalt.release(1, jsonResponse({ token: makeJwt("99") }));
+    await expect(next).resolves.toMatchObject({ userId: "99" });
+  });
+
+  it("the timeout covers the whole retry sequence, not each attempt", async () => {
+    vi.useFakeTimers();
+    setSessionFile(sessionJson("SECRET_A"));
+    const cobalt = gatedCobalt();
+    cobalt.release(0, jsonResponse({}, 503)); // first attempt: retryable
+
+    const outcome = sf.getCobaltToken().then(() => "resolved", (e: unknown) => e);
+    await cobalt.dispatched(0);
+    // 1 s backoff, then the retry stalls.
+    await vi.advanceTimersByTimeAsync(1000);
+    await cobalt.dispatched(1);
+
+    let done = false;
+    void outcome.then(() => { done = true; });
+    await vi.advanceTimersByTimeAsync(sf.COBALT_TOKEN_TIMEOUT_MS - 1000 - 1);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await outcome).toBeInstanceOf(sf.CobaltTokenTimeoutError);
+  });
+
+  it("a revoke during the retry backoff rejects every joined caller promptly with SessionChangedError", async () => {
+    vi.useFakeTimers();
+    setSessionFile(sessionJson("SECRET_A"));
+    const cobalt = gatedCobalt();
+    cobalt.release(0, jsonResponse({}, 503)); // retryable → 1 s backoff
+
+    const settled = settleAll(Array.from({ length: 4 }, () => sf.getCobaltToken()));
+    await cobalt.dispatched(0);
+    await vi.advanceTimersByTimeAsync(0); // into the backoff sleep
+
+    let done = false;
+    void settled.then(() => { done = true; });
+    await ss.revokeSession();
+    // No timer time passes: only the abort may wake the sleeping retry loop.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(done).toBe(true);
+
+    for (const s of await settled) {
+      expect(s.status).toBe("rejected");
+      expect((s as PromiseRejectedResult).reason).toBeInstanceOf(sf.SessionChangedError);
+    }
+    expect(cobaltCalls()).toHaveLength(1);
+  });
+});
+
+describe("a failed exchange still reports a session change as such", () => {
+  it("a timeout after an unobserved account swap rejects with SessionChangedError, not the timeout", async () => {
+    vi.useFakeTimers();
+    setSessionFile(sessionJson("SECRET_A"));
+    const cobalt = gatedCobalt();
+
+    const settled = settleAll(Array.from({ length: 4 }, () => sf.getCobaltToken()));
+    await cobalt.dispatched(0);
+    // Swap the account on disk WITHOUT anything reading it: the lifecycle
+    // signal stays un-aborted, so the stalled POST ends by timing out.
+    setSessionFile(sessionJson("SECRET_B"));
+    await vi.advanceTimersByTimeAsync(sf.COBALT_TOKEN_TIMEOUT_MS);
+
+    for (const s of await settled) {
+      expect(s.status).toBe("rejected");
+      expect((s as PromiseRejectedResult).reason).toBeInstanceOf(sf.SessionChangedError);
+    }
+  });
+});
+
+describe("a starter whose snapshot dies inside the mint never strands a newer caller", () => {
+  it("a caller started in the same tick under the new generation mints its own token", async () => {
+    // The starter captures account A; every later read sees account B, so the
+    // mint's first authority check invalidates the starter's generation. The
+    // next caller (same tick, generation B) must not inherit that dead exchange.
+    // Two guards cover this — the entry is published before the mint runs, and
+    // joiners compare generations — so this kills only the pair, by design.
+    fsMock.existsSync.mockReturnValue(true);
+    fsMock.readFileSync
+      .mockReturnValueOnce(sessionJson("SECRET_A"))
+      .mockReturnValue(sessionJson("SECRET_B"));
+    fetchMock.mockImplementation(async () => jsonResponse({ token: makeJwt("NEW") }));
+
+    const starter = sf.beginAuthenticatedSession();
+    const next = sf.beginAuthenticatedSession();
+
+    await expect(starter).rejects.toBeInstanceOf(sf.SessionChangedError);
+    await expect(next).resolves.toMatchObject({ userId: "NEW" });
+    expect(cobaltCalls()).toHaveLength(1);
+    expect(cobaltCalls()[0].cookie).toContain("SECRET_B");
+  });
+});
+
+describe("retry backoff is abort-aware for every snapshot-bound fetch", () => {
+  it("a caller abort during backoff rejects sessionFetch promptly with the abort reason", async () => {
+    vi.useFakeTimers();
+    setSessionFile(sessionJson("SECRET_A"));
+    fetchMock.mockImplementation(async () => jsonResponse({}, 503));
+    const controller = new AbortController();
+    const reason = new Error("caller gave up");
+
+    const outcome = sf.sessionFetch("https://www.dndbeyond.com/api/config/json", { signal: controller.signal })
+      .then(() => "resolved", (e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(0); // first 503 → into the 1 s backoff
+
+    let done = false;
+    void outcome.then(() => { done = true; });
+    controller.abort(reason);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(done).toBe(true);
+    expect(await outcome).toBe(reason);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

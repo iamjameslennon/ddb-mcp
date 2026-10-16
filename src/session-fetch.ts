@@ -94,6 +94,24 @@ export class MalformedCobaltTokenError extends Error {
   }
 }
 
+/**
+ * The cobalt-token exchange (all its retries included) did not finish within
+ * COBALT_TOKEN_TIMEOUT_MS. Callers treat it like an unreachable auth service.
+ */
+export class CobaltTokenTimeoutError extends Error {
+  constructor(readonly timeoutMs: number) {
+    super(`cobalt-token request timed out after ${timeoutMs / 1000} s`);
+    this.name = "CobaltTokenTimeoutError";
+  }
+}
+
+/**
+ * Upper bound on one shared cobalt-token exchange, covering every retry and
+ * backoff. Every cache-miss caller in a generation waits on the same exchange,
+ * so without a bound one hung request would stall them all.
+ */
+export const COBALT_TOKEN_TIMEOUT_MS = 30_000;
+
 // ── In-memory token cache ─────────────────────────────────────────────────────
 // Module-level singleton state — intentional for a single-user MCP server.
 // The cobalt JWT is short-lived but reusable across requests until near-expiry.
@@ -106,11 +124,14 @@ let cobaltTokenCache:
 
 // The one in-flight exchange, shared by every cache-miss caller of the same
 // generation (a cold compendium build fires 16 requests at once). Cleared when
-// it settles — success or failure, so failures are never cached — and on every
-// invalidation, so a newer generation never joins an older exchange.
-let cobaltTokenPending:
-  | { generation: number; promise: Promise<{ token: string; userId: string }> }
-  | null = null;
+// it settles — success, failure or timeout, so failures are never cached — and
+// by the invalidation hook below, so a newer generation never joins an older
+// exchange. Callers also compare generations before joining.
+interface PendingCobaltExchange {
+  generation: number;
+  promise: Promise<{ token: string; userId: string }>;
+}
+let cobaltTokenPending: PendingCobaltExchange | null = null;
 
 // Detach our cached credentials on every session invalidation (transition,
 // login, or revoke). Registered once per module lifetime.
@@ -172,6 +193,22 @@ export function hasValidSession(): boolean {
 const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503]);
 const NON_RETRYABLE_STATUS_CODES = new Set([401, 403, 404]);
 
+/** Sleep for `ms`, waking early (without throwing) if `signal` aborts. */
+function abortableDelay(ms: number, signal?: AbortSignal | null): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve();
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 /** Merge the lifecycle abort signal with any caller-supplied signal. */
 function mergeSignals(lifecycle: AbortSignal, caller?: AbortSignal | null): AbortSignal {
   if (!caller) return lifecycle;
@@ -188,7 +225,10 @@ async function fetchWithRetry(
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     // Authority check immediately before every dispatch — including the retry
     // after a backoff sleep, so a mid-flight account change can't be replayed.
+    // It runs before the abort check below so a session change that cut the
+    // backoff short is reported as SessionChangedError, not as a bare abort.
     assertSessionCurrent(snapshot);
+    options.signal?.throwIfAborted();
 
     const resp = await fetch(url, options);
 
@@ -200,7 +240,9 @@ async function fetchWithRetry(
       if (attempt === maxRetries) return resp;
       const delay = baseDelayMs * Math.pow(2, attempt);
       process.stderr.write(`[ddb-mcp] ${resp.status} from ${url} — retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})\n`);
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      // Wakes early when the (merged) signal aborts — a session change, a
+      // caller abort or the cobalt-token timeout — instead of sleeping it out.
+      await abortableDelay(delay, options.signal);
       continue;
     }
 
@@ -255,6 +297,11 @@ async function snapshotFetch(
  * cached until 60 s before its exp claim AND stamped with the generation it was
  * minted under. Concurrent cache misses in the same generation share one
  * in-flight exchange instead of each POSTing their own.
+ *
+ * Trade-off: because the exchange is shared, its one failure (or timeout) fails
+ * every caller waiting on it together. A cold compendium build whose token
+ * exchange fails therefore loses all 16 class lists at once and falls back as a
+ * whole, rather than ending up as a partial build.
  */
 async function getCobaltTokenForSnapshot(
   snapshot: SessionSnapshot
@@ -270,41 +317,74 @@ async function getCobaltTokenForSnapshot(
     return { token: cobaltTokenCache.token, userId: cobaltTokenCache.userId };
   }
 
-  if (cobaltTokenPending && cobaltTokenPending.generation === snapshot.generation) {
-    // Join the exchange already in flight for this generation. Its result is
-    // account-derived like a cache hit, so re-verify authority before reuse.
-    const result = await cobaltTokenPending.promise;
-    assertSessionCurrent(snapshot);
-    return result;
+  // Join the exchange already in flight for this generation, or start one.
+  let exchange = cobaltTokenPending;
+  if (!exchange || exchange.generation !== snapshot.generation) {
+    exchange = startCobaltTokenExchange(snapshot);
   }
 
-  const entry = { generation: snapshot.generation, promise: mintCobaltToken(snapshot) };
+  // Starter and joiners alike: the result is account-derived like a cache hit,
+  // so re-verify authority before handing it out. On failure, a session change
+  // is reported as SessionChangedError rather than as whatever the exchange
+  // died of (e.g. a timeout that fired after the account changed).
+  let result: { token: string; userId: string };
+  try {
+    result = await exchange.promise;
+  } catch (e) {
+    assertSessionCurrent(snapshot);
+    throw e;
+  }
+  assertSessionCurrent(snapshot);
+  return result;
+}
+
+/**
+ * Start the shared exchange for `snapshot`'s generation, bounded by
+ * COBALT_TOKEN_TIMEOUT_MS, and publish it as the pending entry.
+ */
+function startCobaltTokenExchange(snapshot: SessionSnapshot): PendingCobaltExchange {
+  const timeout = new AbortController();
+  const timer = setTimeout(
+    () => timeout.abort(new CobaltTokenTimeoutError(COBALT_TOKEN_TIMEOUT_MS)),
+    COBALT_TOKEN_TIMEOUT_MS
+  );
+  // The mint is deferred one microtask so the entry is published before any of
+  // it runs: its first authority check can observe a session change and fire
+  // the invalidation hook, which must then find and clear this entry rather
+  // than run before it is stored.
+  const entry: PendingCobaltExchange = {
+    generation: snapshot.generation,
+    promise: Promise.resolve().then(() => mintCobaltToken(snapshot, timeout.signal)),
+  };
   cobaltTokenPending = entry;
   // Clear only our own entry: after an invalidation the slot may hold a newer
   // generation's exchange, which a stale settlement must not drop. Handling
   // both outcomes here also means the stored promise always has a rejection
   // handler, even if no caller is still awaiting it.
   const settle = () => {
+    clearTimeout(timer);
     if (cobaltTokenPending === entry) cobaltTokenPending = null;
   };
   entry.promise.then(settle, settle);
-  return entry.promise;
+  return entry;
 }
 
 /**
- * The network half of getCobaltTokenForSnapshot: POST the snapshot's cookies,
- * decode the JWT, and cache it. A late response from an obsolete snapshot is
- * rejected AFTER the async body parse and BEFORE the cache write, so it can
- * never resurrect old authority.
+ * The network half of the exchange: POST the snapshot's cookies, decode the
+ * JWT, and cache it. `signal` (the exchange timeout) is merged with the
+ * snapshot's lifecycle signal and bounds the whole retry sequence. A late
+ * response from an obsolete snapshot is rejected AFTER the async body parse and
+ * BEFORE the cache write, so it can never resurrect old authority.
  */
 async function mintCobaltToken(
-  snapshot: SessionSnapshot
+  snapshot: SessionSnapshot,
+  signal: AbortSignal
 ): Promise<{ token: string; userId: string }> {
   const now = Date.now() / 1000;
   const resp = await snapshotFetch(
     snapshot,
     "https://auth-service.dndbeyond.com/v1/cobalt-token",
-    { method: "POST" }
+    { method: "POST", signal }
   );
   if (!resp.ok) throw new CobaltTokenError(resp.status);
   let body: { token?: unknown };
