@@ -299,6 +299,11 @@ describe("selectByEdition (spec: selection table)", () => {
     expect(selectByEdition([e(7, "Zombie", "2024"), e(3, "Zombie", "2024")], "2024", infoOf, definitionTiebreak)?.entry.id).toBe(3);
   });
 
+  it("an edition entry beats a homebrew one under the other edition too", () => {
+    expect(selectByEdition([e(1, "Fireball", "2024"), e(5, "Fireball", "homebrew", { isHomebrew: true })], "2014", infoOf, definitionTiebreak))
+      .toEqual({ entry: e(1, "Fireball", "2024"), reason: "no-2014-version" });
+  });
+
   it("an empty group yields null", () => {
     expect(selectByEdition([], "2024", infoOf, definitionTiebreak)).toBeNull();
   });
@@ -354,6 +359,35 @@ describe("lookupByName", () => {
     const fuzzy = { partialMatch: (all: readonly E[]) => all.find(c => c.id === 3) };
     expect(find("slep", "2024", fuzzy)).toEqual({ entry: SPELLS[3] });
     expect(find("slep", "2014", fuzzy)).toEqual({ entry: SPELLS[2] });
+  });
+
+  it("R1a: a query matching no entry takes the table's 2024 spelling for the 2014 side", () => {
+    const lone = [e(2, "Melf's Acid Arrow", "2024")];
+    expect(lookupByName(lone, "  ACID   arrow ", "2024", opts))
+      .toEqual({ entry: lone[0], renamed: { name2014: "Acid Arrow", name2024: "Melf's Acid Arrow" } });
+  });
+
+  it("R1b: the mirror takes the table's spelling for the 2024 side, with the reason kept", () => {
+    const lone = [e(1, "Acid Arrow", "2014")];
+    expect(lookupByName(lone, "Melf’s ACID arrow", "2014", opts))
+      .toEqual({ entry: lone[0], renamed: { name2014: "Acid Arrow", name2024: "Melf's Acid Arrow" } });
+    expect(lookupByName(lone, "Melf’s ACID arrow", "2024", opts))
+      .toEqual({ entry: lone[0], reason: "no-2024-version", renamed: { name2014: "Acid Arrow", name2024: "Melf's Acid Arrow" } });
+  });
+
+  it("R1c: without a spell lookup, the fallback is the cleaned query with its casing kept", () => {
+    const plain = (n: string) => createTwinNamer([["Acid Arrow", "Melf's Acid Arrow"]])(n);
+    const lone = [e(2, "Melf's Acid Arrow", "2024")];
+    expect(lookupByName(lone, "  acid   arrow ", "2024", { ...opts, twinName: plain }))
+      .toEqual({ entry: lone[0], renamed: { name2014: "acid arrow", name2024: "Melf's Acid Arrow" } });
+    expect(lookupByName(lone, "  ACID   arrow ", "2024", { ...opts, twinName: plain })?.renamed?.name2014).toBe("ACID arrow");
+  });
+
+  it("R2: two homebrew entries in a rename pair never get a rename line", () => {
+    const homebrew = [e(21, "Acid Arrow", "homebrew", { isHomebrew: true }), e(22, "Melf's Acid Arrow", "homebrew", { isHomebrew: true })];
+    const picked = lookupByName(homebrew, "Melf's Acid Arrow", "2024", opts);
+    expect(picked?.entry.id).toBe(21);
+    expect(picked).not.toHaveProperty("renamed");
   });
 
   it("an empty or unmatched query yields null", () => {
@@ -428,6 +462,13 @@ describe("groupAndSelect", () => {
       expect(ids(selected)).toEqual([20, 19]);
       expect(hidden).toBe(0);
     }
+  });
+
+  it("R-f: a homebrew entry is still emitted when its group's edition pick fails the attribute filter", () => {
+    const set = [e(40, "Hex", "2024", { conc: false }), e(41, "Hex", "homebrew", { isHomebrew: true, conc: true })];
+    const { selected, hidden } = groupAndSelect(set, "2024", { ...base, passes: c => c.conc === true });
+    expect(ids(selected)).toEqual([41]);
+    expect(hidden).toBe(0);
   });
 
   it("same-edition duplicates in one group show once and are not counted as hidden", () => {

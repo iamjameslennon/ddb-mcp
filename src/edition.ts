@@ -176,17 +176,30 @@ export function normalizeName(name: string): string {
   return name.toLowerCase().replace(/[‘’]/g, "'").replace(/\s+/g, " ").trim();
 }
 
+/**
+ * A twin-name function. `spell` maps the normalized form of either side of a
+ * rename pair to that side's spelling in the table, so output can use it.
+ */
+export type TwinNamer = ((name: string) => string) & { spell?: (normalizedName: string) => string | undefined };
+
 /** A twin-name function over a rename table: normalizes, then maps a 2014 name to its 2024 name. */
-export function createTwinNamer(pairs: ReadonlyArray<readonly [string, string]>): (name: string) => string {
+export function createTwinNamer(pairs: ReadonlyArray<readonly [string, string]>): TwinNamer {
   const renames = new Map(pairs.map(([name2014, name2024]) => [normalizeName(name2014), normalizeName(name2024)]));
-  return name => {
+  const spellings = new Map<string, string>();
+  for (const [name2014, name2024] of pairs) {
+    spellings.set(normalizeName(name2014), name2014);
+    spellings.set(normalizeName(name2024), name2024);
+  }
+  const namer: TwinNamer = name => {
     const n = normalizeName(name);
     return renames.get(n) ?? n;
   };
+  namer.spell = normalized => spellings.get(normalized);
+  return namer;
 }
 
 /** The twin key for spells, items, monsters, feats, backgrounds, species and classes. */
-export const twinName = createTwinNamer(EDITION_RENAMES);
+export const twinName: TwinNamer = createTwinNamer(EDITION_RENAMES);
 
 /** Class features twin only within one class: Paladin's Extra Attack is not Fighter's. */
 export function classFeatureTwinKey(className: string, featureName: string, namer = twinName): string {
@@ -268,7 +281,7 @@ export interface LookupOptions<T> {
   /** The tool's partial-match order. Default: first entry, in array order, whose normalized name contains the query. */
   partialMatch?: (all: readonly T[], normalizedQuery: string) => T | undefined;
   /** Defaults to twinName (the committed rename table). Tests inject their own. */
-  twinName?: (name: string) => string;
+  twinName?: TwinNamer;
 }
 
 export interface LookupResult<T> extends Selection<T> {
@@ -287,7 +300,7 @@ export function lookupByName<T>(
   requested: RulesEdition,
   opts: LookupOptions<T>,
 ): LookupResult<T> | null {
-  const namer = opts.twinName ?? twinName;
+  const namer: TwinNamer = opts.twinName ?? twinName;
   const normalizedQuery = normalizeName(query);
   if (!normalizedQuery) return null; // "" is a substring of every name
   const queryKey = namer(query);
@@ -309,9 +322,13 @@ export function lookupByName<T>(
   const picked = selectByEdition(group, requested, opts.info, opts.tiebreak);
   if (!picked) return null;
 
-  const matchedName = matched ? opts.name(matched) : query.trim();
+  // No entry carries the typed name: use the table's spelling, else the query cleaned up but not lowercased.
+  const typedName = namer.spell?.(normalizedQuery) ?? query.replace(/[‘’]/g, "'").replace(/\s+/g, " ").trim();
+  const matchedName = matched ? opts.name(matched) : typedName;
   const returnedName = opts.name(picked.entry);
   if (normalizeName(matchedName) === normalizeName(returnedName)) return picked;
+  // Non-edition entries are never twins, so they never get a rename line.
+  if (!isEdition(opts.info(picked.entry).ruleset)) return picked;
   // The 2024 name is the twin key itself; the other is the 2014 alias.
   const [name2024, name2014] = normalizeName(returnedName) === key
     ? [returnedName, matchedName]
