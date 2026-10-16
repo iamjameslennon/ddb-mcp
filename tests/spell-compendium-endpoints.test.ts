@@ -178,4 +178,50 @@ describe("spell compendium queries both class spell-list endpoints", () => {
     const got = await reference.getSpell("Cure Wounds");
     expect(got).toContain("FROM_SPELLS_CLASS_2");
   });
+
+  it("abandons the build at once when the account changes during an always-known-spells request", async () => {
+    // /always-known-spells class 3 is held until the account is swapped, so its
+    // response lands in the new generation and refFetch throws
+    // SessionChangedError. /spells class 1 never answers (and ignores the abort
+    // signal): the build only settles if that error is rethrown rather than
+    // counted as a failed request, since swallowing it would leave Promise.all
+    // waiting on class 1 before the post-batch boundary check could run.
+    let dispatched!: () => void;
+    const alwaysKnownDispatched = new Promise<void>((r) => { dispatched = r; });
+    let releaseAlwaysKnown!: () => void;
+    const alwaysKnownGate = new Promise<void>((r) => { releaseAlwaysKnown = r; });
+    let releaseHung!: () => void;
+    const hung = new Promise<void>((r) => { releaseHung = r; });
+
+    const service = serviceMock({ spells: { "2": [spell("Sacred Flame", 0)] } });
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.includes("/always-known-spells?classId=3&")) {
+        dispatched();
+        await alwaysKnownGate;
+      } else if (url.includes("/spells?classId=1&")) {
+        await hung;
+      }
+      return service(url);
+    });
+
+    const p = reference.searchSpells({ limit: 50 }).catch((e) => `THREW:${(e as Error)?.name}`);
+    await alwaysKnownDispatched;
+    fsMock.readFileSync.mockReturnValue(JSON.stringify({
+      cookies: [{
+        name: "CobaltSession", value: "SECRET_B", domain: ".dndbeyond.com", path: "/",
+        expires: Date.now() / 1000 + 3600, httpOnly: true, secure: true,
+      }],
+    }));
+    releaseAlwaysKnown();
+
+    const result = await Promise.race([
+      p,
+      new Promise((r) => setTimeout(() => r("STILL_PENDING"), 200)),
+    ]);
+    releaseHung();
+    expect(result).not.toBe("STILL_PENDING");
+    // Account A's lists were neither cached nor served; Open5e carried the call.
+    expect(result).not.toContain("Sacred Flame");
+    expect(reference.getCompendiumSource()).toBeNull();
+  });
 });
