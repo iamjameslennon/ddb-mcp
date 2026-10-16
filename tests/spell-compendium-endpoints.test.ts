@@ -121,6 +121,15 @@ describe("spell compendium queries both class spell-list endpoints", () => {
     }
   });
 
+  it("shares one cobalt-token exchange across the 16 parallel requests of a cold build", async () => {
+    fetchMock.mockImplementation(serviceMock({ spells: { "8": [spell("Fire Bolt", 0)] } }));
+
+    await reference.searchSpells({});
+
+    expect(gameDataUrls()).toHaveLength(16);
+    expect(fetchMock.mock.calls.filter((c) => String(c[0]) === COBALT_URL)).toHaveLength(1);
+  });
+
   it("includes prepared-caster leveled spells that only /always-known-spells returns", async () => {
     fetchMock.mockImplementation(serviceMock({
       // Live shape: Cleric /spells is cantrips only, Paladin /spells is empty.

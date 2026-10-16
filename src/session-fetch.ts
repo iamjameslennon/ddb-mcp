@@ -104,10 +104,19 @@ let cobaltTokenCache:
   | { token: string; userId: string; expiresAt: number; generation: number }
   | null = null;
 
+// The one in-flight exchange, shared by every cache-miss caller of the same
+// generation (a cold compendium build fires 16 requests at once). Cleared when
+// it settles — success or failure, so failures are never cached — and on every
+// invalidation, so a newer generation never joins an older exchange.
+let cobaltTokenPending:
+  | { generation: number; promise: Promise<{ token: string; userId: string }> }
+  | null = null;
+
 // Detach our cached credentials on every session invalidation (transition,
 // login, or revoke). Registered once per module lifetime.
 onSessionInvalidated(() => {
   cobaltTokenCache = null;
+  cobaltTokenPending = null;
 });
 
 /**
@@ -117,6 +126,7 @@ onSessionInvalidated(() => {
  */
 export function invalidateSessionCache(): void {
   cobaltTokenCache = null;
+  cobaltTokenPending = null;
   clearRevoked();            // a fresh login lifts any prior revoke block
   invalidateSessionState();  // advance generation + notify all hooks
 }
@@ -243,9 +253,8 @@ async function snapshotFetch(
 /**
  * Exchange a snapshot's cookies for a short-lived cobalt JWT. The token is
  * cached until 60 s before its exp claim AND stamped with the generation it was
- * minted under. A late response from an obsolete snapshot is rejected AFTER the
- * async body parse and BEFORE the cache write, so it can never resurrect old
- * authority.
+ * minted under. Concurrent cache misses in the same generation share one
+ * in-flight exchange instead of each POSTing their own.
  */
 async function getCobaltTokenForSnapshot(
   snapshot: SessionSnapshot
@@ -261,6 +270,37 @@ async function getCobaltTokenForSnapshot(
     return { token: cobaltTokenCache.token, userId: cobaltTokenCache.userId };
   }
 
+  if (cobaltTokenPending && cobaltTokenPending.generation === snapshot.generation) {
+    // Join the exchange already in flight for this generation. Its result is
+    // account-derived like a cache hit, so re-verify authority before reuse.
+    const result = await cobaltTokenPending.promise;
+    assertSessionCurrent(snapshot);
+    return result;
+  }
+
+  const entry = { generation: snapshot.generation, promise: mintCobaltToken(snapshot) };
+  cobaltTokenPending = entry;
+  // Clear only our own entry: after an invalidation the slot may hold a newer
+  // generation's exchange, which a stale settlement must not drop. Handling
+  // both outcomes here also means the stored promise always has a rejection
+  // handler, even if no caller is still awaiting it.
+  const settle = () => {
+    if (cobaltTokenPending === entry) cobaltTokenPending = null;
+  };
+  entry.promise.then(settle, settle);
+  return entry.promise;
+}
+
+/**
+ * The network half of getCobaltTokenForSnapshot: POST the snapshot's cookies,
+ * decode the JWT, and cache it. A late response from an obsolete snapshot is
+ * rejected AFTER the async body parse and BEFORE the cache write, so it can
+ * never resurrect old authority.
+ */
+async function mintCobaltToken(
+  snapshot: SessionSnapshot
+): Promise<{ token: string; userId: string }> {
+  const now = Date.now() / 1000;
   const resp = await snapshotFetch(
     snapshot,
     "https://auth-service.dndbeyond.com/v1/cobalt-token",
