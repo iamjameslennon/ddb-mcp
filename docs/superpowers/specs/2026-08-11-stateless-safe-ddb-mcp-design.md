@@ -184,6 +184,8 @@ Therefore:
 2. `character/parse.ts` stops importing `reference.ts`.
 3. `isConcentrationSpell` keeps only the compendium lookup. Callers already fall back to `def.concentration`, so no behaviour is lost.
 
+**Correction (2026-10-16): behaviour *is* lost while spell editions collide.** The argument above assumes the compendium agrees with the character's own definition. It doesn't always. The compendium holds one entry per name, and for the 304 names that exist in both 2014 and 2024 it holds the 2014 one 277 times (CLAUDE.md "Next steps"). `buildConcentrationByLevel` takes the compendium's answer whenever it has one. Today the buffer answers first for class spells, so only `char.spells.*` grants are exposed. With the buffer gone, every class spell is, too: a 2024 character's Divine Favor or Spiritual Weapon would report the 2014 concentration (9 spells differ; `scripts/diagnose-compendium.mjs` lists them). Before step 3, either fix the collision or invert the caller so `def.concentration` wins and the compendium is consulted only when the definition has no value.
+
 ### Two-layer compendium
 
 Homebrew spells and subclasses reach the compendium only through a character's `classSpells` — they will never appear in DDB's per-class endpoints. Preserving that coverage is a hard requirement. It is preserved by making character seeding an explicit, deterministic input to the build rather than an incidental side effect of having fetched a character.
