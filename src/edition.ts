@@ -391,3 +391,160 @@ export function groupAndSelect<T>(
   }
   return { selected, hidden };
 }
+
+// ── Labels ────────────────────────────────────────────────────────────────────
+// Every edition string a tool prints. Wording is pinned by tests/edition.test.ts;
+// new wording goes here, with a test, never in a tool module.
+
+const NOT_STATED = "edition not stated";
+
+const REASON_TEXT = {
+  "no-2024-version": "(no 2024 version exists — 2014 text shown)",
+  "no-2014-version": "(no 2014 version exists — 2024 text shown)",
+  "rules-miss-2024": "(no matching 2024 rules section — 2014 text shown)",
+  "rules-miss-2014": "(no matching 2014 rules section — 2024 text shown)",
+  "treasure-no-2014": "(no 2014 version exists — 2024 tables used)",
+} as const;
+export type RulesLineReason = keyof typeof REASON_TEXT;
+
+const SRD_NAME: Record<RulesEdition, string> = { "2024": "SRD 5.2", "2014": "SRD 5.1" };
+
+const OPEN5E_SUFFIX = {
+  unavailable: " (Open5e fallback — D&D Beyond unavailable)",
+  "not-found": " (Open5e fallback — not found on D&D Beyond)",
+  primary: "",
+} as const;
+export type Open5eOrigin = keyof typeof OPEN5E_SUFFIX;
+
+/**
+ * The line under a single lookup's title, e.g. "Rules: 2024 · Player's Handbook (2024)".
+ * `open5e` swaps the book for the SRD (2014/2024 content only). `reason` adds a
+ * second line saying why the edition shown differs from the one requested.
+ */
+export function rulesLine(info: EditionInfo, opts: { reason?: RulesLineReason; open5e?: Open5eOrigin } = {}): string {
+  const { ruleset, book } = info;
+  const withBook = (head: string) => (book ? `${head} · ${book}` : head);
+  let line: string;
+  if (opts.open5e && isEdition(ruleset)) {
+    line = `Rules: ${ruleset} · ${SRD_NAME[ruleset]}${OPEN5E_SUFFIX[opts.open5e]}`;
+  } else if (ruleset === "homebrew") {
+    line = `Rules: homebrew (${NOT_STATED})`;
+  } else if (ruleset === "third-party") {
+    line = `${withBook("Rules: third-party")} (${NOT_STATED})`;
+  } else if (ruleset === "unstated") {
+    line = withBook(`Rules: ${NOT_STATED}`);
+  } else {
+    line = withBook(`Rules: ${ruleset}`); // 2024, 2014, playtest
+  }
+  return opts.reason ? `${line}\n${REASON_TEXT[opts.reason]}` : line;
+}
+
+/** Added when the query matched a different name in the twin group than the one shown. */
+export function renameLine(name2014: string, name2024: string): string {
+  return `(2014 name: ${name2014} · 2024 name: ${name2024})`;
+}
+
+/** Monsters: a `source` book whose edition contradicts rules_edition. Null when they agree. */
+export function sourceNote(source: string, bookRuleset: RulesEdition, requested: RulesEdition): string | null {
+  if (bookRuleset === requested) return null;
+  return `(source "${source}" is a ${bookRuleset} book — rules_edition "${requested}" was ignored)`;
+}
+
+/** Inline tag placed immediately after an entry's name: "[2024]", "[edition not stated]", … */
+export function editionTag(info: EditionInfo): string {
+  return `[${info.ruleset === "unstated" ? NOT_STATED : info.ruleset}]`;
+}
+
+export type SearchHeaderMode = { requested: RulesEdition } | { sourceBook: string } | { rulesDoc: RulesEdition };
+
+/** First line of every search result, above the tool's own heading. */
+export function searchHeader(mode: SearchHeaderMode): string {
+  if ("sourceBook" in mode) return `Rules: showing every entry in ${mode.sourceBook}, each tagged with its edition.`;
+  if ("rulesDoc" in mode) return `Rules: sections from ${SRD_NAME[mode.rulesDoc]} (${mode.rulesDoc}).`;
+  return mode.requested === "2024"
+    ? `Rules: 2024 by default — 2014 entries appear only where no 2024 version exists. Use rules_edition: "2014" for 2014 versions.`
+    : "Rules: 2014 requested — 2024 entries appear only where no 2014 version exists.";
+}
+
+/** Last line of a search when twins were hidden; null when none were. */
+export function searchFooter(requested: RulesEdition, hidden: number): string | null {
+  if (hidden <= 0) return null;
+  const one = hidden === 1;
+  const counted = `${hidden} ${requested === "2024" ? "2014" : "2024"} ${one ? "version" : "versions"} hidden`;
+  return requested === "2024"
+    ? `${counted} — rules_edition: "2014" shows ${one ? "it" : "them"}.`
+    : `${counted} — omit rules_edition to show ${one ? "it" : "them"}.`;
+}
+
+/** Encounter/treasure: a partial monster name that spans several distinct creatures. */
+export function ambiguityMessage(query: string, candidates: ReadonlyArray<{ name: string; cr: string }>): string {
+  const list = candidates.map(c => `${c.name} (CR ${c.cr})`).join(", ");
+  return `Ambiguous: "${query}" could be ${list} — use the full name.`;
+}
+
+// ── Character summary ─────────────────────────────────────────────────────────
+
+export type CharacterEntryKind = "class" | "subclass" | "species" | "background" | "feat" | "spell" | "item";
+export interface CharacterEditionEntry { name: string; kind: CharacterEntryKind; level?: number; info: EditionInfo }
+
+/**
+ * Only base classes classified 2014/2024 count. None → "unstated". Both
+ * editions → mixed, with 2024 the main edition for tagging. Otherwise the one
+ * edition they share.
+ */
+export function characterMainEdition(entries: readonly CharacterEditionEntry[]): { main: RulesEdition | "unstated"; mixed: boolean } {
+  const editions = new Set<RulesEdition>();
+  for (const e of entries) if (e.kind === "class" && isEdition(e.info.ruleset)) editions.add(e.info.ruleset);
+  if (editions.size === 0) return { main: "unstated", mixed: false };
+  if (editions.size > 1) return { main: "2024", mixed: true };
+  return { main: [...editions][0], mixed: false };
+}
+
+/** Inline tag for one character entry: null when it matches the main edition; non-edition entries always tagged. */
+export function characterTag(info: EditionInfo, main: RulesEdition | "unstated"): string | null {
+  return isEdition(info.ruleset) && info.ruleset === main ? null : editionTag(info);
+}
+
+const CHARACTER_GROUPS: ReadonlyArray<readonly [Ruleset, string]> = [
+  ["2024", "2024 content"],
+  ["2014", "2014 content"],
+  ["homebrew", "homebrew"],
+  ["third-party", "third-party"],
+  ["playtest", "playtest"],
+  ["unstated", NOT_STATED],
+];
+
+/**
+ * "Rules: 2024 · 2014 content: Criminal / Spy (background)", or for a
+ * mixed-edition multiclass "Rules: mixed — 2024: Bard 5 · 2014: Ranger 3 · …".
+ * Entries are listed in the order given. Entries matching the main edition are
+ * never listed. That includes "edition not stated" entries when the main
+ * edition is itself unstated: the head already says so, and characterTag()
+ * still tags each one inline.
+ */
+export function characterRulesLine(entries: readonly CharacterEditionEntry[]): string {
+  const { main, mixed } = characterMainEdition(entries);
+  const classLabel = (e: CharacterEditionEntry) => (e.level != null ? `${e.name} ${e.level}` : e.name);
+  const isCountedClass = (e: CharacterEditionEntry) => e.kind === "class" && isEdition(e.info.ruleset);
+
+  let head: string;
+  let rest = entries;
+  if (mixed) {
+    const classesIn = (edition: RulesEdition) =>
+      entries.filter(e => isCountedClass(e) && e.info.ruleset === edition).map(classLabel).join(", ");
+    head = `Rules: mixed — 2024: ${classesIn("2024")} · 2014: ${classesIn("2014")}`;
+    rest = entries.filter(e => !isCountedClass(e));
+  } else {
+    head = `Rules: ${main === "unstated" ? NOT_STATED : main}`;
+  }
+
+  const groups: string[] = [];
+  for (const [ruleset, label] of CHARACTER_GROUPS) {
+    if (ruleset === main) continue;
+    const items = rest
+      .filter(e => e.info.ruleset === ruleset)
+      .map(e => `${e.kind === "class" ? classLabel(e) : e.name} (${e.kind})`);
+    if (items.length) groups.push(`${label}: ${items.join(", ")}`);
+  }
+  return [head, ...groups].join(" · ");
+}

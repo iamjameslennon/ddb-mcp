@@ -4,7 +4,10 @@ import {
   normalizeName, createTwinNamer, classFeatureTwinKey, racialTraitTwinKey,
   dedupeById, definitionTiebreak, monsterTiebreak,
   selectByEdition, lookupByName, groupAndSelect,
-  type CategoryRecord, type EditionInfo, type EditionMarkers, type Ruleset, type SourceRecord,
+  rulesLine, renameLine, sourceNote, editionTag, searchHeader, searchFooter, ambiguityMessage,
+  characterMainEdition, characterTag, characterRulesLine,
+  type CategoryRecord, type CharacterEditionEntry, type CharacterEntryKind,
+  type EditionInfo, type EditionMarkers, type Ruleset, type SourceRecord,
 } from "../src/edition.js";
 import { EDITION_RENAMES } from "../src/edition-renames.js";
 
@@ -475,5 +478,162 @@ describe("groupAndSelect", () => {
     const { selected, hidden } = groupAndSelect([e(30, "Zombie", "2024"), e(25, "Zombie", "2024")], "2024", base);
     expect(ids(selected)).toEqual([25]);
     expect(hidden).toBe(0);
+  });
+});
+
+// ── Labels (spec: "Label formats") ────────────────────────────────────────────
+
+const info = (ruleset: Ruleset, book: string | null = null): EditionInfo => ({ ruleset, book });
+
+describe("rulesLine", () => {
+  it.each([
+    [info("2024", "Player's Handbook (2024)"), "Rules: 2024 · Player's Handbook (2024)"],
+    [info("2014", "Xanathar's Guide to Everything"), "Rules: 2014 · Xanathar's Guide to Everything"],
+    [info("2024"), "Rules: 2024"],
+    [info("third-party", "Critical Role"), "Rules: third-party · Critical Role (edition not stated)"],
+    [info("third-party"), "Rules: third-party (edition not stated)"],
+    [info("homebrew"), "Rules: homebrew (edition not stated)"],
+    [info("homebrew", "ignored"), "Rules: homebrew (edition not stated)"],
+    [info("playtest", "Unearthed Arcana"), "Rules: playtest · Unearthed Arcana"],
+    [info("unstated", "Eberron: Rising from the Last War"), "Rules: edition not stated · Eberron: Rising from the Last War"],
+    [info("unstated"), "Rules: edition not stated"],
+  ])("%j → %s", (i, expected) => {
+    expect(rulesLine(i)).toBe(expected);
+  });
+
+  it("Open5e: the SRD replaces the book, with the fallback reason", () => {
+    expect(rulesLine(info("2024", "x"), { open5e: "unavailable" })).toBe("Rules: 2024 · SRD 5.2 (Open5e fallback — D&D Beyond unavailable)");
+    expect(rulesLine(info("2024"), { open5e: "not-found" })).toBe("Rules: 2024 · SRD 5.2 (Open5e fallback — not found on D&D Beyond)");
+    expect(rulesLine(info("2014"), { open5e: "unavailable" })).toBe("Rules: 2014 · SRD 5.1 (Open5e fallback — D&D Beyond unavailable)");
+    expect(rulesLine(info("2014"), { open5e: "not-found" })).toBe("Rules: 2014 · SRD 5.1 (Open5e fallback — not found on D&D Beyond)");
+    expect(rulesLine(info("2024"), { open5e: "primary" })).toBe("Rules: 2024 · SRD 5.2");
+    expect(rulesLine(info("2014"), { open5e: "primary" })).toBe("Rules: 2014 · SRD 5.1");
+  });
+
+  it("Open5e origin is ignored for a non-edition ruleset", () => {
+    expect(rulesLine(info("homebrew"), { open5e: "primary" })).toBe("Rules: homebrew (edition not stated)");
+  });
+
+  it("appends the reason on the next line", () => {
+    const xge = info("2014", "Xanathar's Guide to Everything");
+    expect(rulesLine(xge, { reason: "no-2024-version" })).toBe("Rules: 2014 · Xanathar's Guide to Everything\n(no 2024 version exists — 2014 text shown)");
+    expect(rulesLine(info("2024", "Player's Handbook (2024)"), { reason: "no-2014-version" })).toBe("Rules: 2024 · Player's Handbook (2024)\n(no 2014 version exists — 2024 text shown)");
+    expect(rulesLine(info("2014"), { open5e: "primary", reason: "rules-miss-2024" })).toBe("Rules: 2014 · SRD 5.1\n(no matching 2024 rules section — 2014 text shown)");
+    expect(rulesLine(info("2024"), { open5e: "primary", reason: "rules-miss-2014" })).toBe("Rules: 2024 · SRD 5.2\n(no matching 2014 rules section — 2024 text shown)");
+    expect(rulesLine(info("2024", "Dungeon Master's Guide (2024)"), { reason: "treasure-no-2014" })).toBe("Rules: 2024 · Dungeon Master's Guide (2024)\n(no 2014 version exists — 2024 tables used)");
+  });
+});
+
+describe("other single-lookup lines", () => {
+  it("renameLine", () => {
+    expect(renameLine("Acid Arrow", "Melf's Acid Arrow")).toBe("(2014 name: Acid Arrow · 2024 name: Melf's Acid Arrow)");
+  });
+
+  it("sourceNote: only when the book's edition differs from the request", () => {
+    expect(sourceNote("mm-2024", "2024", "2014")).toBe(`(source "mm-2024" is a 2024 book — rules_edition "2014" was ignored)`);
+    expect(sourceNote("mm-2014", "2014", "2024")).toBe(`(source "mm-2014" is a 2014 book — rules_edition "2024" was ignored)`);
+    expect(sourceNote("mm-2024", "2024", "2024")).toBeNull();
+  });
+
+  it("ambiguityMessage", () => {
+    expect(ambiguityMessage("Red Dragon", [
+      { name: "Red Dragon Wyrmling", cr: "4" },
+      { name: "Young Red Dragon", cr: "10" },
+      { name: "Adult Red Dragon", cr: "17" },
+      { name: "Ancient Red Dragon", cr: "24" },
+    ])).toBe(`Ambiguous: "Red Dragon" could be Red Dragon Wyrmling (CR 4), Young Red Dragon (CR 10), Adult Red Dragon (CR 17), Ancient Red Dragon (CR 24) — use the full name.`);
+  });
+});
+
+describe("search labels", () => {
+  it.each([
+    ["2024", "[2024]"], ["2014", "[2014]"], ["third-party", "[third-party]"],
+    ["homebrew", "[homebrew]"], ["playtest", "[playtest]"], ["unstated", "[edition not stated]"],
+  ] as const)("editionTag %s → %s", (ruleset, tag) => {
+    expect(editionTag(info(ruleset, "any book"))).toBe(tag);
+  });
+
+  it("searchHeader", () => {
+    expect(searchHeader({ requested: "2024" })).toBe(`Rules: 2024 by default — 2014 entries appear only where no 2024 version exists. Use rules_edition: "2014" for 2014 versions.`);
+    expect(searchHeader({ requested: "2014" })).toBe("Rules: 2014 requested — 2024 entries appear only where no 2014 version exists.");
+    expect(searchHeader({ sourceBook: "Monster Manual (2024)" })).toBe("Rules: showing every entry in Monster Manual (2024), each tagged with its edition.");
+    expect(searchHeader({ rulesDoc: "2024" })).toBe("Rules: sections from SRD 5.2 (2024).");
+    expect(searchHeader({ rulesDoc: "2014" })).toBe("Rules: sections from SRD 5.1 (2014).");
+  });
+
+  it("searchFooter", () => {
+    expect(searchFooter("2024", 14)).toBe(`14 2014 versions hidden — rules_edition: "2014" shows them.`);
+    expect(searchFooter("2024", 1)).toBe(`1 2014 version hidden — rules_edition: "2014" shows it.`);
+    expect(searchFooter("2014", 3)).toBe("3 2024 versions hidden — omit rules_edition to show them.");
+    expect(searchFooter("2014", 1)).toBe("1 2024 version hidden — omit rules_edition to show it.");
+    expect(searchFooter("2024", 0)).toBeNull();
+  });
+});
+
+// ── Character summary (spec: "Characters") ────────────────────────────────────
+
+describe("character edition labels", () => {
+  const ent = (name: string, kind: CharacterEntryKind, ruleset: Ruleset, level?: number): CharacterEditionEntry =>
+    ({ name, kind, level, info: info(ruleset) });
+
+  it("pure 2024", () => {
+    const entries = [ent("Bard", "class", "2024", 5), ent("Sage", "background", "2024"), ent("Alert", "feat", "2024")];
+    expect(characterMainEdition(entries)).toEqual({ main: "2024", mixed: false });
+    expect(characterRulesLine(entries)).toBe("Rules: 2024");
+  });
+
+  it("2024 with a 2014 background and feat", () => {
+    const entries = [ent("Bard", "class", "2024", 5), ent("Criminal / Spy", "background", "2014"), ent("Sharpshooter", "feat", "2014")];
+    expect(characterRulesLine(entries)).toBe("Rules: 2024 · 2014 content: Criminal / Spy (background), Sharpshooter (feat)");
+  });
+
+  it("all-2014 classes make a 2014 character", () => {
+    const entries = [ent("Fighter", "class", "2014", 3), ent("Wizard", "class", "2014", 2), ent("Alert", "feat", "2024")];
+    expect(characterMainEdition(entries)).toEqual({ main: "2014", mixed: false });
+    expect(characterRulesLine(entries)).toBe("Rules: 2014 · 2024 content: Alert (feat)");
+  });
+
+  it("mixed-edition multiclass: 2024 is the main edition for tagging", () => {
+    const entries = [
+      ent("Bard", "class", "2024", 5), ent("Cleric", "class", "2024", 1), ent("Ranger", "class", "2014", 3),
+      ent("Sage", "background", "2024"), ent("Sharpshooter", "feat", "2014"),
+    ];
+    expect(characterMainEdition(entries)).toEqual({ main: "2024", mixed: true });
+    expect(characterRulesLine(entries)).toBe("Rules: mixed — 2024: Bard 5, Cleric 1 · 2014: Ranger 3 · 2014 content: Sharpshooter (feat)");
+  });
+
+  it("mixed even when the 2014 class is the higher level: 2024 stays the main edition", () => {
+    const entries = [ent("Ranger", "class", "2014", 5), ent("Bard", "class", "2024", 1)];
+    expect(characterMainEdition(entries)).toEqual({ main: "2024", mixed: true });
+    expect(characterRulesLine(entries)).toBe("Rules: mixed — 2024: Bard 1 · 2014: Ranger 5");
+  });
+
+  it("non-edition entries get their own groups", () => {
+    const entries = [ent("Bard", "class", "2024", 5), ent("Blood Hunter", "class", "homebrew", 2), ent("Firearm Specialist", "feat", "third-party")];
+    expect(characterRulesLine(entries)).toBe("Rules: 2024 · homebrew: Blood Hunter 2 (class) · third-party: Firearm Specialist (feat)");
+  });
+
+  it("a subclass with a different ruleset is listed on its own", () => {
+    const entries = [ent("Ranger", "class", "2024", 5), ent("Gloom Stalker", "subclass", "2014")];
+    expect(characterRulesLine(entries)).toBe("Rules: 2024 · 2014 content: Gloom Stalker (subclass)");
+  });
+
+  it("no 2014/2024 class: edition not stated, every other group listed", () => {
+    const entries = [ent("Blood Hunter", "class", "homebrew", 5), ent("Alert", "feat", "2024"), ent("Mystery", "item", "unstated")];
+    expect(characterMainEdition(entries)).toEqual({ main: "unstated", mixed: false });
+    expect(characterRulesLine(entries)).toBe("Rules: edition not stated · 2024 content: Alert (feat) · homebrew: Blood Hunter 5 (class)");
+  });
+
+  it("unstated entries under an edition get the 'edition not stated' group", () => {
+    const entries = [ent("Bard", "class", "2024", 5), ent("Mystery Trinket", "item", "unstated")];
+    expect(characterRulesLine(entries)).toBe("Rules: 2024 · edition not stated: Mystery Trinket (item)");
+  });
+
+  it("characterTag: tag entries that differ from the main edition; non-edition always", () => {
+    expect(characterTag(info("2024"), "2024")).toBeNull();
+    expect(characterTag(info("2014"), "2024")).toBe("[2014]");
+    expect(characterTag(info("homebrew"), "2024")).toBe("[homebrew]");
+    expect(characterTag(info("2024"), "unstated")).toBe("[2024]");
+    expect(characterTag(info("unstated"), "unstated")).toBe("[edition not stated]");
   });
 });
