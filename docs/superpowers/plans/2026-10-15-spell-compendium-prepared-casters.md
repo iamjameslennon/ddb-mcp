@@ -43,7 +43,7 @@
 - Consumes: existing `refFetch`, `captureSession`, `assertSessionCurrent`, `SessionChangedError`, `SPELLCASTING_CLASS_IDS`, `CHARACTER_SERVICE`.
 - Produces: no new exports. `loadSpellCompendium()` signature and return type unchanged.
 
-- [ ] **Step 1: Write the failing test file**
+- [x] **Step 1: Write the failing test file**
 
 Create `tests/spell-compendium-endpoints.test.ts` with exactly:
 
@@ -229,12 +229,12 @@ describe("spell compendium queries both class spell-list endpoints", () => {
 });
 ```
 
-- [ ] **Step 2: Run the new tests to verify they fail**
+- [x] **Step 2: Run the new tests to verify they fail**
 
 Run: `npx vitest run tests/spell-compendium-endpoints.test.ts`
 Expected: FAIL — the first test sees 8 URLs not 16; the prepared-caster test misses Spirit Guardians / Bless / Divine Smite; the partial test sees `ddb-authoritative`. The fixed-order test may pass or fail by timing (that is fine before the change).
 
-- [ ] **Step 3: Replace the fetch-and-merge block in `loadSpellCompendium()`**
+- [x] **Step 3: Replace the fetch-and-merge block in `loadSpellCompendium()`**
 
 In `src/tools/reference.ts`, replace everything from the line `  const allSpells = new Map<string, DdbSpell>();` through the line `  assertSessionCurrent(snapshot);` (the first `assertSessionCurrent(snapshot);` inside `loadSpellCompendium`, together with its preceding two-line comment) with:
 
@@ -298,7 +298,7 @@ In `src/tools/reference.ts`, replace everything from the line `  const allSpells
 
 Leave everything after it (the `allSpells.size === 0` throw, the `characterSpellBuffer` merge, provenance, TTL, cache write) unchanged.
 
-- [ ] **Step 4: Fix the three stale comments in `src/tools/reference.ts`**
+- [x] **Step 4: Fix the three stale comments in `src/tools/reference.ts`**
 
 1. Module header — replace:
 ```
@@ -318,17 +318,17 @@ with:
 
 Also in the comment just above the `characterSpellBuffer` merge loop inside `loadSpellCompendium`, replace `The /game-data/spells endpoint covers the canonical class` with `The per-class game-data lists cover the canonical class`.
 
-- [ ] **Step 5: Run the new tests and the session-lifecycle regression**
+- [x] **Step 5: Run the new tests and the session-lifecycle regression**
 
 Run: `npx vitest run tests/spell-compendium-endpoints.test.ts tests/session-consumers.test.ts`
 Expected: PASS, all tests in both files.
 
-- [ ] **Step 6: Full gate**
+- [x] **Step 6: Full gate**
 
 Run: `npm run typecheck && npm run lint && npm test`
 Expected: all green; test count = baseline 392 + 4 = 396.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/tools/reference.ts tests/spell-compendium-endpoints.test.ts
@@ -350,7 +350,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Files:**
 - Modify: `CLAUDE.md` (two lines)
 
-- [ ] **Step 1: Key-modules table row**
+- [x] **Step 1: Key-modules table row**
 
 In the `src/tools/reference.ts` row, replace:
 ```
@@ -361,7 +361,7 @@ with:
 (DDB character-service, two requests per spellcasting class at `classLevel=20`: `/game-data/spells` — cantrips, plus leveled spells for known casters only — and `/game-data/always-known-spells` — leveled spells for every class, the only source for Cleric/Druid/Paladin)
 ```
 
-- [ ] **Step 2: Caching-layers bullet**
+- [x] **Step 2: Caching-layers bullet**
 
 Replace:
 ```
@@ -372,7 +372,7 @@ with:
 — first spell call builds the full compendium by firing 16 parallel requests (`/game-data/spells` and `/game-data/always-known-spells`, `classLevel=20`, for each of the 8 spellcasting classes). Neither endpoint is complete alone: `/spells` returns only cantrips for prepared casters, and `always-known-spells` never returns cantrips. Results merge in fixed request order, first name wins
 ```
 
-- [ ] **Step 3: Gate and commit**
+- [x] **Step 3: Gate and commit**
 
 Run: `npm run lint && npm test` — expected green.
 
