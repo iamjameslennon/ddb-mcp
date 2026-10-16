@@ -127,7 +127,9 @@ function stripHtml(html: string | null | undefined): string {
     .replace(/<\/p>/gi, "\n")
     .replace(/<\/li>/gi, "\n")
     .replace(/<li>/gi, "• ")
-    .replace(/<[^>]+>/g, ""))
+    // [^<>] rather than [^>]: a scan stops at the next "<", so a run of
+    // unterminated "<" in homebrew text stays linear instead of quadratic.
+    .replace(/<[^<>]+>/g, ""))
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
@@ -135,13 +137,22 @@ function stripHtml(html: string | null | undefined): string {
 /**
  * Stat-block prose (traits, actions, reactions…): like stripHtml, but keeps
  * DDB's <strong> feature names ("Bite.", "Multiattack.") as Markdown bold.
+ * The body only runs up to the next tag of the same name, so each scan ends
+ * there and hostile homebrew markup (unclosed tags, huge whitespace runs)
+ * stays linear, while a <b> nested in a <strong> keeps the outer bold.
  */
 function statBlockText(html: string | null | undefined): string {
   if (!html) return "";
-  return stripHtml(html.replace(/<(strong|b)\b[^>]*>([\s\S]*?)<\/\1>/gi, (_m, _tag, inner: string) =>
-    inner.replace(/<[^>]+>/g, "").trim()
-      ? inner.replace(/^(\s*)([\s\S]*?)(\s*)$/, "$1**$2**$3")
-      : inner));
+  return stripHtml(html.replace(/<(strong|b)\b[^<>]*>((?:(?!<\/?\1\b)[\s\S])*)<\/\1>/gi,
+    (_m, _tag, inner: string) => boldInner(inner)));
+}
+
+/** Wrap a tag's contents in Markdown bold, keeping its surrounding whitespace outside the markers. */
+function boldInner(inner: string): string {
+  if (!inner.replace(/<[^<>]+>/g, "").trim()) return inner;
+  const lead = inner.length - inner.trimStart().length;
+  const end = inner.trimEnd().length;
+  return `${inner.slice(0, lead)}**${inner.slice(lead, end)}**${inner.slice(end)}`;
 }
 
 function abilityMod(score: number): string {
@@ -253,31 +264,38 @@ function rankCandidates(candidates: DdbMonster[], config: GameConfig | null, pre
 }
 
 /**
- * Pick the right monster from a candidate list fetched by name: exact
- * (case-insensitive) name matches, falling back to partial, then ranked by
- * rankCandidates(). Source filtering happens server-side before this.
+ * Pick the right monster from a candidate list fetched by name: exact name
+ * matches, falling back to partial, then (unless `allowFuzzy` is false) the
+ * service's top hit — ranked by rankCandidates(). Source filtering happens
+ * server-side before this.
  */
 function selectMonster(
   candidates: DdbMonster[],
   name: string,
   config: GameConfig | null,
-  preferLegacy = false
+  opts: { preferLegacy?: boolean; allowFuzzy?: boolean } = {}
 ): DdbMonster | undefined {
-  const named = namedCandidates(candidates, name);
-  return rankCandidates(named, config, preferLegacy)[0];
+  const named = namedCandidates(candidates, name, opts.allowFuzzy ?? true);
+  return rankCandidates(named, config, opts.preferLegacy ?? false)[0];
 }
 
-function namedCandidates(candidates: DdbMonster[], name: string): DdbMonster[] {
-  const nameLower = name.toLowerCase();
-  const exact = candidates.filter(m => m.name.toLowerCase() === nameLower);
+/** A monster name for comparison: case-, edge-whitespace- and apostrophe-insensitive. */
+function nameKey(name: string): string {
+  return name.trim().toLowerCase().replace(/[‘’]/g, "'");
+}
+
+function namedCandidates(candidates: DdbMonster[], name: string, allowFuzzy = true): DdbMonster[] {
+  const key = nameKey(name);
+  if (!key) return []; // "" is a substring of every name
+  const exact = candidates.filter(m => nameKey(m.name) === key);
   if (exact.length) return exact;
-  const partial = candidates.filter(m => m.name.toLowerCase().includes(nameLower));
-  if (partial.length) return partial;
+  const partial = candidates.filter(m => nameKey(m.name).includes(key));
+  if (partial.length || !allowFuzzy) return partial;
   // No name contains the query (typos, word order: "Beholdr", "red dragon
   // adult"), but the service ranks its fuzzy hits best-first. Take the top
   // hit's name — not the entry, whose edition twin may be listed first instead.
-  const top = candidates[0]?.name.toLowerCase();
-  return top ? candidates.filter(m => m.name.toLowerCase() === top) : [];
+  const top = candidates[0] ? nameKey(candidates[0].name) : "";
+  return top ? candidates.filter(m => nameKey(m.name) === top) : [];
 }
 
 /**
@@ -373,10 +391,12 @@ async function fetchMonsterList(search: string, take: number, sourceIds: number[
   const sourceQs = sourceIds.map(id => `&sources=${id}`).join("");
   const url = `${MONSTER_SERVICE}/v1/Monster?search=${encodeURIComponent(search)}&skip=${skip}&take=${take}${sourceQs}`;
   const cacheKey = `monsters:list:${search.toLowerCase()}:skip${skip}:take${take}:src${sourceIds.join(",")}`;
+  // Boundary check before the cache read, so a pending account change clears
+  // the cache rather than serving the previous account's list.
+  const snapshot = captureSession();
   const cached = monsterCache.get(cacheKey);
   if (cached !== undefined) return JSON.parse(cached) as MonsterListResponse;
 
-  const snapshot = captureSession();
   const resp = await monsterFetch(url);
   if (!resp.ok) throw new Error(`Monster search failed: ${resp.status} ${resp.statusText}`);
   const list = await resp.json() as MonsterListResponse;
@@ -393,14 +413,23 @@ const MAX_FILTER_SCAN = 600;
 /**
  * Fetch up to `limit` entries by paging: the first page reveals the total,
  * the rest are fetched in parallel. Used when CR/type/size filter client-side.
+ * The service can reorder entries between requests, so pages may overlap (and
+ * miss entries); each ID is kept once and callers compare the distinct count
+ * with `total` to tell whether the scan was complete.
  */
 async function fetchMonsterPages(search: string, sourceIds: number[], limit: number): Promise<{ data: DdbMonster[]; total: number }> {
+  // One snapshot for the whole scan: each page checks only its own request,
+  // so pages fetched either side of an account change would otherwise merge.
+  const snapshot = captureSession();
   const first = await fetchMonsterList(search, PAGE_SIZE, sourceIds);
   const total = first.pagination.total;
   const skips: number[] = [];
   for (let skip = PAGE_SIZE; skip < Math.min(total, limit); skip += PAGE_SIZE) skips.push(skip);
   const rest = await Promise.all(skips.map(skip => fetchMonsterList(search, PAGE_SIZE, sourceIds, skip)));
-  return { data: [first, ...rest].flatMap(page => page.data ?? []), total };
+  assertSessionCurrent(snapshot);
+  const seen = new Set<number>();
+  const data = [first, ...rest].flatMap(page => page.data ?? []).filter(m => !seen.has(m.id) && seen.add(m.id));
+  return { data, total };
 }
 
 /**
@@ -411,7 +440,13 @@ async function fetchMonsterPages(search: string, sourceIds: number[], limit: num
 async function availableSourcesFor(name: string, config: GameConfig | null): Promise<string[]> {
   try {
     const all = await fetchMonsterList(name, 20);
-    const named = rankCandidates(namedCandidates(all.data ?? [], name), config, false);
+    // Official entries in books the config knows: a homebrew copy filed under a
+    // book (or under none) would advertise a source with no official entry, and
+    // an unknown id would surface as a bare "source 424242".
+    const known = new Set((config?.sources ?? []).map(s => s.id));
+    const official = (all.data ?? []).filter(m => m.isHomebrew === false && known.has(m.sourceId));
+    // No fuzzy guess: a typo's nearest hit is a different monster.
+    const named = rankCandidates(namedCandidates(official, name, false), config, false);
     return [...new Set(named.map(m => sourceLabel(config, m.sourceId)))];
   } catch {
     return [];
@@ -547,7 +582,7 @@ export async function searchMonsters(params: {
   const crMap = new Map(config?.challengeRatings.map(cr => [cr.id, cr]) ?? []);
   const typeMap = new Map(config?.monsterTypes.map(t => [t.id, t.name]) ?? []);
 
-  const searchTerm = params.name ?? "";
+  const searchTerm = params.name?.trim() ?? "";
 
   // Resolve filter IDs up front so we can pass them to the API.
   const targetCrId = params.cr !== undefined
@@ -572,7 +607,7 @@ export async function searchMonsters(params: {
   if (clientFilters) {
     ({ data: fetched, total } = await fetchMonsterPages(searchTerm, sourceIds, MAX_FILTER_SCAN));
   } else {
-    take = !params.name && params.source ? PAGE_SIZE : 20;
+    take = !searchTerm && params.source ? PAGE_SIZE : 20;
     const page = await fetchMonsterList(searchTerm, take, sourceIds);
     fetched = page.data ?? [];
     total = page.pagination.total;
@@ -599,20 +634,23 @@ export async function searchMonsters(params: {
       const where = sourceLabel(config, sourceIds[0]);
       const scope = partialScan ? ` (checked the first ${checked} of ${total} entries)` : "";
       let msg = `No monsters matching the search criteria in ${where}${scope}.`;
-      if (params.name) {
-        const available = await availableSourcesFor(params.name, config);
-        if (available.length) msg += ` "${params.name}" appears in: ${available.join(", ")}.`;
+      if (searchTerm) {
+        const available = await availableSourcesFor(searchTerm, config);
+        if (available.length) msg += ` "${searchTerm}" appears in: ${available.join(", ")}.`;
       }
       return msg;
     }
     return await o5SearchMonsters(params).catch(() => "No monsters found matching the search criteria.");
   }
 
-  const matchedBy = params.source ? "name and source" : "name";
+  const matchedBy = searchTerm && params.source ? "matched by name and source"
+    : searchTerm ? "matched by name"
+    : params.source ? "matched by source"
+    : "in the compendium";
   const shown = monsters.slice(0, PAGE_SIZE);
   const header = clientFilters
-    ? `${shown.length} shown of ${monsters.length} matching; checked ${checked} of ${total} matched by ${matchedBy}`
-    : `${shown.length} shown, ${total} total matched by ${matchedBy}`;
+    ? `${shown.length} shown of ${monsters.length} matching; checked ${checked} of ${total} ${matchedBy}`
+    : `${shown.length} shown, ${total} total ${matchedBy}`;
   const lines = [`**Monster Search** (${header})\n`];
   for (const m of shown) {
     const cr = crMap.get(m.challengeRatingId);
@@ -631,7 +669,10 @@ export async function searchMonsters(params: {
       const via = m.sources?.find(s => sourceIds.includes(s.sourceId))?.sourceId ?? sourceIds[0];
       sourceStr += `, reprinted in ${sourceLabel(config, via)}`;
     }
-    lines.push(`- **${m.name}**${tagStr} — ${sourceStr} — CR ${crStr}, ${size} ${typeName}, AC ${m.armorClass}, ${m.averageHitPoints} HP`);
+    const line = `- **${m.name}**${tagStr} — ${sourceStr} — CR ${crStr}, ${size} ${typeName}, AC ${m.armorClass}, ${m.averageHitPoints} HP`;
+    // Homebrew names are user-authored — delimit them, as getMonster does for
+    // homebrew stat blocks. Fail closed: only an explicitly official entry is left plain.
+    lines.push(m.isHomebrew === false ? line : wrapUntrusted(line));
   }
 
   if (shown.length < monsters.length) {
@@ -659,6 +700,8 @@ function withSourceCaveat(o5Result: string, source: string | undefined): string 
 }
 
 export async function getMonster(monsterName: string, source?: string): Promise<string> {
+  monsterName = monsterName.trim();
+  if (!monsterName) return "Monster name is required.";
   if (!hasValidSession()) {
     const o5Result = await o5GetMonster(monsterName).catch(() => null);
     if (o5Result) return withSourceCaveat(o5Result, source);
@@ -684,7 +727,7 @@ export async function getMonster(monsterName: string, source?: string): Promise<
     // With a source, require an exact name: a partial match would quietly turn
     // "Zombie" in mm-2014 into Beholder Zombie. Near names are offered instead.
     const best = source
-      ? rankCandidates(candidates.filter(m => m.name.toLowerCase() === monsterName.toLowerCase()), config, false)[0]
+      ? rankCandidates(candidates.filter(m => nameKey(m.name) === nameKey(monsterName)), config, false)[0]
       : selectMonster(candidates, monsterName, config);
 
     if (!best) {
@@ -707,13 +750,14 @@ export async function getMonster(monsterName: string, source?: string): Promise<
 
     const detailUrl = `${MONSTER_SERVICE}/v1/Monster/${best.id}`;
     const detailCacheKey = `monster:${best.id}`;
+    // Boundary check before the cache read, as in fetchMonsterList.
+    const snapshot = captureSession();
     const cachedDetail = monsterCache.get(detailCacheKey);
 
     let detail: MonsterSingleResponse;
     if (cachedDetail !== undefined) {
       detail = JSON.parse(cachedDetail) as MonsterSingleResponse;
     } else {
-      const snapshot = captureSession();
       const resp = await monsterFetch(detailUrl);
       if (!resp.ok) throw new Error(`Monster fetch failed: ${resp.status} ${resp.statusText}`);
       detail = await resp.json() as MonsterSingleResponse;
@@ -728,12 +772,13 @@ export async function getMonster(monsterName: string, source?: string): Promise<
     // restricted block already says the content isn't owned.
     if (detail.accessType === 4 && !detail.data.stats?.length && !source) {
       const o5Result = await o5GetMonster(monsterName).catch(() => null);
-      if (o5Result) return withSourceCaveat(o5Result, source);
+      if (o5Result) return o5Result;
     }
 
     // Homebrew stat blocks are user-authored free text (trait/action
     // descriptions) — delimit as untrusted. Official WotC content is not.
-    return detail.data.isHomebrew ? wrapUntrusted(statBlock) : statBlock;
+    // Fail closed: only an explicitly official entry is left plain.
+    return detail.data.isHomebrew === false ? statBlock : wrapUntrusted(statBlock);
   } catch {
     const o5Result = await o5GetMonster(monsterName).catch(() => null);
     if (o5Result) return withSourceCaveat(o5Result, source);
@@ -760,18 +805,27 @@ const CR_VALUE_O5: Record<string, number> = {
  * and treasure generator. Tries the DDB monster service first, then falls back
  * to Open5e. `preferLegacy` picks the 2014 entry when a name exists in both
  * editions (the encounter rater sets it for 2014 rules).
+ *
+ * Unlike getMonster, no fuzzy fallback (on either path): callers fold the CR
+ * into a rating or a treasure roll, where a near-miss creature would silently
+ * skew the result instead of surfacing as "not found". Homebrew is skipped too —
+ * callers print the returned name as trusted text, and the rating should use
+ * official CRs.
  */
 export async function getMonsterStats(name: string, opts: { preferLegacy?: boolean } = {}): Promise<{
   name: string;
   crValue: number;
   xp: number;
 } | null> {
+  name = name.trim();
+  if (!name) return null;
   // DDB path
   if (hasValidSession()) {
     try {
       const config = await getGameConfig();
       const list = await fetchMonsterList(name, 20);
-      const match = selectMonster(list.data ?? [], name, config, opts.preferLegacy ?? false);
+      const official = (list.data ?? []).filter(m => m.isHomebrew === false);
+      const match = selectMonster(official, name, config, { preferLegacy: opts.preferLegacy, allowFuzzy: false });
       if (match && config) {
         const crEntry = config.challengeRatings.find(cr => cr.id === match.challengeRatingId);
         if (crEntry) {
@@ -791,9 +845,7 @@ export async function getMonsterStats(name: string, opts: { preferLegacy?: boole
     );
     if (resp.ok) {
       const data = await resp.json() as { results: Array<{ name: string; challenge_rating: string }> };
-      const match =
-        data.results.find(m => m.name.toLowerCase() === name.toLowerCase()) ??
-        data.results[0];
+      const match = data.results.find(m => nameKey(m.name) === nameKey(name));
       if (match) {
         const crStr = match.challenge_rating;
         const xp = CR_XP_O5[crStr];

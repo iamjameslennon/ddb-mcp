@@ -951,12 +951,12 @@ server.tool(
 // ─── ddb_roll_treasure ───────────────────────────────────────────────────────
 server.tool(
   "ddb_roll_treasure",
-  `Generate a treasure reward using the 2024 XDMG treasure tables (default). Provide either a CR directly or a list of monster names — CR is resolved automatically via fuzzy name matching. treasure_type 'hoard' makes one roll using the highest CR and includes magic items (requires character_level); 'individual' rolls once per monster and sums the results. Limits (rejected requests return an error, never silently truncated): at most ${MAX_TREASURE_ENTRIES} monster entries, at most ${MAX_MONSTER_COUNT} per entry, and at most ${MAX_MONSTER_NAME_CHARS} characters per monster name — these per-entry restrictions apply to hoard requests too, not just individual. 'individual' additionally caps the total rolls (sum of all entry counts) at ${MAX_INDIVIDUAL_ROLLS}.`,
+  `Generate a treasure reward using the 2024 XDMG treasure tables (default). Provide either a CR directly or a list of monster names — CR is resolved automatically by name (exact, then partial; official entries only — a name that matches nothing is reported as not found rather than guessed). treasure_type 'hoard' makes one roll using the highest CR and includes magic items (requires character_level); 'individual' rolls once per monster and sums the results. Limits (rejected requests return an error, never silently truncated): at most ${MAX_TREASURE_ENTRIES} monster entries, at most ${MAX_MONSTER_COUNT} per entry, and at most ${MAX_MONSTER_NAME_CHARS} characters per monster name — these per-entry restrictions apply to hoard requests too, not just individual. 'individual' additionally caps the total rolls (sum of all entry counts) at ${MAX_INDIVIDUAL_ROLLS}.`,
   {
     cr: z.number().min(0).max(30).optional()
       .describe("Challenge rating (0–30). Use instead of monsters for a direct CR lookup."),
     monsters: z.array(z.object({
-      name: z.string().min(1).max(MAX_MONSTER_NAME_CHARS).describe(`Monster name — fuzzy matched, DDB with Open5e fallback. Max ${MAX_MONSTER_NAME_CHARS} characters.`),
+      name: z.string().min(1).max(MAX_MONSTER_NAME_CHARS).describe(`Monster name — exact or partial match, DDB with Open5e fallback. Max ${MAX_MONSTER_NAME_CHARS} characters.`),
       count: z.number().int().min(1).max(MAX_MONSTER_COUNT).default(1).describe(`Number of this monster (default 1, max ${MAX_MONSTER_COUNT} per entry — applies to both individual and hoard).`),
     })).max(MAX_TREASURE_ENTRIES).optional()
       .describe(`Monsters from the encounter. Highest CR determines the treasure tier for hoards. At most ${MAX_TREASURE_ENTRIES} entries; for treasure_type 'individual' the total count across all entries is capped at ${MAX_INDIVIDUAL_ROLLS} rolls.`),

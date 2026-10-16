@@ -6,7 +6,9 @@
  * content can't close the block early and pose as trusted output.
  */
 export function wrapUntrusted(text: string): string {
-  const sanitized = text.replace(/<\/?untrusted_dndbeyond_content>/gi, "[removed-delimiter]");
+  // Also catches near-miss variants (inner whitespace, attributes) that a model
+  // could still read as our delimiter.
+  const sanitized = text.replace(/<\s*\/?\s*untrusted_dndbeyond_content\b[^<>]*>/gi, "[removed-delimiter]");
   return `<untrusted_dndbeyond_content>\n${sanitized}\n</untrusted_dndbeyond_content>`;
 }
 
