@@ -514,6 +514,20 @@ describe("rulesLine", () => {
     expect(rulesLine(info("homebrew"), { open5e: "primary" })).toBe("Rules: homebrew (edition not stated)");
   });
 
+  it("Open5e origin is dropped for every non-edition ruleset, whatever the origin", () => {
+    const cases: Array<[EditionInfo, string]> = [
+      [info("homebrew"), "Rules: homebrew (edition not stated)"],
+      [info("playtest", "Unearthed Arcana"), "Rules: playtest · Unearthed Arcana"],
+      [info("third-party", "Critical Role"), "Rules: third-party · Critical Role (edition not stated)"],
+      [info("unstated", "Eberron: Rising from the Last War"), "Rules: edition not stated · Eberron: Rising from the Last War"],
+    ];
+    for (const [i, expected] of cases) {
+      expect(rulesLine(i, { open5e: "unavailable" })).toBe(expected);
+      expect(rulesLine(i, { open5e: "not-found" })).toBe(expected);
+      expect(rulesLine(i)).toBe(expected);
+    }
+  });
+
   it("appends the reason on the next line", () => {
     const xge = info("2014", "Xanathar's Guide to Everything");
     expect(rulesLine(xge, { reason: "no-2024-version" })).toBe("Rules: 2014 · Xanathar's Guide to Everything\n(no 2024 version exists — 2014 text shown)");
@@ -533,6 +547,7 @@ describe("other single-lookup lines", () => {
     expect(sourceNote("mm-2024", "2024", "2014")).toBe(`(source "mm-2024" is a 2024 book — rules_edition "2014" was ignored)`);
     expect(sourceNote("mm-2014", "2014", "2024")).toBe(`(source "mm-2014" is a 2014 book — rules_edition "2024" was ignored)`);
     expect(sourceNote("mm-2024", "2024", "2024")).toBeNull();
+    expect(sourceNote("mm-2014", "2014", "2014")).toBeNull();
   });
 
   it("ambiguityMessage", () => {
@@ -567,6 +582,7 @@ describe("search labels", () => {
     expect(searchFooter("2014", 3)).toBe("3 2024 versions hidden — omit rules_edition to show them.");
     expect(searchFooter("2014", 1)).toBe("1 2024 version hidden — omit rules_edition to show it.");
     expect(searchFooter("2024", 0)).toBeNull();
+    expect(searchFooter("2014", 0)).toBeNull();
   });
 });
 
@@ -635,5 +651,27 @@ describe("character edition labels", () => {
     expect(characterTag(info("homebrew"), "2024")).toBe("[homebrew]");
     expect(characterTag(info("2024"), "unstated")).toBe("[2024]");
     expect(characterTag(info("unstated"), "unstated")).toBe("[edition not stated]");
+  });
+
+  it("characterTag: symmetric cases and non-edition tags against a 2014 main edition", () => {
+    expect(characterTag(info("2014"), "2014")).toBeNull();
+    expect(characterTag(info("playtest"), "2024")).toBe("[playtest]");
+    expect(characterTag(info("third-party"), "2014")).toBe("[third-party]");
+    expect(characterTag(info("unstated"), "2024")).toBe("[edition not stated]");
+  });
+
+  it("empty entry list: edition not stated, nothing listed", () => {
+    expect(characterMainEdition([])).toEqual({ main: "unstated", mixed: false });
+    expect(characterRulesLine([])).toBe("Rules: edition not stated");
+  });
+
+  it("mixed character with a homebrew class: homebrew class listed in its own group", () => {
+    const entries = [ent("Bard", "class", "2024", 5), ent("Ranger", "class", "2014", 3), ent("Blood Hunter", "class", "homebrew", 2)];
+    expect(characterRulesLine(entries)).toBe("Rules: mixed — 2024: Bard 5 · 2014: Ranger 3 · homebrew: Blood Hunter 2 (class)");
+  });
+
+  it("class without a level: head is plain edition, no number", () => {
+    const entries = [ent("Fighter", "class", "2014"), ent("Alert", "feat", "2024")];
+    expect(characterRulesLine(entries)).toBe("Rules: 2014 · 2024 content: Alert (feat)");
   });
 });
