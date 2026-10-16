@@ -205,6 +205,7 @@ function abortableDelay(ms: number, signal?: AbortSignal | null): Promise<void> 
       signal?.removeEventListener("abort", onAbort);
       resolve();
     }, ms);
+    timer.unref?.();
     signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
@@ -225,8 +226,10 @@ async function fetchWithRetry(
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     // Authority check immediately before every dispatch — including the retry
     // after a backoff sleep, so a mid-flight account change can't be replayed.
-    // It runs before the abort check below so a session change that cut the
-    // backoff short is reported as SessionChangedError, not as a bare abort.
+    // It runs before the abort check below. A lifecycle abort's reason is
+    // already a SessionChangedError, so the order only matters when an on-disk
+    // swap nobody has observed yet coincides with a caller or timeout abort:
+    // then the swap is what gets reported.
     assertSessionCurrent(snapshot);
     options.signal?.throwIfAborted();
 
@@ -344,26 +347,35 @@ async function getCobaltTokenForSnapshot(
  */
 function startCobaltTokenExchange(snapshot: SessionSnapshot): PendingCobaltExchange {
   const timeout = new AbortController();
-  const timer = setTimeout(
-    () => timeout.abort(new CobaltTokenTimeoutError(COBALT_TOKEN_TIMEOUT_MS)),
-    COBALT_TOKEN_TIMEOUT_MS
-  );
-  // The mint is deferred one microtask so the entry is published before any of
-  // it runs: its first authority check can observe a session change and fire
-  // the invalidation hook, which must then find and clear this entry rather
-  // than run before it is stored.
+  // The mint is deferred one microtask so it runs only after the entry is
+  // stored. Its first authority check can observe a session change and fire the
+  // invalidation hook; deferring lets that hook find and clear the entry, so
+  // the slot never holds an exchange that is already dead. (Joiners' generation
+  // compare would keep a newer generation out of such an entry anyway; this
+  // keeps the slot itself clean.)
   const entry: PendingCobaltExchange = {
     generation: snapshot.generation,
     promise: Promise.resolve().then(() => mintCobaltToken(snapshot, timeout.signal)),
   };
   cobaltTokenPending = entry;
   // Clear only our own entry: after an invalidation the slot may hold a newer
-  // generation's exchange, which a stale settlement must not drop. Handling
-  // both outcomes here also means the stored promise always has a rejection
-  // handler, even if no caller is still awaiting it.
+  // generation's exchange, which a stale settlement must not drop.
+  const release = () => {
+    if (cobaltTokenPending === entry) cobaltTokenPending = null;
+  };
+  // At the deadline, abort the exchange (dispatch, retry backoff and body read
+  // all honour the signal) and release the slot directly as well, so later
+  // callers start afresh even if some step ignored the abort and never settles.
+  const timer = setTimeout(() => {
+    timeout.abort(new CobaltTokenTimeoutError(COBALT_TOKEN_TIMEOUT_MS));
+    release();
+  }, COBALT_TOKEN_TIMEOUT_MS);
+  timer.unref?.();
+  // Handling both outcomes here also means the stored promise always has a
+  // rejection handler, even if no caller is still awaiting it.
   const settle = () => {
     clearTimeout(timer);
-    if (cobaltTokenPending === entry) cobaltTokenPending = null;
+    release();
   };
   entry.promise.then(settle, settle);
   return entry;

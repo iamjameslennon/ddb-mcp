@@ -130,6 +130,7 @@ afterEach(() => {
 
 describe("concurrent cold-cache callers share one cobalt-token exchange", () => {
   it(`${N} concurrent beginAuthenticatedSession() calls send exactly one POST`, async () => {
+    vi.useFakeTimers();
     setSessionFile(sessionJson("SECRET_A"));
     const jwt = makeJwt("99");
     fetchMock.mockImplementation(async (url: string) => {
@@ -149,6 +150,8 @@ describe("concurrent cold-cache callers share one cobalt-token exchange", () => 
     // The shared token is cached afterwards: a later call sends nothing new.
     await sf.beginAuthenticatedSession();
     expect(cobaltCalls()).toHaveLength(1);
+    // The exchange's timeout timer was cleared when it settled.
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it(`${N} concurrent getCobaltToken() calls send exactly one POST`, async () => {
@@ -163,6 +166,7 @@ describe("concurrent cold-cache callers share one cobalt-token exchange", () => 
   });
 
   it("a revoke mid-exchange rejects every joined caller with SessionChangedError", async () => {
+    vi.useFakeTimers();
     setSessionFile(sessionJson("SECRET_A"));
     const cobalt = gatedCobalt();
 
@@ -178,6 +182,7 @@ describe("concurrent cold-cache callers share one cobalt-token exchange", () => 
       expect((s as PromiseRejectedResult).reason).toBeInstanceOf(sf.SessionChangedError);
     }
     expect(cobaltCalls()).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 
@@ -346,29 +351,52 @@ describe("near-expiry refresh is deduplicated too", () => {
 describe("the starter re-checks authority after the shared exchange, like every joiner", () => {
   it("an account swap AFTER the mint's last check rejects the starter and every joiner", async () => {
     // Flip the file on the first read made by getCobaltTokenForSnapshot itself
-    // rather than by the mint inside it: i.e. the first post-resolve re-check,
+    // rather than by the mint inside it: i.e. the first post-settle re-check,
     // whichever caller (starter or joiner) runs it. Every check inside the mint
     // (and every captureSession) sees account A, so the exchange itself
     // succeeds and the swap lands exactly in the hand-out window.
+    //
+    // The stack-trace gate is guarded so an early flip fails loudly rather than
+    // passing for the wrong reason: the body must have been consumed first, the
+    // mint must have re-checked authority after the body (its post-parse and
+    // pre-cache-write checks), and no mint read may come after the flip.
     const A = sessionJson("SECRET_A");
     const B = sessionJson("SECRET_B");
     let flipped = false;
+    let bodyConsumed = false;
+    let mintReadsAfterBody = 0;
+    let mintReadsAfterFlip = 0;
     const prevLimit = Error.stackTraceLimit;
     Error.stackTraceLimit = 200;
     try {
       fsMock.existsSync.mockReturnValue(true);
       fsMock.readFileSync.mockImplementation(() => {
-        if (!flipped) {
-          const stack = new Error().stack ?? "";
-          flipped = stack.includes("getCobaltTokenForSnapshot") && !stack.includes("mintCobaltToken");
+        const stack = new Error().stack ?? "";
+        const inMint = stack.includes("mintCobaltToken");
+        if (inMint && flipped) mintReadsAfterFlip += 1;
+        if (inMint && bodyConsumed && !flipped) mintReadsAfterBody += 1;
+        if (!flipped && bodyConsumed && !inMint && stack.includes("getCobaltTokenForSnapshot")) {
+          flipped = true;
         }
         return flipped ? B : A;
       });
-      fetchMock.mockImplementation(async () => jsonResponse({ token: makeJwt("OLD") }));
+      fetchMock.mockImplementation(async () => ({
+        ok: true,
+        status: 200,
+        headers: { get: () => "application/json" },
+        json: async () => {
+          bodyConsumed = true;
+          return { token: makeJwt("OLD") };
+        },
+      }) as unknown as Response);
 
       const settled = await settleAll(Array.from({ length: 4 }, () => sf.beginAuthenticatedSession()));
 
       expect(flipped).toBe(true);
+      // The mint finished all its post-body checks against account A before
+      // the flip, and nothing inside it ran afterwards.
+      expect(mintReadsAfterBody).toBeGreaterThanOrEqual(2);
+      expect(mintReadsAfterFlip).toBe(0);
       expect(cobaltCalls()).toHaveLength(1);
       for (const s of settled) {
         expect(s.status).toBe("rejected");
@@ -406,12 +434,15 @@ describe("the shared exchange is bounded by COBALT_TOKEN_TIMEOUT_MS", () => {
       );
     }
 
+    expect(vi.getTimerCount()).toBe(0);
+
     // Pending was cleared: the next call sends a fresh POST and succeeds.
     const next = sf.beginAuthenticatedSession();
     await cobalt.dispatched(1);
     expect(cobaltCalls()).toHaveLength(2);
     cobalt.release(1, jsonResponse({ token: makeJwt("99") }));
     await expect(next).resolves.toMatchObject({ userId: "99" });
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("the timeout covers the whole retry sequence, not each attempt", async () => {
@@ -456,6 +487,69 @@ describe("the shared exchange is bounded by COBALT_TOKEN_TIMEOUT_MS", () => {
       expect((s as PromiseRejectedResult).reason).toBeInstanceOf(sf.SessionChangedError);
     }
     expect(cobaltCalls()).toHaveLength(1);
+    // Neither the exchange timeout nor the cut-short backoff sleep lingers.
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("a body read that honours the abort rejects every joined caller at the deadline", async () => {
+    vi.useFakeTimers();
+    setSessionFile(sessionJson("SECRET_A"));
+    let posts = 0;
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => {
+      posts += 1;
+      if (posts > 1) return jsonResponse({ token: makeJwt("99") });
+      // Headers arrive, then the body stalls until the signal aborts — as
+      // undici's body read does.
+      const signal = init?.signal;
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => "application/json" },
+        json: () => new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+      } as unknown as Response;
+    });
+
+    const settled = settleAll(Array.from({ length: 4 }, () => sf.getCobaltToken()));
+    await vi.advanceTimersByTimeAsync(sf.COBALT_TOKEN_TIMEOUT_MS);
+
+    for (const s of await settled) {
+      expect(s.status).toBe("rejected");
+      expect((s as PromiseRejectedResult).reason).toBeInstanceOf(sf.CobaltTokenTimeoutError);
+    }
+    expect(vi.getTimerCount()).toBe(0);
+
+    await expect(sf.getCobaltToken()).resolves.toMatchObject({ userId: "99" });
+    expect(cobaltCalls()).toHaveLength(2);
+  });
+
+  it("the deadline releases the pending slot even if the exchange never settles", async () => {
+    vi.useFakeTimers();
+    setSessionFile(sessionJson("SECRET_A"));
+    let posts = 0;
+    fetchMock.mockImplementation(async () => {
+      posts += 1;
+      if (posts > 1) return jsonResponse({ token: makeJwt("99") });
+      // A body read that ignores the abort entirely and never settles.
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => "application/json" },
+        json: () => new Promise(() => {}),
+      } as unknown as Response;
+    });
+
+    // These callers stay stuck on the dead exchange forever; they never
+    // reject, so they leave no unhandled rejection behind.
+    const stuck = Array.from({ length: 2 }, () => sf.getCobaltToken());
+    void stuck;
+    await vi.advanceTimersByTimeAsync(sf.COBALT_TOKEN_TIMEOUT_MS);
+
+    const next = sf.getCobaltToken();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cobaltCalls()).toHaveLength(2);
+    await expect(next).resolves.toMatchObject({ userId: "99" });
   });
 });
 
