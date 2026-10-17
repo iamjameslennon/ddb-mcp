@@ -92,6 +92,7 @@ afterEach(() => {
 
 const EXPECTED = {
   classesAll: "**Class Search** (2 found)\n\n- **Fighter** — Hit Die: d10\n  Fighter description\n- **Fighter** — Hit Die: d10\n  Fighter description — long placeholder text, padded past the 120-character cut-off so the truncation path is exercised i...",
+  // Equals classesAll: both fixture classes are named "Fighter", so "fight" matches both.
   classesFight: "**Class Search** (2 found)\n\n- **Fighter** — Hit Die: d10\n  Fighter description\n- **Fighter** — Hit Die: d10\n  Fighter description — long placeholder text, padded past the 120-character cut-off so the truncation path is exercised i...",
   racesAll: "**Race Search** (7 found)\n\n- **Elf** — Elf description\n- **Goliath** — Goliath description — long placeholder text, padded past the 120-character cut-off so the truncation...\n- **High Elf** *(Subrace, Legacy)* — High Elf description\n- **Human** *(Legacy)* — Human description\n- **Tiefling** — Tiefling description\n- **Tiefling** *(Subrace, Homebrew)* — Tiefling description\n- **Wood Elf** *(Subrace, Legacy)* — Wood Elf description",
   racesElf: "**Race Search** (3 found)\n\n- **Elf** — Elf description\n- **High Elf** *(Subrace, Legacy)* — High Elf description\n- **Wood Elf** *(Subrace, Legacy)* — Wood Elf description",
@@ -118,5 +119,29 @@ describe("shared game-data list loader", () => {
     await reference.searchClasses();
     await reference.searchClasses();
     expect(requestsTo("classes")).toHaveLength(2);
+  });
+
+  it("does not cache a non-array data payload", async () => {
+    fetchMock.mockImplementation(serviceMock({ classes: {} }));
+    await reference.searchClasses();
+    await reference.searchClasses();
+    expect(requestsTo("classes")).toHaveLength(2);
+  });
+
+  it("refetches after an empty list, then serves from cache", async () => {
+    const real = serviceMock();
+    let first = true;
+    fetchMock.mockImplementation(async (url: string) => {
+      if (first && new URL(url).pathname.endsWith("/game-data/classes")) {
+        first = false;
+        return jsonResponse({ data: [] });
+      }
+      return real(url);
+    });
+    await reference.searchClasses();
+    await reference.searchClasses();
+    const third = await reference.searchClasses();
+    expect(requestsTo("classes")).toHaveLength(2);
+    expect(third).toBe(EXPECTED.classesAll);
   });
 });

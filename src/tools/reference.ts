@@ -66,8 +66,8 @@ async function loadGameDataList<T>(cacheKey: string, path: string): Promise<T[]>
   }
   const json = await resp.json() as { data?: T[] } | T[];
   const list = Array.isArray(json) ? json : json.data;
-  if (!Array.isArray(list)) return [];
   assertSessionCurrent(snapshot);
+  if (!Array.isArray(list)) return [];
   if (list.length > 0) referenceCache.set(cacheKey, JSON.stringify(list));
   return list;
 }
