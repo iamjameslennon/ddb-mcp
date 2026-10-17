@@ -80,7 +80,7 @@ if (unplaced.length) {
 } else {
   console.log("Every source category is placed in edition.ts's table.\n");
 }
-if (process.argv.includes("--snapshot-only")) process.exit(0);
+const snapshotOnly = process.argv.includes("--snapshot-only");
 
 // ── 3. Rename candidates (needs a logged-in session) ─────────────────────────
 
@@ -124,7 +124,15 @@ const entries = (rows: Row[], f: (r: Row) => Entry | null) => rows.map(f).filter
 async function loadSpells(): Promise<Entry[]> {
   const urls = ["spells", "always-known-spells"].flatMap(endpoint => [1, 2, 3, 4, 5, 6, 7, 8].map(classId =>
     `${CHARACTER_SERVICE}/character/v5/game-data/${endpoint}?classId=${classId}&classLevel=20&sharingSetting=2`));
-  const rows = (await Promise.all(urls.map(getList))).flat().map(s => s.definition as Row).filter(Boolean);
+  // allSettled: one failed class/endpoint keeps the rest of the spell list.
+  const results = await Promise.allSettled(urls.map(getList));
+  results.forEach((r, i) => {
+    if (r.status === "rejected") {
+      console.log(`WARNING: ${urls[i]} failed — ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`);
+    }
+  });
+  if (results.every(r => r.status === "rejected")) throw new Error("every spell request failed");
+  const rows = results.flatMap(r => r.status === "fulfilled" ? r.value : []).map(s => s.definition as Row).filter(Boolean);
   return entries(rows, r => toEntry("spell", r, { bucket: d => `level ${String(d.level)}` }));
 }
 
@@ -167,14 +175,15 @@ function report(kind: string, loaded: Entry[]): void {
   const keys2014 = keysOf("2014");
   const orphans2014 = rows.filter(x => x.info.ruleset === "2014" && !keys2024.has(x.key));
   const orphans2024 = rows.filter(x => x.info.ruleset === "2024" && !keys2014.has(x.key));
-  console.log(`\n=== ${kind}: ${all.length} definitions; ${orphans2014.length} 2014 names with no 2024 twin; ${orphans2024.length} 2024 names with no 2014 twin ===`);
+  console.log(`\n=== ${kind}: ${loaded.length} loaded, ${all.length} definitions after dedupe by id; ${orphans2014.length} 2014 names with no 2024 twin; ${orphans2024.length} 2024 names with no 2014 twin ===`);
 
   for (const o of orphans2014) {
     const oName = normalizeName(o.e.name);
     const candidates = orphans2024
       .map(c => ({
         c,
-        contains: normalizeName(c.e.name).includes(oName),
+        // Whole-word containment: "goblin" matches "goblin warrior", not "hobgoblin".
+        contains: (` ${normalizeName(c.e.name)} `).includes(` ${oName} `),
         sim: c.e.bucket === o.e.bucket ? similarity(o.w, c.w) : 0,
       }))
       .filter(x => x.contains || x.sim >= 0.5)
@@ -189,6 +198,8 @@ function report(kind: string, loaded: Entry[]): void {
     }
   }
   console.log(`\n--- ${kind}: every 2014 name with no 2024 twin ---\n${orphans2014.map(o => o.e.name).sort().join(", ")}`);
+  // Whole-name renames (Feeblemind → Befuddlement) share no words, so list both sides for manual cross-matching.
+  console.log(`\n--- ${kind}: every 2024 name with no 2014 twin ---\n${orphans2024.map(o => o.e.name).sort().join(", ")}`);
 }
 
 const loaders: Array<[string, () => Promise<Entry[]>]> = [
@@ -200,11 +211,13 @@ const loaders: Array<[string, () => Promise<Entry[]>]> = [
   ["feat", () => loadSimple("feat", "feats")],
   ["monster", loadMonsters],
 ];
-for (const [kind, load] of loaders) {
-  try {
-    report(kind, await load());
-  } catch (e) {
-    console.log(`\n=== ${kind}: FAILED — ${(e as Error).message} ===`);
+// No process.exit here: on a pipe, stdout writes are async and exiting early drops the tail.
+if (!snapshotOnly) {
+  for (const [kind, load] of loaders) {
+    try {
+      report(kind, await load());
+    } catch (e) {
+      console.log(`\n=== ${kind}: FAILED — ${(e as Error).message} ===`);
+    }
   }
 }
-process.exit(0);
