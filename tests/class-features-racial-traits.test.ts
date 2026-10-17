@@ -262,10 +262,12 @@ describe("searchClassFeatures", () => {
     }
   });
 
-  it("a cached partial build still shows the partial note", async () => {
+  it("a cached partial build still shows the partial note, without re-requesting", async () => {
     withOverride((u) => u.includes("/subclasses?baseClassId=10"), () => jsonResponse({}, 403));
     await reference.searchClassFeatures({});
+    const before = gameDataRequests().length;
     const second = await reference.searchClassFeatures({ name: "action surge" });
+    expect(gameDataRequests()).toHaveLength(before);
     expect(second.startsWith(CF_PARTIAL)).toBe(true);
   });
 
@@ -399,11 +401,32 @@ describe("searchRacialTraits", () => {
   });
 
   it("a failed optional-trait list is partial and caches briefly", async () => {
-    withOverride((u) => u.includes("/racial-trait/collection?entityRaceId=1&entityRaceTypeId=1743923279"), () => jsonResponse({}, 403));
-    const out = await reference.searchRacialTraits({ name: "darkvision" });
-    expect(out.startsWith(`${RT_PARTIAL}\n\n`)).toBe(true);
-    const again = await reference.searchRacialTraits({ name: "darkvision" });
-    expect(again.startsWith(RT_PARTIAL)).toBe(true);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      withOverride((u) => u.includes("/racial-trait/collection?entityRaceId=1&entityRaceTypeId=1743923279"), () => jsonResponse({}, 403));
+      const out = await reference.searchRacialTraits({ name: "darkvision" });
+      expect(out.startsWith(`${RT_PARTIAL}\n\n`)).toBe(true);
+
+      const before = requestsTo("racial-trait/collection").length;
+      const again = await reference.searchRacialTraits({ name: "darkvision" });
+      expect(requestsTo("racial-trait/collection")).toHaveLength(before); // cached
+      expect(again.startsWith(RT_PARTIAL)).toBe(true);
+
+      vi.setSystemTime(Date.now() + 5 * 60_000 + 1);
+      await reference.searchRacialTraits({ name: "darkvision" });
+      expect(requestsTo("racial-trait/collection").length).toBeGreaterThan(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("with no session, rejects with a login hint rather than unavailable or none-found", async () => {
+    fsMock.existsSync.mockReturnValue(false);
+    const err = await reference.searchRacialTraits({}).then(() => null, (e: Error) => e);
+    expect(err).not.toBeNull();
+    expect(err!.message).toContain("ddb_login");
+    expect(err!.message).not.toContain("unavailable");
+    expect(err!.message).not.toContain("No racial traits found");
   });
 
   it("an optional-trait response with data: {} is partial", async () => {

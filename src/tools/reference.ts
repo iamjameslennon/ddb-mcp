@@ -1082,9 +1082,8 @@ export async function searchFeats(params: {
 // behind /game-data/subclasses?baseClassId=N, so both searches are built from
 // those payloads (see features-traits.ts) rather than from one collection call.
 
-function unavailableError(what: string, status?: number): Error {
-  const detail = status === undefined ? ": it returned no " + what : ` (HTTP ${status})`;
-  const label = what === "class features" ? "Class feature" : "Racial trait";
+function unavailableError(label: string, what: string, status?: number): Error {
+  const detail = status === undefined ? `: it returned no ${what}` : ` (HTTP ${status})`;
   return new Error(
     `${label} data is unavailable from D&D Beyond right now${detail}. Try again later, or run ddb_login if your session has expired.`,
   );
@@ -1134,11 +1133,11 @@ function writeBuildCache<T>(key: string, build: CachedBuild<T>): void {
 }
 
 /** Wrap only a GameDataFetchError from the base list; everything else propagates. */
-async function baseListOrUnavailable(cacheKey: string, path: string, what: string): Promise<unknown[]> {
+async function baseListOrUnavailable(cacheKey: string, path: string, label: string, what: string): Promise<unknown[]> {
   try {
     return await loadGameDataList<unknown>(cacheKey, path);
   } catch (e) {
-    if (e instanceof GameDataFetchError) throw unavailableError(what, e.status);
+    if (e instanceof GameDataFetchError) throw unavailableError(label, what, e.status);
     throw e;
   }
 }
@@ -1149,8 +1148,8 @@ async function loadClassFeatures(): Promise<CachedBuild<ClassFeatureEntry>> {
   const hit = readBuildCache<ClassFeatureEntry>("class-features");
   if (hit) return hit;
 
-  const classes = await baseListOrUnavailable("game-data:classes", "classes", "class features");
-  if (classes.length === 0) throw unavailableError("class features");
+  const classes = await baseListOrUnavailable("game-data:classes", "classes", "Class feature", "class features");
+  if (classes.length === 0) throw unavailableError("Class feature", "class features");
 
   const counter = { failed: 0 };
   const classIds = classes
@@ -1178,7 +1177,7 @@ async function loadClassFeatures(): Promise<CachedBuild<ClassFeatureEntry>> {
   assertSessionCurrent(snapshot);
 
   const entries = buildClassFeatures(classes, subclassesByClassId, optionalByClassId);
-  if (entries.length === 0) throw unavailableError("class features");
+  if (entries.length === 0) throw unavailableError("Class feature", "class features");
   const build: CachedBuild<ClassFeatureEntry> = {
     source: counter.failed === 0 ? "ddb-authoritative" : "ddb-partial",
     entries,
@@ -1229,8 +1228,8 @@ async function loadRacialTraits(): Promise<CachedBuild<RacialTraitEntry>> {
   const hit = readBuildCache<RacialTraitEntry>("racial-traits");
   if (hit) return hit;
 
-  const races = await baseListOrUnavailable("game-data:races", "races", "racial traits");
-  if (races.length === 0) throw unavailableError("racial traits");
+  const races = await baseListOrUnavailable("game-data:races", "races", "Racial trait", "racial traits");
+  if (races.length === 0) throw unavailableError("Racial trait", "racial traits");
 
   const counter = { failed: 0 };
   const optionalByRaceKey = new Map<string, OptionalCollection>();
@@ -1251,7 +1250,7 @@ async function loadRacialTraits(): Promise<CachedBuild<RacialTraitEntry>> {
   assertSessionCurrent(snapshot);
 
   const entries = buildRacialTraits(races, optionalByRaceKey);
-  if (entries.length === 0) throw unavailableError("racial traits");
+  if (entries.length === 0) throw unavailableError("Racial trait", "racial traits");
   const build: CachedBuild<RacialTraitEntry> = {
     source: counter.failed === 0 ? "ddb-authoritative" : "ddb-partial",
     entries,
