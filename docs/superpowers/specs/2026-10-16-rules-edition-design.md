@@ -32,7 +32,7 @@ This spec is written for agents who arrive cold. Each phase in [Phases](#phases)
 | Spells (`/game-data/spells`, `/always-known-spells`) | `isLegacy` + `sources[]` (`sourceId` is null) | Wizard list alone has 176 names in both editions |
 | Items (`/game-data/items`) | `isLegacy` + `sources[]` | 1873 rows, 357 names in both editions. **Mundane items list books from both editions in one definition**, e.g. Studded Leather `sources: [148 br-2024, 1 BR]`, `isLegacy: false` |
 | Races (`/game-data/races`) | `isLegacy` + `sources[]` | One live row (`COPY_OF_Tiefling`) has no sources |
-| Classes, backgrounds, feats, class features, racial traits | **no `isLegacy`**, `sources[]` only | e.g. Fighter appears twice, `[BR]` and `[PHB-2024]` |
+| Classes, backgrounds, feats, class features, racial traits | **no `isLegacy`**. Classes, backgrounds and feats have `sources[]` only. Base and subclass class features have no `sources` of their own. Optional entries and racial traits have their own `sources[]` | e.g. Fighter appears twice, `[BR]` and `[PHB-2024]` |
 | Monsters (monster-service) | `isLegacy` + `sourceId` + reprint `sources[]` | 2024 Zombie lists 2024 reprint books |
 | Character JSON (paths below) | spells/items/race: `isLegacy` + `sources`; class/subclass/background/feat: `sources` only | A 2024 Bard character had a 2014 background (`Criminal / Spy`, `[BR]`) |
 | Conditions (`/character/v5/rule-data` → `data.conditions`) | none | 15 conditions, **2024 text only** (Exhaustion: "You die if your Exhaustion level is 6", D20 Tests reduced) |

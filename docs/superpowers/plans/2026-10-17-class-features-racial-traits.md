@@ -50,7 +50,7 @@ These come from the owner and take precedence over superpowers:subagent-driven-d
 
 ## Changes agreed during execution
 
-The original task text below is unchanged; where it differs from this list, this list is what shipped. (Task 6's Step 1 still says `/classes` returns `subclasses: null`; the field is absent.)
+The original task text below is unchanged; where it differs from this list, this list is what shipped. (Task 6's Step 1 still says `/classes` returns `subclasses: null`; the field is absent. Task 6's Step 3 says features "carry no `sources` of their own"; that holds only for class and subclass features. Standard racial traits do carry their own.)
 
 **Task 1, fixtures**
 - Top-level class and race fields that the code reads are kept, as well as the fields listed in "Investigation findings". Placeholders replace only non-empty strings; empty strings stay `""`.
@@ -81,6 +81,9 @@ The original task text below is unchanged; where it differs from this list, this
 **Task 6, documentation**
 - Three Next steps items were added instead of one: the dead "Subclasses:" line in `ddb_search_classes`, `npm run typecheck` not covering `tests/` (`include: ["src/**/*"]`), and `paginateResults` garbling its header when `offset` is past the end (e.g. "showing 31–30 of 20", predates this work).
 - Deferred minor findings, no action: several tests pin behaviour rather than discriminate one fix; two optional-collection guard clauses overlap later checks, so are not independently testable; no test covers a 5xx/429 in the fan-out (same path as 403); the class-feature "filter doesn't mutate input" test starts from sorted input.
+
+**Final review wave (2026-10-17)**
+- No-match replies now end with an account-availability sentence ("D&D Beyond lists only the classes and subclasses available to your account." / "... the species available to your account."), because `/classes`, `/subclasses` and `/races` list only the logged-in account's content. Also: two racial-trait tests mirroring the class-feature ones (account change mid-fan-out, shared `/races` fetch), the `reference.ts` header, and doc fixes in CLAUDE.md and the rules-edition spec (sources wording, tool-notes examples).
 
 ## Global Constraints
 
