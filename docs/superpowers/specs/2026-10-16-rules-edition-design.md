@@ -1,6 +1,6 @@
 # Rules edition across all tools: design
 
-**Status:** approved design. Phase 1 (foundation) implemented 2026-10-17. Its real signatures are in the "Signatures that differ from the spec's sketch" table of [the phase-1 plan](../plans/2026-10-16-rules-edition-phase-1-foundation.md), plus `twinAliases()`, which was added after review. Phases 2–5 are not started.
+**Status:** approved design. Phase 1 (foundation) implemented 2026-10-17. Its real signatures are in the "Signatures that differ from the spec's sketch" table of [the phase-1 plan](../plans/2026-10-16-rules-edition-phase-1-foundation.md), plus `twinAliases()`, which was added after review. Phases 2–5 are not started. Revised 2026-10-17 with the owner's phase-2 decisions: reasons say "found", not "exists"; a locked monster pick yields to an owned other-edition twin; a failed game-config fetch is remembered for 60 s; registrations move to `src/server.ts`; the Open5e fallback label stands in for a reason line until phase 4.
 **Date:** 2026-10-16 (revised the same day after an adversarial review)
 **Supersedes:** CLAUDE.md "Next steps" work item 1 (`rules_edition` for spells and monsters) and item 3 (ambiguous partial monster names). They are now phase 2 of this spec. Where this spec and CLAUDE.md's "Decisions" differ in wording, **this spec wins**.
 
@@ -41,7 +41,7 @@ This spec is written for agents who arrive cold. Each phase in [Phases](#phases)
 
 **Verified source IDs** (live): `1` BR "Basic Rules (2014)" cat 26; `2` PHB (2014) cat 26; `3` DMG (2014) cat 26; `5` MM (2014) cat 26; `145` PHB-2024 cat 24; `146` DMG-2024 cat 24; `147` MM-2024 cat 24; `148` br-2024 cat 24; `193` TCMP1 cat 34 (third-party).
 
-**"Legacy" is not the same as "2014".** D&D Beyond marks content Legacy only when 2024 replaced it. A Xanathar's spell such as Toll the Dead is 2014-era but `isLegacy: false`. This design labels by **book era**, so Toll the Dead is "2014" and carries the reason "no 2024 version exists".
+**"Legacy" is not the same as "2014".** D&D Beyond marks content Legacy only when 2024 replaced it. A Xanathar's spell such as Toll the Dead is 2014-era but `isLegacy: false`. This design labels by **book era**, so Toll the Dead is "2014" and carries the reason "no 2024 version found".
 
 **Some names changed between editions.** For example, the 2014 Basic Rules' "Acid Arrow" appears to be the 2024 "Melf's Acid Arrow". This and other example pairs are **unverified until the rename script runs**. Matching by name alone misses such pairs, so a rename table links them (see [Rename table](#rename-table)).
 
@@ -103,16 +103,18 @@ All strings come from `src/edition.ts`. **No tool builds its own edition text**,
   - Tools whose primary source is Open5e (rules): `Rules: 2024 · SRD 5.2`
   - Conditions (vendored): `Rules: 2024 · SRD 5.2` / `Rules: 2014 · SRD 5.1`
 - **Reason line**, appended on the next line when the edition returned ≠ requested:
-  - `(no 2024 version exists — 2014 text shown)`
-  - `(no 2014 version exists — 2024 text shown)`
+  - `(no 2024 version found — 2014 text shown)`
+  - `(no 2014 version found — 2024 text shown)`
+  - "Found", not "exists": D&D Beyond leaves content locked to the account out of its lists, so the data can't prove a version doesn't exist (live 2026-10-17: Befuddlement, the 2024 Feeblemind, is missing from the owner's spell lists).
+  - Locked monster twin (`ddb_get_monster` only, see [Monsters](#monsters-srctoolsmonsterts--phase-2)): `(the 2024 version isn't available to this account — 2014 text shown)` / `(the 2014 version isn't available to this account — 2024 text shown)`
   - Rules sections: `(no matching 2024 rules section — 2014 text shown)` / `(no matching 2014 rules section — 2024 text shown)`
   - Treasure: `(no 2014 version exists — 2024 tables used)`
 - **Rename line**, appended when the query matched a different name in the same twin group than the entry returned: `(2014 name: Acid Arrow · 2024 name: Melf's Acid Arrow)`
 - **Source note** (monsters): `(source "mm-2024" is a 2024 book — rules_edition "2014" was ignored)`
 - **Inline tag**, placed **immediately after the entry's name** on search lines and minority-edition character entries: `[2024]`, `[2014]`, `[third-party]`, `[homebrew]`, `[playtest]`, `[edition not stated]`. Example search line: `- **Fireball** [2024] — 3rd-level Evocation`.
 - **Search header**, as the first line of every search result, above the tool's existing heading (e.g. `**Spell Search** (N found)`, which stays):
-  - Default: `Rules: 2024 by default — 2014 entries appear only where no 2024 version exists. Use rules_edition: "2014" for 2014 versions.`
-  - With `rules_edition: "2014"`: `Rules: 2014 requested — 2024 entries appear only where no 2014 version exists.`
+  - Default: `Rules: 2024 by default — 2014 entries appear only where no 2024 version was found. Use rules_edition: "2014" for 2014 versions.`
+  - With `rules_edition: "2014"`: `Rules: 2014 requested — 2024 entries appear only where no 2014 version was found.`
   - With a monster `source` filter: `Rules: showing every entry in <book>, each tagged with its edition.`
   - Rules search (no twin grouping): `Rules: sections from SRD 5.2 (2024).` / `Rules: sections from SRD 5.1 (2014).`
 - **Search footer** when twins were hidden: `14 2014 versions hidden — rules_edition: "2014" shows them.` / `3 2024 versions hidden — omit rules_edition to show them.`
@@ -255,6 +257,7 @@ With a monster `source` filter, step 3 is skipped. All entries in the book are l
 
 - Move `getGameConfig()` and its types (`GameConfig`, `GameSource`, now exported) **and its `onSessionInvalidated` hook** out of `src/tools/monster.ts`. Keep its boundary behaviour: `captureSession()` before the early return, and `assertSessionCurrent()` before caching. `monster.ts` and `reference.ts` import it.
 - Export `getSourceIndex(): Promise<SourceIndex>`. It maps source ID → `{ categoryId, name, description, sourceURL }` and merges two inputs: the live config (preferred) and a **generated snapshot** `src/source-snapshot.ts` (all sources with those four fields, plus the category list). If the live config is unavailable, the snapshot alone is used, so labels and monster `source` resolution survive a D&D Beyond outage. The monster "Game config source list unavailable" error then occurs only if both are unusable. Sources newer than the snapshot classify as `unstated` until it is refreshed.
+- `getGameConfig()` remembers a failed fetch for 60 s per session (phase 2), so an outage costs one retry run (~7 s on a 5xx) a minute rather than one per tool call. The session-transition hook clears it.
 
 ### Rename table
 
@@ -303,7 +306,7 @@ These tools are not affected: `ddb_login`, `ddb_logout`, `ddb_close_browser`, `d
   - **Encounter and treasure treat an ambiguous member like a not-found member today**: it is excluded from the XP total / CR max and listed in the output, using `ambiguityMessage` in place of the not-found text.
   - `getMonster` keeps its fuzzy fallback; its output already names the monster.
 - **Tool descriptions**: every tool with the param says "Returns 2024 content by default; set rules_edition to '2014' for 2014 rules. The 'Rules:' line or [tag] in the output names the ruleset."
-- **Server instructions**: `new McpServer({...}, { instructions })` in `src/index.ts` gains: "Every rules answer carries a 'Rules:' line or an inline tag — [2024], [2014], [third-party], [homebrew], [playtest] or [edition not stated] — naming the ruleset, and says when the edition shown differs from the one requested. Pass this on to the user. Content defaults to 2024; if the user's table plays 2014, pass rules_edition: '2014'."
+- **Server instructions**: `new McpServer({...}, { instructions })` in `src/server.ts` (phase 2 moves every registration there from `src/index.ts`, which keeps only the stdio entrypoint, so the consistency test can import the server) gains: "Every rules answer carries a 'Rules:' line or an inline tag — [2024], [2014], [third-party], [homebrew], [playtest] or [edition not stated] — naming the ruleset, and says when the edition shown differs from the one requested. Pass this on to the user. Content defaults to 2024; if the user's table plays 2014, pass rules_edition: '2014'."
 - **Error, not-found and login-required messages** carry no edition label and are exempt from the consistency test.
 
 ---
@@ -337,10 +340,11 @@ These tools are not affected: `ddb_login`, `ddb_logout`, `ddb_close_browser`, `d
 - `getMonsterStats` gets the new return type. Its inline Open5e v1 fetch moves into `open5e.ts` (one place to migrate in phase 4).
 - The `[Legacy]` tag and the `**Source** … [Legacy]` text are replaced by the edition tag and rules line.
 - `searchMonsters` uses the search pipeline. CR/type/size are attribute filters; the 600-entry scan is unchanged.
+- **Locked twin** (owner decision 2026-10-17): when `getMonster`'s pick (no `source`) is the requested edition but its stat block is restricted (`accessType 4`, no stats), and the other edition's twin is owned, show that twin with the locked reason line. Live, about 1 in 55 twin groups (e.g. Twig Blight). With `source`, never swap. Searches can't tell, because the list response carries no `accessType`.
 
 ### Interim Open5e labels — phase 2
 
-`open5e.ts` still calls v1 (SRD 5.1) until phase 4. Phase 2 makes every existing `o5*` output carry `Rules: 2014 · SRD 5.1 (Open5e fallback — …)` (single lookups) or the `[2014]` tag (search lines), for **all** content types, not just spells and monsters. The `…` is `D&D Beyond unavailable` or `not found on D&D Beyond`, chosen by the caller. This keeps the consistency test meaningful from phase 2 on, and no fallback is ever unlabelled.
+`open5e.ts` still calls v1 (SRD 5.1) until phase 4. Phase 2 makes every existing `o5*` output carry `Rules: 2014 · SRD 5.1 (Open5e fallback — …)` (single lookups) or the `[2014]` tag (search lines), for **all** content types, not just spells and monsters. The `…` is `D&D Beyond unavailable` or `not found on D&D Beyond`, chosen by the caller. This keeps the consistency test meaningful from phase 2 on, and no fallback is ever unlabelled. A 2024 request answered this way gets no reason line: the `Rules: 2014 · SRD 5.1 (Open5e fallback — …)` label is the reason until phase 4 queries SRD 5.2 first. A "no 2024 version" reason would be false, because SRD 5.2 has one.
 
 ### Equipment and character options (`src/tools/reference.ts`) — phase 3
 
@@ -440,7 +444,7 @@ Every phase:
 
 ### Phase 2: spells, monsters, encounter, treasure
 
-**Touches:** `src/tools/reference.ts` (spells), `src/tools/character/spells.ts`, `src/tools/monster.ts`, `src/tools/encounter.ts`, `src/tools/treasure.ts`, `src/open5e.ts` (interim labels, relocated monster-stats fetch), `src/index.ts` (params, descriptions, server instructions), `scripts/diagnose-compendium.mjs`, tests including the new `tests/rules-edition-consistency.test.ts`.
+**Touches:** `src/tools/reference.ts` (spells), new `src/tools/spell-store.ts`, `src/tools/character/spells.ts`, `src/tools/monster.ts`, `src/tools/encounter.ts`, `src/tools/treasure.ts`, `src/open5e.ts` (interim labels, relocated monster-stats fetch), `src/game-config.ts` (failure cache), `src/index.ts` → `src/server.ts` (params, descriptions, server instructions; `index.ts` keeps the entrypoint), `scripts/diagnose-compendium.mjs`, tests including the new `tests/rules-edition-consistency.test.ts`.
 
 **Done when:**
 - `ddb_get_spell "Sleep"` gives 2024 by default and 2014 with `rules_edition: "2014"`, each with the right rules line. "Acid Arrow" resolves through the rename table when the pair was committed.
@@ -449,7 +453,9 @@ Every phase:
 - Monster tests are migrated from `preferLegacy` to `rules_edition` and pass. New tests cover:
   - the ambiguity result in both encounter and treasure output;
   - the `source` note on get and search;
-  - search twin hiding with and without `source`.
+  - search twin hiding with and without `source`;
+  - a locked pick yielding to its owned twin, both twins locked, and no swap under `source`.
+- A failed game-config fetch is not repeated within 60 s in the same session.
 - `ddb_rate_encounter`, `ddb_encounter_cr` and `ddb_roll_treasure` output a rules line. Treasure also gives the reason line on `"2014"`.
 - Every Open5e output carries the interim 2014 label.
 - **The consistency test is in place.** It enumerates tools from the server's `tools/list` whose input schema has `rules_edition`, so a new tool can't escape it. For each one, using fixtures, it asserts:
@@ -495,7 +501,7 @@ Every phase:
 ### Sequencing with other work
 
 - **Stateless-safe plan** (`docs/superpowers/plans/2026-09-17-stateless-safe-ddb-mcp.md`):
-  - Task 2 (`server.tool` → `registerTool`) waits until phase 5 is done, because all five phases edit the registrations in `src/index.ts`.
+  - Task 2 (`server.tool` → `registerTool`) waits until phase 5 is done, because all five phases edit the registrations (in `src/server.ts` from phase 2).
   - Task 4 (delete `characterSpellBuffer`) is unblocked once phase 2 is done.
 - CLAUDE.md "Next steps" item 5 (minor monster edges) is not in scope.
 - Releases are the owner's call. Every phase leaves the server working.
@@ -519,6 +525,6 @@ Every phase:
 ## Risks
 
 - **Category drift:** D&D Beyond can add categories or recategorize books. Unknown → `unstated` keeps this safe. The generator script surfaces new categories.
-- **Rename table gaps:** an unlisted rename shows both names, each correctly labelled. The 2014 one also gets "no 2024 version exists", which is wrong but visible. The fix is a table entry.
+- **Rename table gaps:** an unlisted rename shows both names, each correctly labelled. The 2014 one also gets "no 2024 version found", which is misleading but visible. The fix is a table entry.
 - **Open5e v2 shape changes:** phase 4 records fixtures. A shape change fails tests rather than silently mislabelling.
 - **Output length:** per-line tags and headers add a few tokens per search. Character sheets tag only minority-edition entries to limit this.
