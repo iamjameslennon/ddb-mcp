@@ -209,11 +209,11 @@ Can a character use the Help action to assist with a skill check?
 | `ddb_search_rules` | Search all 45 SRD rules sections by keyword. No login required. |
 | `ddb_get_rules` | Read the full text of any SRD rules section (Spellcasting, Attacking, Combat, Multiclassing, Rest, Environment, etc.). Supports `query` to jump to a keyword within long sections. No login required. |
 | `ddb_search_races` | Search all races and subraces in the D&D Beyond compendium (including homebrew). |
-| `ddb_search_classes` | Search all classes with hit die, spellcasting info, and subclasses. |
+| `ddb_search_classes` | Search all classes with hit die and spellcasting info. |
 | `ddb_search_backgrounds` | Search all backgrounds (including homebrew). |
 | `ddb_search_feats` | Search feats by name or prerequisite. |
-| `ddb_search_class_features` | Search class features by name, class, or level gained. |
-| `ddb_search_racial_traits` | Search racial traits by name or race. |
+| `ddb_search_class_features` | Search class, subclass, and optional class features by name, class or subclass, or level gained. |
+| `ddb_search_racial_traits` | Search racial traits, including optional ones, by name or species. |
 
 ### Library & Navigation Tools
 
