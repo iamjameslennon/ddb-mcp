@@ -1,13 +1,16 @@
 /**
- * Class features: normalization, filtering and formatting. Pure — no I/O.
+ * Class features and racial traits: normalization, filtering and formatting.
+ * Pure — no I/O.
  *
- * Turns the /game-data/classes, /game-data/subclasses and optional-feature
- * payloads into one list of `ClassFeatureEntry`. The caller does the fetching
- * and decides what a failed request means.
+ * Turns the /game-data/classes, /game-data/subclasses, /game-data/races and
+ * optional-feature payloads into lists of `ClassFeatureEntry` and
+ * `RacialTraitEntry`. The caller does the fetching and decides what a failed
+ * request means.
  *
  * Text rule: base and subclass features show `summary`, optional features show
  * `snippet` (unless it holds an unresolved `{{` template); both go through
  * `stripHtml`, and a blank result falls back to the stripped `description`.
+ * Racial traits (standard and optional) use the optional-feature rule.
  */
 import { stripHtml, wrapUntrusted } from "../utils.js";
 
@@ -230,6 +233,11 @@ export function filterClassFeatures(
   return sortEntries(matched);
 }
 
+/** First 100 characters of `text`, with "..." when it is 100 or longer. */
+function shortText(text: string): string {
+  return `${text.slice(0, 100)}${text.length >= 100 ? "..." : ""}`;
+}
+
 export function formatClassFeatureLine(e: ClassFeatureEntry): string {
   let line = `- **${e.name}** — ${e.className}`;
   if (e.subclassName) line += ` (${e.subclassName})`;
@@ -238,7 +246,162 @@ export function formatClassFeatureLine(e: ClassFeatureEntry): string {
   if (e.locked) {
     line += "\n  *locked — not available to this account*";
   } else if (e.text) {
-    line += `\n  ${e.text.slice(0, 100)}${e.text.length >= 100 ? "..." : ""}`;
+    line += `\n  ${shortText(e.text)}`;
+  }
+  return e.isHomebrew ? wrapUntrusted(line) : line;
+}
+
+export type TraitKind = "standard" | "optional";
+
+export interface RacialTraitEntry {
+  id: number;
+  name: string;
+  kind: TraitKind;
+  requiredLevel: number | null;
+  displayOrder: number | null;
+  text: string; // plain text, untruncated
+  locked: boolean;
+  raceKey: string; // `${entityRaceTypeId}:${entityRaceId}` of the race it is listed under
+  speciesName: string; // race fullName
+  baseRaceName: string;
+  isSubRace: boolean;
+  isLegacy: boolean;
+  isHomebrew: boolean;
+  sources: SourceRef[]; // the race's; an optional trait's own
+}
+
+const TRAIT_KIND_ORDER: Record<TraitKind, number> = { standard: 0, optional: 1 };
+
+export function raceKeyOf(race: { entityRaceTypeId: number; entityRaceId: number }): string {
+  return `${race.entityRaceTypeId}:${race.entityRaceId}`;
+}
+
+type RaceRec = Rec & { entityRaceId: number; entityRaceTypeId: number; fullName: string };
+
+function raceRec(v: unknown): RaceRec | null {
+  if (
+    !isRec(v) ||
+    typeof v.entityRaceId !== "number" ||
+    typeof v.entityRaceTypeId !== "number" ||
+    typeof v.fullName !== "string"
+  ) {
+    return null;
+  }
+  return v as RaceRec;
+}
+
+export function buildRacialTraits(
+  races: unknown[],
+  optionalByRaceKey: ReadonlyMap<string, OptionalCollection>,
+): RacialTraitEntry[] {
+  const out: RacialTraitEntry[] = [];
+  const seen = new Set<string>();
+  // Standard trait ids per race, for dropping optional repeats of them.
+  const standardIds = new Map<string, Set<number>>();
+  const raceByKey = new Map<string, RaceRec>();
+
+  const push = (key: string, entry: RacialTraitEntry): void => {
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(entry);
+  };
+
+  const entryFor = (
+    race: RaceRec,
+    f: Rec & { id: number; name: string },
+    kind: TraitKind,
+    text: string,
+    locked: boolean,
+    sources: SourceRef[],
+  ): RacialTraitEntry => ({
+    id: f.id,
+    name: f.name,
+    kind,
+    requiredLevel: numOrNull(f.requiredLevel),
+    displayOrder: numOrNull(f.displayOrder),
+    text,
+    locked,
+    raceKey: raceKeyOf(race),
+    speciesName: race.fullName,
+    baseRaceName: str(race.baseRaceName),
+    isSubRace: race.isSubRace === true,
+    isLegacy: race.isLegacy === true,
+    isHomebrew: race.isHomebrew === true,
+    sources,
+  });
+
+  for (const raw of races) {
+    const race = raceRec(raw);
+    if (!race) continue;
+    const key = raceKeyOf(race);
+    if (!raceByKey.has(key)) raceByKey.set(key, race);
+    const ids = standardIds.get(key) ?? new Set<number>();
+    standardIds.set(key, ids);
+    const traits = Array.isArray(race.racialTraits) ? race.racialTraits : [];
+    for (const rawTrait of traits) {
+      const f = isRec(rawTrait) ? named(rawTrait.definition) : null;
+      if (!f) continue;
+      ids.add(f.id);
+      push(`s:${key}:${f.id}`, entryFor(race, f, "standard", optionalText(f), false, sourcesOf(race.sources)));
+    }
+  }
+
+  for (const [key, collection] of optionalByRaceKey) {
+    const race = raceByKey.get(key);
+    if (!race || !isRec(collection) || !Array.isArray(collection.definitionData)) continue;
+    const ownIds = standardIds.get(key) ?? new Set<number>();
+    const access = isRec(collection.accessTypes) ? collection.accessTypes : {};
+    for (const rawTrait of collection.definitionData) {
+      const f = named(rawTrait);
+      if (!f || ownIds.has(f.id)) continue;
+      push(
+        `o:${key}:${f.id}`,
+        entryFor(race, f, "optional", optionalText(f), access[String(f.id)] === LOCKED_ACCESS_TYPE, sourcesOf(f.sources)),
+      );
+    }
+  }
+
+  return sortTraits(out);
+}
+
+/** speciesName, raceKey, kind, name, id. */
+function sortTraits(entries: RacialTraitEntry[]): RacialTraitEntry[] {
+  return entries.sort(
+    (a, b) =>
+      a.speciesName.localeCompare(b.speciesName) ||
+      a.raceKey.localeCompare(b.raceKey) ||
+      TRAIT_KIND_ORDER[a.kind] - TRAIT_KIND_ORDER[b.kind] ||
+      a.name.localeCompare(b.name) ||
+      a.id - b.id,
+  );
+}
+
+export function filterRacialTraits(
+  entries: readonly RacialTraitEntry[],
+  f: { name?: string; raceName?: string },
+): RacialTraitEntry[] {
+  const name = f.name?.toLowerCase();
+  const race = f.raceName?.toLowerCase();
+  const matched = entries.filter(
+    (e) =>
+      (name === undefined || e.name.toLowerCase().includes(name)) &&
+      (race === undefined ||
+        e.speciesName.toLowerCase().includes(race) ||
+        e.baseRaceName.toLowerCase().includes(race)),
+  );
+  return sortTraits(matched);
+}
+
+export function formatRacialTraitLine(e: RacialTraitEntry): string {
+  let label = e.speciesName;
+  if (e.isSubRace && e.baseRaceName !== "") label += ` — subrace of ${e.baseRaceName}`;
+  if (e.isHomebrew) label += ", Homebrew";
+  let line = `- **${e.name}** *(${label})*`;
+  if (e.kind === "optional") line += " *(optional)*";
+  if (e.locked) {
+    line += " — *locked — not available to this account*";
+  } else if (e.text) {
+    line += ` — ${shortText(e.text)}`;
   }
   return e.isHomebrew ? wrapUntrusted(line) : line;
 }

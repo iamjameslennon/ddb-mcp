@@ -3,13 +3,20 @@ import {
   buildClassFeatures,
   filterClassFeatures,
   formatClassFeatureLine,
+  buildRacialTraits,
+  filterRacialTraits,
+  formatRacialTraitLine,
+  raceKeyOf,
   type OptionalCollection,
+  type RacialTraitEntry,
 } from "../src/tools/features-traits.js";
 import { stripHtml, wrapUntrusted } from "../src/utils.js";
 import {
   CLASSES,
   SUBCLASSES_BY_CLASS_ID,
   OPTIONAL_FEATURES_BY_CLASS_ID,
+  RACES,
+  OPTIONAL_TRAITS_BY_RACE_KEY,
 } from "./fixtures/features-traits-fixtures.js";
 
 function toMap<T>(rec: Record<string, unknown>): Map<number, T> {
@@ -265,5 +272,159 @@ describe("buildClassFeatures rules (synthetic inputs)", () => {
       const r = buildClassFeatures([cls()], new Map([[1, order.map(mk)]]), new Map());
       expect(r.filter((x) => x.kind === "subclass").map((x) => x.subclassId)).toEqual([10, 20]);
     }
+  });
+});
+
+describe("racial traits", () => {
+  const optByKey = new Map(Object.entries(OPTIONAL_TRAITS_BY_RACE_KEY).map(([k, v]) => [k, v as OptionalCollection]));
+  const all = buildRacialTraits(RACES, optByKey);
+  const label = (e: RacialTraitEntry) => formatRacialTraitLine(e);
+
+  it("builds raceKey from type and race ids", () => {
+    expect(raceKeyOf({ entityRaceTypeId: 5, entityRaceId: 7 })).toBe("5:7");
+  });
+
+  it("gives Darkvision 11 one entry each for High Elf and Wood Elf", () => {
+    const dv = all.filter((e) => e.id === 11);
+    expect(dv.map((e) => e.speciesName)).toEqual(["High Elf", "Wood Elf"]);
+    expect(dv.map((e) => label(e).match(/\((High Elf[^)]*|Wood Elf[^)]*)\)/)?.[1])).toEqual([
+      "High Elf — subrace of Elf",
+      "Wood Elf — subrace of Elf",
+    ]);
+  });
+
+  it("lists Tiefling 2024 and the homebrew subrace, wrapping only the homebrew line", () => {
+    const dv = all.filter((e) => e.id === 13856159);
+    expect(dv).toHaveLength(2);
+    const hb = dv.find((e) => e.isHomebrew)!;
+    const off = dv.find((e) => !e.isHomebrew)!;
+    expect(label(hb)).toBe(wrapUntrusted(label(hb).replace(/^<[^\n]*\n|\n<[^\n]*$/g, "")));
+    expect(label(hb)).toContain("Tiefling — subrace of Tiefling, Homebrew");
+    expect(label(off)).toBe(`- **Darkvision** *(Tiefling)*${label(off).slice(label(off).indexOf(" — "))}`);
+    expect(label(off).startsWith("- ")).toBe(true);
+  });
+
+  it("keeps separate raceKeys for Human and High Elf", () => {
+    expect(all.find((e) => e.id === 64)?.raceKey).toBe("1743923279:1");
+    expect(all.find((e) => e.id === 11 && e.speciesName === "High Elf")?.raceKey).toBe("1228963568:1");
+  });
+
+  it("includes hidden traits", () => {
+    expect(all.find((e) => e.id === 13856108)?.name).toBe("Speed");
+    expect(all.find((e) => e.id === 13856114)?.name).toBe("Elven Lineage Spells");
+  });
+
+  it("uses the stripped description when the snippet has a template", () => {
+    const e = all.find((x) => x.id === 13856114)!;
+    expect(e.text).toBe(stripHtml("<p>Elven Lineage Spells description</p>"));
+  });
+
+  it("marks Human optional Languages and shows (optional)", () => {
+    const e = all.find((x) => x.id === 4566698)!;
+    expect(e.kind).toBe("optional");
+    expect(label(e)).toContain(" *(optional)*");
+    expect(all.find((x) => x.id === 64)?.kind).toBe("standard");
+  });
+
+  it("keeps both Goliath Large Form traits", () => {
+    const lf = all.filter((e) => e.speciesName === "Goliath" && e.name === "Large Form");
+    expect(lf.map((e) => e.id).sort((a, b) => a - b)).toEqual([13856127, 15478362]);
+  });
+
+  it("truncates a long trait line at 100 characters", () => {
+    const e = all.find((x) => x.id === 13856127)!;
+    expect(e.text.length).toBeGreaterThan(120);
+    expect(label(e).endsWith(` — ${e.text.slice(0, 100)}...`)).toBe(true);
+  });
+
+  it("filters by name and raceName, sorted by species", () => {
+    const elves = filterRacialTraits(all, { raceName: "elf" });
+    expect(new Set(elves.map((e) => e.speciesName))).toEqual(new Set(["High Elf", "Wood Elf", "Elf"]));
+    const dv = filterRacialTraits(all, { name: "darkvision" });
+    const species = dv.map((e) => e.speciesName);
+    expect(species).toEqual([...species].sort((a, b) => a.localeCompare(b)));
+    expect(dv.length).toBeGreaterThan(3);
+  });
+
+  it("matches raceName against baseRaceName", () => {
+    const r = filterRacialTraits(all, { raceName: "tiefling" });
+    expect(r.some((e) => e.isHomebrew)).toBe(true);
+  });
+
+  const race = (extra: Record<string, unknown> = {}) => ({
+    entityRaceId: 9, entityRaceTypeId: 9, fullName: "Synth", baseRaceName: "Synth",
+    isSubRace: false, isLegacy: false, isHomebrew: false,
+    sources: [{ sourceId: 111 }],
+    racialTraits: [{ definition: { id: 1, name: "Std", snippet: "", description: "<p>d</p>" } }],
+    ...extra,
+  });
+
+  it("cleans text: strips tags, falls back on blank snippet", () => {
+    const r = buildRacialTraits(
+      [race({ racialTraits: [
+        { definition: { id: 1, name: "Em", snippet: "<em>Bold</em> text", description: "<p>other</p>" } },
+        { definition: { id: 2, name: "Blank", snippet: "  ", description: "<p>Desc text</p>" } },
+      ] })],
+      new Map(),
+    );
+    expect(r.find((x) => x.name === "Em")?.text).toBe("Bold text");
+    expect(r.find((x) => x.name === "Blank")?.text).toBe("Desc text");
+  });
+
+  it("drops an optional trait whose id is standard for that species, keeps others", () => {
+    const opt = new Map<string, OptionalCollection>([
+      ["9:9", { definitionData: [{ id: 1, name: "Dup" }, { id: 2, name: "Other" }], accessTypes: {} }],
+    ]);
+    const r = buildRacialTraits([race()], opt);
+    expect(r.map((e) => [e.id, e.kind])).toEqual([[1, "standard"], [2, "optional"]]);
+  });
+
+  it("marks locked optional traits and shows the locked desc", () => {
+    const opt = new Map<string, OptionalCollection>([
+      ["9:9", { definitionData: [{ id: 2, name: "Lk", snippet: "Has text" }], accessTypes: { "2": 4 } }],
+    ]);
+    const e = buildRacialTraits([race()], opt).find((x) => x.id === 2)!;
+    expect(e.locked).toBe(true);
+    expect(label(e)).toBe("- **Lk** *(Synth)* *(optional)* — *locked — not available to this account*");
+  });
+
+  it("propagates sources: race's for standard, own for optional", () => {
+    const opt = new Map<string, OptionalCollection>([
+      ["9:9", { definitionData: [{ id: 2, name: "Op", sources: [{ sourceId: 222 }] }, { id: 3, name: "NoSrc" }], accessTypes: {} }],
+    ]);
+    const r = buildRacialTraits([race()], opt);
+    expect(r.find((x) => x.id === 1)?.sources).toEqual([{ sourceId: 111 }]);
+    expect(r.find((x) => x.id === 2)?.sources).toEqual([{ sourceId: 222 }]);
+    expect(r.find((x) => x.id === 3)?.sources).toEqual([]);
+  });
+
+  it("is independent of input order", () => {
+    const rev = <T,>(a: T[]): T[] => [...a].reverse();
+    const races = rev(RACES).map((r) => ({ ...r, racialTraits: rev(r.racialTraits) }));
+    const entries = rev([...optByKey.entries()]).map(
+      ([k, v]) => [k, { ...v, definitionData: rev((v.definitionData ?? []) as unknown[]) }] as [string, OptionalCollection],
+    );
+    expect(buildRacialTraits(races, new Map(entries))).toEqual(all);
+  });
+
+  it("filterRacialTraits does not mutate its input", () => {
+    const copy = [...all].reverse();
+    const before = [...copy];
+    const out = filterRacialTraits(copy, {});
+    expect(copy).toEqual(before);
+    expect(out).toEqual(all);
+  });
+
+  it("skips malformed inputs without throwing", () => {
+    const opt = new Map<string, unknown>([
+      ["9:9", "nope"],
+      ["8:8", { definitionData: "x" }],
+      ["7:7", { definitionData: [null, { id: "x", name: "bad" }] }],
+    ]);
+    const r = buildRacialTraits(
+      [null, race({ fullName: undefined }), race({ entityRaceId: "1" }), race({ racialTraits: [{}, { definition: { name: "noid" } }, null] }), race()],
+      opt as Map<string, OptionalCollection>,
+    );
+    expect(r.map((e) => e.id)).toEqual([1]);
   });
 });
