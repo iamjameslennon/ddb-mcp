@@ -1,6 +1,6 @@
 # Rules edition across all tools: design
 
-**Status:** approved design, not yet implemented
+**Status:** approved design. Phase 1 (foundation) implemented 2026-10-17. Its real signatures are in the "Signatures that differ from the spec's sketch" table of [the phase-1 plan](../plans/2026-10-16-rules-edition-phase-1-foundation.md), plus `twinAliases()`, which was added after review. Phases 2–5 are not started.
 **Date:** 2026-10-16 (revised the same day after an adversarial review)
 **Supersedes:** CLAUDE.md "Next steps" work item 1 (`rules_edition` for spells and monsters) and item 3 (ambiguous partial monster names). They are now phase 2 of this spec. Where this spec and CLAUDE.md's "Decisions" differ in wording, **this spec wins**.
 
