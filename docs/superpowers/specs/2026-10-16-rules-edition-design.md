@@ -350,7 +350,7 @@ These tools are not affected: `ddb_login`, `ddb_logout`, `ddb_close_browser`, `d
   - widen each `Ddb*` interface for any marker it lacks;
   - the existing "Legacy"/"Homebrew" text tags are replaced by `editionTag`;
   - an entry with no sources is `unstated` and stays listed.
-  - class-feature and racial-trait entries are now `ClassFeatureEntry` / `RacialTraitEntry` (`src/tools/features-traits.ts`). Their `sources` are the owning subclass's, class's or race's (an optional entry's own); D&D Beyond features carry no `sources` of their own, so classify them from those.
+  - class-feature and racial-trait entries are now `ClassFeatureEntry` / `RacialTraitEntry` (`src/tools/features-traits.ts`). Class and subclass features carry no `sources` of their own, so their entries take the owning subclass's or class's. Standard racial traits do carry their own `sources` (live 2026-10-17: 149 of 313 differ from their race's; e.g. 2014 Human lists sourceIds [1, 2], its traits [1]), but `buildRacialTraits` deliberately uses the race's; an optional entry keeps its own. Open phase-3 decision: classify standard traits from their own `sources` or from the race's.
 - `ddb_search_site` (`src/tools/search.ts`): thread `rulesEdition` through `search()` / `runCategory` and use the embedded mode.
 
 ### Open5e, rules and conditions (`src/open5e.ts`, `src/tools/reference.ts`) — phase 4

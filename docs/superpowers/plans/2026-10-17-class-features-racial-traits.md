@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript (ESM, Node ≥ 22), vitest 4, native `fetch` via `beginAuthenticatedSession()`.
 
-**Status: done (2026-10-17).** All six tasks landed on `main`: Task 1 `9c0c42b` + `3678ac3`, Task 2 `4cf1aa9` + `44623be`, Task 3 `cd5c942` + `4a0994b`, Task 4 `4331dec` + `e816cab`, Task 5 `fc05b7e` + `a18e811`, Task 6 this commit. Live smoke check passed (action surge: 2, champion: 11, darkvision: 20). See "Changes agreed during execution".
+**Status: done (2026-10-17).** All six tasks landed on `main`: Task 1 `9c0c42b` + `3678ac3`, Task 2 `4cf1aa9` + `44623be`, Task 3 `cd5c942` + `4a0994b`, Task 4 `4331dec` + `e816cab`, Task 5 `fc05b7e` + `a18e811`, Task 6 `ac46a02`, and the fix in this commit. Live smoke check passed (action surge: 2, champion: 11, darkvision: 20). See "Changes agreed during execution".
 
 **Spec:** CLAUDE.md "Next steps" work item 0, plus the decisions below (agreed with the owner 2026-10-17). There is no separate spec document.
 
@@ -41,11 +41,11 @@ These come from the owner and take precedence over superpowers:subagent-driven-d
 - **Models:** the cheapest Claude model that fits each role. Haiku for transcription-level work (Task 1), Sonnet for judgement or multi-file work (Tasks 2–6) and for task reviewers, Opus for the final review. Always pass `model` explicitly when dispatching.
 - **Every task gets two adversarial reviewers:** one Sonnet subagent, plus one free opencode Zen model.
   - Run `opencode_provider_models` first, because the free list changes. Use only provider `opencode` models marked free.
-  - Use `deepseek-v4.1-flash-free`, plus a free GLM model only if one is listed (none was on 2026-10-17). Never substitute a paid model. Muse Spark is deprecated; don't use it.
+  - Use `deepseek-v4.1-flash-free`, plus a free GLM model only if one is listed (none was early on 2026-10-17; one appeared later, see the addendum below). Never substitute a paid model. Muse Spark is deprecated; don't use it.
   - Run opencode reviewers with agent `plan`, read-only, and tell them in the prompt not to write files.
 - **Bring all findings to the owner, with a verdict on each, before running any fix round.** No fix dispatch until the owner answers.
 - Don't make assumptions: when something the plan doesn't settle comes up, ask the owner rather than ruling silently.
-- Commit straight to `main`, one commit per task (six in total; the plan file goes in Task 6's docs commit). Never push.
+- Commit straight to `main`, one commit per task (six in total; the plan file goes in Task 6's docs commit; the real count differed, see the addendum below). Never push.
 - *Addendum (2026-10-17, after execution):* GLM (`glm-5.3-flash-free`) reviewed Tasks 1–3 and was then dropped by the owner, because it invented findings and broke the read-only rule; Tasks 4–5 used Sonnet plus `deepseek-v4.1-flash-free`. The commit count was not one per task: fix rounds have their own commits (see the status line). Trailers stay `Co-Authored-By: Claude Opus 5.5`.
 
 ## Changes agreed during execution
