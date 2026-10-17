@@ -12,7 +12,16 @@
  * - subclass 900001 "Homebrew Duelist" and its feature 900002 "Riposte Flourish"
  * - optional feature 900003 "Synthetic Option" (class 10)
  * - the summary on Fighter (10) Action Surge, which the source leaves null
- * - the snippet "Deals 1d4 {{modifier:str}} damage." on Elven Lineage Spells (13856114)
+ * - the snippet "Deals 1d4 {{modifier:str}} damage." on Elven Lineage Spells (13856114),
+ *   a deliberate synthetic; the source snippet is empty
+ *
+ * Long-text entries (placeholder padded past the truncation cut-offs), each marked
+ * `// long: exercises truncation` below:
+ * - Fighter (2190879) class description, stripped length over 120
+ * - Champion (16) Remarkable Athlete (216) description; its summary is null, so the
+ *   description is the display text
+ * - Goliath (1751439) race description
+ * - Goliath (1751439) Large Form (13856127) snippet
  *
  * Race keys are "<entityRaceTypeId>:<entityRaceId>".
  */
@@ -26,7 +35,6 @@ export const CLASSES = [
     hitDice: 10,
     isHomebrew: false,
     spellCastingAbilityId: null,
-    subclasses: null,
     subclassDefinition: null,
     parentClassId: null,
     sources: [
@@ -174,11 +182,10 @@ export const CLASSES = [
   {
     id: 2190879,
     name: "Fighter",
-    description: "<p>Fighter description</p>",
+    description: "<p>Fighter description — long placeholder text, padded past the 120-character cut-off so the truncation path is exercised in tests.</p>",  // long: exercises truncation
     hitDice: 10,
     isHomebrew: false,
     spellCastingAbilityId: null,
-    subclasses: null,
     subclassDefinition: null,
     parentClassId: null,
     sources: [
@@ -233,6 +240,83 @@ export const CLASSES = [
         prerequisite: null,
         moreDetailsUrl: "/classes/2190879-fighter#ExtraAttack-10292239",
       },
+      {
+        id: 10292241,
+        name: "6: Ability Score Improvement",
+        description: "<p>6: Ability Score Improvement description</p>",
+        summary: null,
+        requiredLevel: 6,
+        displayOrder: 11,
+        featuresSectionType: null,
+        prerequisite: null,
+        moreDetailsUrl: "/classes/2190879-fighter#6:AbilityScoreImprovement-10292241",
+      },
+      {
+        id: 10292242,
+        name: "8: Ability Score Improvement",
+        description: "<p>8: Ability Score Improvement description</p>",
+        summary: null,
+        requiredLevel: 8,
+        displayOrder: 12,
+        featuresSectionType: null,
+        prerequisite: null,
+        moreDetailsUrl: "/classes/2190879-fighter#8:AbilityScoreImprovement-10292242",
+      },
+      {
+        id: 10292245,
+        name: "Two Extra Attacks",
+        description: "<p>Two Extra Attacks description</p>",
+        summary: null,
+        requiredLevel: 11,
+        displayOrder: 16,
+        featuresSectionType: null,
+        prerequisite: null,
+        moreDetailsUrl: "/classes/2190879-fighter#TwoExtraAttacks-10292245",
+      },
+      {
+        id: 10292246,
+        name: "12: Ability Score Improvement",
+        description: "<p>12: Ability Score Improvement description</p>",
+        summary: null,
+        requiredLevel: 12,
+        displayOrder: 17,
+        featuresSectionType: null,
+        prerequisite: null,
+        moreDetailsUrl: "/classes/2190879-fighter#12:AbilityScoreImprovement-10292246",
+      },
+      {
+        id: 10292248,
+        name: "14: Ability Score Improvement",
+        description: "<p>14: Ability Score Improvement description</p>",
+        summary: null,
+        requiredLevel: 14,
+        displayOrder: 19,
+        featuresSectionType: null,
+        prerequisite: null,
+        moreDetailsUrl: "/classes/2190879-fighter#14:AbilityScoreImprovement-10292248",
+      },
+      {
+        id: 10292249,
+        name: "16: Ability Score Improvement",
+        description: "<p>16: Ability Score Improvement description</p>",
+        summary: null,
+        requiredLevel: 16,
+        displayOrder: 20,
+        featuresSectionType: null,
+        prerequisite: null,
+        moreDetailsUrl: "/classes/2190879-fighter#16:AbilityScoreImprovement-10292249",
+      },
+      {
+        id: 10292251,
+        name: "Three Extra Attacks",
+        description: "<p>Three Extra Attacks description</p>",
+        summary: null,
+        requiredLevel: 20,
+        displayOrder: 23,
+        featuresSectionType: null,
+        prerequisite: null,
+        moreDetailsUrl: "/classes/2190879-fighter#ThreeExtraAttacks-10292251",
+      },
     ],
   },
 ];
@@ -268,7 +352,7 @@ export const SUBCLASSES_BY_CLASS_ID: Record<string, unknown[]> = {
         {
           id: 216,
           name: "Remarkable Athlete",
-          description: "<p>Remarkable Athlete description</p>",
+          description: "<p>Remarkable Athlete description — long placeholder text, padded past the 120-character cut-off so the truncation path is exercised in tests.</p>",  // long: exercises truncation
           summary: null,
           requiredLevel: 7,
           displayOrder: 2,
@@ -359,6 +443,28 @@ export const SUBCLASSES_BY_CLASS_ID: Record<string, unknown[]> = {
           prerequisite: null,
           moreDetailsUrl: "/classes/2190879-fighter#Champion#HeroicWarrior-10292626",
         },
+        {
+          id: 10292233,
+          name: "Second Wind",
+          description: "<p>Second Wind description</p>",
+          summary: "Second Wind summary",
+          requiredLevel: 1,
+          displayOrder: 3,
+          featuresSectionType: 1,
+          prerequisite: null,
+          moreDetailsUrl: "/classes/2190879-fighter#Champion#SecondWind-10292233",
+        },
+        {
+          id: 10292235,
+          name: "Action Surge",
+          description: "<p>Action Surge description</p>",
+          summary: null,
+          requiredLevel: 2,
+          displayOrder: 5,
+          featuresSectionType: null,
+          prerequisite: null,
+          moreDetailsUrl: "/classes/2190879-fighter#Champion#ActionSurge-10292235",
+        },
       ],
     },
   ],
@@ -393,9 +499,12 @@ export const OPTIONAL_FEATURES_BY_CLASS_ID: Record<string, unknown> = {
         classId: 10,
         snippet: "Synthetic Option snippet",
         description: "<p>Synthetic Option description</p>",
+        displayOrder: 3,
         sources: [
           {
             sourceId: 67,
+            pageNumber: null,
+            sourceType: 1,
           },
         ],
       },
@@ -697,7 +806,7 @@ export const RACES = [
     fullName: "Goliath",
     baseName: "Goliath",
     baseRaceName: "Goliath",
-    description: "<p>Goliath description</p>",
+    description: "<p>Goliath description — long placeholder text, padded past the 120-character cut-off so the truncation path is exercised in tests.</p>",  // long: exercises truncation
     isHomebrew: false,
     isLegacy: false,
     isSubRace: false,
@@ -715,7 +824,7 @@ export const RACES = [
           id: 13856127,
           name: "Large Form",
           description: "<p>Large Form description</p>",
-          snippet: "Large Form snippet",
+          snippet: "Large Form snippet — long placeholder text, padded past the 120-character cut-off so the truncation path is exercised in tests.",  // long: exercises truncation
           requiredLevel: 5,
           displayOrder: 5,
           hideInSheet: true,
