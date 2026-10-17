@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript (ESM, Node ≥ 22), vitest 4, native `fetch` via `beginAuthenticatedSession()`.
 
-**Status: done (2026-10-17).** All six tasks landed on `main`: Task 1 `9c0c42b` + `3678ac3`, Task 2 `4cf1aa9` + `44623be`, Task 3 `cd5c942` + `4a0994b`, Task 4 `4331dec` + `e816cab`, Task 5 `fc05b7e` + `a18e811`, Task 6 `ac46a02`, and the fix in this commit. Live smoke check passed (action surge: 2, champion: 11, darkvision: 20). See "Changes agreed during execution".
+**Status: done (2026-10-17).** All six tasks landed on `main`: Task 1 `9c0c42b` + `3678ac3`, Task 2 `4cf1aa9` + `44623be`, Task 3 `cd5c942` + `4a0994b`, Task 4 `4331dec` + `e816cab`, Task 5 `fc05b7e` + `a18e811`, Task 6 `ac46a02` + `b07e922`. Final whole-change review (Opus): ready to merge after its fixes, which are `874fc48` + `5fab6e1`. Final gate `npm ci && npm test && npm run lint && npm run typecheck`: all clean, 767 tests. Live smoke check passed (action surge: 2, champion: 11, darkvision: 20). Not pushed. See "Changes agreed during execution".
 
 **Spec:** CLAUDE.md "Next steps" work item 0, plus the decisions below (agreed with the owner 2026-10-17). There is no separate spec document.
 
