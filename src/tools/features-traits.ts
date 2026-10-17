@@ -4,6 +4,10 @@
  * Turns the /game-data/classes, /game-data/subclasses and optional-feature
  * payloads into one list of `ClassFeatureEntry`. The caller does the fetching
  * and decides what a failed request means.
+ *
+ * Text rule: base and subclass features show `summary`, optional features show
+ * `snippet` (unless it holds an unresolved `{{` template); both go through
+ * `stripHtml`, and a blank result falls back to the stripped `description`.
  */
 import { stripHtml, wrapUntrusted } from "../utils.js";
 
@@ -58,18 +62,22 @@ function sourcesOf(v: unknown): SourceRef[] {
   return out;
 }
 
-function nonEmptyString(v: unknown): string {
+function str(v: unknown): string {
   return typeof v === "string" ? v : "";
 }
 
+/** Cleaned text of a field: HTML stripped and trimmed; "" when blank or not a string. */
+function cleaned(v: unknown): string {
+  return stripHtml(str(v));
+}
+
 function baseText(f: Rec): string {
-  const summary = nonEmptyString(f.summary);
-  return summary !== "" ? summary : stripHtml(nonEmptyString(f.description));
+  return cleaned(f.summary) || cleaned(f.description);
 }
 
 function optionalText(f: Rec): string {
-  const snippet = nonEmptyString(f.snippet);
-  return snippet !== "" && !snippet.includes("{{") ? snippet : stripHtml(nonEmptyString(f.description));
+  const snippet = cleaned(f.snippet);
+  return snippet !== "" && !snippet.includes("{{") ? snippet : cleaned(f.description);
 }
 
 export function buildClassFeatures(
@@ -189,6 +197,7 @@ function cmpNullable(a: number | null, b: number | null): number {
   return a - b;
 }
 
+/** className, classId, kind, subclassName, level, displayOrder, name, id, then subclassId (nulls last). */
 function sortEntries(entries: ClassFeatureEntry[]): ClassFeatureEntry[] {
   return entries.sort(
     (a, b) =>
@@ -199,7 +208,8 @@ function sortEntries(entries: ClassFeatureEntry[]): ClassFeatureEntry[] {
       cmpNullable(a.requiredLevel, b.requiredLevel) ||
       cmpNullable(a.displayOrder, b.displayOrder) ||
       a.name.localeCompare(b.name) ||
-      a.id - b.id,
+      a.id - b.id ||
+      cmpNullable(a.subclassId, b.subclassId),
   );
 }
 
