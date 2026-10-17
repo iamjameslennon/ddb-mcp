@@ -20,7 +20,7 @@ import { generateTreasure } from "./tools/treasure.js";
 import { MAX_TREASURE_ENTRIES, MAX_MONSTER_COUNT, MAX_INDIVIDUAL_ROLLS, MAX_MONSTER_NAME_CHARS } from "./treasure-limits.js";
 import { getCondition, searchSpells, getSpell, searchItems, getItem, searchRaces, searchClasses, searchBackgrounds, searchFeats, searchClassFeatures, searchRacialTraits, searchRules, getRule, clearReferenceCache } from "./tools/reference.js";
 import { clearOpen5eCache } from "./open5e.js";
-import { RULES_EDITION_TOOL_NOTE } from "./edition.js";
+import { RULES_EDITION_TOOL_NOTE, TREASURE_RULES_EDITION_NOTE } from "./edition.js";
 
 const server = new McpServer({
   name: "dndbeyond",
@@ -889,7 +889,7 @@ server.tool(
 // ─── ddb_rate_encounter ───────────────────────────────────────────────────────
 server.tool(
   "ddb_rate_encounter",
-  "Rate the difficulty of a D&D encounter. Defaults to 2024 XDMG rules (Low/Moderate/High, no multiplier). Set rules_edition to '2014' for the classic DMG XP threshold method (Easy/Medium/Hard/Deadly with encounter multiplier). Monsters are looked up in the compendium automatically — supply 'cr' directly for homebrew.",
+  "Rate the difficulty of a D&D encounter. Defaults to 2024 XDMG rules (Low/Moderate/High, no multiplier). Set rules_edition to '2014' for the classic DMG XP threshold method (Easy/Medium/Hard/Deadly with encounter multiplier). Monsters are looked up in the compendium automatically — supply 'cr' directly for homebrew. " + RULES_EDITION_TOOL_NOTE,
   {
     party: z.array(z.object({
       count: z.number().int().min(1).max(20)
@@ -928,7 +928,7 @@ server.tool(
 // ─── ddb_encounter_cr ─────────────────────────────────────────────────────────
 server.tool(
   "ddb_encounter_cr",
-  "Given a party and a target difficulty, returns the CR to aim for — broken down by encounter shape (solo boss, duo, squad, horde). Defaults to 2024 XDMG rules; set rules_edition to '2014' for classic DMG. No monster lookup required. Use with ddb_rate_encounter to verify a specific monster list.",
+  "Given a party and a target difficulty, returns the CR to aim for — broken down by encounter shape (solo boss, duo, squad, horde). Defaults to 2024 XDMG rules; set rules_edition to '2014' for classic DMG. No monster lookup required. Use with ddb_rate_encounter to verify a specific monster list. " + RULES_EDITION_TOOL_NOTE,
   {
     party: z.array(z.object({
       count: z.number().int().min(1).max(20).describe("Number of characters at this level"),
@@ -957,7 +957,7 @@ server.tool(
 // ─── ddb_roll_treasure ───────────────────────────────────────────────────────
 server.tool(
   "ddb_roll_treasure",
-  `Generate a treasure reward using the 2024 XDMG treasure tables (default). Provide either a CR directly or a list of monster names — CR is resolved automatically by name (exact, then partial; official entries only — a name that matches nothing is reported as not found rather than guessed). treasure_type 'hoard' makes one roll using the highest CR and includes magic items (requires character_level); 'individual' rolls once per monster and sums the results. Limits (rejected requests return an error, never silently truncated): at most ${MAX_TREASURE_ENTRIES} monster entries, at most ${MAX_MONSTER_COUNT} per entry, and at most ${MAX_MONSTER_NAME_CHARS} characters per monster name — these per-entry restrictions apply to hoard requests too, not just individual. 'individual' additionally caps the total rolls (sum of all entry counts) at ${MAX_INDIVIDUAL_ROLLS}.`,
+  `Generate a treasure reward using the 2024 XDMG treasure tables (default). Provide either a CR directly or a list of monster names — CR is resolved automatically by name (exact, then partial; official entries only — a name that matches nothing is reported as not found rather than guessed). treasure_type 'hoard' makes one roll using the highest CR and includes magic items (requires character_level); 'individual' rolls once per monster and sums the results. Limits (rejected requests return an error, never silently truncated): at most ${MAX_TREASURE_ENTRIES} monster entries, at most ${MAX_MONSTER_COUNT} per entry, and at most ${MAX_MONSTER_NAME_CHARS} characters per monster name — these per-entry restrictions apply to hoard requests too, not just individual. 'individual' additionally caps the total rolls (sum of all entry counts) at ${MAX_INDIVIDUAL_ROLLS}. ${RULES_EDITION_TOOL_NOTE} ${TREASURE_RULES_EDITION_NOTE}`,
   {
     cr: z.number().min(0).max(30).optional()
       .describe("Challenge rating (0–30). Use instead of monsters for a direct CR lookup."),
@@ -970,11 +970,12 @@ server.tool(
       .describe("individual = one roll per monster. hoard = one roll using the highest CR."),
     character_level: z.number().int().min(1).max(20).optional()
       .describe("Character level (1–20). Required for hoard treasure to determine which magic item table to use. If omitted, magic items are skipped."),
+    rules_edition: RULES_EDITION_PARAM,
   },
   READ_ONLY_NET,
-  async ({ cr, monsters, treasure_type, character_level }) => {
+  async ({ cr, monsters, treasure_type, character_level, rules_edition }) => {
     try {
-      const result = await generateTreasure({ cr, monsters, treasureType: treasure_type, characterLevel: character_level });
+      const result = await generateTreasure({ cr, monsters, treasureType: treasure_type, characterLevel: character_level, rulesEdition: rules_edition });
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

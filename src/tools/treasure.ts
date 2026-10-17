@@ -1,4 +1,6 @@
-import { getMonsterStats } from "./monster.js";
+import { getMonsterStats, type MonsterStatsResult } from "./monster.js";
+import { peekSourceIndex } from "../game-config.js";
+import { classifyEdition, rulesLine, editionTag, ambiguityMessage, DMG_SOURCE_ID, type RulesEdition } from "../edition.js";
 import { validateTreasureBudget, MAX_MONSTER_NAME_CHARS, MAX_TREASURE_OUTPUT_CHARS } from "../treasure-limits.js";
 
 // ── Dice helpers ──────────────────────────────────────────────────────────────
@@ -450,6 +452,8 @@ export interface TreasureInput {
   monsters?: MonsterEntry[];
   treasureType: "individual" | "hoard";
   characterLevel?: number;
+  /** Default "2024". Only 2024 tables exist: "2014" rolls them, says so, and resolves CRs from 2014 stat blocks. */
+  rulesEdition?: RulesEdition;
 }
 
 // ── Main function ─────────────────────────────────────────────────────────────
@@ -458,7 +462,7 @@ export async function generateTreasure(
   input: TreasureInput,
   options: { maxOutputChars?: number } = {}
 ): Promise<string> {
-  const { cr, monsters, treasureType, characterLevel } = input;
+  const { cr, monsters, treasureType, characterLevel, rulesEdition = "2024" } = input;
   // maxOutputChars defaults to the real limit; it's overridable only so
   // tests can force the omission/truncation paths deterministically with a
   // small, cheap fixture instead of allocating a genuinely oversized
@@ -478,6 +482,12 @@ export async function generateTreasure(
   const budgetError = validateTreasureBudget({ monsters, treasureType });
   if (budgetError) return budgetError;
 
+  // The tables are the 2024 DMG's whichever edition was asked for; say so when it was 2014.
+  const rules = rulesLine(
+    classifyEdition({ sourceId: DMG_SOURCE_ID["2024"] }, peekSourceIndex()),
+    rulesEdition === "2014" ? { reason: "treasure-no-2014" } : {},
+  );
+
   // ── Direct CR path ────────────────────────────────────────────────────────
   if (cr !== undefined) {
     const tier = crToTier(cr);
@@ -489,7 +499,7 @@ export async function generateTreasure(
         ? rollMagicItems(itemCount, characterLevel)
         : [];
       const totalGp = Math.round(coinsGp(coins) * 100) / 100;
-      return formatHoardOutput(crStr, tier, undefined, coins, itemCount, itemDiceExpr, items, characterLevel, totalGp, outputBudget);
+      return formatHoardOutput(crStr, tier, undefined, coins, itemCount, itemDiceExpr, items, characterLevel, totalGp, rules, outputBudget);
     } else {
       const coins = rollIndividualCoins(tier);
       const totalGp = Math.round(coinsGp(coins) * 100) / 100;
@@ -498,6 +508,7 @@ export async function generateTreasure(
         [coins],
         totalGp,
         1,
+        rules,
         outputBudget
       );
     }
@@ -506,23 +517,31 @@ export async function generateTreasure(
   // ── Monster list path ─────────────────────────────────────────────────────
   const monsterList = monsters!;
   const uniqueNames = [...new Set(monsterList.map(m => m.name))];
-  const statsResults = await Promise.all(uniqueNames.map(n => getMonsterStats(n)));
-  const resolvedMap = new Map<string, { name: string; crValue: number } | null>();
+  const statsResults = await Promise.all(uniqueNames.map(n => getMonsterStats(n, { rulesEdition })));
+  const resolvedMap = new Map<string, MonsterStatsResult>();
   for (let i = 0; i < uniqueNames.length; i++) {
     resolvedMap.set(uniqueNames[i], statsResults[i]);
   }
 
-  const found: Array<{ inputName: string; name: string; crValue: number; count: number }> = [];
+  const found: Array<{ inputName: string; name: string; tag: string; crValue: number; count: number }> = [];
   const notFound: string[] = [];
 
   for (const entry of monsterList) {
     const stats = resolvedMap.get(entry.name);
-    if (stats) {
-      found.push({ inputName: entry.name, name: stats.name, crValue: stats.crValue, count: entry.count });
+    if (stats?.status === "found") {
+      found.push({ inputName: entry.name, name: stats.name, tag: editionTag(stats.info), crValue: stats.crValue, count: entry.count });
     } else {
       if (!notFound.includes(entry.name)) notFound.push(entry.name);
     }
   }
+
+  // A name that resolved to nothing, or to several distinct creatures.
+  const unresolvedLine = (n: string): string => {
+    const stats = resolvedMap.get(n);
+    return stats?.status === "ambiguous"
+      ? `  ✗ ${ambiguityMessage(displayName(n), stats.candidates.map(c => ({ name: displayName(c.name), cr: crDisplay(c.crValue) })))}`
+      : `  ✗ "${displayName(n)}" — not found in DDB or Open5e`;
+  };
 
   if (found.length === 0) {
     // Reserve room for the closing "No treasure rolled" message AND a
@@ -538,7 +557,7 @@ export async function generateTreasure(
     acc.push(``);
     let omitted = 0;
     for (const entry of monsterList) {
-      if (!acc.push(`  ✗ "${displayName(entry.name)}" — not found in DDB or Open5e`)) omitted++;
+      if (!acc.push(unresolvedLine(entry.name))) omitted++;
     }
     const lines = [...acc.items];
     if (omitted > 0) {
@@ -572,7 +591,7 @@ export async function generateTreasure(
       if (!acc.push(`  ✓ ${displayName(f.inputName)} → CR ${crDisplay(f.crValue)}`)) omitted++;
     }
     for (const n of notFound) {
-      if (!acc.push(`  ✗ "${displayName(n)}" — not found in DDB or Open5e`)) omitted++;
+      if (!acc.push(unresolvedLine(n))) omitted++;
     }
     const lines = [...acc.items];
     if (omitted > 0) {
@@ -595,7 +614,7 @@ export async function generateTreasure(
     const sourceAcc = new BoundedAccumulator(Math.min(4_000, bodyBudget), ", ");
     let sourceOmitted = 0;
     for (const f of found) {
-      const seg = `${f.count > 1 ? f.count + " × " : ""}${displayName(f.name)} (CR ${crDisplay(f.crValue)})`;
+      const seg = `${f.count > 1 ? f.count + " × " : ""}${displayName(f.name)} ${f.tag} (CR ${crDisplay(f.crValue)})`;
       if (!sourceAcc.push(seg)) sourceOmitted++;
     }
     let sourceDesc = sourceAcc.join();
@@ -603,7 +622,7 @@ export async function generateTreasure(
 
     return [
       ...statusLines,
-      ...formatHoardOutput(crDisplay(highestCr), tier, sourceDesc, coins, itemCount, itemDiceExpr, items, characterLevel, totalGp, bodyBudget).split("\n"),
+      ...formatHoardOutput(crDisplay(highestCr), tier, sourceDesc, coins, itemCount, itemDiceExpr, items, characterLevel, totalGp, rules, bodyBudget).split("\n"),
     ].join("\n");
   } else {
     // Individual — one roll per monster instance
@@ -612,7 +631,7 @@ export async function generateTreasure(
 
     for (const f of found) {
       const tier = crToTier(f.crValue);
-      rollEntries.push({ label: `${displayName(f.name)} (CR ${crDisplay(f.crValue)})`, tier, count: f.count });
+      rollEntries.push({ label: `${displayName(f.name)} ${f.tag} (CR ${crDisplay(f.crValue)})`, tier, count: f.count });
       for (let i = 0; i < f.count; i++) {
         allCoins.push(rollIndividualCoins(tier));
       }
@@ -624,12 +643,18 @@ export async function generateTreasure(
 
     return [
       ...statusLines,
-      ...formatIndividualOutput(rollEntries, allCoins, totalGp, totalMonsters, bodyBudget).split("\n"),
+      ...formatIndividualOutput(rollEntries, allCoins, totalGp, totalMonsters, rules, bodyBudget).split("\n"),
     ].join("\n");
   }
 }
 
 // ── Output builders ───────────────────────────────────────────────────────────
+
+/** The body's lines with the (reserved) rules text right after the title, or first if the title didn't fit. */
+function withRules(items: readonly string[], titled: boolean, rules: string): string[] {
+  const at = titled ? 1 : 0;
+  return [...items.slice(0, at), rules, ...items.slice(at)];
+}
 
 function formatHoardOutput(
   crStr: string,
@@ -641,6 +666,7 @@ function formatHoardOutput(
   items: Array<{ category: Category; rarity: Rarity; name: string }>,
   characterLevel: number | undefined,
   totalGp: number,
+  rules: string,
   outputBudget: number = MAX_TREASURE_OUTPUT_CHARS
 ): string {
   // Mandatory trailer: the coin total and the closing TOTAL VALUE line are
@@ -660,14 +686,16 @@ function formatHoardOutput(
   const itemsNoteWorst = `  … ${items.length} more item${items.length !== 1 ? "s" : ""} omitted to stay under the ${outputBudget.toLocaleString()}-character output limit`;
   const detailNoteWorst = `  … some hoard details (source description and/or magic items) omitted to stay under the ${outputBudget.toLocaleString()}-character output limit`;
   const omissionReserve = Math.max(itemsNoteWorst.length, detailNoteWorst.length) + 8;
-  const bodyBudget = Math.max(0, outputBudget - trailerText.length - 1 - omissionReserve);
+  // The rules line(s) are mandatory too, so reserve them like the trailer.
+  const rulesReserve = rules.length + 1;
+  const bodyBudget = Math.max(0, outputBudget - trailerText.length - 1 - omissionReserve - rulesReserve);
 
   // Everything else — the header, the (variable-length, network-sourced)
   // Source description, and the magic-item section — is "detail" and
   // flows through the same bounded accumulator, exactly like
   // formatIndividualOutput's roll-detail loop.
   const acc = new BoundedAccumulator(bodyBudget);
-  acc.push(`TREASURE HOARD — CR ${crStr} (tier ${tier})`);
+  const titled = acc.push(`TREASURE HOARD — CR ${crStr} (tier ${tier})`);
 
   let detailOmitted = false;
   if (sourceDesc) {
@@ -697,7 +725,7 @@ function formatHoardOutput(
     if (!acc.push(`(provide character_level to include magic items)`)) detailOmitted = true;
   }
 
-  const lines = [...acc.items];
+  const lines = withRules(acc.items, titled, rules);
   if (itemsOmitted > 0) {
     lines.push(`  … ${itemsOmitted} more item${itemsOmitted !== 1 ? "s" : ""} omitted to stay under the ${outputBudget.toLocaleString()}-character output limit`);
   } else if (detailOmitted) {
@@ -712,6 +740,7 @@ function formatIndividualOutput(
   allCoins: Coins[],
   totalGp: number,
   totalMonsters: number,
+  rules: string,
   outputBudget: number = MAX_TREASURE_OUTPUT_CHARS
 ): string {
   // Coin totals are always preserved in full, even when per-roll detail is
@@ -730,10 +759,12 @@ function formatIndividualOutput(
   // accumulator never has to choose between reporting an omission and
   // keeping the totals.
   const omissionReserve = 160;
-  const bodyBudget = Math.max(0, outputBudget - trailerText.length - 1 - omissionReserve);
+  // The rules line(s) are mandatory too, so reserve them like the trailer.
+  const rulesReserve = rules.length + 1;
+  const bodyBudget = Math.max(0, outputBudget - trailerText.length - 1 - omissionReserve - rulesReserve);
 
   const acc = new BoundedAccumulator(bodyBudget);
-  acc.push(`INDIVIDUAL TREASURE — ${totalMonsters} monster${totalMonsters !== 1 ? "s" : ""} rolled separately`);
+  const titled = acc.push(`INDIVIDUAL TREASURE — ${totalMonsters} monster${totalMonsters !== 1 ? "s" : ""} rolled separately`);
   acc.push(``);
 
   let coinIdx = 0;
@@ -762,7 +793,7 @@ function formatIndividualOutput(
     }
   }
 
-  const lines = [...acc.items];
+  const lines = withRules(acc.items, titled, rules);
   if (truncated) {
     lines.push(``, `  … ${omittedRolls} roll line${omittedRolls !== 1 ? "s" : ""} omitted to stay under the ${outputBudget.toLocaleString()}-character output limit (coin totals below include every roll)`);
   }

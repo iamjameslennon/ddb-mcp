@@ -13,7 +13,11 @@ import {
   beginAuthenticatedSession, hasValidSession,
   captureSession, assertSessionCurrent, onSessionInvalidated,
 } from "../session-fetch.js";
-import { getGameConfig, type GameConfig, type GameSource } from "../game-config.js";
+import { getGameConfig, getSourceIndex, type GameConfig, type GameSource } from "../game-config.js";
+import {
+  classifyEdition, selectByEdition, monsterTiebreak, twinName, twinAliases, normalizeName, dedupeById,
+  type EditionInfo, type RulesEdition,
+} from "../edition.js";
 import { TtlCache } from "../cache.js";
 import { wrapUntrusted } from "../utils.js";
 import { o5SearchMonsters, o5GetMonster, o5GetMonsterStats } from "../open5e.js";
@@ -356,6 +360,25 @@ async function fetchMonsterList(search: string, take: number, sourceIds: number[
   assertSessionCurrent(snapshot);
   monsterCache.set(cacheKey, JSON.stringify(list));
   return list;
+}
+
+/**
+ * Name-search candidates for every spelling in the name's twin group (Thug and
+ * Tough are one creature, but a search for one never returns the other),
+ * merged in alias order, first copy of each id kept. Only the typed name's own
+ * query (the first alias) fails the call; a failed alias query contributes nothing.
+ */
+async function fetchCandidates(name: string, take: number, sourceIds?: number[]): Promise<DdbMonster[]> {
+  // One snapshot for every alias query, as in fetchMonsterPages: lists fetched
+  // either side of an account change must not merge.
+  const snapshot = captureSession();
+  const [typed, ...others] = twinAliases(name);
+  const [first, ...rest] = await Promise.all([
+    fetchMonsterList(typed, take, sourceIds),
+    ...others.map(alias => fetchMonsterList(alias, take, sourceIds).catch(() => null)),
+  ]);
+  assertSessionCurrent(snapshot);
+  return dedupeById([first, ...rest].flatMap(list => list?.data ?? []));
 }
 
 /** Page size the monster service actually honours — larger `take` values are silently capped. */
@@ -739,43 +762,78 @@ export async function getMonster(monsterName: string, source?: string): Promise<
   }
 }
 
+export type MonsterStatsResult =
+  | { status: "found"; name: string; crValue: number; xp: number; info: EditionInfo }
+  | { status: "not-found" }
+  | { status: "ambiguous"; candidates: Array<{ name: string; crValue: number; xp: number }> };
+
 /**
- * Returns CR and XP for a named monster. Used by the encounter difficulty rater
- * and treasure generator. Tries the DDB monster service first, then falls back
- * to Open5e. `preferLegacy` picks the 2014 entry when a name exists in both
- * editions (the encounter rater sets it for 2014 rules).
+ * CR and XP for a named monster, for the encounter rater and the treasure
+ * generator. Tries the DDB monster service first, then falls back to Open5e.
+ * `rulesEdition` (default "2024") picks between edition twins of one creature.
  *
- * Unlike getMonster, no fuzzy fallback (on either path): callers fold the CR
+ * Unlike getMonster, it never guesses (on either path): callers fold the CR
  * into a rating or a treasure roll, where a near-miss creature would silently
- * skew the result instead of surfacing as "not found". Homebrew is skipped too —
+ * skew the result. So there is no fuzzy fallback, and a partial name matching
+ * several distinct creatures ("Red Dragon": Wyrmling … Ancient) is reported as
+ * ambiguous with each candidate's CR instead of picked. Homebrew is skipped too:
  * callers print the returned name as trusted text, and the rating should use
  * official CRs.
  */
-export async function getMonsterStats(name: string, opts: { preferLegacy?: boolean } = {}): Promise<{
-  name: string;
-  crValue: number;
-  xp: number;
-} | null> {
+export async function getMonsterStats(name: string, opts: { rulesEdition?: RulesEdition } = {}): Promise<MonsterStatsResult> {
   name = name.trim();
-  if (!name) return null;
-  // DDB path
+  if (!name) return { status: "not-found" };
+  const requested = opts.rulesEdition ?? "2024";
   if (hasValidSession()) {
     try {
       const config = await getGameConfig();
-      const list = await fetchMonsterList(name, 20);
-      const official = (list.data ?? []).filter(m => m.isHomebrew === false);
-      const match = selectMonster(official, name, config, { preferLegacy: opts.preferLegacy, allowFuzzy: false });
-      if (match && config) {
-        const crEntry = config.challengeRatings.find(cr => cr.id === match.challengeRatingId);
-        if (crEntry) {
-          return { name: match.name, crValue: crEntry.value, xp: crEntry.xp };
-        }
+      // No extra request: getGameConfig() serves this call from its cache (or its failure cache).
+      const index = await getSourceIndex();
+      const info = (m: DdbMonster) => classifyEdition(m, index);
+      const tiebreak = monsterTiebreak(index);
+      const crById = new Map((config?.challengeRatings ?? []).map(cr => [cr.id, cr]));
+      const official = (await fetchCandidates(name, 20))
+        .filter(m => m.isHomebrew === false && crById.has(m.challengeRatingId));
+      const stats = (m: DdbMonster) => {
+        const cr = crById.get(m.challengeRatingId)!;
+        return { name: m.name, crValue: cr.value, xp: cr.xp };
+      };
+      const found = (group: DdbMonster[]): MonsterStatsResult | null => {
+        const picked = selectByEdition(group, requested, info, tiebreak);
+        return picked ? { status: "found", ...stats(picked.entry), info: info(picked.entry) } : null;
+      };
+
+      const key = twinName(name);
+      const exact = official.filter(m => twinName(m.name) === key);
+      if (exact.length) {
+        const result = found(exact);
+        if (result) return result;
+      }
+
+      const query = normalizeName(name);
+      const groups = new Map<string, DdbMonster[]>();
+      for (const m of official) {
+        if (!normalizeName(m.name).includes(query)) continue;
+        const k = twinName(m.name);
+        groups.set(k, [...(groups.get(k) ?? []), m]);
+      }
+      if (groups.size === 1) {
+        const result = found([...groups.values()][0]);
+        if (result) return result;
+      } else if (groups.size > 1) {
+        const candidates = [...groups.values()]
+          .map(group => selectByEdition(group, requested, info, tiebreak))
+          .filter(picked => picked !== null)
+          .map(picked => stats(picked.entry))
+          .sort((a, b) => a.crValue - b.crValue || a.name.localeCompare(b.name));
+        return { status: "ambiguous", candidates };
       }
     } catch {
       // fall through to Open5e
     }
   }
 
-  // Open5e fallback
-  return await o5GetMonsterStats(name);
+  // Open5e fallback: its monsters are SRD 5.1 (2014) until phase 4 moves it to v2.
+  const o5 = await o5GetMonsterStats(name);
+  return o5 ? { status: "found", ...o5, info: { ruleset: "2014", book: null } } : { status: "not-found" };
 }

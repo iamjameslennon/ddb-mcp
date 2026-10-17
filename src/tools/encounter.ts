@@ -7,6 +7,8 @@
  */
 
 import { getMonsterStats } from "./monster.js";
+import { peekSourceIndex } from "../game-config.js";
+import { classifyEdition, rulesLine, editionTag, ambiguityMessage, DMG_SOURCE_ID, type RulesEdition } from "../edition.js";
 
 // ── XP thresholds by level (2014 DMG p.82) ────────────────────────────────────
 // Tuple: [easy, medium, hard, deadly]
@@ -99,6 +101,21 @@ function displayCr(cr: number): string {
   if (cr === 0.25)  return "1/4";
   if (cr === 0.5)   return "1/2";
   return String(cr);
+}
+
+/** The line under the title: the edition's Dungeon Master's Guide, whose rules are applied. */
+function encounterRulesLine(rulesEdition: RulesEdition): string {
+  return rulesLine(classifyEdition({ sourceId: DMG_SOURCE_ID[rulesEdition] }, peekSourceIndex()));
+}
+
+/** The unresolved-name warnings under the result: not-found names, then each ambiguous one. */
+function warningLines(notFound: string[], ambiguous: string[]): string[] {
+  if (!notFound.length && !ambiguous.length) return [];
+  return [
+    ``,
+    ...(notFound.length ? [`⚠ Not found in compendium (supply cr manually): ${notFound.join(", ")}`] : []),
+    ...ambiguous.map(a => `⚠ ${a}`),
+  ];
 }
 
 // ── CR table as sorted array (for range finding) ──────────────────────────────
@@ -204,7 +221,7 @@ export type Difficulty = Difficulty2014 | Difficulty2024;
 export async function rateEncounter(
   party: PartyGroup[],
   monsters: MonsterInput[],
-  rulesEdition: "2024" | "2014" = "2024"
+  rulesEdition: RulesEdition = "2024"
 ): Promise<string> {
 
   // 1. Party budget / threshold
@@ -238,16 +255,18 @@ export async function rateEncounter(
     }
   }
 
-  // 2. Resolve monsters — 2014 rules prefer the Legacy stat block when a name exists in both editions
+  // 2. Resolve monsters — 2014 rules prefer the 2014 stat block when a name exists in both editions
   let totalRawXp = 0;
   let totalMonsterCount = 0;
   const monsterLines: string[] = [];
   const notFound: string[] = [];
+  const ambiguous: string[] = [];
 
   for (const m of monsters) {
     const count = m.count ?? 1;
 
     let resolvedName: string;
+    let tag = "";
     let crValue: number;
     let xpEach: number;
 
@@ -259,12 +278,17 @@ export async function rateEncounter(
       );
       xpEach = CR_XP[crKey] ?? 0;
     } else if (m.name) {
-      const stats = await getMonsterStats(m.name, { preferLegacy: rulesEdition === "2014" });
-      if (!stats) {
+      const stats = await getMonsterStats(m.name, { rulesEdition });
+      if (stats.status === "not-found") {
         notFound.push(m.name);
         continue;
       }
+      if (stats.status === "ambiguous") {
+        ambiguous.push(ambiguityMessage(m.name, stats.candidates.map(c => ({ name: c.name, cr: displayCr(c.crValue) }))));
+        continue;
+      }
       resolvedName = stats.name;
+      tag = ` ${editionTag(stats.info)}`;
       crValue = stats.crValue;
       xpEach = stats.xp;
     } else {
@@ -274,7 +298,7 @@ export async function rateEncounter(
     totalMonsterCount += count;
     totalRawXp += xpEach * count;
     const crStr = displayCr(crValue);
-    const countLabel = count === 1 ? `1 × ${resolvedName}` : `${count} × ${resolvedName}`;
+    const countLabel = count === 1 ? `1 × ${resolvedName}${tag}` : `${count} × ${resolvedName}${tag}`;
     monsterLines.push(
       count === 1
         ? `  ${countLabel} (CR ${crStr}, ${xpEach.toLocaleString()} XP)`
@@ -283,8 +307,9 @@ export async function rateEncounter(
   }
 
   if (totalMonsterCount === 0) {
-    return "No valid monsters provided. Check names or supply cr values directly.";
+    return ["No valid monsters provided. Check names or supply cr values directly.", ...ambiguous.map(a => `⚠ ${a}`)].join("\n");
   }
+  const rules = encounterRulesLine(rulesEdition);
 
   // 3/4. Difficulty + output
   if (rulesEdition === "2024") {
@@ -307,6 +332,7 @@ export async function rateEncounter(
 
     const lines = [
       `ENCOUNTER DIFFICULTY: ${difficulty} (2024 XDMG)`,
+      rules,
       ``,
       `PARTY (${partySize} character${partySize !== 1 ? "s" : ""})`,
       ...partyLines,
@@ -320,9 +346,7 @@ export async function rateEncounter(
       `Result: ${difficulty} — ${explanation}`,
     ];
 
-    if (notFound.length) {
-      lines.push(``, `⚠ Not found in compendium (supply cr manually): ${notFound.join(", ")}`);
-    }
+    lines.push(...warningLines(notFound, ambiguous));
     return lines.join("\n");
 
   } else {
@@ -358,6 +382,7 @@ export async function rateEncounter(
 
     const lines = [
       `ENCOUNTER DIFFICULTY: ${difficulty}`,
+      rules,
       ``,
       `PARTY (${partySize} character${partySize !== 1 ? "s" : ""})`,
       ...partyLines,
@@ -376,9 +401,7 @@ export async function rateEncounter(
       `Result: ${difficulty} — ${explanation}`,
     ];
 
-    if (notFound.length) {
-      lines.push(``, `⚠ Not found in compendium (supply cr manually): ${notFound.join(", ")}`);
-    }
+    lines.push(...warningLines(notFound, ambiguous));
     return lines.join("\n");
   }
 }
@@ -389,7 +412,7 @@ export async function targetEncounterCr(
   party: PartyGroup[],
   difficulty: Difficulty,
   monsterCount?: number,
-  rulesEdition: "2024" | "2014" = "2024"
+  rulesEdition: RulesEdition = "2024"
 ): Promise<string> {
 
   const valid2014 = ["easy", "medium", "hard", "deadly"];
@@ -479,6 +502,7 @@ export async function targetEncounterCr(
 
     const lines = [
       `TARGET CR — ${diffLabel.toUpperCase()} encounter for ${partyDesc} (2024 XDMG)`,
+      encounterRulesLine(rulesEdition),
       thresholdLine,
       ``,
       ...rows,
@@ -525,6 +549,7 @@ export async function targetEncounterCr(
 
     const lines = [
       `TARGET CR — ${diffLabel.toUpperCase()} encounter for ${partyDesc}`,
+      encounterRulesLine(rulesEdition),
       thresholdLine,
       ``,
       ...rows,

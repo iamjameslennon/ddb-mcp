@@ -4,7 +4,7 @@ import {
   normalizeName, createTwinNamer, twinName, twinAliases, classFeatureTwinKey, racialTraitTwinKey,
   dedupeById, definitionTiebreak, monsterTiebreak,
   selectByEdition, lookupByName, groupAndSelect,
-  rulesLine, renameLine, RULES_EDITION_TOOL_NOTE, sourceNote, editionTag, searchHeader, searchFooter, ambiguityMessage,
+  rulesLine, renameLine, RULES_EDITION_TOOL_NOTE, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, editionTag, searchHeader, searchFooter, ambiguityMessage,
   characterMainEdition, characterTag, characterRulesLine,
   type CategoryRecord, type CharacterEditionEntry, type CharacterEntryKind,
   type EditionInfo, type EditionMarkers, type Ruleset, type SourceRecord,
@@ -620,6 +620,14 @@ describe("search labels", () => {
 
   it("RULES_EDITION_TOOL_NOTE", () => {
     expect(RULES_EDITION_TOOL_NOTE).toBe("Returns 2024 content by default; set rules_edition to '2014' for 2014 rules. The 'Rules:' line or [tag] in the output names the ruleset.");
+  });
+
+  it("TREASURE_RULES_EDITION_NOTE", () => {
+    expect(TREASURE_RULES_EDITION_NOTE).toBe("Only 2024 treasure tables exist: '2014' still rolls them and says so, but resolves monster CRs from 2014 stat blocks.");
+  });
+
+  it("DMG_SOURCE_ID names the two Dungeon Master's Guides", () => {
+    expect(DMG_SOURCE_ID).toEqual({ "2024": 146, "2014": 3 });
   });
 
   it("searchHeader", () => {

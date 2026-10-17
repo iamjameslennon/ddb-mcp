@@ -6,8 +6,13 @@ vi.mock("../src/tools/monster.js", () => ({
   getMonsterStats: vi.fn(),
 }));
 
-import { getMonsterStats } from "../src/tools/monster.js";
+import { getMonsterStats, type MonsterStatsResult } from "../src/tools/monster.js";
 const mockGetMonsterStats = vi.mocked(getMonsterStats);
+
+const MM_2024 = { ruleset: "2024", book: "Monster Manual (2024)" } as const;
+const found = (name: string, crValue: number, xp: number): MonsterStatsResult =>
+  ({ status: "found", name, crValue, xp, info: MM_2024 });
+const NOT_FOUND: MonsterStatsResult = { status: "not-found" };
 
 beforeEach(() => vi.clearAllMocks());
 afterEach(() => vi.restoreAllMocks());
@@ -175,8 +180,8 @@ describe("magic items — level 17-20 rarity", () => {
 describe("monster resolution — hoard", () => {
   it("uses highest CR for tier selection", async () => {
     mockGetMonsterStats
-      .mockResolvedValueOnce({ name: "Ogre", crValue: 2, xp: 450 })
-      .mockResolvedValueOnce({ name: "Hill Giant", crValue: 5, xp: 1800 });
+      .mockResolvedValueOnce(found("Ogre", 2, 450))
+      .mockResolvedValueOnce(found("Hill Giant", 5, 1800));
 
     const result = await generateTreasure({
       monsters: [{ name: "Ogre", count: 1 }, { name: "Hill Giant", count: 1 }],
@@ -196,8 +201,8 @@ describe("monster resolution — hoard", () => {
 describe("monster resolution — individual", () => {
   it("rolls once per monster instance, shows separate roll lines", async () => {
     mockGetMonsterStats
-      .mockResolvedValueOnce({ name: "Goblin", crValue: 0.25, xp: 50 })
-      .mockResolvedValueOnce({ name: "Hobgoblin", crValue: 1, xp: 200 });
+      .mockResolvedValueOnce(found("Goblin", 0.25, 50))
+      .mockResolvedValueOnce(found("Hobgoblin", 1, 200));
 
     const result = await generateTreasure({
       monsters: [{ name: "Goblin", count: 2 }, { name: "Hobgoblin", count: 1 }],
@@ -217,8 +222,8 @@ describe("monster resolution — individual", () => {
 describe("partial resolution", () => {
   it("shows ✗ for unresolved monster but still rolls with resolved one", async () => {
     mockGetMonsterStats
-      .mockResolvedValueOnce({ name: "Ogre", crValue: 2, xp: 450 })
-      .mockResolvedValueOnce(null);
+      .mockResolvedValueOnce(found("Ogre", 2, 450))
+      .mockResolvedValueOnce(NOT_FOUND);
 
     const result = await generateTreasure({
       monsters: [{ name: "Ogre", count: 1 }, { name: "Blarg the Destroyer", count: 1 }],
@@ -236,7 +241,7 @@ describe("partial resolution", () => {
 
 describe("all unresolved", () => {
   it("returns error without rolling coins", async () => {
-    mockGetMonsterStats.mockResolvedValue(null);
+    mockGetMonsterStats.mockResolvedValue(NOT_FOUND);
 
     const result = await generateTreasure({
       monsters: [{ name: "Fake A", count: 1 }, { name: "Fake B", count: 1 }],
@@ -258,7 +263,7 @@ describe("validation", () => {
   });
 
   it("returns error when both cr and monsters provided", async () => {
-    mockGetMonsterStats.mockResolvedValue({ name: "Goblin", crValue: 0.25, xp: 50 });
+    mockGetMonsterStats.mockResolvedValue(found("Goblin", 0.25, 50));
     const result = await generateTreasure({
       cr: 5,
       monsters: [{ name: "Goblin", count: 1 }],
@@ -345,8 +350,8 @@ describe("treasure work-budget rejections", () => {
 
   it("does not apply the aggregate roll budget to hoard requests", async () => {
     mockGetMonsterStats
-      .mockResolvedValueOnce({ name: "Goblin", crValue: 0.25, xp: 50 })
-      .mockResolvedValueOnce({ name: "Hobgoblin", crValue: 1, xp: 200 });
+      .mockResolvedValueOnce(found("Goblin", 0.25, 50))
+      .mockResolvedValueOnce(found("Hobgoblin", 1, 200));
     const result = await generateTreasure({
       monsters: [
         { name: "Goblin", count: 60 },
@@ -363,7 +368,7 @@ describe("treasure work-budget rejections", () => {
 
 describe("treasure at exactly the roll budget", () => {
   it("performs exactly 100 rolls and stays within the output budget", async () => {
-    mockGetMonsterStats.mockResolvedValueOnce({ name: "Goblin", crValue: 0.25, xp: 50 });
+    mockGetMonsterStats.mockResolvedValueOnce(found("Goblin", 0.25, 50));
     const result = await generateTreasure({
       monsters: [{ name: "Goblin", count: 100 }],
       treasureType: "individual",
@@ -376,9 +381,9 @@ describe("treasure at exactly the roll budget", () => {
 
   it("accepts mixed entries whose counts sum to exactly 100", async () => {
     mockGetMonsterStats
-      .mockResolvedValueOnce({ name: "Goblin", crValue: 0.25, xp: 50 })
-      .mockResolvedValueOnce({ name: "Hobgoblin", crValue: 1, xp: 200 })
-      .mockResolvedValueOnce({ name: "Bugbear", crValue: 1, xp: 200 });
+      .mockResolvedValueOnce(found("Goblin", 0.25, 50))
+      .mockResolvedValueOnce(found("Hobgoblin", 1, 200))
+      .mockResolvedValueOnce(found("Bugbear", 1, 200));
 
     const result = await generateTreasure({
       monsters: [
@@ -402,8 +407,8 @@ describe("treasure at exactly the roll budget", () => {
 describe("repeated and unresolved names within budget", () => {
   it("resolves once per unique name via lookup, but budgets on raw entry counts", async () => {
     mockGetMonsterStats.mockImplementation(async (name: string) => {
-      if (name === "Goblin") return { name: "Goblin", crValue: 0.25, xp: 50 };
-      return null;
+      if (name === "Goblin") return found("Goblin", 0.25, 50);
+      return NOT_FOUND;
     });
 
     const result = await generateTreasure({
@@ -439,7 +444,7 @@ describe("repeated and unresolved names within budget", () => {
 
 describe("forced output truncation — individual", () => {
   it("omits roll detail but always keeps full, correct coin totals within budget", async () => {
-    mockGetMonsterStats.mockResolvedValueOnce({ name: "Goblin", crValue: 0.25, xp: 50 });
+    mockGetMonsterStats.mockResolvedValueOnce(found("Goblin", 0.25, 50));
     vi.spyOn(Math, "random").mockReturnValue(0.5); // 3d6 -> 4 per die -> 12 gp per roll
     const maxOutputChars = 300;
 
@@ -460,8 +465,8 @@ describe("forced output truncation — individual", () => {
 describe("forced output truncation — hoard", () => {
   it("omits source/magic-item detail but always keeps full, correct coin totals within budget", async () => {
     mockGetMonsterStats
-      .mockResolvedValueOnce({ name: "Ancient Red Dragon (Extremely Long Upstream Display Name For Testing Purposes Only)", crValue: 20, xp: 25000 })
-      .mockResolvedValueOnce({ name: "Adult Blue Dragon (Also A Rather Long Upstream Display Name For Testing)", crValue: 16, xp: 15000 });
+      .mockResolvedValueOnce(found("Ancient Red Dragon (Extremely Long Upstream Display Name For Testing Purposes Only)", 20, 25000))
+      .mockResolvedValueOnce(found("Adult Blue Dragon (Also A Rather Long Upstream Display Name For Testing)", 16, 15000));
     vi.spyOn(Math, "random").mockReturnValue(0.5); // deterministic coin/item rolls
     const maxOutputChars = 250;
 
@@ -485,7 +490,7 @@ describe("forced output truncation — hoard", () => {
 
 describe("forced output truncation — unresolved monster listing", () => {
   it("omits unresolved-name detail but always keeps the closing message within budget", async () => {
-    mockGetMonsterStats.mockResolvedValue(null);
+    mockGetMonsterStats.mockResolvedValue(NOT_FOUND);
     const monsters = Array.from({ length: 20 }, (_, i) => ({ name: `Fake Monster Number ${i}`, count: 1 }));
     const maxOutputChars = 200;
 
@@ -503,8 +508,8 @@ describe("forced output truncation — unresolved monster listing", () => {
 describe("forced output truncation — partial resolution status block", () => {
   it("omits resolution-status detail while still rolling treasure, within budget", async () => {
     mockGetMonsterStats.mockImplementation(async (name: string) => {
-      if (name.startsWith("Found")) return { name, crValue: 1, xp: 200 };
-      return null;
+      if (name.startsWith("Found")) return found(name, 1, 200);
+      return NOT_FOUND;
     });
     const monsters = [
       ...Array.from({ length: 10 }, (_, i) => ({ name: `Found Monster ${i}`, count: 1 })),
@@ -527,7 +532,7 @@ describe("forced output truncation — partial resolution status block", () => {
 describe("oversized upstream monster name", () => {
   it("truncates a huge resolved name and keeps output within the character budget", async () => {
     const hugeName = "X".repeat(5000);
-    mockGetMonsterStats.mockResolvedValueOnce({ name: hugeName, crValue: 1, xp: 200 });
+    mockGetMonsterStats.mockResolvedValueOnce(found(hugeName, 1, 200));
 
     const result = await generateTreasure({
       monsters: [{ name: "Goblin", count: 2 }],
@@ -540,7 +545,7 @@ describe("oversized upstream monster name", () => {
 
   it("truncates a huge resolved name in hoard source descriptions too", async () => {
     const hugeName = "Y".repeat(5000);
-    mockGetMonsterStats.mockResolvedValueOnce({ name: hugeName, crValue: 3, xp: 700 });
+    mockGetMonsterStats.mockResolvedValueOnce(found(hugeName, 3, 700));
 
     const result = await generateTreasure({
       monsters: [{ name: "Ogre", count: 1 }],
@@ -549,5 +554,132 @@ describe("oversized upstream monster name", () => {
 
     expect(result.length).toBeLessThanOrEqual(MAX_TREASURE_OUTPUT_CHARS);
     expect(result).not.toContain(hugeName);
+  });
+});
+
+// ── Rules lines, edition tags and ambiguity (rules-edition phase 2) ──────────
+
+const RULES_2024 = "Rules: 2024 · Dungeon Master's Guide (2024)";
+const NO_2014 = "(no 2014 version exists — 2024 tables used)";
+const AMBIGUOUS_RED_DRAGON: MonsterStatsResult = {
+  status: "ambiguous",
+  candidates: [{ name: "Red Dragon Wyrmling", crValue: 4, xp: 1100 }, { name: "Young Red Dragon", crValue: 10, xp: 5900 }],
+};
+const AMBIGUOUS_LINE = '  ✗ Ambiguous: "Red Dragon" could be Red Dragon Wyrmling (CR 4), Young Red Dragon (CR 10) — use the full name.';
+
+describe("rules line", () => {
+  it("hoard and individual outputs put the rules line right after their title", async () => {
+    const hoard = (await generateTreasure({ cr: 2, treasureType: "hoard" })).split("\n");
+    expect(hoard[0]).toMatch(/^TREASURE HOARD — /);
+    expect(hoard[1]).toBe(RULES_2024);
+    const individual = (await generateTreasure({ cr: 2, treasureType: "individual" })).split("\n");
+    expect(individual[0]).toMatch(/^INDIVIDUAL TREASURE — /);
+    expect(individual[1]).toBe(RULES_2024);
+    expect(individual).not.toContain(NO_2014);
+  });
+
+  it("monster-list outputs carry it too, and look monsters up with the requested edition", async () => {
+    mockGetMonsterStats.mockResolvedValue(found("Goblin", 0.25, 50));
+    const out = (await generateTreasure({ monsters: [{ name: "Goblin", count: 1 }], treasureType: "individual" })).split("\n");
+    expect(out[1]).toBe(RULES_2024);
+    expect(mockGetMonsterStats).toHaveBeenCalledWith("Goblin", { rulesEdition: "2024" });
+  });
+
+  it("rulesEdition 2014 adds the no-2014-tables line and resolves CRs from 2014 stat blocks", async () => {
+    mockGetMonsterStats.mockResolvedValue({ status: "found", name: "Goblin", crValue: 0.25, xp: 50, info: { ruleset: "2014", book: "Monster Manual (2014)" } });
+    const out = (await generateTreasure({ monsters: [{ name: "Goblin", count: 1 }], treasureType: "hoard", rulesEdition: "2014" })).split("\n");
+    expect(out[1]).toBe(RULES_2024);
+    expect(out[2]).toBe(NO_2014);
+    expect(mockGetMonsterStats).toHaveBeenCalledWith("Goblin", { rulesEdition: "2014" });
+    expect(out).toContain("Source: Goblin [2014] (CR 1/4) — using highest CR");
+    const direct = (await generateTreasure({ cr: 3, treasureType: "individual", rulesEdition: "2014" })).split("\n");
+    expect(direct.slice(1, 3)).toEqual([RULES_2024, NO_2014]);
+  });
+
+  it("an all-unresolved request is not-found output and carries no rules line", async () => {
+    mockGetMonsterStats.mockResolvedValue(NOT_FOUND);
+    const out = await generateTreasure({ monsters: [{ name: "Fake A", count: 1 }], treasureType: "hoard" });
+    expect(out).not.toContain("Rules:");
+  });
+});
+
+describe("edition tags on resolved names", () => {
+  it("tags hoard Source segments and individual labels; ✓ status lines are unchanged", async () => {
+    mockGetMonsterStats.mockImplementation(async (name: string) => (name === "Goblin" ? found("Goblin", 0.25, 50) : NOT_FOUND));
+    const hoard = await generateTreasure({ monsters: [{ name: "Goblin", count: 2 }], treasureType: "hoard" });
+    expect(hoard).toContain("Source: 2 × Goblin [2024] (CR 1/4) — using highest CR");
+    const individual = await generateTreasure({ monsters: [{ name: "Goblin", count: 2 }, { name: "Nope", count: 1 }], treasureType: "individual" });
+    expect(individual).toContain("  Goblin [2024] (CR 1/4) ×2 — 2 rolls on tier 0-4");
+    expect(individual).toContain("  ✓ Goblin → CR 1/4");
+  });
+});
+
+describe("ambiguous monster names", () => {
+  it("lists the candidates in the partial-resolution status block", async () => {
+    mockGetMonsterStats.mockImplementation(async (name: string) => (name === "Ogre" ? found("Ogre", 2, 450) : AMBIGUOUS_RED_DRAGON));
+    const out = await generateTreasure({ monsters: [{ name: "Ogre", count: 1 }, { name: "Red Dragon", count: 1 }], treasureType: "hoard" });
+    expect(out.split("\n")).toContain(AMBIGUOUS_LINE);
+    expect(out).toContain("✓ Ogre");
+    expect(out).toContain("TOTAL VALUE");
+  });
+
+  it("lists the candidates when nothing resolved", async () => {
+    mockGetMonsterStats.mockResolvedValue(AMBIGUOUS_RED_DRAGON);
+    const out = await generateTreasure({ monsters: [{ name: "Red Dragon", count: 1 }], treasureType: "hoard" });
+    expect(out.split("\n")).toContain(AMBIGUOUS_LINE);
+    expect(out).toContain("No treasure rolled");
+    expect(out).not.toContain("not found in DDB or Open5e");
+  });
+});
+
+describe("rules lines under a tight output budget", () => {
+  it("individual: the rules and reason lines survive omissions and the budget holds", async () => {
+    mockGetMonsterStats.mockResolvedValue(found("Goblin", 0.25, 50));
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
+    const maxOutputChars = 400;
+    const out = await generateTreasure(
+      { monsters: [{ name: "Goblin", count: 10 }], treasureType: "individual", rulesEdition: "2014" },
+      { maxOutputChars }
+    );
+    expect(out.length).toBeLessThanOrEqual(maxOutputChars);
+    expect(out).toMatch(/omitted/i);
+    const lines = out.split("\n");
+    expect(lines[0]).toMatch(/^INDIVIDUAL TREASURE — /);
+    expect(lines.slice(1, 3)).toEqual([RULES_2024, NO_2014]);
+    expect(out).toContain("TOTAL VALUE  ~120 gp");
+  });
+
+  it("hoard: the rules and reason lines survive omissions and the budget holds", async () => {
+    mockGetMonsterStats
+      .mockResolvedValueOnce(found("Ancient Red Dragon (Extremely Long Upstream Display Name For Testing Purposes Only)", 20, 25000))
+      .mockResolvedValueOnce(found("Adult Blue Dragon (Also A Rather Long Upstream Display Name For Testing)", 16, 15000));
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
+    const maxOutputChars = 330;
+    const out = await generateTreasure(
+      { monsters: [{ name: "Dragon A", count: 1 }, { name: "Dragon B", count: 1 }], treasureType: "hoard", characterLevel: 18, rulesEdition: "2014" },
+      { maxOutputChars }
+    );
+    expect(out.length).toBeLessThanOrEqual(maxOutputChars);
+    expect(out).toMatch(/omitted/i);
+    const lines = out.split("\n");
+    expect(lines[0]).toMatch(/^TREASURE HOARD — /);
+    expect(lines.slice(1, 3)).toEqual([RULES_2024, NO_2014]);
+    expect(out).toContain("TOTAL VALUE  ~360,000 gp");
+  });
+
+  it("hoard with a partial-resolution status block: the rules line survives and the budget holds", async () => {
+    mockGetMonsterStats.mockImplementation(async (name: string) => (name.startsWith("Found") ? found(name, 1, 200) : NOT_FOUND));
+    const monsters = [
+      ...Array.from({ length: 10 }, (_, i) => ({ name: `Found Monster ${i}`, count: 1 })),
+      ...Array.from({ length: 10 }, (_, i) => ({ name: `Missing Monster ${i}`, count: 1 })),
+    ];
+    const maxOutputChars = 400;
+    const out = await generateTreasure({ monsters, treasureType: "hoard", rulesEdition: "2014" }, { maxOutputChars });
+    expect(out.length).toBeLessThanOrEqual(maxOutputChars);
+    expect(out).toMatch(/omitted/i);
+    const lines = out.split("\n");
+    const title = lines.findIndex(l => l.startsWith("TREASURE HOARD — "));
+    expect(title).toBeGreaterThanOrEqual(0);
+    expect(lines.slice(title + 1, title + 3)).toEqual([RULES_2024, NO_2014]);
   });
 });

@@ -365,3 +365,16 @@ describe("targetEncounterCr 2024 — difficulty tiers", () => {
     expect(out).toContain("easy");
   });
 });
+
+describe("rules line", () => {
+  it.each([["2024", "Rules: 2024 · Dungeon Master's Guide (2024)"], ["2014", "Rules: 2014 · Dungeon Master's Guide (2014)"]] as const)(
+    "rateEncounter and targetEncounterCr put the %s rules line under the title", async (ed, line) => {
+      expect((await rateEncounter(PARTY_4_L5, [{ cr: 1 }], ed)).split("\n")[1]).toBe(line);
+      expect((await targetEncounterCr(PARTY_4_L5, ed === "2024" ? "moderate" : "medium", undefined, ed)).split("\n")[1]).toBe(line);
+    });
+
+  it("a cr-supplied monster carries no edition tag", async () => {
+    const out = await rateEncounter(PARTY_4_L5, [{ cr: 1, name: "Homebrew Thing" }], "2024");
+    expect(out).toContain("  1 × Homebrew Thing (CR 1, 200 XP)");
+  });
+});

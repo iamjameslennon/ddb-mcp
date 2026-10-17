@@ -445,6 +445,16 @@ const REASON_TEXT = {
 export const RULES_EDITION_TOOL_NOTE =
   "Returns 2024 content by default; set rules_edition to '2014' for 2014 rules. The 'Rules:' line or [tag] in the output names the ruleset.";
 
+/** Appended to ddb_roll_treasure's description, after RULES_EDITION_TOOL_NOTE. */
+export const TREASURE_RULES_EDITION_NOTE =
+  "Only 2024 treasure tables exist: '2014' still rolls them and says so, but resolves monster CRs from 2014 stat blocks.";
+
+/**
+ * The Dungeon Master's Guide for each edition (game-config source IDs, live
+ * 2026-10-16): encounter and treasure rules lines classify against it.
+ */
+export const DMG_SOURCE_ID: Readonly<Record<RulesEdition, number>> = { "2024": 146, "2014": 3 };
+
 export type RulesLineReason = keyof typeof REASON_TEXT;
 
 const SRD_NAME: Record<RulesEdition, string> = { "2024": "SRD 5.2", "2014": "SRD 5.1" };
