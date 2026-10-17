@@ -787,10 +787,10 @@ server.tool(
 
 server.tool(
   "ddb_search_class_features",
-  "Search class features by name, class, or level gained. Requires login — run ddb_login first if you haven't already.",
+  "Search class, subclass and optional class features by name, class or subclass, or level gained. Requires login — run ddb_login first if you haven't already.",
   {
     name: z.string().optional().describe("Partial feature name (e.g. 'action surge', 'sneak attack')"),
-    class_name: z.string().optional().describe("Class name filter (e.g. 'fighter', 'rogue')"),
+    class_name: z.string().optional().describe("Class or subclass name filter (e.g. 'fighter', 'champion')"),
     level: z.number().int().min(1).max(20).optional().describe("Level at which the feature is gained"),
     limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
     offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
@@ -810,10 +810,10 @@ server.tool(
 
 server.tool(
   "ddb_search_racial_traits",
-  "Search racial traits by name or race. Requires login — run ddb_login first if you haven't already.",
+  "Search racial traits, including optional ones, by name or species. Requires login — run ddb_login first if you haven't already.",
   {
     name: z.string().optional().describe("Partial trait name (e.g. 'darkvision', 'breath weapon')"),
-    race_name: z.string().optional().describe("Race name filter (e.g. 'elf', 'dragonborn')"),
+    race_name: z.string().optional().describe("Species or race filter; also matches a subrace's base race (e.g. 'elf' matches High Elf)"),
     limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
     offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
   },

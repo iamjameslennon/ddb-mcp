@@ -17,6 +17,11 @@ import {
 import { TtlCache } from "../cache.js";
 import { stripHtml } from "../utils.js";
 import {
+  buildClassFeatures, filterClassFeatures, formatClassFeatureLine,
+  buildRacialTraits, filterRacialTraits, formatRacialTraitLine, raceKeyOf,
+  type ClassFeatureEntry, type RacialTraitEntry, type OptionalCollection,
+} from "./features-traits.js";
+import {
   o5SearchSpells, o5GetSpell,
   o5SearchItems, o5GetItem,
   o5GetWeapon, o5GetArmor,
@@ -1068,18 +1073,130 @@ export async function searchFeats(params: {
   }
 }
 
-// ── Class Features ────────────────────────────────────────────────────────────
+// ── Class Features and Racial Traits ─────────────────────────────────────────
+//
+// The collection endpoints (/class-feature/collection, /racial-trait/collection)
+// are the OPTIONAL-feature endpoints: they need classId / entityRaceId +
+// entityRaceTypeId and return { definitionData, accessTypes }. Base features
+// live inside /game-data/classes and /game-data/races, and subclass features
+// behind /game-data/subclasses?baseClassId=N, so both searches are built from
+// those payloads (see features-traits.ts) rather than from one collection call.
 
-interface DdbClassFeature {
-  id: number;
-  name: string;
-  description: string;
-  snippet: string;
-  requiredLevel: number;
-  classId: number;
-  className?: string;
-  isHomebrew: boolean;
-  sources: Array<{ sourceId: number }>;
+function unavailableError(what: string, status?: number): Error {
+  const detail = status === undefined ? ": it returned no " + what : ` (HTTP ${status})`;
+  const label = what === "class features" ? "Class feature" : "Racial trait";
+  return new Error(
+    `${label} data is unavailable from D&D Beyond right now${detail}. Try again later, or run ddb_login if your session has expired.`,
+  );
+}
+
+/** A collection counts only with the live `{ definitionData: [...] }` shape. */
+function isOptionalCollection(data: unknown): data is OptionalCollection {
+  return typeof data === "object" && data !== null && Array.isArray((data as OptionalCollection).definitionData);
+}
+
+const REQUEST_FAILED = Symbol("request-failed");
+
+/**
+ * GET a character-service game-data path and return the response's `data`
+ * field, or REQUEST_FAILED (already counted) on a non-OK status or any
+ * non-session error. Callers count a wrong shape themselves.
+ */
+async function fetchGameDataField(path: string, counter: { failed: number }): Promise<unknown> {
+  try {
+    const resp = await refFetch(`${CHARACTER_SERVICE}/character/v5/game-data/${path}`);
+    if (!resp.ok) {
+      counter.failed++;
+      return REQUEST_FAILED;
+    }
+    const json = await resp.json() as { data?: unknown };
+    return json?.data;
+  } catch (e) {
+    // A session transition is not an ordinary failed request: abandon the
+    // whole build so no old-account (or mixed) list is merged into a new one.
+    if (e instanceof SessionChangedError) throw e;
+    counter.failed++;
+    return REQUEST_FAILED;
+  }
+}
+
+interface CachedBuild<T> { source: CompendiumSource; entries: T[] }
+
+function readBuildCache<T>(key: string): CachedBuild<T> | null {
+  const cached = referenceCache.get(key);
+  return cached ? JSON.parse(cached) as CachedBuild<T> : null;
+}
+
+function writeBuildCache<T>(key: string, build: CachedBuild<T>): void {
+  // A partial build is missing some lists; short TTL so it is retried soon.
+  const ttl = build.source === "ddb-authoritative" ? AUTHORITATIVE_TTL_MS : FALLBACK_TTL_MS;
+  referenceCache.set(key, JSON.stringify(build), ttl);
+}
+
+/** Wrap only a GameDataFetchError from the base list; everything else propagates. */
+async function baseListOrUnavailable(cacheKey: string, path: string, what: string): Promise<unknown[]> {
+  try {
+    return await loadGameDataList<unknown>(cacheKey, path);
+  } catch (e) {
+    if (e instanceof GameDataFetchError) throw unavailableError(what, e.status);
+    throw e;
+  }
+}
+
+async function loadClassFeatures(): Promise<CachedBuild<ClassFeatureEntry>> {
+  // Observe on-disk authority before the cache read (see loadSpellCompendium).
+  const snapshot = captureSession();
+  const hit = readBuildCache<ClassFeatureEntry>("class-features");
+  if (hit) return hit;
+
+  const classes = await baseListOrUnavailable("game-data:classes", "classes", "class features");
+  if (classes.length === 0) throw unavailableError("class features");
+
+  const counter = { failed: 0 };
+  const classIds = classes
+    .map((c) => (c as { id?: unknown }).id)
+    .filter((id): id is number => typeof id === "number");
+  const subclassesByClassId = new Map<number, unknown[]>();
+  const optionalByClassId = new Map<number, OptionalCollection>();
+
+  // Requests go out in base-list order; results land in maps keyed by id, so
+  // response-completion order never changes the build.
+  await Promise.all(classIds.flatMap((id) => [
+    (async () => {
+      const data = await fetchGameDataField(`subclasses?baseClassId=${id}`, counter);
+      if (Array.isArray(data)) subclassesByClassId.set(id, data);
+      else if (data !== REQUEST_FAILED) counter.failed++;
+    })(),
+    (async () => {
+      const data = await fetchGameDataField(`class-feature/collection?classId=${id}`, counter);
+      if (isOptionalCollection(data)) optionalByClassId.set(id, data);
+      else if (data !== REQUEST_FAILED) counter.failed++;
+    })(),
+  ]));
+
+  // The account may have changed during a body parse; refuse to build across it.
+  assertSessionCurrent(snapshot);
+
+  const entries = buildClassFeatures(classes, subclassesByClassId, optionalByClassId);
+  if (entries.length === 0) throw unavailableError("class features");
+  const build: CachedBuild<ClassFeatureEntry> = {
+    source: counter.failed === 0 ? "ddb-authoritative" : "ddb-partial",
+    entries,
+  };
+  writeBuildCache("class-features", build);
+  return build;
+}
+
+const PARTIAL_NOTE_CLASS_FEATURES =
+  "> ⚠ Some subclass or optional-feature lists failed to load from D&D Beyond, so results may be incomplete. Run `ddb_clear_cache` to retry.";
+const PARTIAL_NOTE_RACIAL_TRAITS =
+  "> ⚠ Some optional-trait lists failed to load from D&D Beyond, so results may be incomplete. Run `ddb_clear_cache` to retry.";
+
+function describeCriteria(parts: Array<[string, string | number | undefined]>): string {
+  return parts
+    .filter(([, v]) => v !== undefined && v !== "")
+    .map(([label, v]) => (typeof v === "number" ? `${label} ${v}` : `${label} "${v}"`))
+    .join(", ");
 }
 
 export async function searchClassFeatures(params: {
@@ -1089,73 +1206,58 @@ export async function searchClassFeatures(params: {
   limit?: number;
   offset?: number;
 }): Promise<string> {
-  const cacheKey = "game-data:class-features";
-  const cached = referenceCache.get(cacheKey);
+  const { source, entries } = await loadClassFeatures();
+  const note = source === "ddb-partial" ? `${PARTIAL_NOTE_CLASS_FEATURES}\n\n` : "";
+  const matched = filterClassFeatures(entries, params);
 
-  let features: DdbClassFeature[];
-  if (cached) {
-    features = JSON.parse(cached) as DdbClassFeature[];
-  } else {
-    const resp = await refFetch(`${CHARACTER_SERVICE}/character/v5/game-data/class-feature/collection`);
-    if (resp.status === 404) {
-      return "Class feature search is not available on this account. Use ddb_character_lookup with a character_name to look up features for a specific character instead.";
-    }
-    if (!resp.ok) throw new Error(`Class features fetch failed: ${resp.status} ${resp.statusText}`);
-    const json = await resp.json() as { data?: DdbClassFeature[] } | DdbClassFeature[];
-    features = (Array.isArray(json) ? json : json.data) ?? [];
-    referenceCache.set(cacheKey, JSON.stringify(features));
+  if (matched.length === 0) {
+    const criteria = describeCriteria([["name", params.name], ["class", params.className], ["level", params.level]]);
+    return `${note}No class features found matching ${criteria || "the search criteria"} (searched ${entries.length} class features).`;
   }
 
-  let matched = features;
-
-  if (params.name) {
-    const q = params.name.toLowerCase();
-    matched = matched.filter(f => f.name.toLowerCase().includes(q));
-  }
-
-  if (params.className) {
-    const q = params.className.toLowerCase();
-    matched = matched.filter(f => f.className?.toLowerCase().includes(q));
-  }
-
-  if (params.level !== undefined) {
-    matched = matched.filter(f => f.requiredLevel === params.level);
-  }
-
-  matched.sort((a, b) => {
-    const classComp = (a.className || "").localeCompare(b.className || "");
-    if (classComp !== 0) return classComp;
-    if (a.requiredLevel !== b.requiredLevel) return a.requiredLevel - b.requiredLevel;
-    return a.name.localeCompare(b.name);
-  });
-
-  if (matched.length === 0) return "No class features found matching the search criteria.";
-
-  return paginateResults(
+  return note + paginateResults(
     "Class Feature",
     matched,
-    feature => {
-      const className = feature.className || "Unknown";
-      const level = feature.requiredLevel ?? "?";
-      const desc = stripHtml(feature.snippet || feature.description || "").slice(0, 100);
-      return `- **${feature.name}** — ${className} level ${level}${desc ? `\n  ${desc}${desc.length >= 100 ? "..." : ""}` : ""}`;
-    },
+    formatClassFeatureLine,
     params.limit ?? 30,
     params.offset ?? 0,
   );
 }
 
-// ── Racial Traits ─────────────────────────────────────────────────────────────
+async function loadRacialTraits(): Promise<CachedBuild<RacialTraitEntry>> {
+  const snapshot = captureSession();
+  const hit = readBuildCache<RacialTraitEntry>("racial-traits");
+  if (hit) return hit;
 
-interface DdbRacialTrait {
-  id: number;
-  name: string;
-  description: string;
-  snippet: string;
-  raceId: number;
-  raceName?: string;
-  isHomebrew: boolean;
-  sources: Array<{ sourceId: number }>;
+  const races = await baseListOrUnavailable("game-data:races", "races", "racial traits");
+  if (races.length === 0) throw unavailableError("racial traits");
+
+  const counter = { failed: 0 };
+  const optionalByRaceKey = new Map<string, OptionalCollection>();
+  const raceRefs = races.filter((r): r is { entityRaceId: number; entityRaceTypeId: number } => {
+    const x = r as { entityRaceId?: unknown; entityRaceTypeId?: unknown };
+    return typeof x?.entityRaceId === "number" && typeof x?.entityRaceTypeId === "number";
+  });
+
+  await Promise.all(raceRefs.map(async (race) => {
+    const data = await fetchGameDataField(
+      `racial-trait/collection?entityRaceId=${race.entityRaceId}&entityRaceTypeId=${race.entityRaceTypeId}`,
+      counter,
+    );
+    if (isOptionalCollection(data)) optionalByRaceKey.set(raceKeyOf(race), data);
+    else if (data !== REQUEST_FAILED) counter.failed++;
+  }));
+
+  assertSessionCurrent(snapshot);
+
+  const entries = buildRacialTraits(races, optionalByRaceKey);
+  if (entries.length === 0) throw unavailableError("racial traits");
+  const build: CachedBuild<RacialTraitEntry> = {
+    source: counter.failed === 0 ? "ddb-authoritative" : "ddb-partial",
+    entries,
+  };
+  writeBuildCache("racial-traits", build);
+  return build;
 }
 
 export async function searchRacialTraits(params: {
@@ -1164,58 +1266,19 @@ export async function searchRacialTraits(params: {
   limit?: number;
   offset?: number;
 }): Promise<string> {
-  const cacheKey = "game-data:racial-traits";
-  const cached = referenceCache.get(cacheKey);
+  const { source, entries } = await loadRacialTraits();
+  const note = source === "ddb-partial" ? `${PARTIAL_NOTE_RACIAL_TRAITS}\n\n` : "";
+  const matched = filterRacialTraits(entries, params);
 
-  let traits: DdbRacialTrait[];
-  if (cached) {
-    traits = JSON.parse(cached) as DdbRacialTrait[];
-  } else {
-    const resp = await refFetch(`${CHARACTER_SERVICE}/character/v5/game-data/racial-trait/collection`);
-    if (!resp.ok) throw new Error(`Racial traits fetch failed: ${resp.status} ${resp.statusText}`);
-    const json = await resp.json() as Record<string, unknown> | DdbRacialTrait[];
-    let raw: unknown = json;
-    if (!Array.isArray(raw)) {
-      raw = (json as Record<string, unknown>).data
-         ?? (json as Record<string, unknown>).collection
-         ?? (json as Record<string, unknown>).results
-         ?? [];
-    }
-    traits = Array.isArray(raw) ? (raw as DdbRacialTrait[]) : [];
-    if (traits.length === 0) {
-      process.stderr.write(`[ddb-mcp] racial-trait/collection response keys: ${Object.keys(json as object).join(", ")}\n`);
-    }
-    referenceCache.set(cacheKey, JSON.stringify(traits));
+  if (matched.length === 0) {
+    const criteria = describeCriteria([["name", params.name], ["race", params.raceName]]);
+    return `${note}No racial traits found matching ${criteria || "the search criteria"} (searched ${entries.length} racial traits).`;
   }
 
-  let matched = traits;
-
-  if (params.name) {
-    const q = params.name.toLowerCase();
-    matched = matched.filter(t => t.name.toLowerCase().includes(q));
-  }
-
-  if (params.raceName) {
-    const q = params.raceName.toLowerCase();
-    matched = matched.filter(t => t.raceName?.toLowerCase().includes(q));
-  }
-
-  matched.sort((a, b) => {
-    const raceComp = (a.raceName || "").localeCompare(b.raceName || "");
-    if (raceComp !== 0) return raceComp;
-    return a.name.localeCompare(b.name);
-  });
-
-  if (matched.length === 0) return "No racial traits found matching the search criteria.";
-
-  return paginateResults(
+  return note + paginateResults(
     "Racial Trait",
     matched,
-    trait => {
-      const raceName = trait.raceName || "Unknown";
-      const desc = stripHtml(trait.snippet || trait.description || "").slice(0, 100);
-      return `- **${trait.name}** *(${raceName})*${desc ? ` — ${desc}${desc.length >= 100 ? "..." : ""}` : ""}`;
-    },
+    formatRacialTraitLine,
     params.limit ?? 30,
     params.offset ?? 0,
   );
