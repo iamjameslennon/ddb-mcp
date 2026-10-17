@@ -13,10 +13,11 @@ import {
   beginAuthenticatedSession, hasValidSession,
   captureSession, assertSessionCurrent, onSessionInvalidated,
 } from "../session-fetch.js";
-import { getGameConfig, getSourceIndex, type GameConfig, type GameSource } from "../game-config.js";
+import { getGameConfig, getSourceIndex, type GameConfig } from "../game-config.js";
 import {
-  classifyEdition, selectByEdition, monsterTiebreak, twinName, twinAliases, normalizeName, dedupeById,
-  type EditionInfo, type RulesEdition,
+  classifyEdition, selectByEdition, lookupByName, groupAndSelect, monsterTiebreak, twinName, twinAliases,
+  normalizeName, dedupeById, isEdition, rulesLine, renameLine, sourceNote, editionTag, searchHeader, searchFooter,
+  type EditionInfo, type IndexedSource, type RulesEdition, type RulesLineReason, type SourceIndex,
 } from "../edition.js";
 import { TtlCache } from "../cache.js";
 import { wrapUntrusted } from "../utils.js";
@@ -130,38 +131,39 @@ function normalizeSourceQuery(s: string | null | undefined): string {
 }
 
 /** The book's URL slug ("sources/dnd/mm-2024" → "mm-2024") — the form users and labels quote. */
-function sourceSlug(s: GameSource): string {
+function sourceSlug(s: { sourceURL: string | null }): string {
   return (s.sourceURL ?? "").replace(/\/+$/, "").split("/").pop() ?? "";
 }
 
 /**
  * Resolve a user-supplied source string (e.g. "mm-2024", "MM-2024", "Curse of
- * Strahd") to game-config source IDs. Tries the URL slug first (most
- * unambiguous — e.g. "mm-2024" vs "mm-2014"), then the short name, then the
- * full title, stopping at the first tier that matches. Returns every ID in that
- * tier — slugs are not unique (four sources share "basic-rules-2014"), and the
- * monster service accepts several `sources` at once. Never hardcoded — always
- * resolved through the live config.
+ * Strahd") to source IDs. Tries the URL slug first (most unambiguous — e.g.
+ * "mm-2024" vs "mm-2014"), then the short name, then the full title, stopping
+ * at the first tier that matches. Returns every ID in that tier — slugs are not
+ * unique (four sources share "basic-rules-2014"), and the monster service
+ * accepts several `sources` at once. Never hardcoded — always resolved through
+ * the source index, which merges the live config over the generated snapshot,
+ * so resolution survives a game-config outage.
  */
-function resolveSourceIds(config: GameConfig | null, query: string): number[] {
-  const sources = config?.sources ?? [];
+function resolveSourceIds(index: SourceIndex, query: string): number[] {
   const norm = normalizeSourceQuery(query);
   if (!norm) return [];
-  const tiers: Array<(s: GameSource) => string> = [
+  const sources = [...index.sources];
+  const tiers: Array<(s: IndexedSource) => string> = [
     s => normalizeSourceQuery(sourceSlug(s)),
     s => normalizeSourceQuery(s.name),
     s => normalizeSourceQuery(s.description),
   ];
   for (const key of tiers) {
-    const ids = sources.filter(s => key(s) === norm).map(s => s.id);
+    const ids = sources.filter(([, s]) => key(s) === norm).map(([id]) => id);
     if (ids.length) return ids;
   }
   return [];
 }
 
 /** Human-readable label for a source ID, with the slug to pass back as `source`. */
-function sourceLabel(config: GameConfig | null, sourceId: number): string {
-  const s = config?.sources?.find(x => x.id === sourceId);
+function sourceLabel(index: SourceIndex, sourceId: number): string {
+  const s = index.sources.get(sourceId);
   if (!s) return `source ${sourceId}`;
   const title = stripHtml(s.description) || stripHtml(s.name);
   const slug = sourceSlug(s);
@@ -169,71 +171,22 @@ function sourceLabel(config: GameConfig | null, sourceId: number): string {
 }
 
 /** Sources whose slug, short name, or title loosely contains (or is contained by) the query. */
-function suggestSources(config: GameConfig | null, query: string): string[] {
+function suggestSources(index: SourceIndex, query: string): string[] {
   const norm = normalizeSourceQuery(query);
   if (norm.length < 2) return [];
-  return (config?.sources ?? [])
-    .filter(s => [sourceSlug(s), s.name, s.description]
+  return [...index.sources]
+    .filter(([, s]) => [sourceSlug(s), s.name, s.description]
       .map(normalizeSourceQuery)
       .some(v => v.length >= 2 && (v.includes(norm) || norm.includes(v))))
     .slice(0, 8)
-    .map(s => sourceLabel(config, s.id));
+    .map(([id]) => sourceLabel(index, id));
 }
 
-function unknownSourceError(config: GameConfig | null, source: string): string {
-  const suggestions = suggestSources(config, source);
+function unknownSourceError(index: SourceIndex, source: string): string {
+  const suggestions = suggestSources(index, source);
   return `Unknown source "${source}". ` + (suggestions.length
     ? `Did you mean: ${suggestions.join(", ")}?`
     : "Pass a book's short code as shown in brackets in ddb_search_monsters results (e.g. mm-2024, cos).");
-}
-
-/** IDs of the "Core Rules" source categories (5e and 5.5e) — resolved by name, not hardcoded. */
-function coreCategoryIds(config: GameConfig | null): Set<number> {
-  return new Set((config?.sourceCategories ?? [])
-    .filter(c => /core\s*rules/i.test(stripHtml(c.name)))
-    .map(c => c.id));
-}
-
-/**
- * Order same-named candidates deterministically. The monster service returns
- * them in a different order from one request to the next, so "first match"
- * is not a stable choice. Ranking: official before homebrew → preferred
- * edition (2024 by default, Legacy when `preferLegacy`) → a Core Rules book
- * (MM/BR) before an adventure or third-party reprint → lowest ID.
- */
-function rankCandidates(candidates: DdbMonster[], config: GameConfig | null, preferLegacy: boolean): DdbMonster[] {
-  const core = coreCategoryIds(config);
-  const isCore = (m: DdbMonster) => {
-    const cat = config?.sources?.find(s => s.id === m.sourceId)?.sourceCategoryId;
-    return cat !== undefined && core.has(cat);
-  };
-  const score = (m: DdbMonster) => [
-    m.isHomebrew ? 1 : 0,
-    Boolean(m.isLegacy) === preferLegacy ? 0 : 1,
-    isCore(m) ? 0 : 1,
-    m.id,
-  ];
-  return [...candidates].sort((a, b) => {
-    const sa = score(a), sb = score(b);
-    for (let i = 0; i < sa.length; i++) if (sa[i] !== sb[i]) return sa[i] - sb[i];
-    return 0;
-  });
-}
-
-/**
- * Pick the right monster from a candidate list fetched by name: exact name
- * matches, falling back to partial, then (unless `allowFuzzy` is false) the
- * service's top hit — ranked by rankCandidates(). Source filtering happens
- * server-side before this.
- */
-function selectMonster(
-  candidates: DdbMonster[],
-  name: string,
-  config: GameConfig | null,
-  opts: { preferLegacy?: boolean; allowFuzzy?: boolean } = {}
-): DdbMonster | undefined {
-  const named = namedCandidates(candidates, name, opts.allowFuzzy ?? true);
-  return rankCandidates(named, config, opts.preferLegacy ?? false)[0];
 }
 
 /** A monster name for comparison: case-, edge-whitespace- and apostrophe-insensitive. */
@@ -408,22 +361,42 @@ async function fetchMonsterPages(search: string, sourceIds: number[], limit: num
   return { data, total };
 }
 
+/** Fetch (or serve from cache) one monster's stat block. */
+async function fetchMonsterDetail(id: number): Promise<MonsterSingleResponse> {
+  const cacheKey = `monster:${id}`;
+  // Boundary check before the cache read, as in fetchMonsterList.
+  const snapshot = captureSession();
+  const cached = monsterCache.get(cacheKey);
+  if (cached !== undefined) return JSON.parse(cached) as MonsterSingleResponse;
+
+  const resp = await monsterFetch(`${MONSTER_SERVICE}/v1/Monster/${id}`);
+  if (!resp.ok) throw new Error(`Monster fetch failed: ${resp.status} ${resp.statusText}`);
+  const detail = await resp.json() as MonsterSingleResponse;
+  assertSessionCurrent(snapshot);
+  monsterCache.set(cacheKey, JSON.stringify(detail));
+  return detail;
+}
+
+/** Unowned content: the detail endpoint returns an accessType 4 placeholder with no ability scores. */
+function isRestricted(detail: MonsterSingleResponse): boolean {
+  return detail.accessType === 4 && !detail.data.stats?.length;
+}
+
 /**
  * The distinct sources a name appears in (unfiltered search), for "not in that
  * book" errors. Best effort: a failure here must not turn the error into an
  * Open5e substitute, so it yields no hint instead.
  */
-async function availableSourcesFor(name: string, config: GameConfig | null): Promise<string[]> {
+async function availableSourcesFor(name: string, index: SourceIndex): Promise<string[]> {
   try {
     const all = await fetchMonsterList(name, 20);
-    // Official entries in books the config knows: a homebrew copy filed under a
-    // book (or under none) would advertise a source with no official entry, and
-    // an unknown id would surface as a bare "source 424242".
-    const known = new Set((config?.sources ?? []).map(s => s.id));
-    const official = (all.data ?? []).filter(m => m.isHomebrew === false && known.has(m.sourceId));
+    // Official entries in books the source index knows: a homebrew copy filed
+    // under a book (or under none) would advertise a source with no official
+    // entry, and an unknown id would surface as a bare "source 424242".
+    const official = (all.data ?? []).filter(m => m.isHomebrew === false && index.sources.has(m.sourceId));
     // No fuzzy guess: a typo's nearest hit is a different monster.
-    const named = rankCandidates(namedCandidates(official, name, false), config, false);
-    return [...new Set(named.map(m => sourceLabel(config, m.sourceId)))];
+    const named = namedCandidates(official, name, false).sort(monsterTiebreak(index));
+    return [...new Set(named.map(m => sourceLabel(index, m.sourceId)))];
   } catch {
     return [];
   }
@@ -431,7 +404,16 @@ async function availableSourcesFor(name: string, config: GameConfig | null): Pro
 
 // ── Formatter ─────────────────────────────────────────────────────────────────
 
-function formatStatBlock(m: DdbMonster, accessType: number, config: GameConfig | null): string {
+interface StatBlockExtras {
+  reason?: RulesLineReason;
+  renamed?: { name2014: string; name2024: string };
+  /** A sourceNote() line. */
+  note?: string | null;
+}
+
+function formatStatBlock(
+  m: DdbMonster, accessType: number, config: GameConfig | null, index: SourceIndex, extras: StatBlockExtras = {},
+): string {
   const crEntry = config?.challengeRatings.find(cr => cr.id === m.challengeRatingId);
   const crStr = crEntry ? crDisplay(crEntry.value) : `(id:${m.challengeRatingId})`;
   const xpStr = crEntry?.xp ? ` (${crEntry.xp.toLocaleString()} XP)` : "";
@@ -441,9 +423,12 @@ function formatStatBlock(m: DdbMonster, accessType: number, config: GameConfig |
 
   const lines: string[] = [];
   lines.push(`# ${m.name}`);
+  lines.push(rulesLine(classifyEdition(m, index), { reason: extras.reason }));
+  if (extras.renamed) lines.push(renameLine(extras.renamed.name2014, extras.renamed.name2024));
+  if (extras.note) lines.push(extras.note);
   lines.push(`*${size} ${typeName}, ${alignment}*`);
   // Name the book (as ddb_search_monsters does) so same-named 2014/2024 blocks are distinguishable.
-  if (m.sourceId) lines.push(`**Source** ${sourceLabel(config, m.sourceId)}${m.isLegacy ? " [Legacy]" : ""}`);
+  if (m.sourceId) lines.push(`**Source** ${sourceLabel(index, m.sourceId)}`);
   lines.push("");
   lines.push(`**Armor Class** ${m.armorClass}${m.armorClassDescription ? " " + m.armorClassDescription.trim() : ""}`);
   lines.push(`**Hit Points** ${m.averageHitPoints}${m.hitPointDice?.diceString ? " (" + m.hitPointDice.diceString + ")" : ""}`);
@@ -546,15 +531,20 @@ export async function searchMonsters(params: {
   type?: string;
   size?: string;
   source?: string;
+  rulesEdition?: RulesEdition;
 }): Promise<string> {
   if (!hasValidSession()) {
     return await o5SearchMonsters(params, "unavailable").then(r => withSourceCaveat(r, params.source)).catch(
       () => "Monster search requires login. Run ddb_login first."
     );
   }
+  const requested = params.rulesEdition ?? "2024";
 
   try {
   const config = await getGameConfig();
+  // No extra request: getGameConfig() serves this call from its cache (or its failure cache).
+  const index = await getSourceIndex();
+  const info = (m: DdbMonster) => classifyEdition(m, index);
   const crMap = new Map(config?.challengeRatings.map(cr => [cr.id, cr]) ?? []);
   const typeMap = new Map(config?.monsterTypes.map(t => [t.id, t.name]) ?? []);
 
@@ -566,52 +556,71 @@ export async function searchMonsters(params: {
     : undefined;
   let sourceIds: number[] = [];
   if (params.source) {
-    // No source list means DDB is unreachable or changed shape — the catch
-    // below falls back to Open5e with a caveat rather than calling every
-    // source "unknown".
-    if (!config?.sources?.length) throw new Error("Game config source list unavailable");
-    sourceIds = resolveSourceIds(config, params.source);
-    if (!sourceIds.length) return unknownSourceError(config, params.source);
+    sourceIds = resolveSourceIds(index, params.source);
+    if (!sourceIds.length) return unknownSourceError(index, params.source);
   }
 
   // Source filters server-side. CR/type/size filter client-side, so page
   // through results (up to MAX_FILTER_SCAN) rather than judging one page.
   const clientFilters = targetCrId !== undefined || Boolean(params.type) || Boolean(params.size);
-  let fetched: DdbMonster[];
-  let total: number;
-  let take = 0;
-  if (clientFilters) {
-    ({ data: fetched, total } = await fetchMonsterPages(searchTerm, sourceIds, MAX_FILTER_SCAN));
-  } else {
-    take = !searchTerm && params.source ? PAGE_SIZE : 20;
-    const page = await fetchMonsterList(searchTerm, take, sourceIds);
-    fetched = page.data ?? [];
-    total = page.pagination.total;
+  const take = !searchTerm && params.source ? PAGE_SIZE : 20;
+  const fetchTerm = async (term: string): Promise<{ data: DdbMonster[]; total: number }> => {
+    if (clientFilters) return fetchMonsterPages(term, sourceIds, MAX_FILTER_SCAN);
+    const page = await fetchMonsterList(term, take, sourceIds);
+    return { data: page.data ?? [], total: page.pagination.total };
+  };
+  // Every spelling of the term's twin group (Thug and Tough are one creature,
+  // but a search for one never returns the other), under one snapshot, as in
+  // fetchCandidates. Only the typed term's own query fails the search.
+  const snapshot = captureSession();
+  const [typed, ...aliases] = searchTerm ? twinAliases(searchTerm) : [""];
+  const results = await Promise.all([fetchTerm(typed), ...aliases.map(alias => fetchTerm(alias).catch(() => null))]);
+  assertSessionCurrent(snapshot);
+  // `total` is the alias totals' sum minus the duplicates met while merging:
+  // exact when every scan is complete, an upper bound otherwise.
+  const seen = new Set<number>();
+  const fetched: DdbMonster[] = [];
+  let total = 0;
+  for (const result of results) {
+    if (!result) continue;
+    total += result.total;
+    for (const m of result.data) {
+      if (seen.has(m.id)) total--;
+      else { seen.add(m.id); fetched.push(m); }
+    }
   }
   const checked = fetched.length;
   const partialScan = clientFilters && checked < total;
-  let monsters = fetched;
 
-  if (targetCrId !== undefined) {
-    monsters = monsters.filter(m => m.challengeRatingId === targetCrId);
-  }
-  if (params.type) {
-    const searchType = params.type.toLowerCase();
-    monsters = monsters.filter(m => (typeMap.get(m.typeId) ?? "").toLowerCase().includes(searchType));
-  }
-  if (params.size) {
-    const searchSize = params.size.toLowerCase();
-    monsters = monsters.filter(m => (sizeName(config, m.sizeId) ?? "").toLowerCase().includes(searchSize));
+  const searchType = params.type?.toLowerCase();
+  const searchSize = params.size?.toLowerCase();
+  const passes = (m: DdbMonster) =>
+    (targetCrId === undefined || m.challengeRatingId === targetCrId)
+    && (!searchType || (typeMap.get(m.typeId) ?? "").toLowerCase().includes(searchType))
+    && (!searchSize || (sizeName(config, m.sizeId) ?? "").toLowerCase().includes(searchSize));
+
+  // With a source, every entry in the book is listed (no edition selection);
+  // otherwise one entry per twin group, the other edition's twins hidden.
+  let monsters: Array<{ m: DdbMonster; info: EditionInfo }>;
+  let hidden = 0;
+  if (params.source) {
+    monsters = fetched.filter(passes).map(m => ({ m, info: info(m) }));
+  } else {
+    const picked = groupAndSelect(fetched, requested, {
+      info, twinKey: m => twinName(m.name), tiebreak: monsterTiebreak(index), passes,
+    });
+    monsters = picked.selected.map(s => ({ m: s.entry, info: s.info }));
+    hidden = picked.hidden;
   }
 
   if (monsters.length === 0) {
     if (params.source) {
       // Open5e only carries the SRD — never substitute it for a requested book.
-      const where = sourceLabel(config, sourceIds[0]);
+      const where = sourceLabel(index, sourceIds[0]);
       const scope = partialScan ? ` (checked the first ${checked} of ${total} entries)` : "";
       let msg = `No monsters matching the search criteria in ${where}${scope}.`;
       if (searchTerm) {
-        const available = await availableSourcesFor(searchTerm, config);
+        const available = await availableSourcesFor(searchTerm, index);
         if (available.length) msg += ` "${searchTerm}" appears in: ${available.join(", ")}.`;
       }
       return msg;
@@ -619,16 +628,29 @@ export async function searchMonsters(params: {
     return await o5SearchMonsters(params, "not-found").catch(() => "No monsters found matching the search criteria.");
   }
 
+  const lines: string[] = [];
+  if (params.source) {
+    // Slugs aren't unique; the lowest ID is the main book, not a premade-character pack.
+    lines.push(searchHeader({ sourceBook: index.sources.get(Math.min(...sourceIds))!.book }));
+    const bookRuleset = classifyEdition({ sources: sourceIds.map(sourceId => ({ sourceId })) }, index).ruleset;
+    const note = isEdition(bookRuleset) ? sourceNote(params.source, bookRuleset, requested) : null;
+    if (note) lines.push(note);
+  } else {
+    lines.push(searchHeader({ requested }));
+  }
+
   const matchedBy = searchTerm && params.source ? "matched by name and source"
     : searchTerm ? "matched by name"
     : params.source ? "matched by source"
     : "in the compendium";
   const shown = monsters.slice(0, PAGE_SIZE);
+  // Totals count the result after hiding: the fetched entries the selection
+  // dropped (hidden twins, same-edition duplicates) come off the service total.
   const header = clientFilters
     ? `${shown.length} shown of ${monsters.length} matching; checked ${checked} of ${total} ${matchedBy}`
-    : `${shown.length} shown, ${total} total ${matchedBy}`;
-  const lines = [`**Monster Search** (${header})\n`];
-  for (const m of shown) {
+    : `${shown.length} shown, ${total - (checked - monsters.length)} total ${matchedBy}`;
+  lines.push(`**Monster Search** (${header})\n`);
+  for (const { m, info: mInfo } of shown) {
     const cr = crMap.get(m.challengeRatingId);
     const crStr = cr ? crDisplay(cr.value) : "?";
     const typeName = typeMap.get(m.typeId) ?? "Unknown";
@@ -636,16 +658,14 @@ export async function searchMonsters(params: {
     const tags: string[] = [];
     if (m.isLegendary) tags.push("Legendary");
     if (m.isMythic) tags.push("Mythic");
-    if (m.isHomebrew) tags.push("Homebrew");
-    if (m.isLegacy) tags.push("Legacy");
     const tagStr = tags.length ? ` [${tags.join(", ")}]` : "";
-    let sourceStr = sourceLabel(config, m.sourceId);
+    let sourceStr = sourceLabel(index, m.sourceId);
     if (sourceIds.length && !sourceIds.includes(m.sourceId)) {
       // Matched the requested book as a reprint — say so, or the line looks off-filter.
       const via = m.sources?.find(s => sourceIds.includes(s.sourceId))?.sourceId ?? sourceIds[0];
-      sourceStr += `, reprinted in ${sourceLabel(config, via)}`;
+      sourceStr += `, reprinted in ${sourceLabel(index, via)}`;
     }
-    const line = `- **${m.name}**${tagStr} — ${sourceStr} — CR ${crStr}, ${size} ${typeName}, AC ${m.armorClass}, ${m.averageHitPoints} HP`;
+    const line = `- **${m.name}** ${editionTag(mInfo)}${tagStr} — ${sourceStr} — CR ${crStr}, ${size} ${typeName}, AC ${m.armorClass}, ${m.averageHitPoints} HP`;
     // Homebrew names are user-authored — delimit them, as getMonster does for
     // homebrew stat blocks. Fail closed: only an explicitly official entry is left plain.
     lines.push(m.isHomebrew === false ? line : wrapUntrusted(line));
@@ -656,9 +676,11 @@ export async function searchMonsters(params: {
   }
   if (partialScan) {
     lines.push(`\n*Only the first ${checked} of ${total} were checked against the CR/type/size filters — add a name or source to narrow the search.*`);
-  } else if (!clientFilters && total > take) {
+  } else if (!clientFilters && checked < total) {
     lines.push(`\n*Refine your search with a name term for more specific results.*`);
   }
+  const footer = searchFooter(requested, hidden);
+  if (footer) lines.push(footer);
 
   return lines.join("\n");
   } catch {
@@ -675,7 +697,12 @@ function withSourceCaveat(o5Result: string, source: string | undefined): string 
   return `${o5Result}\n\n*Note: source filtering is not available via the Open5e SRD fallback — "${source}" was requested but could not be honoured.*`;
 }
 
-export async function getMonster(monsterName: string, source?: string): Promise<string> {
+export async function getMonster(
+  monsterName: string,
+  opts: { source?: string; rulesEdition?: RulesEdition } = {},
+): Promise<string> {
+  const { source } = opts;
+  const requested = opts.rulesEdition ?? "2024";
   monsterName = monsterName.trim();
   if (!monsterName) return "Monster name is required.";
   if (!hasValidSession()) {
@@ -686,32 +713,33 @@ export async function getMonster(monsterName: string, source?: string): Promise<
 
   try {
     const config = await getGameConfig();
+    // No extra request: getGameConfig() serves this call from its cache (or its failure cache).
+    const index = await getSourceIndex();
+    const info = (m: DdbMonster) => classifyEdition(m, index);
+    const tiebreak = monsterTiebreak(index);
     let sourceIds: number[] = [];
     if (source) {
-      // No source list means DDB is unreachable or changed shape — the catch
-      // below falls back to Open5e with a caveat.
-      if (!config?.sources?.length) throw new Error("Game config source list unavailable");
-      sourceIds = resolveSourceIds(config, source);
-      if (!sourceIds.length) return unknownSourceError(config, source);
+      sourceIds = resolveSourceIds(index, source);
+      if (!sourceIds.length) return unknownSourceError(index, source);
     }
 
-    // 20 slots so a crowded name (e.g. "Zombie" has Ash/Beholder/Girallon/
-    // Greater/Ogre/Strahd/Yellow Musk/plain across both editions) doesn't
-    // miss the intended entry.
-    const searchResp = await fetchMonsterList(monsterName, 20, sourceIds);
-    const candidates = searchResp.data ?? [];
-    // With a source, require an exact name: a partial match would quietly turn
-    // "Zombie" in mm-2014 into Beholder Zombie. Near names are offered instead.
-    const best = source
-      ? rankCandidates(candidates.filter(m => nameKey(m.name) === nameKey(monsterName)), config, false)[0]
-      : selectMonster(candidates, monsterName, config);
+    // 20 slots per spelling so a crowded name (e.g. "Zombie" has Ash/Beholder/
+    // Girallon/Greater/Ogre/Strahd/Yellow Musk/plain across both editions)
+    // doesn't miss the intended entry.
+    const candidates = await fetchCandidates(monsterName, 20, sourceIds);
 
-    if (!best) {
-      if (source) {
+    let detail: MonsterSingleResponse;
+    let extras: StatBlockExtras;
+    if (source) {
+      // With a source, require an exact (twin) name: a partial match would
+      // quietly turn "Zombie" in mm-2014 into Beholder Zombie. Near names are offered instead.
+      const key = twinName(monsterName);
+      const picked = selectByEdition(candidates.filter(m => twinName(m.name) === key), requested, info, tiebreak);
+      if (!picked) {
         // A requested book is never silently swapped for another edition or the SRD.
         // Homebrew names are user-authored — keep them out of this hint.
         const similar = [...new Set(namedCandidates(candidates, monsterName).filter(m => !m.isHomebrew).map(m => m.name))].slice(0, 5);
-        const available = await availableSourcesFor(monsterName, config);
+        const available = await availableSourcesFor(monsterName, index);
         let msg = `No "${monsterName}" entry found in source "${source}".`;
         if (similar.length) msg += ` Similar names in that source: ${similar.join(", ")}.`;
         msg += available.length
@@ -719,38 +747,65 @@ export async function getMonster(monsterName: string, source?: string): Promise<
           : ` Try ddb_search_monsters with a partial name.`;
         return msg;
       }
-      const o5Result = await o5GetMonster(monsterName, "not-found").catch(() => null);
-      if (o5Result) return o5Result;
-      return `Monster "${monsterName}" not found. Try ddb_search_monsters with a partial name.`;
-    }
-
-    const detailUrl = `${MONSTER_SERVICE}/v1/Monster/${best.id}`;
-    const detailCacheKey = `monster:${best.id}`;
-    // Boundary check before the cache read, as in fetchMonsterList.
-    const snapshot = captureSession();
-    const cachedDetail = monsterCache.get(detailCacheKey);
-
-    let detail: MonsterSingleResponse;
-    if (cachedDetail !== undefined) {
-      detail = JSON.parse(cachedDetail) as MonsterSingleResponse;
+      // `source` wins over rules_edition, so the reason is dropped; a book of
+      // the other edition gets a note instead. A restricted pick is never
+      // swapped or replaced with Open5e: the book was asked for, and the
+      // restricted block already says the content isn't owned.
+      detail = await fetchMonsterDetail(picked.entry.id);
+      const shown = info(detail.data);
+      extras = {
+        note: isEdition(shown.ruleset) ? sourceNote(source, shown.ruleset, requested) : null,
+        renamed: isEdition(shown.ruleset) ? renamedFromQuery(monsterName, detail.data.name) : undefined,
+      };
     } else {
-      const resp = await monsterFetch(detailUrl);
-      if (!resp.ok) throw new Error(`Monster fetch failed: ${resp.status} ${resp.statusText}`);
-      detail = await resp.json() as MonsterSingleResponse;
-      assertSessionCurrent(snapshot);
-      monsterCache.set(detailCacheKey, JSON.stringify(detail));
+      const found = lookupByName(candidates, monsterName, requested, {
+        name: m => m.name,
+        info,
+        tiebreak,
+        // No name contains the query (typos, word order: "Beholdr", "red dragon
+        // adult"), but the service ranks its fuzzy hits best-first: take the top
+        // hit, whose whole twin group is then the target.
+        partialMatch: (all, q) => all.filter(m => normalizeName(m.name).includes(q)).sort(tiebreak)[0] ?? all[0],
+      });
+      if (!found) {
+        const o5Result = await o5GetMonster(monsterName, "not-found").catch(() => null);
+        if (o5Result) return o5Result;
+        return `Monster "${monsterName}" not found. Try ddb_search_monsters with a partial name.`;
+      }
+      detail = await fetchMonsterDetail(found.entry.id);
+      extras = { reason: found.reason, renamed: found.renamed };
+
+      // Locked twin: the requested edition's stat block is restricted to this
+      // account. Show the other edition's twin when that one is owned. Only
+      // this case costs an extra (cached) detail request.
+      const picked = info(found.entry).ruleset;
+      if (isRestricted(detail) && !found.reason && isEdition(picked)) {
+        const other: RulesEdition = picked === "2024" ? "2014" : "2024";
+        const key = twinName(found.entry.name);
+        const twin = candidates
+          .filter(m => twinName(m.name) === key && info(m).ruleset === other)
+          .sort(tiebreak)[0];
+        const twinDetail = twin ? await fetchMonsterDetail(twin.id) : null;
+        if (twin && twinDetail && !isRestricted(twinDetail)) {
+          detail = twinDetail;
+          const [name2014, name2024] = other === "2014" ? [twin.name, found.entry.name] : [found.entry.name, twin.name];
+          const showRename = normalizeName(name2014) !== normalizeName(name2024)
+            && normalizeName(twin.name) !== normalizeName(monsterName);
+          extras = {
+            reason: requested === "2024" ? "locked-2024" : "locked-2014",
+            renamed: showRename ? { name2014, name2024 } : undefined,
+          };
+        }
+      }
+
+      // Still an empty stat block (unowned content): fall back to Open5e.
+      if (isRestricted(detail)) {
+        const o5Result = await o5GetMonster(monsterName, "unavailable").catch(() => null);
+        if (o5Result) return o5Result;
+      }
     }
 
-    const statBlock = formatStatBlock(detail.data, detail.accessType, config);
-
-    // If DDB returned an empty stat block (unowned content), fall back to Open5e.
-    // Not when a source was requested: the SRD isn't that book, and the
-    // restricted block already says the content isn't owned.
-    if (detail.accessType === 4 && !detail.data.stats?.length && !source) {
-      const o5Result = await o5GetMonster(monsterName, "unavailable").catch(() => null);
-      if (o5Result) return o5Result;
-    }
-
+    const statBlock = formatStatBlock(detail.data, detail.accessType, config, index, extras);
     // Homebrew stat blocks are user-authored free text (trait/action
     // descriptions) — delimit as untrusted. Official WotC content is not.
     // Fail closed: only an explicitly official entry is left plain.
@@ -760,6 +815,20 @@ export async function getMonster(monsterName: string, source?: string): Promise<
     if (o5Result) return withSourceCaveat(o5Result, source);
     return `Monster "${monsterName}" not found. DnD Beyond is unavailable and "${monsterName}" is not in the SRD.`;
   }
+}
+
+/**
+ * The rename line's names when a `source` lookup shows a twin under another
+ * name than the query's (Thug → Tough): the 2024 name is the twin key, as in
+ * lookupByName. Undefined when the shown name is the query's.
+ */
+function renamedFromQuery(query: string, shownName: string): { name2014: string; name2024: string } | undefined {
+  const normalizedQuery = normalizeName(query);
+  if (normalizeName(shownName) === normalizedQuery) return undefined;
+  const typed = twinName.spell?.(normalizedQuery) ?? query.replace(/[‘’]/g, "'").replace(/\s+/g, " ").trim();
+  return normalizeName(shownName) === twinName(shownName)
+    ? { name2014: typed, name2024: shownName }
+    : { name2014: shownName, name2024: typed };
 }
 
 export type MonsterStatsResult =

@@ -76,11 +76,11 @@ beforeEach(() => {
 describe("paged monster scans and account changes", () => {
   it("discards a scan whose pages straddle an account change, instead of merging two accounts", async () => {
     // Swap accounts right after the first page passes its own boundary check:
-    // config is assert #1, page one is assert #2.
+    // config is assert #1, the source index is assert #2, page one is assert #3.
     let asserts = 0;
     vi.mocked(assertSessionCurrent).mockImplementation(((snap: { gen: number }) => {
       if (snap.gen !== S.gen) throw new Error("session changed");
-      if (++asserts === 2) S.gen = 2;
+      if (++asserts === 3) S.gen = 2;
     }) as never);
 
     // The scan is abandoned, so the search falls back to Open5e rather than
@@ -106,16 +106,17 @@ describe("cached stat blocks and account changes", () => {
     }) as never);
     expect(await getMonster("Lich")).toContain("Account1 actions");
 
-    // Second lookup: config and list come from cache; the account changes
-    // right after the list lookup's boundary check (capture #2 of this call).
-    let captures = 0;
-    vi.mocked(captureSession).mockImplementation((() => {
-      if (S.gen !== S.lastSeen) { S.lastSeen = S.gen; S.hooks.forEach(h => h()); }
-      const snap = { gen: S.gen };
-      if (++captures === 2) S.gen = 2;
-      return snap;
+    // Second lookup: config, source index and list come from cache; the
+    // account changes right after the list lookup's boundary check (the call's
+    // only assert before the stat block's cache read).
+    let asserts = 0;
+    vi.mocked(assertSessionCurrent).mockImplementation(((snap: { gen: number }) => {
+      if (snap.gen !== S.gen) throw new Error("session changed");
+      if (++asserts === 1) S.gen = 2;
     }) as never);
-    expect(await getMonster("Lich")).not.toContain("Account1 actions");
+    const second = await getMonster("Lich");
+    expect(second).not.toContain("Account1 actions");
+    expect(second).toContain("Account2 actions");
   });
 });
 
@@ -131,13 +132,14 @@ describe("cached monster lists and account changes", () => {
     }) as never);
     expect(await getMonster("Lich")).toContain("Entry 7");
 
-    // The account changes right after this call's config lookup (capture #1),
-    // so the list lookup is the first to observe it.
+    // The account changes right after this call's config and source-index
+    // lookups (captures #1–3: config, index, the index's config), so the list
+    // lookup is the first to observe it.
     let captures = 0;
     vi.mocked(captureSession).mockImplementation((() => {
       if (S.gen !== S.lastSeen) { S.lastSeen = S.gen; S.hooks.forEach(h => h()); }
       const snap = { gen: S.gen };
-      if (++captures === 1) S.gen = 2;
+      if (++captures === 3) S.gen = 2;
       return snap;
     }) as never);
     expect(await getMonster("Lich")).toContain("Entry 8");

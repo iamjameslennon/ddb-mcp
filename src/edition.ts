@@ -440,6 +440,9 @@ const REASON_TEXT = {
   "rules-miss-2024": "(no matching 2024 rules section — 2014 text shown)",
   "rules-miss-2014": "(no matching 2014 rules section — 2024 text shown)",
   "treasure-no-2014": "(no 2014 version exists — 2024 tables used)",
+  // ddb_get_monster: the requested edition's stat block is locked to the account, the other edition's isn't.
+  "locked-2024": "(the 2024 version isn't available to this account — 2014 text shown)",
+  "locked-2014": "(the 2014 version isn't available to this account — 2024 text shown)",
 } as const;
 /** Appended to the description of every tool that takes rules_edition. */
 export const RULES_EDITION_TOOL_NOTE =

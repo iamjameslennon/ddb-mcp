@@ -586,6 +586,13 @@ describe("rulesLine", () => {
     expect(rulesLine(info("2024"), { open5e: "primary", reason: "rules-miss-2014" })).toBe("Rules: 2024 · SRD 5.2\n(no matching 2014 rules section — 2024 text shown)");
     expect(rulesLine(info("2024", "Dungeon Master's Guide (2024)"), { reason: "treasure-no-2014" })).toBe("Rules: 2024 · Dungeon Master's Guide (2024)\n(no 2014 version exists — 2024 tables used)");
   });
+
+  it("the locked-twin reasons", () => {
+    expect(rulesLine(info("2014", "Monster Manual (2014)"), { reason: "locked-2024" }))
+      .toBe("Rules: 2014 · Monster Manual (2014)\n(the 2024 version isn't available to this account — 2014 text shown)");
+    expect(rulesLine(info("2024", "Monster Manual (2024)"), { reason: "locked-2014" }))
+      .toBe("Rules: 2024 · Monster Manual (2024)\n(the 2014 version isn't available to this account — 2024 text shown)");
+  });
 });
 
 describe("other single-lookup lines", () => {

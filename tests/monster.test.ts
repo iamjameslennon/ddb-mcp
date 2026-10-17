@@ -223,7 +223,8 @@ const ALL_MONSTERS = [
   BEHOLDER_2014, BEHOLDER_2024, VAMPIRE_SPAWN_COS, HOMEBREW_IN_BOOK,
   ...FILLERS.slice(0, 120), CR20_TARGET, ...FILLERS.slice(120), CR21_TARGET,
 ];
-const UNOWNED_IDS = new Set([VAMPIRE_SPAWN_COS.id]);
+// Refilled with VAMPIRE_SPAWN_COS.id in beforeEach, so each test chooses what else is locked.
+const unownedIds = new Set<number>();
 
 // Only reachable through FUZZY, so it can't shift any name search's counts.
 const GRAVE_MOTH_RTHW = monster({ id: 8_000_030, name: "Grave Moth", sourceId: 232, sources: sources(232) });
@@ -260,6 +261,7 @@ const failSearchTerms = new Set<string>();
 // Per-test monsters, kept out of ALL_MONSTERS so they can't shift other tests' counts.
 let extraMonsters: Array<Record<string, unknown>> = [];
 const listUrls: string[] = [];
+const detailUrls: string[] = [];
 
 // Assumed live behaviour: the service's search treats curly and straight apostrophes alike.
 const foldName = (s: string) => s.toLowerCase().replace(/[‘’]/g, "'");
@@ -300,8 +302,9 @@ function setupFetch(): void {
 
     const idMatch = url.match(/\/v1\/Monster\/(\d+)/);
     if (idMatch) {
+      detailUrls.push(url);
       const found = [...ALL_MONSTERS, ...extraMonsters].find(m => m.id === Number(idMatch[1]));
-      if (found && UNOWNED_IDS.has(found.id as number)) return mockResponse({ accessType: 4, data: found });
+      if (found && unownedIds.has(found.id as number)) return mockResponse({ accessType: 4, data: found });
       return mockResponse({ accessType: 3, data: found });
     }
 
@@ -323,6 +326,9 @@ beforeEach(() => {
   failSearchTerms.clear();
   extraMonsters = [];
   listUrls.length = 0;
+  detailUrls.length = 0;
+  unownedIds.clear();
+  unownedIds.add(VAMPIRE_SPAWN_COS.id as number);
   setupFetch();
 });
 
@@ -376,7 +382,7 @@ it("rateEncounter with 2014 rules uses the Legacy CR; 2024 rules use the 2024 CR
 
 describe("stat block formatting", () => {
   it("decodes numeric and named entities, turning non-breaking spaces into plain spaces", async () => {
-    const result = await getMonster("Giant Shark", "mm-2024");
+    const result = await getMonster("Giant Shark", { source: "mm-2024" });
     expect(result).toContain("Melee Attack Roll: +9 (with Advantage if the target doesn’t have all its Hit Points)");
     expect(result).toContain("Hit: 22 (3d10 + 6)");
     const bite = result.split("\n").find(l => l.startsWith("**Bite.**")) ?? "";
@@ -386,12 +392,14 @@ describe("stat block formatting", () => {
     expect(result).toContain("Fish &#160; chips.");
   });
 
-  it("names the source book near the header, tagging Legacy entries", async () => {
-    const shark = await getMonster("Giant Shark", "mm-2024");
-    expect(shark.split("\n").slice(0, 3)).toContain("**Source** Monster Manual [mm-2024]");
+  it("names the source book near the header, with the rules line and no Legacy tag", async () => {
+    const shark = await getMonster("Giant Shark", { source: "mm-2024" });
+    expect(shark.split("\n").slice(0, 4)).toContain("**Source** Monster Manual [mm-2024]");
     expect(shark).not.toContain("[Legacy]");
-    const zombie2014 = await getMonster("Zombie", "basic-rules-2014");
-    expect(zombie2014).toContain("**Source** Basic Rules (2014) [basic-rules-2014] [Legacy]");
+    const zombie2014 = await getMonster("Zombie", { source: "basic-rules-2014" });
+    expect(zombie2014).toContain("Rules: 2014 · Basic Rules (2014)");
+    expect(zombie2014).toContain("**Source** Basic Rules (2014) [basic-rules-2014]\n");
+    expect(zombie2014).not.toContain("[Legacy]");
   });
 
   it("resolves size IDs through the game config, including combined sizes", async () => {
@@ -419,18 +427,18 @@ describe("stat block formatting", () => {
   });
 
   it("does not repeat a languageNote that duplicates the 2014 languageDescription", async () => {
-    const result = await getMonster("Bandit Captain", "basic-rules-2014");
+    const result = await getMonster("Bandit Captain", { source: "basic-rules-2014" });
     expect(result).toContain("**Languages** any two languages\n");
     expect(result).not.toMatch(/any two languages,? Any two languages/i);
   });
 
   it("search listings use the config size names and size filter", async () => {
     const result = await searchMonsters({ name: "Bandit Captain", size: "small" });
-    expect(result).toContain("**Bandit Captain** — Monster Manual [mm-2024] — CR 1/4, Medium or Small Humanoid");
+    expect(result).toContain("**Bandit Captain** [2024] — Monster Manual [mm-2024] — CR 1/4, Medium or Small Humanoid");
   });
 
   it("bolds trait, action, and reaction names", async () => {
-    const result = await getMonster("Giant Shark", "mm-2024");
+    const result = await getMonster("Giant Shark", { source: "mm-2024" });
     expect(result).toContain("**Water Breathing.** The shark can breathe only underwater.");
     expect(result).toContain("**Multiattack.** The shark makes two Bite attacks.");
     expect(result).toContain("**Bite.** Melee Attack Roll:");
@@ -440,33 +448,33 @@ describe("stat block formatting", () => {
 
 describe("getMonster source filter", () => {
   it("filters server-side with every ID the slug resolves to", async () => {
-    const result = await getMonster("Zombie", "basic-rules-2014");
+    const result = await getMonster("Zombie", { source: "basic-rules-2014" });
     expect(result).toContain("**Hit Points** 22 (3d8 + 9)");
     expect(listUrls[0]).toContain("&sources=1&sources=209");
   });
 
   it("accepts the short name or full title as well as the slug", async () => {
-    expect(await getMonster("Zombie", "BR")).toContain("**Hit Points** 22");
-    expect(await getMonster("Zombie", "Basic Rules (2014)")).toContain("**Hit Points** 22");
-    expect(await getMonster("Zombie", "MM-2024")).toContain("**Hit Points** 15");
+    expect(await getMonster("Zombie", { source: "BR" })).toContain("**Hit Points** 22");
+    expect(await getMonster("Zombie", { source: "Basic Rules (2014)" })).toContain("**Hit Points** 22");
+    expect(await getMonster("Zombie", { source: "MM-2024" })).toContain("**Hit Points** 15");
   });
 
   it("matches reprint sources, not just the primary book", async () => {
     // 2024 is also the default, so the URL is what proves the filter was sent.
-    expect(await getMonster("Zombie", "phb-2024")).toContain("**Hit Points** 15");
+    expect(await getMonster("Zombie", { source: "phb-2024" })).toContain("**Hit Points** 15");
     expect(listUrls[0]).toMatch(/&sources=145$/);
-    expect(await getMonster("Zombie", "D&D Beyond Basic Rules")).toContain("**Hit Points** 15");
+    expect(await getMonster("Zombie", { source: "D&D Beyond Basic Rules" })).toContain("**Hit Points** 15");
     expect(listUrls[1]).toMatch(/&sources=148$/);
   });
 
   it("resolves a source-exclusive creature", async () => {
-    const result = await getMonster("Strahd Zombie", "cos");
+    const result = await getMonster("Strahd Zombie", { source: "cos" });
     expect(result).toContain("Rotting Claw");
     expect(listUrls[0]).toMatch(/&sources=6$/);
   });
 
   it("a book without the monster errors with the books that have it — no Open5e or other-edition fallback", async () => {
-    const result = await getMonster("Zombie", "mm-2014");
+    const result = await getMonster("Zombie", { source: "mm-2014" });
     expect(result).toContain('No "Zombie" entry found in source "mm-2014"');
     expect(result).toContain("Monster Manual [mm-2024]");
     expect(result).toContain("Basic Rules (2014) [basic-rules-2014]");
@@ -475,26 +483,26 @@ describe("getMonster source filter", () => {
   });
 
   it("requires an exact name within a source, offering near names instead of substituting one", async () => {
-    const result = await getMonster("Zombie", "cos");
+    const result = await getMonster("Zombie", { source: "cos" });
     expect(result).toContain('No "Zombie" entry found in source "cos"');
     expect(result).toContain("Similar names in that source: Strahd Zombie");
     expect(result).not.toContain("Rotting Claw");
   });
 
   it("does not let homebrew names into the similar-names hint", async () => {
-    const result = await getMonster("Zombie", "mm-2014");
+    const result = await getMonster("Zombie", { source: "mm-2014" });
     expect(result).not.toContain("Overlord");
   });
 
   it("still reports the missing book when the follow-up all-sources search fails", async () => {
     failUnfilteredSearch = true;
-    const result = await getMonster("Zombie", "mm-2014");
+    const result = await getMonster("Zombie", { source: "mm-2014" });
     expect(result).toContain('No "Zombie" entry found in source "mm-2014"');
     expect(o5GetMonster).not.toHaveBeenCalled();
   });
 
   it("unowned content in the requested book returns DDB's restricted block, not an Open5e substitute", async () => {
-    const result = await getMonster("Vampire Spawn", "cos");
+    const result = await getMonster("Vampire Spawn", { source: "cos" });
     expect(result).toContain("# Vampire Spawn");
     expect(result).toContain("requires ownership");
     expect(o5GetMonster).not.toHaveBeenCalled();
@@ -504,16 +512,17 @@ describe("getMonster source filter", () => {
     expect(await getMonster("Vampire Spawn")).toBe("O5 MONSTER RESULT");
   });
 
-  it("a config with no sources list is treated as unavailable, not as an unknown source", async () => {
+  it("a config with no sources list resolves the source through the snapshot", async () => {
     configWithoutSources = true;
-    const result = await getMonster("Zombie", "mm-2024");
+    const result = await getMonster("Strahd Zombie", { source: "cos" });
     expect(result).not.toContain("Unknown source");
-    expect(result).toContain("O5 MONSTER RESULT");
-    expect(result).toContain("could not be honoured");
+    expect(result).toContain("Rotting Claw");
+    expect(listUrls[0]).toContain("sources=6");
+    expect(o5GetMonster).not.toHaveBeenCalled();
   });
 
   it("an unknown source errors with suggestions before any monster request", async () => {
-    const result = await getMonster("Zombie", "strahd");
+    const result = await getMonster("Zombie", { source: "strahd" });
     expect(result).toContain('Unknown source "strahd"');
     expect(result).toContain("Curse of Strahd [cos]");
     expect(listUrls).toHaveLength(0);
@@ -521,27 +530,28 @@ describe("getMonster source filter", () => {
   });
 
   it("an unknown source with no near match points at the bracketed short codes", async () => {
-    const result = await getMonster("Zombie", "zzz");
+    const result = await getMonster("Zombie", { source: "zzz" });
     expect(result).toContain('Unknown source "zzz"');
     expect(result).toContain("short code");
   });
 
   it("calls differing only by source do not share a cache entry", async () => {
-    expect(await getMonster("Zombie", "mm-2024")).toContain("**Hit Points** 15");
-    expect(await getMonster("Zombie", "basic-rules-2014")).toContain("**Hit Points** 22");
-    expect(await getMonster("Zombie", "mm-2024")).toContain("**Hit Points** 15");
+    expect(await getMonster("Zombie", { source: "mm-2024" })).toContain("**Hit Points** 15");
+    expect(await getMonster("Zombie", { source: "basic-rules-2014" })).toContain("**Hit Points** 22");
+    expect(await getMonster("Zombie", { source: "mm-2024" })).toContain("**Hit Points** 15");
   });
 
-  it("falls back to Open5e with a caveat when DDB's source list is unavailable", async () => {
+  it("resolves the source through the snapshot when DDB's game config is unavailable", async () => {
     configAvailable = false;
-    const result = await getMonster("Zombie", "mm-2024");
-    expect(result).toContain("O5 MONSTER RESULT");
-    expect(result).toContain('"mm-2024" was requested but could not be honoured');
+    const result = await getMonster("Strahd Zombie", { source: "cos" });
+    expect(result).toContain("Rotting Claw");
+    expect(listUrls[0]).toContain("sources=6");
+    expect(o5GetMonster).not.toHaveBeenCalled();
   });
 
   it("falls back to Open5e with a caveat when logged out", async () => {
     vi.mocked(hasValidSession).mockReturnValue(false);
-    const result = await getMonster("Zombie", "mm-2024");
+    const result = await getMonster("Zombie", { source: "mm-2024" });
     expect(result).toContain("O5 MONSTER RESULT");
     expect(result).toContain("could not be honoured");
   });
@@ -550,12 +560,32 @@ describe("getMonster source filter", () => {
 // ── searchMonsters ────────────────────────────────────────────────────────────
 
 describe("searchMonsters", () => {
-  it("labels each entry with its source and a Legacy tag", async () => {
-    const result = await searchMonsters({ name: "Wolf" });
-    const lines = result.split("\n").filter(l => l.startsWith("- **Wolf"));
-    expect(lines).toHaveLength(2);
-    expect(result).toMatch(/\*\*Wolf\*\* \[Legacy\] — Basic Rules \(2014\) \[basic-rules-2014\]/);
-    expect(result).toMatch(/\*\*Wolf\*\* — Monster Manual \[mm-2024\]/);
+  it("search hides the other edition's twin, with header and footer", async () => {
+    const lines = (await searchMonsters({ name: "Wolf" })).split("\n");
+    expect(lines[0]).toBe('Rules: 2024 by default — 2014 entries appear only where no 2024 version was found. Use rules_edition: "2014" for 2014 versions.');
+    expect(lines.filter(l => l.startsWith("- **Wolf**"))).toEqual([expect.stringMatching(/^- \*\*Wolf\*\* \[2024\] — Monster Manual \[mm-2024\]/)]);
+    expect(lines.at(-1)).toBe('1 2014 version hidden — rules_edition: "2014" shows it.');
+    const old = await searchMonsters({ name: "Wolf", rulesEdition: "2014" });
+    expect(old).toMatch(/- \*\*Wolf\*\* \[2014\] — Basic Rules \(2014\) \[basic-rules-2014\]/);
+    expect(old.split("\n").at(-1)).toBe("1 2024 version hidden — omit rules_edition to show it.");
+  });
+
+  it("a source filter lists every edition in the book, tagged, without hiding", async () => {
+    extraMonsters = [monster({ id: 8_000_300, name: "Crypt Wolf", isLegacy: true, sourceId: 6, sources: sources(6) }),
+                     monster({ id: 8_000_301, name: "Crypt Wolf", sourceId: 147, sources: sources(147, 6) })];
+    const out = await searchMonsters({ name: "Crypt Wolf", source: "cos" });
+    expect(out.split("\n")[0]).toBe("Rules: showing every entry in Curse of Strahd, each tagged with its edition.");
+    expect(out).toContain("- **Crypt Wolf** [2014]");
+    expect(out).toContain("- **Crypt Wolf** [2024]");
+    expect(out).not.toContain("hidden");
+  });
+
+  it("a source that contradicts rules_edition adds a note, on get and search", async () => {
+    expect(await getMonster("Zombie", { source: "mm-2024", rulesEdition: "2014" }))
+      .toContain('(source "mm-2024" is a 2024 book — rules_edition "2014" was ignored)');
+    expect((await searchMonsters({ name: "Zombie", source: "mm-2024", rulesEdition: "2014" })).split("\n")[1])
+      .toBe('(source "mm-2024" is a 2024 book — rules_edition "2014" was ignored)');
+    expect(await getMonster("Zombie", { source: "mm-2024" })).not.toContain("was ignored");
   });
 
   it("filters by source server-side, including source-only searches", async () => {
@@ -583,7 +613,7 @@ describe("searchMonsters", () => {
 
   it("labels a reprint with the requested book when its primary source differs", async () => {
     const result = await searchMonsters({ name: "Zombie", source: "phb-2024" });
-    expect(result).toContain("**Zombie** — Monster Manual [mm-2024], reprinted in Player’s Handbook [phb-2024]");
+    expect(result).toContain("**Zombie** [2024] — Monster Manual [mm-2024], reprinted in Player’s Handbook [phb-2024]");
   });
 
   it("pages past the first 100 entries while CR/type/size filters are active", async () => {
@@ -611,11 +641,12 @@ describe("searchMonsters", () => {
     expect(result).toMatch(/Only the first 600 of \d+ were checked/);
   });
 
-  it("a config with no sources list falls back to Open5e with a caveat", async () => {
+  it("a config with no sources list resolves the source through the snapshot", async () => {
     configWithoutSources = true;
-    const result = await searchMonsters({ name: "Wolf", source: "mm-2024" });
-    expect(result).toContain("O5 SEARCH RESULT");
-    expect(result).toContain("could not be honoured");
+    const result = await searchMonsters({ source: "cos" });
+    expect(result).toContain("Strahd Zombie");
+    expect(listUrls[0]).toContain("sources=6");
+    expect(o5SearchMonsters).not.toHaveBeenCalled();
   });
 
   it("without a source, an empty DDB result still falls back to Open5e", async () => {
@@ -700,7 +731,7 @@ describe("the available-sources hint lists official entries only", () => {
       monster({ id: 8_000_011, name: "Grave Moth", isHomebrew: true, sourceId: 1, sources: sources(1) }),
       monster({ id: 8_000_012, name: "Grave Moth", isHomebrew: true, sourceId: null, sources: [] }),
     ];
-    const result = await getMonster("Grave Moth", "mm-2024");
+    const result = await getMonster("Grave Moth", { source: "mm-2024" });
     expect(result).toContain('Available sources for "Grave Moth": Ravenloft: The Horrors Within [rthw].');
     expect(result).not.toContain("Basic Rules (2014)");
     expect(result).not.toContain("source null");
@@ -710,13 +741,13 @@ describe("the available-sources hint lists official entries only", () => {
 describe("search listings delimit homebrew names as untrusted", () => {
   it("wraps each homebrew line, leaving official lines plain", async () => {
     const lines = (await searchMonsters({ name: "Zombie" })).split("\n");
-    const homebrew = lines.flatMap((l, i) => (l.includes("[Homebrew") ? [i] : []));
+    const homebrew = lines.flatMap((l, i) => (l.includes("[homebrew]") ? [i] : []));
     expect(homebrew).toHaveLength(2); // ZOMBIE_HOMEBREW and HOMEBREW_IN_BOOK
     for (const i of homebrew) {
       expect(lines[i - 1]).toBe("<untrusted_dndbeyond_content>");
       expect(lines[i + 1]).toBe("</untrusted_dndbeyond_content>");
     }
-    const official = lines.findIndex(l => l.startsWith("- **Zombie** — Monster Manual [mm-2024]"));
+    const official = lines.findIndex(l => l.startsWith("- **Zombie** [2024] — Monster Manual [mm-2024]"));
     expect(official).toBeGreaterThan(0);
     expect(lines[official - 1]).not.toBe("<untrusted_dndbeyond_content>");
   });
@@ -732,12 +763,12 @@ describe("search headers describe what was actually matched", () => {
 
 describe("exact-name matching tolerates incidental differences", () => {
   it("trims surrounding whitespace", async () => {
-    expect(await getMonster("  Zombie ", "mm-2024")).toContain("**Hit Points** 15");
+    expect(await getMonster("  Zombie ", { source: "mm-2024" })).toContain("**Hit Points** 15");
   });
 
   it("treats straight and curly apostrophes alike", async () => {
     extraMonsters = [monster({ id: 8_000_020, name: "Strahd’s Animated Armor", sourceId: 6, sources: sources(6), actionsDescription: "<p>ARMOR</p>" })];
-    expect(await getMonster("Strahd's Animated Armor", "cos")).toContain("ARMOR");
+    expect(await getMonster("Strahd's Animated Armor", { source: "cos" })).toContain("ARMOR");
   });
 });
 
@@ -774,7 +805,7 @@ describe("second-round review follow-ups", () => {
   });
 
   it("the available-sources hint does not guess from a typo", async () => {
-    const result = await getMonster("Grave Mothh", "mm-2024");
+    const result = await getMonster("Grave Mothh", { source: "mm-2024" });
     expect(result).toContain('No "Grave Mothh" entry found in source "mm-2024"');
     expect(result).not.toContain("Available sources");
     expect(result).toContain("Try ddb_search_monsters with a partial name.");
@@ -787,7 +818,7 @@ describe("adversarial review: security follow-ups", () => {
       monster({ id: 8_000_050, name: "Bone Lantern", sourceId: 424242, sources: sources(424242) }),
       monster({ id: 8_000_051, name: "Bone Lantern", sourceId: 232, sources: sources(232) }),
     ];
-    const result = await getMonster("Bone Lantern", "mm-2024");
+    const result = await getMonster("Bone Lantern", { source: "mm-2024" });
     expect(result).toContain('Available sources for "Bone Lantern": Ravenloft: The Horrors Within [rthw].');
     expect(result).not.toContain("source 424242");
   });
@@ -924,5 +955,139 @@ describe("getMonsterStats result union", () => {
   it("rateEncounter with 2014 rules tags the Legacy entry it rated", async () => {
     const out = await rateEncounter([{ count: 4, level: 1 }], [{ name: "Wolf" }], "2014");
     expect(out).toContain("1 × Wolf [2014] (CR 1/4");
+  });
+});
+
+// ── rules_edition on getMonster / searchMonsters (rules-edition phase 2) ──────
+
+describe("getMonster rules_edition", () => {
+  const TOUGH = monster({ id: 8_000_100, name: "Tough", typeId: 8, sourceId: 147, sources: sources(147), challengeRatingId: 4 });
+
+  it("the stat block opens with the rules line", async () => {
+    expect((await getMonster("Zombie")).split("\n")[1]).toBe("Rules: 2024 · Monster Manual (2024)");
+  });
+
+  it("a 2014-only monster under the default gives the reason", async () => {
+    expect(await getMonster("Bugbear")).toContain("Rules: 2014 · Basic Rules (2014)\n(no 2024 version found — 2014 text shown)");
+  });
+
+  it("a 2024-only monster under 2014 gives the reason", async () => {
+    expect(await getMonster("Giant Shark", { rulesEdition: "2014" })).toContain("(no 2014 version found — 2024 text shown)");
+  });
+
+  it("rules_edition 2014 picks the 2014 twin", async () => {
+    const out = await getMonster("Zombie", { rulesEdition: "2014" });
+    expect(out).toContain("**Hit Points** 22 (3d8 + 9)");
+    expect(out.split("\n")[1]).toBe("Rules: 2014 · Basic Rules (2014)");
+  });
+
+  it("a 2014 name reaches its renamed 2024 creature, with the rename line", async () => {
+    extraMonsters = [TOUGH];
+    expect(await getMonster("Thug")).toContain("(2014 name: Thug · 2024 name: Tough)");
+  });
+});
+
+describe("a locked twin", () => {
+  const BLIGHT_2014 = monster({ id: 8_000_400, name: "Twig Blight", isLegacy: true, sourceId: 5, sources: sources(5), actionsDescription: "<p>BLIGHT 2014</p>" });
+  const BLIGHT_2024 = monster({ id: 8_000_401, name: "Twig Blight", sourceId: 147, sources: sources(147), stats: [], actionsDescription: "" });
+  beforeEach(() => { extraMonsters = [BLIGHT_2014, BLIGHT_2024]; });
+
+  it("shows the owned 2014 version when the 2024 one is locked", async () => {
+    unownedIds.add(BLIGHT_2024.id as number);
+    const lines = (await getMonster("Twig Blight")).split("\n");
+    expect(lines.slice(1, 3)).toEqual(["Rules: 2014 · Monster Manual (2014)",
+      "(the 2024 version isn't available to this account — 2014 text shown)"]);
+    expect(lines.join("\n")).toContain("BLIGHT 2014");
+    expect(o5GetMonster).not.toHaveBeenCalled();
+  });
+
+  it("shows the owned 2024 version when the 2014 one is locked under rules_edition 2014", async () => {
+    extraMonsters = [{ ...BLIGHT_2014, stats: [], actionsDescription: "" },
+                     { ...BLIGHT_2024, stats: [{ statId: 1, value: 6 }], actionsDescription: "<p>BLIGHT 2024</p>" }];
+    unownedIds.add(BLIGHT_2014.id as number);
+    const out = await getMonster("Twig Blight", { rulesEdition: "2014" });
+    expect(out).toContain("Rules: 2024 · Monster Manual (2024)\n(the 2014 version isn't available to this account — 2024 text shown)");
+    expect(out).toContain("BLIGHT 2024");
+  });
+
+  it("both locked: today's Open5e fallback", async () => {
+    extraMonsters = [{ ...BLIGHT_2014, stats: [], actionsDescription: "" }, BLIGHT_2024];
+    unownedIds.add(BLIGHT_2024.id as number);
+    unownedIds.add(BLIGHT_2014.id as number);
+    expect(await getMonster("Twig Blight")).toBe("O5 MONSTER RESULT");
+    expect(o5GetMonster).toHaveBeenCalledWith("Twig Blight", "unavailable");
+  });
+
+  it("both locked and Open5e has nothing: the requested edition's restricted block", async () => {
+    vi.mocked(o5GetMonster).mockResolvedValueOnce(null as unknown as string);
+    extraMonsters = [{ ...BLIGHT_2014, stats: [], actionsDescription: "" }, BLIGHT_2024];
+    unownedIds.add(BLIGHT_2024.id as number);
+    unownedIds.add(BLIGHT_2014.id as number);
+    const out = await getMonster("Twig Blight");
+    expect(out.split("\n")[1]).toBe("Rules: 2024 · Monster Manual (2024)");
+    expect(out).toContain("requires ownership");
+    expect(out).not.toContain("isn't available to this account");
+  });
+
+  it("with a source, the restricted block is shown and nothing is swapped", async () => {
+    unownedIds.add(BLIGHT_2024.id as number);
+    const out = await getMonster("Twig Blight", { source: "mm-2024" });
+    expect(out).toContain("requires ownership");
+    expect(out).not.toContain("BLIGHT 2014");
+    expect(out).not.toContain("isn't available to this account — 2014");
+    expect(o5GetMonster).not.toHaveBeenCalled();
+  });
+
+  it("an owned pick makes no second detail request", async () => {
+    await getMonster("Twig Blight");
+    expect(detailUrls.filter(u => /\/Monster\/8000400$/.test(u))).toEqual([]);
+  });
+
+  it("the swapped twin's detail is cached", async () => {
+    unownedIds.add(BLIGHT_2024.id as number);
+    await getMonster("Twig Blight");
+    await getMonster("Twig Blight");
+    expect(detailUrls.filter(u => /\/Monster\/8000400$/.test(u))).toHaveLength(1);
+  });
+
+  it("a swap across a rename shows the rename line when the shown name isn't the query", async () => {
+    extraMonsters = [
+      monster({ id: 8_000_410, name: "Thug", typeId: 8, isLegacy: true, sourceId: 5, sources: sources(5), actionsDescription: "<p>THUG 2014</p>" }),
+      monster({ id: 8_000_411, name: "Tough", typeId: 8, sourceId: 147, sources: sources(147), stats: [], actionsDescription: "" }),
+    ];
+    unownedIds.add(8_000_411);
+    const viaTough = await getMonster("Tough");
+    expect(viaTough).toContain("THUG 2014");
+    expect(viaTough).toContain("(the 2024 version isn't available to this account — 2014 text shown)\n(2014 name: Thug · 2024 name: Tough)");
+    const viaThug = await getMonster("Thug");
+    expect(viaThug).toContain("THUG 2014");
+    expect(viaThug).not.toContain("2014 name:");
+  });
+});
+
+describe("searchMonsters result lines", () => {
+  it("Legendary and Mythic move to a second bracket after the edition tag", async () => {
+    extraMonsters = [monster({ id: 8_000_500, name: "Tarrasque Prime", isLegendary: true, sourceId: 147, sources: sources(147) })];
+    expect(await searchMonsters({ name: "Tarrasque Prime" })).toContain("- **Tarrasque Prime** [2024] [Legendary] — Monster Manual [mm-2024]");
+  });
+
+  it("queries every rename alias and merges the results", async () => {
+    extraMonsters = [
+      monster({ id: 8_000_510, name: "Thug", typeId: 8, isLegacy: true, sourceId: 1, sources: sources(1) }),
+      monster({ id: 8_000_511, name: "Tough", typeId: 8, sourceId: 147, sources: sources(147) }),
+    ];
+    const out = await searchMonsters({ name: "Thug" });
+    expect(listUrls.some(u => u.includes("search=Tough"))).toBe(true);
+    expect(out).toContain("- **Tough** [2024]");
+    expect(out).not.toContain("- **Thug**");
+    expect(out.split("\n").at(-1)).toBe('1 2014 version hidden — rules_edition: "2014" shows it.');
+  });
+
+  it("a failed alias query contributes nothing; a failed typed query falls back to Open5e", async () => {
+    extraMonsters = [monster({ id: 8_000_511, name: "Tough", typeId: 8, sourceId: 147, sources: sources(147) })];
+    failSearchTerms.add("thug");
+    expect(await searchMonsters({ name: "Tough" })).toContain("- **Tough** [2024]");
+    expect(o5SearchMonsters).not.toHaveBeenCalled();
+    expect(await searchMonsters({ name: "Thug" })).toContain("O5 SEARCH RESULT");
   });
 });

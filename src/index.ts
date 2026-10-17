@@ -322,7 +322,7 @@ server.tool(
 // ─── ddb_search_monsters ──────────────────────────────────────────────────────
 server.tool(
   "ddb_search_monsters",
-  "Search the D&D Beyond monster compendium by name, CR, type, size, or source. Returns a summary list with each entry's source and a Legacy tag where relevant — useful for telling apart same-named 2014 and 2024 versions. Use ddb_get_monster for the full stat block. Requires login.",
+  "Search the D&D Beyond monster compendium by name, CR, type, size, or source. Returns a summary list with each entry's source and edition tag. Where a monster exists in both editions, only the rules_edition version is listed and the other is counted as hidden. A source lists every entry in that book, of either edition, and wins over rules_edition; a book of the other edition adds a note. Use ddb_get_monster for the full stat block. Requires login. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().optional().describe("Partial name to search for (e.g. 'goblin', 'dragon')"),
     cr: z.number().optional().describe("Challenge Rating filter (e.g. 0.25, 1, 5, 20)"),
@@ -331,12 +331,13 @@ server.tool(
     source: z.string().optional()
       .describe("Restrict to one sourcebook — its short code (e.g. 'mm-2024', 'cos', 'rthw', as shown in " +
                 "brackets in results), short name, or full title. Matches reprints too. An unknown or " +
-                "non-matching book returns an error naming the alternatives. Omit to see all editions/sources."),
+                "non-matching book returns an error naming the alternatives. Wins over rules_edition."),
+    rules_edition: RULES_EDITION_PARAM,
   },
   READ_ONLY_NET,
-  async ({ name, cr, type, size, source }) => {
+  async ({ name, cr, type, size, source, rules_edition }) => {
     try {
-      const result = await searchMonsters({ name, cr, type, size, source });
+      const result = await searchMonsters({ name, cr, type, size, source, rulesEdition: rules_edition });
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -349,19 +350,20 @@ server.tool(
 // ─── ddb_get_monster ──────────────────────────────────────────────────────────
 server.tool(
   "ddb_get_monster",
-  "Get the full stat block for a specific monster from the D&D Beyond compendium. Matches by name: exact, then partial, then D&D Beyond's closest hit (with source, only an exact name in that book counts). Defaults to the official, non-Legacy (2024) entry, falling back to Legacy (2014) only when no non-Legacy one exists; pass source to force a specific book. Requires login.",
+  "Get the full stat block for a specific monster from the D&D Beyond compendium. Matches by name: exact, then partial, then D&D Beyond's closest hit (with source, only an exact name in that book counts). Shows the rules_edition version, or the other edition when that is the only one found or the only one available to the account (the output says which). A source picks a specific book and wins over rules_edition; a book of the other edition adds a note. Requires login. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().min(1).describe("Monster name (e.g. 'Beholder', 'Adult Red Dragon')"),
     source: z.string().optional()
       .describe("Restrict to one sourcebook — its short code (e.g. 'mm-2024', 'cos', 'rthw', as shown in " +
                 "brackets in ddb_search_monsters results), short name, or full title. Matches reprints too. " +
                 "Many 2014 core monsters (e.g. Zombie) are filed under 'basic-rules-2014', not 'mm-2014'. " +
-                "When omitted, the official non-Legacy (2024) entry is preferred over Legacy (2014) content."),
+                "Wins over rules_edition."),
+    rules_edition: RULES_EDITION_PARAM,
   },
   READ_ONLY_NET,
-  async ({ name, source }) => {
+  async ({ name, source, rules_edition }) => {
     try {
-      const result = await getMonster(name, source);
+      const result = await getMonster(name, { source, rulesEdition: rules_edition });
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
