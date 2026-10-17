@@ -234,12 +234,12 @@ describe("searchClassFeatures", () => {
   it("reports no matches with the searched count", async () => {
     const out = await reference.searchClassFeatures({ name: "zzz" });
     expect(FULL_CLASS_ENTRIES.length).toBeGreaterThan(0);
-    expect(out).toBe(`No class features found matching name "zzz" (searched ${FULL_CLASS_ENTRIES.length} class features).`);
+    expect(out).toBe(`No class features found matching name "zzz" (searched ${FULL_CLASS_ENTRIES.length} class features). D&D Beyond lists only the classes and subclasses available to your account.`);
   });
 
   it("joins every criterion in the no-match message", async () => {
     const out = await reference.searchClassFeatures({ name: "zzz", className: "fighter", level: 3 });
-    expect(out).toBe(`No class features found matching name "zzz", class "fighter", level 3 (searched ${FULL_CLASS_ENTRIES.length} class features).`);
+    expect(out).toBe(`No class features found matching name "zzz", class "fighter", level 3 (searched ${FULL_CLASS_ENTRIES.length} class features). D&D Beyond lists only the classes and subclasses available to your account.`);
   });
 
   it("a 403 on one subclasses request is partial: note, base features, short TTL", async () => {
@@ -397,7 +397,7 @@ describe("searchRacialTraits", () => {
     const entries = buildRacialTraits(RACES, new Map(Object.entries(OPTIONAL_TRAITS_BY_RACE_KEY).map(([k, v]) => [k, v as never])));
     const out = await reference.searchRacialTraits({ name: "zzz", raceName: "elf" });
     expect(entries.length).toBeGreaterThan(0);
-    expect(out).toBe(`No racial traits found matching name "zzz", race "elf" (searched ${entries.length} racial traits).`);
+    expect(out).toBe(`No racial traits found matching name "zzz", race "elf" (searched ${entries.length} racial traits). D&D Beyond lists only the species available to your account.`);
   });
 
   it("a failed optional-trait list is partial and caches briefly", async () => {
@@ -433,5 +433,45 @@ describe("searchRacialTraits", () => {
     withOverride((u) => u.includes("/racial-trait/collection?entityRaceId=1&entityRaceTypeId=1743923279"), () => jsonResponse({ data: {} }));
     const out = await reference.searchRacialTraits({ name: "darkvision" });
     expect(out.startsWith(RT_PARTIAL)).toBe(true);
+  });
+
+  it("abandons the build when the account changes mid-fan-out, and caches nothing", async () => {
+    let dispatched!: () => void;
+    const held = new Promise<void>((r) => { dispatched = r; });
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const service = serviceMock();
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.includes("/racial-trait/collection?entityRaceId=1&entityRaceTypeId=1743923279")) {
+        dispatched();
+        await gate;
+      }
+      return service(url);
+    });
+
+    const p = reference.searchRacialTraits({}).then((v) => `RESOLVED:${v}`, (e) => `THREW:${(e as Error).name}`);
+    await held;
+    fsMock.readFileSync.mockReturnValue(JSON.stringify({
+      cookies: [{
+        name: "CobaltSession", value: "SECRET_B", domain: ".dndbeyond.com", path: "/",
+        expires: Date.now() / 1000 + 3600, httpOnly: true, secure: true,
+      }],
+    }));
+    release();
+    const result = await Promise.race([p, new Promise((r) => setTimeout(() => r("STILL_PENDING"), 200))]);
+    expect(result).toBe("THREW:SessionChangedError");
+
+    fetchMock.mockImplementation(serviceMock());
+    const racesBefore = requestsTo("races").length;
+    await reference.searchRacialTraits({});
+    expect(requestsTo("races").length).toBe(racesBefore + 1); // nothing was cached
+  });
+
+  it("shares the /races fetch with searchRaces", async () => {
+    await reference.searchRacialTraits({});
+    expect(requestsTo("races")).toHaveLength(1);
+    const out = await reference.searchRaces();
+    expect(requestsTo("races")).toHaveLength(1);
+    expect(out).toBe(EXPECTED.racesAll);
   });
 });

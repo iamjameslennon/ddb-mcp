@@ -6,6 +6,9 @@
  *         game-data/always-known-spells (leveled) across all 8 spellcasting
  *         classes; cached 24 h.
  * Items: single game-data/items endpoint; cached 24 h.
+ * Class features: /classes + /subclasses?baseClassId + optional class-feature/collection?classId.
+ * Racial traits: /races + optional racial-trait/collection?entityRaceId&entityRaceTypeId.
+ *         Both are normalized in src/tools/features-traits.ts.
  *
  * All character-service endpoints use the cobalt Bearer token.
  */
@@ -1211,7 +1214,7 @@ export async function searchClassFeatures(params: {
 
   if (matched.length === 0) {
     const criteria = describeCriteria([["name", params.name], ["class", params.className], ["level", params.level]]);
-    return `${note}No class features found matching ${criteria || "the search criteria"} (searched ${entries.length} class features).`;
+    return `${note}No class features found matching ${criteria || "the search criteria"} (searched ${entries.length} class features). D&D Beyond lists only the classes and subclasses available to your account.`;
   }
 
   return note + paginateResults(
@@ -1271,7 +1274,7 @@ export async function searchRacialTraits(params: {
 
   if (matched.length === 0) {
     const criteria = describeCriteria([["name", params.name], ["race", params.raceName]]);
-    return `${note}No racial traits found matching ${criteria || "the search criteria"} (searched ${entries.length} racial traits).`;
+    return `${note}No racial traits found matching ${criteria || "the search criteria"} (searched ${entries.length} racial traits). D&D Beyond lists only the species available to your account.`;
   }
 
   return note + paginateResults(
