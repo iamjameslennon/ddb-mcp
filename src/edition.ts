@@ -435,12 +435,16 @@ export function groupAndSelect<T>(
 const NOT_STATED = "edition not stated";
 
 const REASON_TEXT = {
-  "no-2024-version": "(no 2024 version exists — 2014 text shown)",
-  "no-2014-version": "(no 2014 version exists — 2024 text shown)",
+  "no-2024-version": "(no 2024 version found — 2014 text shown)",
+  "no-2014-version": "(no 2014 version found — 2024 text shown)",
   "rules-miss-2024": "(no matching 2024 rules section — 2014 text shown)",
   "rules-miss-2014": "(no matching 2014 rules section — 2024 text shown)",
   "treasure-no-2014": "(no 2014 version exists — 2024 tables used)",
 } as const;
+/** Appended to the description of every tool that takes rules_edition. */
+export const RULES_EDITION_TOOL_NOTE =
+  "Returns 2024 content by default; set rules_edition to '2014' for 2014 rules. The 'Rules:' line or [tag] in the output names the ruleset.";
+
 export type RulesLineReason = keyof typeof REASON_TEXT;
 
 const SRD_NAME: Record<RulesEdition, string> = { "2024": "SRD 5.2", "2014": "SRD 5.1" };
@@ -498,8 +502,8 @@ export function searchHeader(mode: SearchHeaderMode): string {
   if ("sourceBook" in mode) return `Rules: showing every entry in ${mode.sourceBook}, each tagged with its edition.`;
   if ("rulesDoc" in mode) return `Rules: sections from ${SRD_NAME[mode.rulesDoc]} (${mode.rulesDoc}).`;
   return mode.requested === "2024"
-    ? `Rules: 2024 by default — 2014 entries appear only where no 2024 version exists. Use rules_edition: "2014" for 2014 versions.`
-    : "Rules: 2014 requested — 2024 entries appear only where no 2014 version exists.";
+    ? `Rules: 2024 by default — 2014 entries appear only where no 2024 version was found. Use rules_edition: "2014" for 2014 versions.`
+    : "Rules: 2014 requested — 2024 entries appear only where no 2014 version was found.";
 }
 
 /** Last line of a search when twins were hidden; null when none were. */

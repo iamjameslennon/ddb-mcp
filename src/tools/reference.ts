@@ -19,8 +19,13 @@ import {
 } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
 import { stripHtml } from "../utils.js";
-import { twinName, classifyEdition, selectByEdition, definitionTiebreak, isEdition } from "../edition.js";
-import { peekSourceIndex } from "../game-config.js";
+import {
+  twinName, classifyEdition, selectByEdition, definitionTiebreak, isEdition,
+  lookupByName, groupAndSelect, normalizeName, rulesLine, renameLine, editionTag,
+  searchHeader, searchFooter,
+  type RulesEdition, type EditionInfo, type EditionReason,
+} from "../edition.js";
+import { peekSourceIndex, getSourceIndex } from "../game-config.js";
 import { createSpellStore, addSpells, spellList, type DdbSpell, type SpellStore } from "./spell-store.js";
 import {
   buildClassFeatures, filterClassFeatures, formatClassFeatureLine,
@@ -482,7 +487,10 @@ export function isConcentrationSpell(def: Record<string, unknown>): boolean | nu
   return null;
 }
 
-function formatSpell(spell: DdbSpell): string {
+function formatSpell(
+  spell: DdbSpell,
+  edition: { info: EditionInfo; reason?: EditionReason; renamed?: { name2014: string; name2024: string } },
+): string {
   const d = spell.definition;
   const ACTIVATION_TYPES: Record<number, string> = {
     1: "Action", 3: "Bonus Action", 6: "Reaction",
@@ -521,6 +529,8 @@ function formatSpell(spell: DdbSpell): string {
 
   const lines = [
     `**${d.name}** — ${levelLabel} ${d.school}${tagStr}`,
+    rulesLine(edition.info, { reason: edition.reason }),
+    ...(edition.renamed ? [renameLine(edition.renamed.name2014, edition.renamed.name2024)] : []),
     `Casting Time: ${castingTime}`,
     `Range: ${range}`,
     `Components: ${components || "None"}${matNote}`,
@@ -539,38 +549,39 @@ export async function searchSpells(params: {
   ritual?: boolean;
   limit?: number;
   offset?: number;
+  rulesEdition?: RulesEdition;
 }): Promise<string> {
   try {
-    const spells = spellList(await loadSpellCompendium());
-    let matched = spells;
+    const requested = params.rulesEdition ?? "2024";
+    const store = await loadSpellCompendium();
+    const index = await getSourceIndex();
+    const nameQuery = params.name ? normalizeName(params.name) : "";
+    const schoolQuery = params.school?.toLowerCase();
 
-    if (params.name) {
-      const q = params.name.toLowerCase();
-      matched = matched.filter(s => s.definition.name.toLowerCase().includes(q));
-    }
-    if (params.level !== undefined) {
-      matched = matched.filter(s => s.definition.level === params.level);
-    }
-    if (params.school) {
-      const q = params.school.toLowerCase();
-      matched = matched.filter(s => s.definition.school.toLowerCase().includes(q));
-    }
-    if (params.concentration !== undefined) {
-      matched = matched.filter(s => s.definition.concentration === params.concentration);
-    }
-    if (params.ritual !== undefined) {
-      matched = matched.filter(s => s.definition.ritual === params.ritual);
-    }
-
-    matched.sort((a, b) => {
-      if (a.definition.level !== b.definition.level) return a.definition.level - b.definition.level;
-      return a.definition.name.localeCompare(b.definition.name);
+    const { selected, hidden } = groupAndSelect(spellList(store), requested, {
+      info: s => classifyEdition(s.definition, index),
+      twinKey: s => twinName(s.definition.name),
+      tiebreak: (a, b) => definitionTiebreak(a.definition, b.definition),
+      nameMatches: nameQuery ? s => normalizeName(s.definition.name).includes(nameQuery) : undefined,
+      passes: s => {
+        const d = s.definition;
+        return (params.level === undefined || d.level === params.level)
+          && (!schoolQuery || d.school.toLowerCase().includes(schoolQuery))
+          && (params.concentration === undefined || d.concentration === params.concentration)
+          && (params.ritual === undefined || d.ritual === params.ritual);
+      },
     });
 
-    const total = matched.length;
+    selected.sort((a, b) => {
+      const da = a.entry.definition, db = b.entry.definition;
+      if (da.level !== db.level) return da.level - db.level;
+      return da.name.localeCompare(db.name);
+    });
+
+    const total = selected.length;
     const limit = params.limit ?? 20;
     const offset = params.offset ?? 0;
-    const page = matched.slice(offset, offset + limit);
+    const page = selected.slice(offset, offset + limit);
 
     if (page.length === 0) return "No spells found matching the criteria.";
 
@@ -585,19 +596,21 @@ export async function searchSpells(params: {
       ? "\n> ⚠ Compendium build was incomplete — one or more class spell-list requests to D&D Beyond failed, so spells from those classes may be missing. If you've just re-logged in, run `ddb_clear_cache` to retry.\n"
       : "";
 
-    const lines = [header + "\n" + provenanceNote];
-    for (const s of page) {
-      const d = s.definition;
+    const lines = [searchHeader({ requested }), header + "\n" + provenanceNote];
+    for (const sel of page) {
+      const d = sel.entry.definition;
       const level = d.level === 0 ? "Cantrip" : `Level ${d.level}`;
       const tags: string[] = [];
       if (d.concentration) tags.push("Conc.");
       if (d.ritual) tags.push("Ritual");
       const tagStr = tags.length ? ` (${tags.join(", ")})` : "";
-      lines.push(`- **${d.name}** — ${level} ${d.school}${tagStr}`);
+      lines.push(`- **${d.name}** ${editionTag(sel.info)} — ${level} ${d.school}${tagStr}`);
     }
     if (total > offset + limit) {
       lines.push(`\n*Use offset: ${offset + limit} to see more.*`);
     }
+    const footer = searchFooter(requested, hidden);
+    if (footer) lines.push(footer);
     return lines.join("\n");
   } catch (err) {
     try {
@@ -608,21 +621,28 @@ export async function searchSpells(params: {
   }
 }
 
-export async function getSpell(spellName: string): Promise<string> {
+export async function getSpell(spellName: string, rulesEdition: RulesEdition = "2024"): Promise<string> {
   try {
-    const spells = spellList(await loadSpellCompendium());
-    const q = spellName.toLowerCase();
+    const store = await loadSpellCompendium();
+    const index = await getSourceIndex();
 
-    const spell = spells.find(s => s.definition.name.toLowerCase() === q)
-      ?? spells.find(s => s.definition.name.toLowerCase().includes(q));
+    const found = lookupByName(spellList(store), spellName, rulesEdition, {
+      name: s => s.definition.name,
+      info: s => classifyEdition(s.definition, index),
+      tiebreak: (a, b) => definitionTiebreak(a.definition, b.definition),
+    });
 
-    if (!spell) {
+    if (!found) {
       const o5Result = await o5GetSpell(spellName, "not-found").catch(() => null);
       if (o5Result) return o5Result;
       return `Spell "${spellName}" not found in the compendium. Try ddb_search_spells with a partial name.`;
     }
 
-    return formatSpell(spell);
+    return formatSpell(found.entry, {
+      info: classifyEdition(found.entry.definition, index),
+      reason: found.reason,
+      renamed: found.renamed,
+    });
   } catch (err) {
     try {
       const o5Result = await o5GetSpell(spellName, "unavailable");

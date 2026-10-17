@@ -4,7 +4,7 @@ import {
   normalizeName, createTwinNamer, twinName, twinAliases, classFeatureTwinKey, racialTraitTwinKey,
   dedupeById, definitionTiebreak, monsterTiebreak,
   selectByEdition, lookupByName, groupAndSelect,
-  rulesLine, renameLine, sourceNote, editionTag, searchHeader, searchFooter, ambiguityMessage,
+  rulesLine, renameLine, RULES_EDITION_TOOL_NOTE, sourceNote, editionTag, searchHeader, searchFooter, ambiguityMessage,
   characterMainEdition, characterTag, characterRulesLine,
   type CategoryRecord, type CharacterEditionEntry, type CharacterEntryKind,
   type EditionInfo, type EditionMarkers, type Ruleset, type SourceRecord,
@@ -580,8 +580,8 @@ describe("rulesLine", () => {
 
   it("appends the reason on the next line", () => {
     const xge = info("2014", "Xanathar's Guide to Everything");
-    expect(rulesLine(xge, { reason: "no-2024-version" })).toBe("Rules: 2014 · Xanathar's Guide to Everything\n(no 2024 version exists — 2014 text shown)");
-    expect(rulesLine(info("2024", "Player's Handbook (2024)"), { reason: "no-2014-version" })).toBe("Rules: 2024 · Player's Handbook (2024)\n(no 2014 version exists — 2024 text shown)");
+    expect(rulesLine(xge, { reason: "no-2024-version" })).toBe("Rules: 2014 · Xanathar's Guide to Everything\n(no 2024 version found — 2014 text shown)");
+    expect(rulesLine(info("2024", "Player's Handbook (2024)"), { reason: "no-2014-version" })).toBe("Rules: 2024 · Player's Handbook (2024)\n(no 2014 version found — 2024 text shown)");
     expect(rulesLine(info("2014"), { open5e: "primary", reason: "rules-miss-2024" })).toBe("Rules: 2014 · SRD 5.1\n(no matching 2024 rules section — 2014 text shown)");
     expect(rulesLine(info("2024"), { open5e: "primary", reason: "rules-miss-2014" })).toBe("Rules: 2024 · SRD 5.2\n(no matching 2014 rules section — 2024 text shown)");
     expect(rulesLine(info("2024", "Dungeon Master's Guide (2024)"), { reason: "treasure-no-2014" })).toBe("Rules: 2024 · Dungeon Master's Guide (2024)\n(no 2014 version exists — 2024 tables used)");
@@ -618,9 +618,13 @@ describe("search labels", () => {
     expect(editionTag(info(ruleset, "any book"))).toBe(tag);
   });
 
+  it("RULES_EDITION_TOOL_NOTE", () => {
+    expect(RULES_EDITION_TOOL_NOTE).toBe("Returns 2024 content by default; set rules_edition to '2014' for 2014 rules. The 'Rules:' line or [tag] in the output names the ruleset.");
+  });
+
   it("searchHeader", () => {
-    expect(searchHeader({ requested: "2024" })).toBe(`Rules: 2024 by default — 2014 entries appear only where no 2024 version exists. Use rules_edition: "2014" for 2014 versions.`);
-    expect(searchHeader({ requested: "2014" })).toBe("Rules: 2014 requested — 2024 entries appear only where no 2014 version exists.");
+    expect(searchHeader({ requested: "2024" })).toBe(`Rules: 2024 by default — 2014 entries appear only where no 2024 version was found. Use rules_edition: "2014" for 2014 versions.`);
+    expect(searchHeader({ requested: "2014" })).toBe("Rules: 2014 requested — 2024 entries appear only where no 2014 version was found.");
     expect(searchHeader({ sourceBook: "Monster Manual (2024)" })).toBe("Rules: showing every entry in Monster Manual (2024), each tagged with its edition.");
     expect(searchHeader({ rulesDoc: "2024" })).toBe("Rules: sections from SRD 5.2 (2024).");
     expect(searchHeader({ rulesDoc: "2014" })).toBe("Rules: sections from SRD 5.1 (2014).");

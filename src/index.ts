@@ -20,6 +20,7 @@ import { generateTreasure } from "./tools/treasure.js";
 import { MAX_TREASURE_ENTRIES, MAX_MONSTER_COUNT, MAX_INDIVIDUAL_ROLLS, MAX_MONSTER_NAME_CHARS } from "./treasure-limits.js";
 import { getCondition, searchSpells, getSpell, searchItems, getItem, searchRaces, searchClasses, searchBackgrounds, searchFeats, searchClassFeatures, searchRacialTraits, searchRules, getRule, clearReferenceCache } from "./tools/reference.js";
 import { clearOpen5eCache } from "./open5e.js";
+import { RULES_EDITION_TOOL_NOTE } from "./edition.js";
 
 const server = new McpServer({
   name: "dndbeyond",
@@ -32,6 +33,9 @@ const server = new McpServer({
 // confirm_click/confirm_fill gates are set by the calling model and therefore
 // can't substitute for a human-in-the-loop check. Hints only: clients must
 // not treat them as a security boundary.
+/** Shared by every tool that can return either rules edition. */
+const RULES_EDITION_PARAM = z.enum(["2024", "2014"]).default("2024").describe("Ruleset: '2024' (default) or '2014'.");
+
 const READ_ONLY_NET: ToolAnnotations = { readOnlyHint: true, openWorldHint: true };
 const READ_ONLY_LOCAL: ToolAnnotations = { readOnlyHint: true, openWorldHint: false };
 
@@ -616,7 +620,7 @@ server.tool(
 
 server.tool(
   "ddb_search_spells",
-  "Search the full D&D Beyond spell compendium by name, level, school, concentration, or ritual. First call builds the compendium (slow); subsequent calls are instant. Requires login.",
+  "Search the full D&D Beyond spell compendium by name, level, school, concentration, or ritual. First call builds the compendium (slow); subsequent calls are instant. Requires login. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().optional().describe("Partial spell name (e.g. 'fire' finds Fireball, Fire Storm, etc.)"),
     level: z.number().int().min(0).max(9).optional().describe("Spell level (0 = cantrip)"),
@@ -625,11 +629,12 @@ server.tool(
     ritual: z.boolean().optional().describe("Filter by ritual tag"),
     limit: z.number().int().min(1).max(100).default(20).describe("Max results to return (default 20)"),
     offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
+    rules_edition: RULES_EDITION_PARAM,
   },
   READ_ONLY_NET,
-  async ({ name, level, school, concentration, ritual, limit, offset }) => {
+  async ({ name, level, school, concentration, ritual, limit, offset, rules_edition }) => {
     try {
-      const result = await searchSpells({ name, level, school, concentration, ritual, limit, offset });
+      const result = await searchSpells({ name, level, school, concentration, ritual, limit, offset, rulesEdition: rules_edition });
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -641,14 +646,15 @@ server.tool(
 
 server.tool(
   "ddb_get_spell",
-  "Get the full description of any spell in the D&D Beyond compendium by name. Not limited to a character's known spells. Requires login.",
+  "Get the full description of any spell in the D&D Beyond compendium by name. Not limited to a character's known spells. Requires login. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().min(1).describe("Spell name (e.g. 'Fireball', 'Hunter\\'s Mark')"),
+    rules_edition: RULES_EDITION_PARAM,
   },
   READ_ONLY_NET,
-  async ({ name }) => {
+  async ({ name, rules_edition }) => {
     try {
-      const result = await getSpell(name);
+      const result = await getSpell(name, rules_edition);
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
