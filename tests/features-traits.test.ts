@@ -296,12 +296,10 @@ describe("racial traits", () => {
   it("lists Tiefling 2024 and the homebrew subrace, wrapping only the homebrew line", () => {
     const dv = all.filter((e) => e.id === 13856159);
     expect(dv).toHaveLength(2);
-    const hb = dv.find((e) => e.isHomebrew)!;
-    const off = dv.find((e) => !e.isHomebrew)!;
-    expect(label(hb)).toBe(wrapUntrusted(label(hb).replace(/^<[^\n]*\n|\n<[^\n]*$/g, "")));
-    expect(label(hb)).toContain("Tiefling — subrace of Tiefling, Homebrew");
-    expect(label(off)).toBe(`- **Darkvision** *(Tiefling)*${label(off).slice(label(off).indexOf(" — "))}`);
-    expect(label(off).startsWith("- ")).toBe(true);
+    expect(label(dv.find((e) => e.isHomebrew)!)).toBe(
+      "<untrusted_dndbeyond_content>\n- **Darkvision** *(Tiefling — subrace of Tiefling, Homebrew)* — Darkvision snippet\n</untrusted_dndbeyond_content>",
+    );
+    expect(label(dv.find((e) => !e.isHomebrew)!)).toBe("- **Darkvision** *(Tiefling)* — Darkvision snippet");
   });
 
   it("keeps separate raceKeys for Human and High Elf", () => {
@@ -340,10 +338,8 @@ describe("racial traits", () => {
   it("filters by name and raceName, sorted by species", () => {
     const elves = filterRacialTraits(all, { raceName: "elf" });
     expect(new Set(elves.map((e) => e.speciesName))).toEqual(new Set(["High Elf", "Wood Elf", "Elf"]));
-    const dv = filterRacialTraits(all, { name: "darkvision" });
-    const species = dv.map((e) => e.speciesName);
-    expect(species).toEqual([...species].sort((a, b) => a.localeCompare(b)));
-    expect(dv.length).toBeGreaterThan(3);
+    const dv = filterRacialTraits([...all].reverse(), { name: "darkvision" });
+    expect(dv.map((e) => e.speciesName)).toEqual(["Elf", "High Elf", "Tiefling", "Tiefling", "Wood Elf"]);
   });
 
   it("matches raceName against baseRaceName", () => {
@@ -416,15 +412,66 @@ describe("racial traits", () => {
   });
 
   it("skips malformed inputs without throwing", () => {
-    const opt = new Map<string, unknown>([
-      ["9:9", "nope"],
-      ["8:8", { definitionData: "x" }],
-      ["7:7", { definitionData: [null, { id: "x", name: "bad" }] }],
-    ]);
     const r = buildRacialTraits(
       [null, race({ fullName: undefined }), race({ entityRaceId: "1" }), race({ racialTraits: [{}, { definition: { name: "noid" } }, null] }), race()],
-      opt as Map<string, OptionalCollection>,
+      new Map(),
     );
     expect(r.map((e) => e.id)).toEqual([1]);
+  });
+
+  it("skips broken optional collections but keeps the valid parts", () => {
+    const cases: [unknown, number[]][] = [
+      ["nope", [1]],
+      [{ definitionData: "x" }, [1]],
+      [{ definitionData: [null, { id: "x", name: "bad" }, { id: 2, name: "Good" }], accessTypes: null }, [1, 2]],
+    ];
+    cases.forEach(([coll, ids], i) => {
+      const r = buildRacialTraits([race({ entityRaceId: 100 + i })], new Map([[`9:${100 + i}`, coll as OptionalCollection]]));
+      expect(r.map((e) => e.id)).toEqual(ids);
+      expect(r.every((e) => e.raceKey === `9:${100 + i}` && !e.locked)).toBe(true);
+    });
+  });
+
+  it("matches raceName on baseRaceName when the subrace name lacks it", () => {
+    const drow = race({
+      entityRaceId: 50, fullName: "Drow", baseRaceName: "Elf", isSubRace: true,
+      racialTraits: [{ definition: { id: 77, name: "Sunlight Sensitivity", snippet: "s" } }],
+    });
+    const r = filterRacialTraits(buildRacialTraits([drow, race()], new Map()), { raceName: "elf" });
+    expect(r.map((e) => e.id)).toEqual([77]);
+  });
+
+  it("takes an optional trait's race data from the race it is listed under", () => {
+    const hb = race({
+      entityRaceId: 976786, entityRaceTypeId: 1228963568, fullName: "Tiefling", baseRaceName: "Tiefling",
+      isSubRace: true, isHomebrew: true, racialTraits: [],
+    });
+    const opt = new Map<string, OptionalCollection>([
+      ["1228963568:976786", { definitionData: [{ id: 5, name: "Infernal Gift", snippet: "Gift" }], accessTypes: {} }],
+    ]);
+    const [e] = buildRacialTraits([hb], opt);
+    expect(e).toMatchObject({
+      kind: "optional", speciesName: "Tiefling", baseRaceName: "Tiefling",
+      isSubRace: true, isHomebrew: true, raceKey: "1228963568:976786",
+    });
+    expect(formatRacialTraitLine(e)).toBe(
+      "<untrusted_dndbeyond_content>\n- **Infernal Gift** *(Tiefling — subrace of Tiefling, Homebrew)* *(optional)* — Gift\n</untrusted_dndbeyond_content>",
+    );
+  });
+
+  it("ignores an optional collection whose race is not in the call", () => {
+    const opt = new Map<string, OptionalCollection>([["8:8", { definitionData: [{ id: 2, name: "Orphan" }], accessTypes: {} }]]);
+    expect(buildRacialTraits([race()], opt).map((e) => e.id)).toEqual([1]);
+  });
+
+  it("keeps the first of duplicate standard ids within one race", () => {
+    const r = buildRacialTraits(
+      [race({ racialTraits: [
+        { definition: { id: 1, name: "First", snippet: "a" } },
+        { definition: { id: 1, name: "Second", snippet: "b" } },
+      ] })],
+      new Map(),
+    );
+    expect(r.map((e) => e.name)).toEqual(["First"]);
   });
 });

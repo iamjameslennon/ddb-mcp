@@ -233,9 +233,10 @@ export function filterClassFeatures(
   return sortEntries(matched);
 }
 
-/** First 100 characters of `text`, with "..." when it is 100 or longer. */
-function shortText(text: string): string {
-  return `${text.slice(0, 100)}${text.length >= 100 ? "..." : ""}`;
+/** Description part of a line: the locked marker, else the first 100 characters of text (plus "..." from 100 up), else "". */
+function descriptionPart(e: { locked: boolean; text: string }): string {
+  if (e.locked) return "*locked — not available to this account*";
+  return `${e.text.slice(0, 100)}${e.text.length >= 100 ? "..." : ""}`;
 }
 
 export function formatClassFeatureLine(e: ClassFeatureEntry): string {
@@ -243,11 +244,8 @@ export function formatClassFeatureLine(e: ClassFeatureEntry): string {
   if (e.subclassName) line += ` (${e.subclassName})`;
   line += ` level ${e.requiredLevel ?? "?"}`;
   if (e.kind === "optional") line += ", optional";
-  if (e.locked) {
-    line += "\n  *locked — not available to this account*";
-  } else if (e.text) {
-    line += `\n  ${shortText(e.text)}`;
-  }
+  const desc = descriptionPart(e);
+  if (desc) line += `\n  ${desc}`;
   return e.isHomebrew ? wrapUntrusted(line) : line;
 }
 
@@ -290,6 +288,7 @@ function raceRec(v: unknown): RaceRec | null {
   return v as RaceRec;
 }
 
+/** An optional collection keyed to a race not in `races` contributes nothing. */
 export function buildRacialTraits(
   races: unknown[],
   optionalByRaceKey: ReadonlyMap<string, OptionalCollection>,
@@ -398,10 +397,7 @@ export function formatRacialTraitLine(e: RacialTraitEntry): string {
   if (e.isHomebrew) label += ", Homebrew";
   let line = `- **${e.name}** *(${label})*`;
   if (e.kind === "optional") line += " *(optional)*";
-  if (e.locked) {
-    line += " — *locked — not available to this account*";
-  } else if (e.text) {
-    line += ` — ${shortText(e.text)}`;
-  }
+  const desc = descriptionPart(e);
+  if (desc) line += ` — ${desc}`;
   return e.isHomebrew ? wrapUntrusted(line) : line;
 }
