@@ -234,9 +234,11 @@ const FUZZY: Record<string, unknown[]> = {
   "grave mothh": [GRAVE_MOTH_RTHW],
 };
 
-// monster.ts registers one invalidation hook at import; it is the only way to
-// drop the module-level game-config singleton between tests.
-const invalidateMonsterModule = vi.mocked(onSessionInvalidated).mock.calls[0][0] as () => void;
+// monster.ts and game-config.ts each register an invalidation hook at import;
+// running them all is the only way to drop the module-level game-config
+// singleton between tests.
+const invalidationHooks = vi.mocked(onSessionInvalidated).mock.calls.map(call => call[0] as () => void);
+const invalidateMonsterModule = () => invalidationHooks.forEach(hook => hook());
 
 // The live service returns same-query results in a different order between
 // requests. Emulate that: `reverseOrder` flips the result order.

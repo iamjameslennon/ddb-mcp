@@ -1,0 +1,110 @@
+/**
+ * game-config.ts — D&D Beyond's game config (CR table, monster types, sizes,
+ * sources…) and the source index that edition labels classify against.
+ *
+ * getGameConfig() fetches https://www.dndbeyond.com/api/config/json with
+ * session cookies and caches it until the next session transition (cleared
+ * conservatively until its account independence is established).
+ *
+ * getSourceIndex() merges the live source list over the generated snapshot in
+ * source-snapshot.ts, so edition labels and book names survive a D&D Beyond
+ * outage. While the live config is unavailable, sources newer than the
+ * snapshot classify as "edition not stated". It never rejects.
+ */
+
+import { sessionFetch, captureSession, assertSessionCurrent, onSessionInvalidated } from "./session-fetch.js";
+import { buildSourceIndex, type CategoryRecord, type SourceIndex, type SourceRecord } from "./edition.js";
+import { SNAPSHOT_CATEGORIES, SNAPSHOT_SOURCES } from "./source-snapshot.js";
+
+export const CONFIG_URL = "https://www.dndbeyond.com/api/config/json";
+
+export interface GameConfig {
+  challengeRatings: Array<{ id: number; value: number; xp: number; proficiencyBonus: number }>;
+  monsterTypes: Array<{ id: number; name: string }>;
+  alignments: Array<{ id: number; name: string }>;
+  senses: Array<{ id: number; name: string }>;
+  sources?: GameSource[];
+  sourceCategories?: Array<{ id: number; name: string }>;
+  creatureSizes?: Array<{ id: number; name: string }>;
+  languages?: Array<{ id: number; name: string }>;
+}
+
+export interface GameSource {
+  id: number;
+  name: string;
+  description: string | null;
+  sourceURL: string | null;
+  sourceCategoryId?: number;
+}
+
+let configCache: GameConfig | null = null;
+// Keyed by the config object it was built from (null = snapshot only), so a
+// recovered or newly fetched config always rebuilds it.
+let indexCache: { config: GameConfig | null; index: SourceIndex } | null = null;
+
+// Registered once per module lifetime.
+onSessionInvalidated(() => {
+  configCache = null;
+  indexCache = null;
+});
+
+export async function getGameConfig(): Promise<GameConfig | null> {
+  // Boundary check before the early singleton return, so a pending transition
+  // fires the invalidation hook (which nulls configCache) before we reuse it.
+  const snapshot = captureSession();
+  if (configCache) return configCache;
+  try {
+    const resp = await sessionFetch(CONFIG_URL);
+    if (!resp.ok) return null;
+    const json = await resp.json() as { data?: GameConfig } | GameConfig;
+    const cfg = (json as { data?: GameConfig }).data ?? (json as GameConfig);
+    if (cfg.challengeRatings) {
+      // Don't cache one account's config into another account's generation.
+      assertSessionCurrent(snapshot);
+      configCache = cfg;
+      return cfg;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getSourceIndex(): Promise<SourceIndex> {
+  const config = await getGameConfig();
+  if (indexCache && indexCache.config === config) return indexCache.index;
+  let index: SourceIndex;
+  try {
+    // The live config is untyped JSON: a non-array list or a null entry must
+    // degrade to the snapshot, never reject.
+    const liveSources = Array.isArray(config?.sources) ? config.sources : undefined;
+    const liveCategories = Array.isArray(config?.sourceCategories) ? config.sourceCategories : undefined;
+    index = buildSourceIndex(mergeSources(liveSources), mergeCategories(liveCategories));
+  } catch {
+    index = buildSourceIndex(SNAPSHOT_SOURCES, SNAPSHOT_CATEGORIES);
+  }
+  indexCache = { config, index };
+  return index;
+}
+
+/** Live sources over the snapshot, field by field: a missing live field keeps the snapshot's. */
+function mergeSources(live: GameSource[] | undefined): SourceRecord[] {
+  const merged = new Map<number, SourceRecord>(SNAPSHOT_SOURCES.map(s => [s.id, s]));
+  for (const s of live ?? []) {
+    const snap = merged.get(s.id);
+    merged.set(s.id, {
+      id: s.id,
+      name: s.name ?? snap?.name ?? "",
+      description: s.description ?? snap?.description ?? null,
+      sourceURL: s.sourceURL ?? snap?.sourceURL ?? null,
+      sourceCategoryId: s.sourceCategoryId ?? snap?.sourceCategoryId ?? null,
+    });
+  }
+  return [...merged.values()];
+}
+
+function mergeCategories(live: Array<{ id: number; name: string }> | undefined): CategoryRecord[] {
+  const merged = new Map<number, CategoryRecord>(SNAPSHOT_CATEGORIES.map(c => [c.id, c]));
+  for (const c of live ?? []) merged.set(c.id, { id: c.id, name: c.name });
+  return [...merged.values()];
+}

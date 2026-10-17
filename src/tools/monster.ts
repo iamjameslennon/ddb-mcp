@@ -5,14 +5,15 @@
  * Auth: Bearer cobalt token (same as character service)
  * Envelope: { accessType, pagination, data } for list; { accessType, data } for single
  *
- * Game config (CR values, type names, etc.) is fetched from
- * https://www.dndbeyond.com/api/config/json and cached for 24 h.
+ * Game config (CR values, type names, sources, etc.) comes from
+ * ../game-config.ts.
  */
 
 import {
-  sessionFetch, beginAuthenticatedSession, hasValidSession,
+  beginAuthenticatedSession, hasValidSession,
   captureSession, assertSessionCurrent, onSessionInvalidated,
 } from "../session-fetch.js";
+import { getGameConfig, type GameConfig, type GameSource } from "../game-config.js";
 import { TtlCache } from "../cache.js";
 import { wrapUntrusted } from "../utils.js";
 import { o5SearchMonsters, o5GetMonster } from "../open5e.js";
@@ -20,7 +21,6 @@ import { o5SearchMonsters, o5GetMonster } from "../open5e.js";
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const MONSTER_SERVICE = "https://monster-service.dndbeyond.com";
-const CONFIG_URL = "https://www.dndbeyond.com/api/config/json";
 
 const SIZE_MAP: Record<number, string> = {
   2: "Tiny", 3: "Small", 4: "Medium", 5: "Large", 6: "Huge", 7: "Gargantuan",
@@ -43,59 +43,12 @@ export function clearMonsterCache(): void {
   monsterCache.clear();
 }
 
-// Drop account-derived monster + game-config state on every session transition.
-// The monster service is gated by the cobalt token, and the game config is
-// fetched with session cookies; `configCache` is cleared conservatively until
-// its account independence is established. Registered once per module lifetime.
+// Drop account-derived monster state on every session transition — the
+// monster service is gated by the cobalt token. game-config.ts drops the game
+// config itself. Registered once per module lifetime.
 onSessionInvalidated(() => {
   monsterCache.clear();
-  configCache = null;
 });
-
-// ── Game config ───────────────────────────────────────────────────────────────
-
-interface GameConfig {
-  challengeRatings: Array<{ id: number; value: number; xp: number; proficiencyBonus: number }>;
-  monsterTypes: Array<{ id: number; name: string }>;
-  alignments: Array<{ id: number; name: string }>;
-  senses: Array<{ id: number; name: string }>;
-  sources?: GameSource[];
-  sourceCategories?: Array<{ id: number; name: string }>;
-  creatureSizes?: Array<{ id: number; name: string }>;
-  languages?: Array<{ id: number; name: string }>;
-}
-
-interface GameSource {
-  id: number;
-  name: string;
-  description: string | null;
-  sourceURL: string | null;
-  sourceCategoryId?: number;
-}
-
-let configCache: GameConfig | null = null;
-
-async function getGameConfig(): Promise<GameConfig | null> {
-  // Boundary check before the early singleton return, so a pending transition
-  // fires the invalidation hook (which nulls configCache) before we reuse it.
-  const snapshot = captureSession();
-  if (configCache) return configCache;
-  try {
-    const resp = await sessionFetch(CONFIG_URL);
-    if (!resp.ok) return null;
-    const json = await resp.json() as { data?: GameConfig } | GameConfig;
-    const cfg = (json as { data?: GameConfig }).data ?? (json as GameConfig);
-    if (cfg.challengeRatings) {
-      // Don't cache one account's config into another account's generation.
-      assertSessionCurrent(snapshot);
-      configCache = cfg;
-      return cfg;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
