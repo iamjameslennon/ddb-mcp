@@ -71,6 +71,9 @@ export async function getGameConfig(): Promise<GameConfig | null> {
 }
 
 export async function getSourceIndex(): Promise<SourceIndex> {
+  // Capture before the work, assert before caching: a session change while the
+  // index is built must not leave one account's index in the cache.
+  const snapshot = captureSession();
   const config = await getGameConfig();
   if (indexCache && indexCache.config === config) return indexCache.index;
   let index: SourceIndex;
@@ -83,7 +86,12 @@ export async function getSourceIndex(): Promise<SourceIndex> {
   } catch {
     index = buildSourceIndex(SNAPSHOT_SOURCES, SNAPSHOT_CATEGORIES);
   }
-  indexCache = { config, index };
+  try {
+    assertSessionCurrent(snapshot);
+    indexCache = { config, index };
+  } catch {
+    // Session changed mid-build: return this index, but don't cache it.
+  }
   return index;
 }
 
@@ -91,6 +99,8 @@ export async function getSourceIndex(): Promise<SourceIndex> {
 function mergeSources(live: GameSource[] | undefined): SourceRecord[] {
   const merged = new Map<number, SourceRecord>(SNAPSHOT_SOURCES.map(s => [s.id, s]));
   for (const s of live ?? []) {
+    // Skip bad entries one at a time; a single bad entry must not drop the rest.
+    if (!s || typeof s !== "object" || typeof s.id !== "number") continue;
     const snap = merged.get(s.id);
     merged.set(s.id, {
       id: s.id,
@@ -105,6 +115,10 @@ function mergeSources(live: GameSource[] | undefined): SourceRecord[] {
 
 function mergeCategories(live: Array<{ id: number; name: string }> | undefined): CategoryRecord[] {
   const merged = new Map<number, CategoryRecord>(SNAPSHOT_CATEGORIES.map(c => [c.id, c]));
-  for (const c of live ?? []) merged.set(c.id, { id: c.id, name: c.name });
+  for (const c of live ?? []) {
+    if (!c || typeof c !== "object" || typeof c.id !== "number") continue;
+    const snap = merged.get(c.id);
+    merged.set(c.id, { id: c.id, name: c.name ?? snap?.name ?? "" });
+  }
   return [...merged.values()];
 }
