@@ -10,6 +10,7 @@ import {
   type EditionInfo, type EditionMarkers, type Ruleset, type SourceRecord,
 } from "../src/edition.js";
 import { EDITION_RENAMES } from "../src/edition-renames.js";
+import { SNAPSHOT_CATEGORIES, SNAPSHOT_DATE, SNAPSHOT_SOURCES } from "../src/source-snapshot.js";
 
 // ── Fixture source index ──────────────────────────────────────────────────────
 // Real IDs, names and categories from the live game config (2026-10-16), except
@@ -673,5 +674,30 @@ describe("character edition labels", () => {
   it("class without a level: head is plain edition, no number", () => {
     const entries = [ent("Fighter", "class", "2014"), ent("Alert", "feat", "2024")];
     expect(characterRulesLine(entries)).toBe("Rules: 2014 · 2024 content: Alert (feat)");
+  });
+});
+
+// ── Generated source snapshot ─────────────────────────────────────────────────
+
+describe("source snapshot", () => {
+  const snapshotIndex = buildSourceIndex(SNAPSHOT_SOURCES, SNAPSHOT_CATEGORIES);
+
+  it("is dated and non-trivial", () => {
+    expect(SNAPSHOT_DATE).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(SNAPSHOT_SOURCES.length).toBeGreaterThan(200);
+  });
+
+  it.each([
+    [1, 26], [2, 26], [3, 26], [5, 26], [145, 24], [146, 24], [147, 24], [148, 24], [193, 34],
+  ])("verified source %i is in category %i", (id, category) => {
+    expect(snapshotIndex.sources.get(id)?.categoryId).toBe(category);
+  });
+
+  it("classifies the named spec cases from the snapshot alone", () => {
+    const at = (...ids: number[]) => classifyEdition({ sources: ids.map(sourceId => ({ sourceId })) }, snapshotIndex);
+    expect(at(1)).toEqual({ ruleset: "2014", book: "Basic Rules (2014)" });
+    expect(at(145)).toEqual({ ruleset: "2024", book: "Player's Handbook (2024)" });
+    expect(at(148, 1)).toEqual({ ruleset: "2024", book: "D&D Beyond Basic Rules" });
+    expect(at(193).ruleset).toBe("third-party");
   });
 });
