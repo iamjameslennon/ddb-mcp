@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildSourceIndex, categoryRuleset, classifyEdition, KNOWN_CATEGORY_IDS,
-  normalizeName, createTwinNamer, classFeatureTwinKey, racialTraitTwinKey,
+  normalizeName, createTwinNamer, twinName, twinAliases, classFeatureTwinKey, racialTraitTwinKey,
   dedupeById, definitionTiebreak, monsterTiebreak,
   selectByEdition, lookupByName, groupAndSelect,
   rulesLine, renameLine, sourceNote, editionTag, searchHeader, searchFooter, ambiguityMessage,
@@ -190,7 +190,7 @@ describe("classifyEdition", () => {
     expect(classify({ isHomebrew: null, isLegacy: null, sourceId: null, sources: null })).toEqual({ ruleset: "unstated", book: null });
     expect(classify({ sources: [{ sourceId: null }, { sourceId: 2 }] })).toEqual({ ruleset: "2014", book: "Player's Handbook (2014)" });
     expect(classify({ sourceId: 800, sources: from(800, 800) })).toEqual({ ruleset: "unstated", book: "Eberron: Rising from the Last War" });
-    expect(classify({ sources: [null, { sourceId: 2 }] } as unknown as EditionMarkers)).toEqual({ ruleset: "2014", book: "Player's Handbook (2014)" });
+    expect(classify({ sources: [null, { sourceId: 2 }] })).toEqual({ ruleset: "2014", book: "Player's Handbook (2014)" });
     expect(classify({ sources: [undefined] } as unknown as EditionMarkers)).toEqual({ ruleset: "unstated", book: null });
   });
 
@@ -225,6 +225,33 @@ describe("twin names", () => {
   });
 });
 
+describe("twinAliases", () => {
+  const twin = createTwinNamer([["Thug", "Tough"], ["Acid Arrow", "Melf’s Acid Arrow"]]);
+
+  it("lists the given spelling first, then the other table spelling", () => {
+    expect(twinAliases("Thug", twin)).toEqual(["Thug", "Tough"]);
+    expect(twinAliases("tough", twin)).toEqual(["tough", "Thug"]);
+  });
+
+  it("is just the name when it has no twin", () => {
+    expect(twinAliases("Fireball", twin)).toEqual(["Fireball"]);
+  });
+
+  it("matches ignoring case, curly apostrophes and whitespace; keeps table spellings", () => {
+    expect(twinAliases("  melf’s acid ARROW", twin)).toEqual(["  melf’s acid ARROW", "Acid Arrow"]);
+  });
+
+  it("falls back to [name] for a namer without aliases", () => {
+    const plain = Object.assign((n: string) => n, {});
+    expect(twinAliases("Thug", plain)).toEqual(["Thug"]);
+  });
+
+  it("works with the real table", () => {
+    expect(twinAliases("Acid Arrow")).toContain("Melf's Acid Arrow");
+    expect(twinAliases("Thug")).toEqual(["Thug", "Tough"]);
+  });
+});
+
 describe("EDITION_RENAMES table", () => {
   const pairs = EDITION_RENAMES.map(([a, b]) => [normalizeName(a), normalizeName(b)] as const);
 
@@ -234,6 +261,15 @@ describe("EDITION_RENAMES table", () => {
 
   it("never maps a name to itself", () => {
     for (const [a, b] of pairs) expect(a).not.toBe(b);
+  });
+
+  it("no two 2014 names map to one 2024 name", () => {
+    expect(new Set(pairs.map(([, b]) => b)).size).toBe(pairs.length);
+  });
+
+  it("is wired into twinName", () => {
+    expect(twinName("Acid Arrow")).toBe("melf's acid arrow");
+    expect(twinName("Thug")).toBe("tough");
   });
 
   it("has no chains: no 2024 name is also a 2014 name", () => {
@@ -475,6 +511,22 @@ describe("groupAndSelect", () => {
     expect(hidden).toBe(0);
   });
 
+  it("hidden counts what the other request would show: one entry per group, not every other-edition duplicate", () => {
+    const zombies = [e(30, "Zombie", "2024"), e(31, "Zombie", "2014"), e(32, "Zombie", "2014"), e(33, "Zombie", "2014")];
+    const to24 = groupAndSelect(zombies, "2024", base);
+    expect(ids(to24.selected)).toEqual([30]);
+    expect(to24.hidden).toBe(1);
+    const to14 = groupAndSelect(zombies, "2014", base);
+    expect(ids(to14.selected)).toEqual([31]);
+    expect(to14.hidden).toBe(1);
+  });
+
+  it("hidden follows the other request's tiebreak pick, then its attribute filter", () => {
+    const bless = [e(4, "Bless", "2024", { conc: true }), e(5, "Bless", "2014", { conc: false }), e(6, "Bless", "2014", { conc: true })];
+    // The 2014 request picks id 5 (tiebreak), which fails the filter, so nothing is hidden.
+    expect(groupAndSelect(bless, "2024", { ...base, passes: c => c.conc === true }).hidden).toBe(0);
+  });
+
   it("same-edition duplicates in one group show once and are not counted as hidden", () => {
     const { selected, hidden } = groupAndSelect([e(30, "Zombie", "2024"), e(25, "Zombie", "2024")], "2024", base);
     expect(ids(selected)).toEqual([25]);
@@ -511,10 +563,6 @@ describe("rulesLine", () => {
     expect(rulesLine(info("2014"), { open5e: "primary" })).toBe("Rules: 2014 · SRD 5.1");
   });
 
-  it("Open5e origin is ignored for a non-edition ruleset", () => {
-    expect(rulesLine(info("homebrew"), { open5e: "primary" })).toBe("Rules: homebrew (edition not stated)");
-  });
-
   it("Open5e origin is dropped for every non-edition ruleset, whatever the origin", () => {
     const cases: Array<[EditionInfo, string]> = [
       [info("homebrew"), "Rules: homebrew (edition not stated)"],
@@ -525,6 +573,7 @@ describe("rulesLine", () => {
     for (const [i, expected] of cases) {
       expect(rulesLine(i, { open5e: "unavailable" })).toBe(expected);
       expect(rulesLine(i, { open5e: "not-found" })).toBe(expected);
+      expect(rulesLine(i, { open5e: "primary" })).toBe(expected);
       expect(rulesLine(i)).toBe(expected);
     }
   });

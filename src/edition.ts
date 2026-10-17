@@ -51,7 +51,7 @@ export interface EditionMarkers {
   isHomebrew?: boolean | null;
   isLegacy?: boolean | null;
   sourceId?: number | null;
-  sources?: ReadonlyArray<{ sourceId?: number | null }> | null;
+  sources?: ReadonlyArray<{ sourceId?: number | null } | null | undefined> | null;
 }
 
 export function isEdition(r: Ruleset): r is RulesEdition {
@@ -180,7 +180,11 @@ export function normalizeName(name: string): string {
  * A twin-name function. `spell` maps the normalized form of either side of a
  * rename pair to that side's spelling in the table, so output can use it.
  */
-export type TwinNamer = ((name: string) => string) & { spell?: (normalizedName: string) => string | undefined };
+export type TwinNamer = ((name: string) => string) & {
+  spell?: (normalizedName: string) => string | undefined;
+  /** Every table spelling in the name's twin group, the given name first. */
+  aliases?: (name: string) => string[];
+};
 
 /** A twin-name function over a rename table: normalizes, then maps a 2014 name to its 2024 name. */
 export function createTwinNamer(pairs: ReadonlyArray<readonly [string, string]>): TwinNamer {
@@ -195,11 +199,36 @@ export function createTwinNamer(pairs: ReadonlyArray<readonly [string, string]>)
     return renames.get(n) ?? n;
   };
   namer.spell = normalized => spellings.get(normalized);
+  namer.aliases = name => {
+    const key = namer(name);
+    const out = [name];
+    const seen = new Set([normalizeName(name)]);
+    for (const [name2014, name2024] of pairs) {
+      for (const spelling of [name2014, name2024]) {
+        const n = normalizeName(spelling);
+        if (namer(spelling) === key && !seen.has(n)) {
+          seen.add(n);
+          out.push(spelling);
+        }
+      }
+    }
+    return out;
+  };
   return namer;
 }
 
 /** The twin key for spells, items, monsters, feats, backgrounds, species and classes. */
 export const twinName: TwinNamer = createTwinNamer(EDITION_RENAMES);
+
+/**
+ * Every spelling of a name's twin group, the name as given first, so a caller
+ * that searches D&D Beyond by name can query each (Thug and Tough are one
+ * creature, but a search for one never returns the other). Just `[name]` when
+ * the name has no twin or the namer has no alias support.
+ */
+export function twinAliases(name: string, namer: TwinNamer = twinName): string[] {
+  return namer.aliases ? namer.aliases(name) : [name];
+}
 
 /** Class features twin only within one class: Paladin's Extra Attack is not Fighter's. */
 export function classFeatureTwinKey(className: string, featureName: string, namer = twinName): string {
@@ -352,11 +381,13 @@ export interface SearchSelection<T> extends Selection<T> { info: EditionInfo }
  * Search pipeline steps 1–5 over the FULL compendium (dedupe by id first):
  * group by twin key → name filter per group → one edition entry per group
  * (non-edition entries pass through) → attribute filters on the selected
- * entry → count other-edition entries in surviving groups that would also
- * have passed the attribute filters. The name filter is per group, so a twin
- * counts as hidden even if only its partner's name matched: the other
- * rules_edition would list it for the same query. Same-edition duplicates are
- * not shown and not counted.
+ * entry → count the groups where the OTHER rules_edition would list an
+ * entry: selecting from the group's edition entries for the other edition must
+ * yield an entry of that ruleset (not a fallback) that passes the attribute
+ * filters. At most one per group, matching what switching would show. The
+ * name filter is per group, so a twin counts as hidden even if only its
+ * partner's name matched: the other rules_edition would list it for the same
+ * query. Same-edition duplicates are not shown and not counted.
  * Groups keep first-appearance order; sorting and paging are the caller's.
  */
 export function groupAndSelect<T>(
@@ -382,7 +413,12 @@ export function groupAndSelect<T>(
     if (pick && passes(pick.entry)) {
       const info = opts.info(pick.entry);
       selected.push({ ...pick, info });
-      hidden += editions.filter(x => opts.info(x).ruleset !== info.ruleset && passes(x)).length;
+      const otherEdition = requested === "2024" ? "2014" : "2024";
+      // A fallback pick (this group has only the other edition) is not hidden: the other request shows the same entry.
+      if (info.ruleset !== otherEdition) {
+        const other = selectByEdition(editions, otherEdition, opts.info, opts.tiebreak);
+        if (other && opts.info(other.entry).ruleset === otherEdition && passes(other.entry)) hidden++;
+      }
     }
     const nonEdition = group.filter(x => !isEdition(opts.info(x).ruleset)).sort(opts.tiebreak);
     for (const x of nonEdition) {
