@@ -18,12 +18,13 @@ vi.mock("../src/session-fetch.js", () => {
 vi.mock("../src/open5e.js", () => ({
   o5SearchMonsters: vi.fn(async () => "O5 SEARCH RESULT"),
   o5GetMonster: vi.fn(async () => "O5 MONSTER RESULT"),
+  o5GetMonsterStats: vi.fn(async () => null),
 }));
 
 import { getMonster, searchMonsters, getMonsterStats, clearMonsterCache } from "../src/tools/monster.js";
 import { rateEncounter } from "../src/tools/encounter.js";
 import { sessionFetch, hasValidSession, onSessionInvalidated } from "../src/session-fetch.js";
-import { o5SearchMonsters, o5GetMonster } from "../src/open5e.js";
+import { o5SearchMonsters, o5GetMonster, o5GetMonsterStats } from "../src/open5e.js";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 // IDs, source attribution, and categories mirror live monster-service / game
@@ -744,15 +745,11 @@ describe("rankCandidates final tie-break", () => {
 });
 
 describe("second-round review follow-ups", () => {
-  it("getMonsterStats ignores an Open5e result whose name doesn't match", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => mockResponse({ results: [{ name: "Wolf", challenge_rating: "1/4" }] })));
-    expect(await getMonsterStats("Wolf Lord")).toBeNull();
-  });
-
-  it("getMonsterStats still takes an exact Open5e match when DDB is unavailable", async () => {
+  it("getMonsterStats takes the Open5e stats when logged out", async () => {
     vi.mocked(hasValidSession).mockReturnValue(false);
-    vi.stubGlobal("fetch", vi.fn(async () => mockResponse({ results: [{ name: "wolf", challenge_rating: "1/4" }] })));
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce({ name: "wolf", crValue: 0.25, xp: 50 });
     expect(await getMonsterStats("Wolf")).toEqual({ name: "wolf", crValue: 0.25, xp: 50 });
+    expect(o5GetMonsterStats).toHaveBeenCalledWith("Wolf");
   });
 
   it("a whitespace-only name is rejected rather than matching every monster", async () => {

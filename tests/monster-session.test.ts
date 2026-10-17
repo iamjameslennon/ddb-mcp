@@ -27,6 +27,7 @@ vi.mock("../src/session-fetch.js", () => {
 vi.mock("../src/open5e.js", () => ({
   o5SearchMonsters: vi.fn(async () => "O5 SEARCH RESULT"),
   o5GetMonster: vi.fn(async () => "O5 MONSTER RESULT"),
+  o5GetMonsterStats: vi.fn(async () => null),
 }));
 
 import { searchMonsters, getMonster, clearMonsterCache } from "../src/tools/monster.js";

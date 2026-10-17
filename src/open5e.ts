@@ -12,6 +12,7 @@
  */
 
 import { TtlCache } from "./cache.js";
+import { editionTag, rulesLine, searchHeader, type EditionInfo, type Open5eOrigin } from "./edition.js";
 
 const OPEN5E = "https://api.open5e.com/v1";
 const SRD = "wotc-srd";
@@ -37,9 +38,15 @@ async function o5fetch(path: string): Promise<unknown> {
   return data;
 }
 
-// ── Source tag ────────────────────────────────────────────────────────────────
+// ── Edition labels ────────────────────────────────────────────────────────────
 
-const SRC = "\n\n*(Source: SRD 5.1 via Open5e — DnD Beyond unavailable)*";
+// Interim: v1 Open5e serves SRD 5.1 only. Phase 4 moves the fallback to v2 (SRD 5.2/5.1).
+const O5_INFO: EditionInfo = { ruleset: "2014", book: null };
+
+/** Line 2 of a single lookup. */
+const label = (origin: Open5eOrigin): string => rulesLine(O5_INFO, { open5e: origin });
+/** Inline tag after a search result's name. */
+const TAG = editionTag(O5_INFO);
 
 // ── SPELLS ────────────────────────────────────────────────────────────────────
 
@@ -58,12 +65,13 @@ interface O5Spell {
   dnd_class?: string;
 }
 
-function formatO5Spell(s: O5Spell): string {
+function formatO5Spell(s: O5Spell, origin: Open5eOrigin): string {
   const level = s.level_int === 0 ? "Cantrip" : `Level ${s.level_int}`;
   const conc = s.requires_concentration ? " | Concentration" : "";
   const ritual = s.ritual === "yes" ? " | Ritual" : "";
   const lines = [
     `${s.name} (${level} ${s.school}${conc}${ritual})`,
+    label(origin),
     `Casting Time: ${s.casting_time}`,
     `Range: ${s.range}`,
     `Components: ${s.components}`,
@@ -72,7 +80,7 @@ function formatO5Spell(s: O5Spell): string {
   if (s.dnd_class) lines.push(`Classes: ${s.dnd_class}`);
   lines.push("", s.desc.replace(/<[^>]+>/g, "").trim());
   if (s.higher_level) lines.push("", `At Higher Levels: ${s.higher_level}`);
-  return lines.join("\n") + SRC;
+  return lines.join("\n");
 }
 
 /**
@@ -102,7 +110,7 @@ export async function o5SearchSpells(params: {
   ritual?: boolean;
   limit?: number;
   offset?: number;
-}): Promise<string> {
+}, origin: Open5eOrigin): Promise<string> {
   const limit = params.limit ?? 20;
   const offset = params.offset ?? 0;
   // Request enough results to cover the offset window (capped at 100)
@@ -123,7 +131,7 @@ export async function o5SearchSpells(params: {
     const level = s.level_int === 0 ? "Cantrip" : `Level ${s.level_int}`;
     const conc = s.requires_concentration ? " [C]" : "";
     const ritual = s.ritual === "yes" ? " [R]" : "";
-    return `• ${s.name} (${level} ${s.school}${conc}${ritual})`;
+    return `• ${s.name} ${TAG} (${level} ${s.school}${conc}${ritual})`;
   });
 
   const showing = offset + 1 === offset + page.length
@@ -133,10 +141,10 @@ export async function o5SearchSpells(params: {
     ? `Found ${data.count} spell(s) (showing ${showing}, SRD only — use offset: ${offset + limit} for more):`
     : `Found ${data.count} spell(s) (showing ${showing}, SRD only):`;
 
-  return [header, ...lines, SRC].join("\n");
+  return [label(origin), header, ...lines].join("\n");
 }
 
-export async function o5GetSpell(name: string): Promise<string | null> {
+export async function o5GetSpell(name: string, origin: Open5eOrigin): Promise<string | null> {
   const data = await o5fetch(
     `/spells/?name=${encodeURIComponent(name)}&limit=5`
   ) as { results: O5Spell[] };
@@ -146,7 +154,7 @@ export async function o5GetSpell(name: string): Promise<string | null> {
   );
   const match = exact ?? data.results[0];
   if (!match) return null;
-  return formatO5Spell(match);
+  return formatO5Spell(match, origin);
 }
 
 // ── MONSTERS ──────────────────────────────────────────────────────────────────
@@ -189,7 +197,7 @@ interface O5Monster {
   legendary_actions?: Array<{ name: string; desc: string }>;
 }
 
-function formatO5Monster(m: O5Monster): string {
+function formatO5Monster(m: O5Monster, origin: Open5eOrigin): string {
   const signed = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
   const mod = (score: number) => Math.floor((score - 10) / 2);
   const speedStr = Object.entries(m.speed)
@@ -212,6 +220,7 @@ function formatO5Monster(m: O5Monster): string {
 
   const lines: string[] = [
     `${m.name}`,
+    label(origin),
     `${m.size} ${m.type}${m.subtype ? ` (${m.subtype})` : ""}, ${m.alignment}`,
     `CR ${m.challenge_rating} | AC ${m.armor_class}${m.armor_desc ? ` (${m.armor_desc})` : ""} | HP ${m.hit_points} (${m.hit_dice})`,
     `Speed: ${speedStr}`,
@@ -246,7 +255,6 @@ function formatO5Monster(m: O5Monster): string {
     for (const a of m.legendary_actions) lines.push(`  ${a.name}. ${a.desc}`);
   }
 
-  lines.push(SRC);
   return lines.join("\n");
 }
 
@@ -255,7 +263,7 @@ export async function o5SearchMonsters(params: {
   cr?: number;
   type?: string;
   size?: string;
-}): Promise<string> {
+}, origin: Open5eOrigin): Promise<string> {
   const qs = new URLSearchParams({ document__slug: SRD, limit: "20" });
   if (params.name) qs.set("search", params.name);
   if (params.cr !== undefined) qs.set("challenge_rating", String(params.cr));
@@ -265,16 +273,16 @@ export async function o5SearchMonsters(params: {
   if (!data.results.length) return `No monsters found (SRD only).`;
 
   const lines = data.results.map(
-    m => `• ${m.name} (CR ${m.challenge_rating}, ${m.size} ${m.type})`
+    m => `• ${m.name} ${TAG} (CR ${m.challenge_rating}, ${m.size} ${m.type})`
   );
   return [
+    label(origin),
     `Found ${data.count} monster(s) (showing ${data.results.length}, SRD only):`,
     ...lines,
-    SRC.trim(),
   ].join("\n");
 }
 
-export async function o5GetMonster(name: string): Promise<string | null> {
+export async function o5GetMonster(name: string, origin: Open5eOrigin): Promise<string | null> {
   const data = await o5fetch(
     `/monsters/?name=${encodeURIComponent(name)}&limit=5`
   ) as { results: O5Monster[] };
@@ -284,7 +292,7 @@ export async function o5GetMonster(name: string): Promise<string | null> {
   );
   const match = exact ?? data.results[0];
   if (!match) return null;
-  return formatO5Monster(match);
+  return formatO5Monster(match, origin);
 }
 
 // ── ITEMS ─────────────────────────────────────────────────────────────────────
@@ -297,19 +305,19 @@ interface O5Item {
   desc: string;
 }
 
-function formatO5Item(item: O5Item): string {
+function formatO5Item(item: O5Item, origin: Open5eOrigin): string {
   const attune = item.requires_attunement
     ? ` | Requires attunement${item.requires_attunement !== "true" ? ` (${item.requires_attunement})` : ""}`
     : "";
   return [
     `${item.name} (${item.type}, ${item.rarity}${attune})`,
+    label(origin),
     ``,
     item.desc.replace(/<[^>]+>/g, "").trim(),
-    SRC,
   ].join("\n");
 }
 
-export async function o5SearchItems(name: string): Promise<string> {
+export async function o5SearchItems(name: string, origin: Open5eOrigin): Promise<string> {
   const data = await o5fetch(
     `/magicitems/?search=${encodeURIComponent(name)}&limit=20`
   ) as { count: number; results: O5Item[] };
@@ -317,16 +325,16 @@ export async function o5SearchItems(name: string): Promise<string> {
   if (!data.results.length) return `No magic items found matching "${name}" (SRD only).`;
 
   const lines = data.results.map(
-    i => `• ${i.name} (${i.type}, ${i.rarity})`
+    i => `• ${i.name} ${TAG} (${i.type}, ${i.rarity})`
   );
   return [
+    label(origin),
     `Found ${data.count} item(s) (showing ${data.results.length}, SRD only):`,
     ...lines,
-    SRC.trim(),
   ].join("\n");
 }
 
-export async function o5GetItem(name: string): Promise<string | null> {
+export async function o5GetItem(name: string, origin: Open5eOrigin): Promise<string | null> {
   const data = await o5fetch(
     `/magicitems/?name=${encodeURIComponent(name)}&limit=5`
   ) as { results: O5Item[] };
@@ -336,7 +344,7 @@ export async function o5GetItem(name: string): Promise<string | null> {
   );
   const match = exact ?? data.results[0];
   if (!match) return null;
-  return formatO5Item(match);
+  return formatO5Item(match, origin);
 }
 
 // ── WEAPONS ───────────────────────────────────────────────────────────────────
@@ -351,13 +359,13 @@ interface O5Weapon {
   properties: string[];   // e.g. ["versatile (1d10)", "thrown (20/60)"]
 }
 
-function formatO5Weapon(w: O5Weapon): string {
+function formatO5Weapon(w: O5Weapon, origin: Open5eOrigin): string {
   return [
     `${w.name} (${w.category})`,
+    label(origin),
     `Damage: ${w.damage_dice} ${w.damage_type}`,
     `Cost: ${w.cost} | Weight: ${w.weight || "—"}`,
     w.properties.length ? `Properties: ${w.properties.join(", ")}` : "",
-    SRC,
   ].filter(Boolean).join("\n");
 }
 
@@ -366,7 +374,7 @@ export async function o5SearchWeapons(params: {
   category?: string;
   limit?: number;
   offset?: number;
-}): Promise<string> {
+}, origin: Open5eOrigin): Promise<string> {
   const limit = params.limit ?? 20;
   const offset = params.offset ?? 0;
   const qs = new URLSearchParams({ document__slug: SRD, limit: String(Math.min(offset + limit, 100)) });
@@ -377,11 +385,11 @@ export async function o5SearchWeapons(params: {
   const page = data.results.slice(offset, offset + limit);
   if (!page.length) return `No weapons found matching the criteria (SRD only).`;
 
-  const lines = page.map(w => `• ${w.name} — ${w.category} | ${w.damage_dice} ${w.damage_type} | ${w.cost}`);
-  return [`Found ${data.count} weapon(s) (SRD only):`, ...lines, SRC.trim()].join("\n");
+  const lines = page.map(w => `• ${w.name} ${TAG} — ${w.category} | ${w.damage_dice} ${w.damage_type} | ${w.cost}`);
+  return [label(origin), `Found ${data.count} weapon(s) (SRD only):`, ...lines].join("\n");
 }
 
-export async function o5GetWeapon(name: string): Promise<string | null> {
+export async function o5GetWeapon(name: string, origin: Open5eOrigin): Promise<string | null> {
   const data = await o5fetch(
     `/weapons/?name=${encodeURIComponent(name)}&limit=5`
   ) as { results: O5Weapon[] };
@@ -389,7 +397,7 @@ export async function o5GetWeapon(name: string): Promise<string | null> {
   const exact = data.results.find(w => w.name.toLowerCase() === name.toLowerCase());
   const match = exact ?? data.results[0];
   if (!match) return null;
-  return formatO5Weapon(match);
+  return formatO5Weapon(match, origin);
 }
 
 // ── ARMOUR ────────────────────────────────────────────────────────────────────
@@ -405,14 +413,14 @@ interface O5Armor {
   weight: string;
 }
 
-function formatO5Armor(a: O5Armor): string {
+function formatO5Armor(a: O5Armor, origin: Open5eOrigin): string {
   const strReq = a.strength_requirement ? ` | Requires STR ${a.strength_requirement}` : "";
   const stealth = a.stealth_disadvantage ? ` | Stealth disadvantage` : "";
   return [
     `${a.name} (${a.category})`,
+    label(origin),
     `AC: ${a.ac_string}${strReq}${stealth}`,
     `Cost: ${a.cost} | Weight: ${a.weight || "—"}`,
-    SRC,
   ].join("\n");
 }
 
@@ -421,7 +429,7 @@ export async function o5SearchArmor(params: {
   category?: string;
   limit?: number;
   offset?: number;
-}): Promise<string> {
+}, origin: Open5eOrigin): Promise<string> {
   const limit = params.limit ?? 20;
   const offset = params.offset ?? 0;
   const qs = new URLSearchParams({ document__slug: SRD, limit: String(Math.min(offset + limit, 100)) });
@@ -435,12 +443,12 @@ export async function o5SearchArmor(params: {
   const lines = page.map(a => {
     const strReq = a.strength_requirement ? ` | STR ${a.strength_requirement}` : "";
     const stealth = a.stealth_disadvantage ? ` | Stealth disadv.` : "";
-    return `• ${a.name} — ${a.category} | ${a.ac_string}${strReq}${stealth} | ${a.cost}`;
+    return `• ${a.name} ${TAG} — ${a.category} | ${a.ac_string}${strReq}${stealth} | ${a.cost}`;
   });
-  return [`Found ${data.count} armour piece(s) (SRD only):`, ...lines, SRC.trim()].join("\n");
+  return [label(origin), `Found ${data.count} armour piece(s) (SRD only):`, ...lines].join("\n");
 }
 
-export async function o5GetArmor(name: string): Promise<string | null> {
+export async function o5GetArmor(name: string, origin: Open5eOrigin): Promise<string | null> {
   const data = await o5fetch(
     `/armor/?name=${encodeURIComponent(name)}&limit=5`
   ) as { results: O5Armor[] };
@@ -448,7 +456,7 @@ export async function o5GetArmor(name: string): Promise<string | null> {
   const exact = data.results.find(a => a.name.toLowerCase() === name.toLowerCase());
   const match = exact ?? data.results[0];
   if (!match) return null;
-  return formatO5Armor(match);
+  return formatO5Armor(match, origin);
 }
 
 // ── RACES ─────────────────────────────────────────────────────────────────────
@@ -465,42 +473,42 @@ interface O5Race {
   traits: string;
 }
 
-function formatO5Race(r: O5Race): string {
+function formatO5Race(r: O5Race, origin: Open5eOrigin): string {
   const speedStr = Object.entries(r.speed).map(([k, v]) => `${k} ${v} ft.`).join(", ");
   const asiStr = r.asi.map(a => `+${a.value} ${a.attributes.join(", ")}`).join("; ");
   return [
     `${r.name}`,
+    label(origin),
     `Size: ${r.size} | Speed: ${speedStr} | ASI: ${asiStr}`,
     `Languages: ${r.languages}`,
     r.vision ? `Vision: ${r.vision}` : "",
     ``,
     r.traits.replace(/<[^>]+>/g, "").trim(),
-    SRC,
   ].filter(Boolean).join("\n");
 }
 
-export async function o5SearchRaces(name?: string): Promise<string> {
+export async function o5SearchRaces(name: string | undefined, origin: Open5eOrigin): Promise<string> {
   const qs = new URLSearchParams({ document__slug: SRD, limit: "20" });
   if (name) qs.set("search", name);
 
   const data = await o5fetch(`/races/?${qs}`) as { count: number; results: O5Race[] };
   if (!data.results.length) return `No races found (SRD only).`;
 
-  if (name && data.results.length === 1) return formatO5Race(data.results[0]);
+  if (name && data.results.length === 1) return formatO5Race(data.results[0], origin);
 
   const lines = data.results.map(r => {
     const speedStr = Object.entries(r.speed).map(([k, v]) => `${k} ${v} ft.`).join(", ");
     const asiStr = r.asi.map(a => `+${a.value} ${a.attributes.join(", ")}`).join("; ");
-    return `• ${r.name} | ${speedStr} | ASI: ${asiStr}`;
+    return `• ${r.name} ${TAG} | ${speedStr} | ASI: ${asiStr}`;
   });
   return [
+    label(origin),
     `Found ${data.count} race(s) (SRD only):`,
     ...lines,
-    SRC.trim(),
   ].join("\n");
 }
 
-export async function o5GetRace(name: string): Promise<string | null> {
+export async function o5GetRace(name: string, origin: Open5eOrigin): Promise<string | null> {
   const data = await o5fetch(
     `/races/?name=${encodeURIComponent(name)}&limit=5`
   ) as { results: O5Race[] };
@@ -508,7 +516,7 @@ export async function o5GetRace(name: string): Promise<string | null> {
   const exact = data.results.find(r => r.name.toLowerCase() === name.toLowerCase());
   const match = exact ?? data.results[0];
   if (!match) return null;
-  return formatO5Race(match);
+  return formatO5Race(match, origin);
 }
 
 // ── CLASSES ───────────────────────────────────────────────────────────────────
@@ -526,31 +534,31 @@ interface O5Class {
   desc: string;
 }
 
-function formatO5Class(c: O5Class): string {
+function formatO5Class(c: O5Class, origin: Open5eOrigin): string {
   return [
     `${c.name}`,
+    label(origin),
     `Hit Die: ${c.hit_dice} | HP at 1st: ${c.hp_at_1st_level}`,
     `Armor: ${c.prof_armor || "None"} | Weapons: ${c.prof_weapons}`,
     `Saving Throws: ${c.prof_saving_throws}`,
     `Skills: ${c.prof_skills}`,
     c.spellcasting_ability ? `Spellcasting: ${c.spellcasting_ability}` : "",
-    SRC,
   ].filter(Boolean).join("\n");
 }
 
-export async function o5SearchClasses(name?: string): Promise<string> {
+export async function o5SearchClasses(name: string | undefined, origin: Open5eOrigin): Promise<string> {
   const qs = new URLSearchParams({ document__slug: SRD, limit: "20" });
   if (name) qs.set("search", name);
 
   const data = await o5fetch(`/classes/?${qs}`) as { count: number; results: O5Class[] };
   if (!data.results.length) return `No classes found (SRD only).`;
 
-  if (name && data.results.length === 1) return formatO5Class(data.results[0]);
+  if (name && data.results.length === 1) return formatO5Class(data.results[0], origin);
 
   const lines = data.results.map(c =>
-    `• ${c.name} (${c.hit_dice})${c.spellcasting_ability ? ` | Spellcasting: ${c.spellcasting_ability}` : ""}`
+    `• ${c.name} ${TAG} (${c.hit_dice})${c.spellcasting_ability ? ` | Spellcasting: ${c.spellcasting_ability}` : ""}`
   );
-  return [`Found ${data.count} class(es) (SRD only):`, ...lines, SRC.trim()].join("\n");
+  return [label(origin), `Found ${data.count} class(es) (SRD only):`, ...lines].join("\n");
 }
 
 // ── BACKGROUNDS ───────────────────────────────────────────────────────────────
@@ -565,9 +573,10 @@ interface O5Background {
   feature_desc: string;
 }
 
-function formatO5Background(b: O5Background): string {
+function formatO5Background(b: O5Background, origin: Open5eOrigin): string {
   return [
     `${b.name}`,
+    label(origin),
     `Skills: ${b.skill_proficiencies}`,
     b.tool_proficiencies ? `Tools: ${b.tool_proficiencies}` : "",
     b.languages ? `Languages: ${b.languages}` : "",
@@ -575,21 +584,20 @@ function formatO5Background(b: O5Background): string {
     ``,
     `Feature — ${b.feature}`,
     b.feature_desc.replace(/<[^>]+>/g, "").trim(),
-    SRC,
   ].filter(Boolean).join("\n");
 }
 
-export async function o5SearchBackgrounds(name?: string): Promise<string> {
+export async function o5SearchBackgrounds(name: string | undefined, origin: Open5eOrigin): Promise<string> {
   const qs = new URLSearchParams({ document__slug: SRD, limit: "20" });
   if (name) qs.set("search", name);
 
   const data = await o5fetch(`/backgrounds/?${qs}`) as { count: number; results: O5Background[] };
   if (!data.results.length) return `No backgrounds found (SRD only — only Acolyte is in the SRD).`;
 
-  if (data.results.length === 1) return formatO5Background(data.results[0]);
+  if (data.results.length === 1) return formatO5Background(data.results[0], origin);
 
-  const lines = data.results.map(b => `• ${b.name} (Skills: ${b.skill_proficiencies})`);
-  return [`Found ${data.count} background(s) (SRD only):`, ...lines, SRC.trim()].join("\n");
+  const lines = data.results.map(b => `• ${b.name} ${TAG} (Skills: ${b.skill_proficiencies})`);
+  return [label(origin), `Found ${data.count} background(s) (SRD only):`, ...lines].join("\n");
 }
 
 // ── FEATS ─────────────────────────────────────────────────────────────────────
@@ -601,29 +609,29 @@ interface O5Feat {
   effects_desc?: string[];
 }
 
-function formatO5Feat(f: O5Feat): string {
+function formatO5Feat(f: O5Feat, origin: Open5eOrigin): string {
   return [
     `${f.name}`,
+    label(origin),
     f.prerequisite ? `Prerequisite: ${f.prerequisite.replace(/^Prerequisite:\s*/i, "")}` : "",
     ``,
     f.desc.replace(/<[^>]+>/g, "").trim(),
-    SRC,
   ].filter(Boolean).join("\n");
 }
 
-export async function o5SearchFeats(name?: string): Promise<string> {
+export async function o5SearchFeats(name: string | undefined, origin: Open5eOrigin): Promise<string> {
   const qs = new URLSearchParams({ document__slug: SRD, limit: "20" });
   if (name) qs.set("search", name);
 
   const data = await o5fetch(`/feats/?${qs}`) as { count: number; results: O5Feat[] };
   if (!data.results.length) return `No feats found (SRD only — only Grappler is in the SRD).`;
 
-  if (data.results.length === 1) return formatO5Feat(data.results[0]);
+  if (data.results.length === 1) return formatO5Feat(data.results[0], origin);
 
   const lines = data.results.map(f =>
-    `• ${f.name}${f.prerequisite ? ` (${f.prerequisite.replace(/^Prerequisite:\s*/i, "")})` : ""}`
+    `• ${f.name} ${TAG}${f.prerequisite ? ` (${f.prerequisite.replace(/^Prerequisite:\s*/i, "")})` : ""}`
   );
-  return [`Found ${data.count} feat(s) (SRD only):`, ...lines, SRC.trim()].join("\n");
+  return [label(origin), `Found ${data.count} feat(s) (SRD only):`, ...lines].join("\n");
 }
 
 // ── RULES SECTIONS ────────────────────────────────────────────────────────────
@@ -645,10 +653,10 @@ export async function o5SearchSections(query?: string): Promise<string> {
 
   const lines = data.results.map(s => `• **${s.name}** (slug: \`${s.slug}\`)`);
   return [
+    searchHeader({ rulesDoc: "2014" }),
     `Found ${data.count} rules section(s)${query ? ` matching "${query}"` : ""} (SRD only):`,
     ...lines,
     `\nUse ddb_get_rules with the section name or slug to read the full text.`,
-    SRC.trim(),
   ].join("\n");
 }
 
@@ -690,5 +698,43 @@ export async function o5GetSection(
     ? `\n\n*(Showing first ${maxChars} of ${text.length} chars — increase max_chars or use query to jump to a topic)*`
     : "";
 
-  return [`## ${section.name}`, ``, output + truncNote, SRC].join("\n");
+  return [`## ${section.name}`, label("primary"), ``, output + truncNote].join("\n");
+}
+
+// ── MONSTER STATS (encounter / treasure) ─────────────────────────────────────
+
+const CR_XP_O5: Record<string, number> = {
+  "0": 10, "1/8": 25, "1/4": 50, "1/2": 100,
+  "1": 200, "2": 450, "3": 700, "4": 1100, "5": 1800,
+  "6": 2300, "7": 2900, "8": 3900, "9": 5000, "10": 5900,
+  "11": 7200, "12": 8400, "13": 10000, "14": 11500, "15": 13000,
+  "16": 15000, "17": 18000, "18": 20000, "19": 22000, "20": 25000,
+  "21": 33000, "22": 41000, "23": 50000, "24": 62000, "25": 75000,
+  "26": 90000, "27": 105000, "28": 120000, "29": 135000, "30": 155000,
+};
+
+const CR_VALUE_O5: Record<string, number> = {
+  "0": 0, "1/8": 0.125, "1/4": 0.25, "1/2": 0.5,
+};
+
+const o5NameKey = (n: string): string => n.trim().toLowerCase().replace(/[‘’]/g, "'");
+
+/**
+ * CR and XP for an exact-name SRD monster, or null (no match, unknown CR, or
+ * any Open5e failure). Never guesses: only an exact name counts.
+ */
+export async function o5GetMonsterStats(name: string): Promise<{ name: string; crValue: number; xp: number } | null> {
+  try {
+    const data = await o5fetch(
+      `/monsters/?name=${encodeURIComponent(name)}&limit=5`
+    ) as { results: Array<{ name: string; challenge_rating: string }> };
+    const match = data.results.find(m => o5NameKey(m.name) === o5NameKey(name));
+    if (!match) return null;
+    const crStr = match.challenge_rating;
+    const xp = CR_XP_O5[crStr];
+    if (xp === undefined) return null;
+    return { name: match.name, crValue: CR_VALUE_O5[crStr] ?? parseFloat(crStr), xp };
+  } catch {
+    return null;
+  }
 }

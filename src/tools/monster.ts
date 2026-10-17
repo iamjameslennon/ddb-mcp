@@ -16,7 +16,7 @@ import {
 import { getGameConfig, type GameConfig, type GameSource } from "../game-config.js";
 import { TtlCache } from "../cache.js";
 import { wrapUntrusted } from "../utils.js";
-import { o5SearchMonsters, o5GetMonster } from "../open5e.js";
+import { o5SearchMonsters, o5GetMonster, o5GetMonsterStats } from "../open5e.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -525,7 +525,7 @@ export async function searchMonsters(params: {
   source?: string;
 }): Promise<string> {
   if (!hasValidSession()) {
-    return await o5SearchMonsters(params).then(r => withSourceCaveat(r, params.source)).catch(
+    return await o5SearchMonsters(params, "unavailable").then(r => withSourceCaveat(r, params.source)).catch(
       () => "Monster search requires login. Run ddb_login first."
     );
   }
@@ -593,7 +593,7 @@ export async function searchMonsters(params: {
       }
       return msg;
     }
-    return await o5SearchMonsters(params).catch(() => "No monsters found matching the search criteria.");
+    return await o5SearchMonsters(params, "not-found").catch(() => "No monsters found matching the search criteria.");
   }
 
   const matchedBy = searchTerm && params.source ? "matched by name and source"
@@ -639,7 +639,7 @@ export async function searchMonsters(params: {
 
   return lines.join("\n");
   } catch {
-    return await o5SearchMonsters(params).then(r => withSourceCaveat(r, params.source)).catch(
+    return await o5SearchMonsters(params, "unavailable").then(r => withSourceCaveat(r, params.source)).catch(
       () => "Monster search unavailable — DnD Beyond and Open5e both failed."
     );
   }
@@ -649,14 +649,14 @@ export async function searchMonsters(params: {
 /** Open5e has no concept of sources — flag that the filter wasn't honoured when one was requested. */
 function withSourceCaveat(o5Result: string, source: string | undefined): string {
   if (!source) return o5Result;
-  return `${o5Result}\n\n*Note: source filtering is not available via the Open5e SRD fallback — "${source}" was requested but could not be honoured. This may not be the requested edition.*`;
+  return `${o5Result}\n\n*Note: source filtering is not available via the Open5e SRD fallback — "${source}" was requested but could not be honoured.*`;
 }
 
 export async function getMonster(monsterName: string, source?: string): Promise<string> {
   monsterName = monsterName.trim();
   if (!monsterName) return "Monster name is required.";
   if (!hasValidSession()) {
-    const o5Result = await o5GetMonster(monsterName).catch(() => null);
+    const o5Result = await o5GetMonster(monsterName, "unavailable").catch(() => null);
     if (o5Result) return withSourceCaveat(o5Result, source);
     return "Monster lookup requires login. Run ddb_login first.";
   }
@@ -696,7 +696,7 @@ export async function getMonster(monsterName: string, source?: string): Promise<
           : ` Try ddb_search_monsters with a partial name.`;
         return msg;
       }
-      const o5Result = await o5GetMonster(monsterName).catch(() => null);
+      const o5Result = await o5GetMonster(monsterName, "not-found").catch(() => null);
       if (o5Result) return o5Result;
       return `Monster "${monsterName}" not found. Try ddb_search_monsters with a partial name.`;
     }
@@ -724,7 +724,7 @@ export async function getMonster(monsterName: string, source?: string): Promise<
     // Not when a source was requested: the SRD isn't that book, and the
     // restricted block already says the content isn't owned.
     if (detail.accessType === 4 && !detail.data.stats?.length && !source) {
-      const o5Result = await o5GetMonster(monsterName).catch(() => null);
+      const o5Result = await o5GetMonster(monsterName, "unavailable").catch(() => null);
       if (o5Result) return o5Result;
     }
 
@@ -733,25 +733,11 @@ export async function getMonster(monsterName: string, source?: string): Promise<
     // Fail closed: only an explicitly official entry is left plain.
     return detail.data.isHomebrew === false ? statBlock : wrapUntrusted(statBlock);
   } catch {
-    const o5Result = await o5GetMonster(monsterName).catch(() => null);
+    const o5Result = await o5GetMonster(monsterName, "unavailable").catch(() => null);
     if (o5Result) return withSourceCaveat(o5Result, source);
     return `Monster "${monsterName}" not found. DnD Beyond is unavailable and "${monsterName}" is not in the SRD.`;
   }
 }
-
-const CR_XP_O5: Record<string, number> = {
-  "0": 10, "1/8": 25, "1/4": 50, "1/2": 100,
-  "1": 200, "2": 450, "3": 700, "4": 1100, "5": 1800,
-  "6": 2300, "7": 2900, "8": 3900, "9": 5000, "10": 5900,
-  "11": 7200, "12": 8400, "13": 10000, "14": 11500, "15": 13000,
-  "16": 15000, "17": 18000, "18": 20000, "19": 22000, "20": 25000,
-  "21": 33000, "22": 41000, "23": 50000, "24": 62000, "25": 75000,
-  "26": 90000, "27": 105000, "28": 120000, "29": 135000, "30": 155000,
-};
-
-const CR_VALUE_O5: Record<string, number> = {
-  "0": 0, "1/8": 0.125, "1/4": 0.25, "1/2": 0.5,
-};
 
 /**
  * Returns CR and XP for a named monster. Used by the encounter difficulty rater
@@ -791,24 +777,5 @@ export async function getMonsterStats(name: string, opts: { preferLegacy?: boole
   }
 
   // Open5e fallback
-  try {
-    const resp = await fetch(
-      `https://api.open5e.com/v1/monsters/?name=${encodeURIComponent(name)}&limit=5`,
-      { headers: { Accept: "application/json" } }
-    );
-    if (resp.ok) {
-      const data = await resp.json() as { results: Array<{ name: string; challenge_rating: string }> };
-      const match = data.results.find(m => nameKey(m.name) === nameKey(name));
-      if (match) {
-        const crStr = match.challenge_rating;
-        const xp = CR_XP_O5[crStr];
-        const crValue = CR_VALUE_O5[crStr] ?? parseFloat(crStr);
-        if (xp !== undefined) return { name: match.name, crValue, xp };
-      }
-    }
-  } catch {
-    // both sources failed
-  }
-
-  return null;
+  return await o5GetMonsterStats(name);
 }

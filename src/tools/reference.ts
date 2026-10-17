@@ -603,7 +603,7 @@ export async function searchSpells(params: {
     return lines.join("\n");
   } catch (err) {
     try {
-      return await o5SearchSpells(params);
+      return await o5SearchSpells(params, "unavailable");
     } catch {
       throw err;
     }
@@ -619,7 +619,7 @@ export async function getSpell(spellName: string): Promise<string> {
       ?? spells.find(s => s.definition.name.toLowerCase().includes(q));
 
     if (!spell) {
-      const o5Result = await o5GetSpell(spellName).catch(() => null);
+      const o5Result = await o5GetSpell(spellName, "not-found").catch(() => null);
       if (o5Result) return o5Result;
       return `Spell "${spellName}" not found in the compendium. Try ddb_search_spells with a partial name.`;
     }
@@ -627,7 +627,7 @@ export async function getSpell(spellName: string): Promise<string> {
     return formatSpell(spell);
   } catch (err) {
     try {
-      const o5Result = await o5GetSpell(spellName);
+      const o5Result = await o5GetSpell(spellName, "unavailable");
       if (o5Result) return o5Result;
     } catch {
       // fall through
@@ -759,7 +759,7 @@ export async function searchItems(params: {
   const shown = matched.slice(0, 30);
 
   if (shown.length === 0) {
-    return await o5SearchItems(params.name ?? "").catch(
+    return await o5SearchItems(params.name ?? "", "not-found").catch(
       () => "No items found matching the criteria."
     );
   }
@@ -786,7 +786,7 @@ export async function getItem(itemName: string): Promise<string> {
     if (!item) {
       // Try magic items, then weapons, then armour via Open5e
       for (const fallback of [o5GetItem, o5GetWeapon, o5GetArmor]) {
-        const result = await fallback(itemName).catch(() => null);
+        const result = await fallback(itemName, "not-found").catch(() => null);
         if (result) return result;
       }
       return `Item "${itemName}" not found. Try ddb_search_equipment with a partial name.`;
@@ -796,7 +796,7 @@ export async function getItem(itemName: string): Promise<string> {
   } catch (err) {
     for (const fallback of [o5GetItem, o5GetWeapon, o5GetArmor]) {
       try {
-        const result = await fallback(itemName);
+        const result = await fallback(itemName, "unavailable");
         if (result) return result;
       } catch { /* continue */ }
     }
@@ -877,11 +877,11 @@ export async function searchRaces(name?: string, limit?: number, offset?: number
     );
 
     if (!result) {
-      return await o5SearchRaces(name).catch(() => `No races found matching "${name}".`);
+      return await o5SearchRaces(name, "not-found").catch(() => `No races found matching "${name}".`);
     }
     return result;
   } catch {
-    return await o5SearchRaces(name).catch(
+    return await o5SearchRaces(name, "unavailable").catch(
       () => "Races unavailable — DnD Beyond and Open5e both failed."
     );
   }
@@ -937,11 +937,11 @@ export async function searchClasses(name?: string, limit?: number, offset?: numb
     );
 
     if (!result) {
-      return await o5SearchClasses(name).catch(() => `No classes found matching "${name}".`);
+      return await o5SearchClasses(name, "not-found").catch(() => `No classes found matching "${name}".`);
     }
     return result;
   } catch {
-    return await o5SearchClasses(name).catch(
+    return await o5SearchClasses(name, "unavailable").catch(
       () => "Classes unavailable — DnD Beyond and Open5e both failed."
     );
   }
@@ -995,11 +995,11 @@ export async function searchBackgrounds(name?: string, limit?: number, offset?: 
     );
 
     if (!result) {
-      return await o5SearchBackgrounds(name).catch(() => `No backgrounds found matching "${name}".`);
+      return await o5SearchBackgrounds(name, "not-found").catch(() => `No backgrounds found matching "${name}".`);
     }
     return result;
   } catch {
-    return await o5SearchBackgrounds(name).catch(
+    return await o5SearchBackgrounds(name, "unavailable").catch(
       () => "Backgrounds unavailable — DnD Beyond and Open5e both failed."
     );
   }
@@ -1066,11 +1066,11 @@ export async function searchFeats(params: {
     );
 
     if (!result) {
-      return await o5SearchFeats(params.name).catch(() => "No feats found matching the search criteria.");
+      return await o5SearchFeats(params.name, "not-found").catch(() => "No feats found matching the search criteria.");
     }
     return result;
   } catch {
-    return await o5SearchFeats(params.name).catch(
+    return await o5SearchFeats(params.name, "unavailable").catch(
       () => "Feats unavailable — DnD Beyond and Open5e both failed."
     );
   }
