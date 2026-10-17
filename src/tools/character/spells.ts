@@ -6,8 +6,8 @@
  * Phase 7 of the character.ts refactor — see docs/character-refactor.md.
  *
  * Concentration detection delegates to `isConcentrationSpell` in
- * `./reference.ts` (compendium-backed) and falls back to the per-spell
- * `concentration` flag. Spellbook (Wizard) prepared/ritual gate is applied
+ * `../reference.ts`: the spell's own `concentration` flag first, then the same
+ * definition id, then the twin group's entry for its own edition. Spellbook (Wizard) prepared/ritual gate is applied
  * to leveled spells but not cantrips.
  *
  * Output is pre-formatted strings to preserve byte-for-byte parity with
@@ -199,8 +199,7 @@ function buildConcentrationByLevel(
     const name = str(def.name);
     if (!name) return;
     const level = num(def.level);
-    const fromCompendium = isConcentrationSpell(name);
-    const isConc = fromCompendium !== null ? fromCompendium : def.concentration === true;
+    const isConc = isConcentrationSpell(def) ?? false;
     if (!isConc) return;
     const bucket = concByLevel.get(level) ?? [];
     if (!bucket.includes(name)) { bucket.push(name); concByLevel.set(level, bucket); }

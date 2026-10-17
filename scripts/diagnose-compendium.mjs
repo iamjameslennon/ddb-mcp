@@ -8,9 +8,10 @@
  * latency, response size, and spell count. Use this to figure out *why* the
  * spell compendium is incomplete or fell back to SRD-only results.
  *
- * It also replays the server's merge (fixed request order, first name wins)
- * and reports the 2014/2024 name collisions that merge resolves — see the
- * "Spell editions collide by name" entry in CLAUDE.md's Next steps.
+ * It also replays the server's id-keyed merge (fixed request order, first id
+ * wins) and reports, per endpoint and combined, how many twin groups hold
+ * 2024 only / 2014 only / both editions, and how many spells the merge loses
+ * (it must be none). Concentration is reported per twin group, per edition.
  *
  * Unlike the server, this script exchanges one cobalt token and reuses it, so
  * it cannot reproduce auth-service rate-limiting of the server's per-request
@@ -21,7 +22,7 @@
  * on Windows). Run ddb_login first if you don't have a session.
  *
  * Usage:
- *   node scripts/diagnose-compendium.mjs
+ *   npx tsx scripts/diagnose-compendium.mjs
  *
  * Output is safe to share in a bug report — no cookie values or tokens are
  * printed, only the user ID, HTTP statuses, sizes, latencies, and spell names.
@@ -30,6 +31,9 @@
 import { readFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { createSpellStore, addSpells, spellList } from "../src/tools/spell-store.js";
+import { classifyEdition, buildSourceIndex } from "../src/edition.js";
+import { SNAPSHOT_SOURCES, SNAPSHOT_CATEGORIES } from "../src/source-snapshot.js";
 
 // ── Session loading (mirrors src/session-fetch.ts) ────────────────────────────
 
@@ -213,20 +217,51 @@ if (failed > 0) {
 
 // ── Merge exactly as loadSpellCompendium() does ───────────────────────────────
 
-const merged = new Map();      // name → winning definition (first wins)
-const byName = new Map();      // name → Map<definition id, definition>
-for (const r of results) {
-  for (const s of r.spells) {
-    const d = s.definition;
-    if (!d?.name) continue;
-    if (!merged.has(d.name)) merged.set(d.name, d);
-    const defs = byName.get(d.name) ?? new Map();
-    defs.set(d.id, d);
-    byName.set(d.name, defs);
+const sourceIndex = buildSourceIndex(SNAPSHOT_SOURCES, SNAPSHOT_CATEGORIES);
+const editionOf = d => classifyEdition(d, sourceIndex).ruleset;
+
+/** Build a store from some results (in task order) and measure it. */
+function measure(label, subset) {
+  const store = createSpellStore();
+  let total = 0;
+  let dropped = 0;
+  const seenIds = new Set();
+  for (const r of subset) {
+    total += r.spells.length;
+    dropped += addSpells(store, r.spells);
+    for (const s of r.spells) {
+      const id = s?.definition?.id;
+      if (typeof id === "number" && Number.isFinite(id)) seenIds.add(id);
+    }
   }
+  let only2024 = 0, only2014 = 0, both = 0, nonEdition = 0;
+  for (const ids of store.byTwin.values()) {
+    const sets = new Set(ids.map(id => editionOf(store.byId.get(id).definition)));
+    for (const set of sets) if (set !== "2024" && set !== "2014") nonEdition += ids.filter(id => editionOf(store.byId.get(id).definition) === set).length;
+    if (sets.has("2024") && sets.has("2014")) both++;
+    else if (sets.has("2024")) only2024++;
+    else if (sets.has("2014")) only2014++;
+  }
+  const absent = [...seenIds].filter(id => !store.byId.has(id)).length;
+  return { label, store, total, only2024, only2014, both, nonEdition, lost: dropped + absent };
 }
 
-console.log(`\nCompendium after merge: ${merged.size} spells`);
+const rows = [
+  measure("spells", results.filter(r => r.endpoint === "spells")),
+  measure("always-known-spells", results.filter(r => r.endpoint === "always-known-spells")),
+  measure("combined", results),
+];
+const combined = rows[2].store;
+
+console.log(`\nCompendium after merge: ${combined.byId.size} spells in ${combined.byTwin.size} twin groups`);
+console.log(`\nEdition table (twin groups by the editions present; non-edition counts definitions):`);
+console.log(`  ${"endpoint".padEnd(20)} ${"total".padStart(6)} ${"2024-only".padStart(10)} ${"2014-only".padStart(10)} ${"both".padStart(6)} ${"non-edition".padStart(12)} ${"lost".padStart(6)}`);
+for (const r of rows) {
+  console.log(`  ${r.label.padEnd(20)} ${String(r.total).padStart(6)} ${String(r.only2024).padStart(10)} ${String(r.only2014).padStart(10)} ${String(r.both).padStart(6)} ${String(r.nonEdition).padStart(12)} ${String(r.lost).padStart(6)}`);
+}
+
+// Probes look at names present in any definition.
+const namesPresent = new Set(spellList(combined).map(s => s.definition.name));
 
 // ── Content probe ─────────────────────────────────────────────────────────────
 // Cantrips come only from /spells; prepared casters' leveled spells come only
@@ -241,29 +276,32 @@ const PROBES = {
 const missingProbes = [];
 console.log(`\nContent probe:`);
 for (const [group, names] of Object.entries(PROBES)) {
-  const missing = names.filter(n => !merged.has(n));
+  const missing = names.filter(n => !namesPresent.has(n));
   missingProbes.push(...missing);
   console.log(`  ${group}: ${names.length - missing.length}/${names.length} present` +
               (missing.length ? ` — missing: ${missing.join(", ")}` : ""));
 }
 
-// ── Edition collisions ────────────────────────────────────────────────────────
+// ── Concentration per twin group ──────────────────────────────────────────────
 
-const collisions = [...byName.entries()].filter(([, defs]) => defs.size > 1);
-const legacyWins = collisions.filter(([name]) => merged.get(name).isLegacy === true);
-const concDiffers = collisions.filter(([, defs]) =>
-  new Set([...defs.values()].map(d => d.concentration === true)).size > 1);
+const concDiffers = [];
+for (const [key, ids] of combined.byTwin) {
+  const defs = ids.map(id => combined.byId.get(id).definition);
+  const editions = new Set(defs.map(editionOf));
+  if (!(editions.has("2024") && editions.has("2014"))) continue;
+  if (new Set(defs.map(d => d.concentration === true)).size > 1) concDiffers.push([key, defs]);
+}
+console.log(`\nConcentration differs between editions in ${concDiffers.length} twin group(s)` +
+            `${concDiffers.length ? " (a character's own definition decides which one it reports):" : ""}`);
+for (const [key, defs] of concDiffers) {
+  const editions = defs.map(d => `${d.name} [${editionOf(d)}]=${d.concentration ? "conc" : "no conc"}`).join(", ");
+  console.log(`    - ${key}: ${editions}`);
+}
 
-console.log(`\nEdition collisions (same name, more than one definition):`);
-console.log(`  ${collisions.length} names — merge keeps the legacy (2014) definition for ${legacyWins.length}`);
-if (concDiffers.length) {
-  console.log(`  ${concDiffers.length} differ in concentration between editions (the merge decides which one ddb_get_character reports):`);
-  for (const [name, defs] of concDiffers) {
-    const editions = [...defs.values()]
-      .map(d => `${d.isLegacy ? "2014" : "2024"}=${d.concentration ? "conc" : "no conc"}`)
-      .join(", ");
-    console.log(`    - ${name}: ${editions}; merge keeps ${merged.get(name).isLegacy ? "2014" : "2024"}`);
-  }
+const lostTotal = rows.reduce((n, r) => n + r.lost, 0);
+if (lostTotal > 0) {
+  console.log(`\nLOST: ${lostTotal}`);
+  process.exit(1);
 }
 
 // ── Verdict ───────────────────────────────────────────────────────────────────

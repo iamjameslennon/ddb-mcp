@@ -688,14 +688,14 @@ describe("item compendium + character-seeded spell buffer", () => {
     setSessionFile(sessionJson("SECRET_A"));
     observeTransition(); // establish account A as the observed baseline
     reference.addCharacterSpellsToCompendium({
-      classSpells: [{ spells: [{ definition: { name: "Hex", concentration: true } }] }],
+      classSpells: [{ spells: [{ definition: { id: 900, name: "Hex", concentration: true } }] }],
     });
-    expect(reference.isConcentrationSpell("Hex")).toBe(true);
+    expect(reference.isConcentrationSpell({ id: 900, name: "Hex" })).toBe(true);
 
     setSessionFile(null);
     observeTransition();
     // Hook cleared the buffer: the character-sourced spell is gone.
-    expect(reference.isConcentrationSpell("Hex")).toBeNull();
+    expect(reference.isConcentrationSpell({ id: 900, name: "Hex" })).toBeNull();
   });
 
   it("clearReferenceCache() also wipes the character spell buffer and item compendium (ddb_clear_cache)", async () => {
@@ -705,14 +705,14 @@ describe("item compendium + character-seeded spell buffer", () => {
     // Seed both the item compendium and the character spell buffer.
     await reference.searchItems({ name: "item" });
     reference.addCharacterSpellsToCompendium({
-      classSpells: [{ spells: [{ definition: { name: "Bless", concentration: true } }] }],
+      classSpells: [{ spells: [{ definition: { id: 901, name: "Bless", concentration: true } }] }],
     });
-    expect(reference.isConcentrationSpell("Bless")).toBe(true);
+    expect(reference.isConcentrationSpell({ id: 901, name: "Bless" })).toBe(true);
 
     reference.clearReferenceCache();
 
     // Buffer cleared: spell is gone.
-    expect(reference.isConcentrationSpell("Bless")).toBeNull();
+    expect(reference.isConcentrationSpell({ id: 901, name: "Bless" })).toBeNull();
     // Item compendium cleared: the next search re-fetches (fetch count grows).
     const before = fetchMock.mock.calls.length;
     await reference.searchItems({ name: "item" });

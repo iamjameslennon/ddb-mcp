@@ -41,11 +41,20 @@ let configCache: GameConfig | null = null;
 // Keyed by the config object it was built from (null = snapshot only), so a
 // recovered or newly fetched config always rebuilds it.
 let indexCache: { config: GameConfig | null; index: SourceIndex } | null = null;
+// Snapshot-only index for peekSourceIndex(); source data isn't account-specific.
+let snapshotIndex: SourceIndex | null = null;
+
+// A failed fetch costs ~7 s of retries on a 5xx, and spell lookups ask for the
+// index on every call. Remember a failure for this long, per session generation.
+const CONFIG_FAILURE_TTL_MS = 60_000;
+let configFailure: { until: number; generation: number } | null = null;
 
 // Registered once per module lifetime.
 onSessionInvalidated(() => {
   configCache = null;
   indexCache = null;
+  snapshotIndex = null;
+  configFailure = null;
 });
 
 export async function getGameConfig(): Promise<GameConfig | null> {
@@ -53,21 +62,50 @@ export async function getGameConfig(): Promise<GameConfig | null> {
   // fires the invalidation hook (which nulls configCache) before we reuse it.
   const snapshot = captureSession();
   if (configCache) return configCache;
+  if (configFailure && configFailure.generation === snapshot.generation && Date.now() < configFailure.until) {
+    return null;
+  }
+  const fail = (): null => {
+    try {
+      // A late failure from an old session must not suppress the new one's fetch.
+      assertSessionCurrent(snapshot);
+      configFailure = { until: Date.now() + CONFIG_FAILURE_TTL_MS, generation: snapshot.generation };
+    } catch {
+      // Session changed mid-fetch: record nothing.
+    }
+    return null;
+  };
   try {
     const resp = await sessionFetch(CONFIG_URL);
-    if (!resp.ok) return null;
+    if (!resp.ok) return fail();
     const json = await resp.json() as { data?: GameConfig } | GameConfig;
     const cfg = (json as { data?: GameConfig }).data ?? (json as GameConfig);
     if (cfg.challengeRatings) {
       // Don't cache one account's config into another account's generation.
-      assertSessionCurrent(snapshot);
+      try {
+        assertSessionCurrent(snapshot);
+      } catch {
+        return null; // stale session: neither cache nor record a failure
+      }
       configCache = cfg;
+      configFailure = null;
       return cfg;
     }
-    return null;
+    return fail();
   } catch {
-    return null;
+    return fail();
   }
+}
+
+/**
+ * The cached source index if one is built, else a memoized snapshot-only index.
+ * Synchronous: never fetches and never checks the session (source data isn't
+ * account-specific).
+ */
+export function peekSourceIndex(): SourceIndex {
+  if (indexCache) return indexCache.index;
+  snapshotIndex ??= buildSourceIndex(SNAPSHOT_SOURCES, SNAPSHOT_CATEGORIES);
+  return snapshotIndex;
 }
 
 export async function getSourceIndex(): Promise<SourceIndex> {

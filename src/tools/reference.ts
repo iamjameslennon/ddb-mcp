@@ -19,6 +19,9 @@ import {
 } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
 import { stripHtml } from "../utils.js";
+import { twinName, classifyEdition, selectByEdition, definitionTiebreak, isEdition } from "../edition.js";
+import { peekSourceIndex } from "../game-config.js";
+import { createSpellStore, addSpells, spellList, type DdbSpell, type SpellStore } from "./spell-store.js";
 import {
   buildClassFeatures, filterClassFeatures, formatClassFeatureLine,
   buildRacialTraits, filterRacialTraits, formatRacialTraitLine, raceKeyOf,
@@ -250,26 +253,7 @@ export function getCondition(conditionName: string): string {
 
 const SPELLCASTING_CLASS_IDS = [1, 2, 3, 4, 5, 6, 7, 8]; // Bard, Cleric, Druid, Paladin, Ranger, Sorcerer, Warlock, Wizard
 
-interface SpellDefinition {
-  name: string;
-  level: number;
-  school: string;
-  description: string;
-  snippet?: string;
-  concentration: boolean;
-  ritual: boolean;
-  components?: number[];
-  componentsDescription?: string;
-  activation?: { activationTime: number; activationType: number };
-  range?: { origin: string; rangeValue?: number; aoeType?: string; aoeValue?: number };
-  duration?: { durationInterval?: number; durationUnit?: string; durationType?: string };
-}
-
-interface DdbSpell {
-  definition: SpellDefinition;
-}
-
-let spellCompendium: DdbSpell[] | null = null;
+let spellStore: SpellStore | null = null;
 
 // Provenance of the currently-loaded compendium. "ddb-authoritative" means all
 // 16 DDB game-data requests succeeded; "ddb-partial" means at least one failed
@@ -300,7 +284,7 @@ export function getCompendiumSource(): CompendiumSource | null {
  */
 export function clearReferenceCache(): void {
   referenceCache.clear();
-  spellCompendium = null;
+  spellStore = null;
   compendiumSource = null;
   characterSpellBuffer.clear();
   itemCompendium = null;
@@ -317,31 +301,26 @@ onSessionInvalidated(() => {
 
 // Spells extracted from character JSON (Warlock invocations, racial cantrip
 // grants, etc.) that may not appear in the per-class game-data spell lists.
-const characterSpellBuffer = new Map<string, DdbSpell>();
+// Keyed by definition id, so both editions of a name can sit in it.
+const characterSpellBuffer = new Map<number, DdbSpell>();
 
-async function loadSpellCompendium(): Promise<DdbSpell[]> {
+async function loadSpellCompendium(): Promise<SpellStore> {
   // Observe the on-disk authority BEFORE any early singleton/cache return, so a
   // pending logout/replacement fires the invalidation hook (which clears the
   // compendium + reference cache) before we hand back stale account state. Also
   // binds the whole parallel build to one generation.
   const snapshot = captureSession();
 
-  if (spellCompendium) return spellCompendium;
+  if (spellStore) return spellStore;
 
-  const cached = referenceCache.get("spell-compendium");
+  const cached = referenceCache.get("spell-compendium-v2");
   if (cached) {
-    const parsed = JSON.parse(cached) as CachedCompendium | DdbSpell[];
-    // Backward compatibility: pre-2.7.2 cache entries are bare DdbSpell arrays
-    // without a provenance wrapper. Treat them as "partial" so the next build
-    // (after the 24 h legacy TTL) gets fresh provenance tracking.
-    if (Array.isArray(parsed)) {
-      spellCompendium = parsed;
-      compendiumSource = "ddb-partial";
-    } else {
-      spellCompendium = parsed.spells;
-      compendiumSource = parsed.source;
-    }
-    return spellCompendium;
+    const parsed = JSON.parse(cached) as CachedCompendium;
+    const store = createSpellStore();
+    addSpells(store, parsed.spells);
+    spellStore = store;
+    compendiumSource = parsed.source;
+    return store;
   }
 
   let failedTasks = 0;
@@ -391,16 +370,12 @@ async function loadSpellCompendium(): Promise<DdbSpell[]> {
   assertSessionCurrent(snapshot);
 
   // Merge in task order (not response-completion order) so the same responses
-  // always produce the same compendium. First occurrence of a name wins.
-  const allSpells = new Map<string, DdbSpell>();
-  for (const spells of lists) {
-    for (const spell of spells) {
-      const name = spell.definition?.name;
-      if (name && !allSpells.has(name)) allSpells.set(name, spell);
-    }
-  }
+  // always produce the same compendium. Keyed by definition id (first wins), so
+  // a 2014 and a 2024 spell of one name both survive.
+  const store = createSpellStore();
+  for (const spells of lists) addSpells(store, spells);
 
-  if (allSpells.size === 0) {
+  if (store.byId.size === 0) {
     // Deliberately don't cache this case — the catch in searchSpells/getSpell
     // falls through to per-call Open5e, and the next call retries DDB fresh.
     throw new Error(
@@ -412,19 +387,17 @@ async function loadSpellCompendium(): Promise<DdbSpell[]> {
   // Merge character-sourced spells (Warlock-style invocations, racial cantrip
   // grants, etc.). The per-class game-data lists cover the canonical class
   // spell lists; characterSpellBuffer fills in anything else a character knows.
-  for (const [name, spell] of characterSpellBuffer) {
-    if (!allSpells.has(name)) allSpells.set(name, spell);
-  }
+  addSpells(store, characterSpellBuffer.values());
 
-  spellCompendium = Array.from(allSpells.values());
+  spellStore = store;
   // If any DDB task failed, the compendium is missing one or more class spell
   // lists. Short-TTL so the build is retried after ~5 min instead of being
   // locked stale for 24 h.
   compendiumSource = failedTasks === 0 ? "ddb-authoritative" : "ddb-partial";
   const ttl = compendiumSource === "ddb-authoritative" ? AUTHORITATIVE_TTL_MS : FALLBACK_TTL_MS;
-  const cacheValue: CachedCompendium = { source: compendiumSource, spells: spellCompendium };
-  referenceCache.set("spell-compendium", JSON.stringify(cacheValue), ttl);
-  return spellCompendium;
+  const cacheValue: CachedCompendium = { source: compendiumSource, spells: spellList(store) };
+  referenceCache.set("spell-compendium-v2", JSON.stringify(cacheValue), ttl);
+  return store;
 }
 
 /**
@@ -439,47 +412,72 @@ export function addCharacterSpellsToCompendium(char: Record<string, unknown>): v
       ? (v as Record<string, unknown>)
       : {};
 
-  let added = false;
+  const added: DdbSpell[] = [];
   for (const cs of arrOf<Record<string, unknown>>(char.classSpells)) {
     for (const spell of arrOf<Record<string, unknown>>(cs.spells)) {
-      const name = objOf(spell.definition).name as string | undefined;
-      if (name && !characterSpellBuffer.has(name)) {
-        characterSpellBuffer.set(name, spell as unknown as DdbSpell);
-        added = true;
+      const id = objOf(spell.definition).id;
+      if (typeof id === "number" && Number.isFinite(id) && !characterSpellBuffer.has(id)) {
+        characterSpellBuffer.set(id, spell as unknown as DdbSpell);
+        added.push(spell as unknown as DdbSpell);
       }
     }
   }
 
   // Merge immediately into the live compendium if already loaded
-  if (added && spellCompendium) {
-    const existing = new Set(spellCompendium.map(s => s.definition?.name));
-    for (const [name, spell] of characterSpellBuffer) {
-      if (!existing.has(name)) spellCompendium.push(spell);
-    }
+  if (added.length && spellStore) {
+    addSpells(spellStore, added);
     // Preserve provenance and use the matching TTL. If we somehow re-merge
     // before the source was set (unlikely — the compendium can't be loaded
     // without going through loadSpellCompendium), default to "ddb-partial"
     // / short TTL to err on the side of retrying sooner.
     const source = compendiumSource ?? "ddb-partial";
     const ttl = source === "ddb-authoritative" ? AUTHORITATIVE_TTL_MS : FALLBACK_TTL_MS;
-    const cacheValue: CachedCompendium = { source, spells: spellCompendium };
-    referenceCache.set("spell-compendium", JSON.stringify(cacheValue), ttl);
+    const cacheValue: CachedCompendium = { source, spells: spellList(spellStore) };
+    referenceCache.set("spell-compendium-v2", JSON.stringify(cacheValue), ttl);
   }
 }
 
 /**
- * Returns true/false if the spell is found in the character spell buffer or
- * loaded compendium, null if the spell is unknown.
- * Call after addCharacterSpellsToCompendium() has run.
+ * Whether a spell definition needs concentration; null if unknown.
+ * Precedence: (1) the definition's own boolean; (2) the same definition id in
+ * the character buffer or the compendium; (3) the entry of the definition's
+ * twin group for its own edition (2024 when its edition isn't stated);
+ * (4) null. Call after addCharacterSpellsToCompendium() has run.
  */
-export function isConcentrationSpell(spellName: string): boolean | null {
-  const lower = spellName.toLowerCase();
-  for (const [name, spell] of characterSpellBuffer) {
-    if (name.toLowerCase() === lower) return spell.definition?.concentration ?? null;
+export function isConcentrationSpell(def: Record<string, unknown>): boolean | null {
+  if (typeof def.concentration === "boolean") return def.concentration;
+
+  const concOf = (spell: DdbSpell | undefined): boolean | null => {
+    const c = spell?.definition?.concentration;
+    return typeof c === "boolean" ? c : null;
+  };
+
+  if (typeof def.id === "number") {
+    const byId = characterSpellBuffer.get(def.id) ?? spellStore?.byId.get(def.id);
+    if (byId) return concOf(byId);
   }
-  if (spellCompendium) {
-    const found = spellCompendium.find(s => (s.definition?.name ?? "").toLowerCase() === lower);
-    if (found) return found.definition?.concentration ?? null;
+
+  if (typeof def.name === "string" && def.name !== "") {
+    const key = twinName(def.name);
+    const group = new Map<number, DdbSpell>();
+    for (const id of spellStore?.byTwin.get(key) ?? []) {
+      const spell = spellStore?.byId.get(id);
+      if (spell) group.set(id, spell);
+    }
+    for (const [id, spell] of characterSpellBuffer) {
+      if (!group.has(id) && twinName(spell.definition?.name ?? "") === key) group.set(id, spell);
+    }
+    if (group.size > 0) {
+      const index = peekSourceIndex();
+      const own = classifyEdition(def as Parameters<typeof classifyEdition>[0], index).ruleset;
+      const picked = selectByEdition(
+        [...group.values()],
+        isEdition(own) ? own : "2024",
+        c => classifyEdition(c.definition, index),
+        (a, b) => definitionTiebreak(a.definition, b.definition),
+      );
+      return concOf(picked?.entry);
+    }
   }
   return null;
 }
@@ -543,7 +541,7 @@ export async function searchSpells(params: {
   offset?: number;
 }): Promise<string> {
   try {
-    const spells = await loadSpellCompendium();
+    const spells = spellList(await loadSpellCompendium());
     let matched = spells;
 
     if (params.name) {
@@ -612,7 +610,7 @@ export async function searchSpells(params: {
 
 export async function getSpell(spellName: string): Promise<string> {
   try {
-    const spells = await loadSpellCompendium();
+    const spells = spellList(await loadSpellCompendium());
     const q = spellName.toLowerCase();
 
     const spell = spells.find(s => s.definition.name.toLowerCase() === q)
