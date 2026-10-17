@@ -40,6 +40,38 @@ async function refFetch(url: string): Promise<Response> {
   return session.fetch(url);
 }
 
+// ── Shared game-data list loader ──────────────────────────────────────────────
+
+/** Non-OK response from a character-service game-data list endpoint. */
+class GameDataFetchError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "GameDataFetchError";
+  }
+}
+
+/**
+ * Fetch a character-service game-data list once per session, bound to one
+ * snapshot. An empty list is never cached: it reads as a real answer, but the
+ * source may simply have returned nothing.
+ */
+async function loadGameDataList<T>(cacheKey: string, path: string): Promise<T[]> {
+  const snapshot = captureSession();
+  const cached = referenceCache.get(cacheKey);
+  if (cached) return JSON.parse(cached) as T[];
+
+  const resp = await refFetch(`${CHARACTER_SERVICE}/character/v5/game-data/${path}`);
+  if (!resp.ok) {
+    throw new GameDataFetchError(`${path} fetch failed: ${resp.status} ${resp.statusText}`, resp.status);
+  }
+  const json = await resp.json() as { data?: T[] } | T[];
+  const list = Array.isArray(json) ? json : json.data;
+  if (!Array.isArray(list)) return [];
+  assertSessionCurrent(snapshot);
+  if (list.length > 0) referenceCache.set(cacheKey, JSON.stringify(list));
+  return list;
+}
+
 // ── HTML strip — imported from src/utils.ts ───────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -808,19 +840,7 @@ interface DdbRace {
 
 export async function searchRaces(name?: string, limit?: number, offset?: number): Promise<string> {
   try {
-    const cacheKey = "game-data:races";
-    const cached = referenceCache.get(cacheKey);
-
-    let races: DdbRace[];
-    if (cached) {
-      races = JSON.parse(cached) as DdbRace[];
-    } else {
-      const resp = await refFetch(`${CHARACTER_SERVICE}/character/v5/game-data/races`);
-      if (!resp.ok) throw new Error(`Races fetch failed: ${resp.status} ${resp.statusText}`);
-      const json = await resp.json() as { data?: DdbRace[] } | DdbRace[];
-      races = (Array.isArray(json) ? json : json.data) ?? [];
-      referenceCache.set(cacheKey, JSON.stringify(races));
-    }
+    const races = await loadGameDataList<DdbRace>("game-data:races", "races");
 
     let matched = races.filter(r => r.fullName || r.baseName);
 
@@ -878,19 +898,7 @@ interface DdbClass {
 
 export async function searchClasses(name?: string, limit?: number, offset?: number): Promise<string> {
   try {
-    const cacheKey = "game-data:classes";
-    const cached = referenceCache.get(cacheKey);
-
-    let classes: DdbClass[];
-    if (cached) {
-      classes = JSON.parse(cached) as DdbClass[];
-    } else {
-      const resp = await refFetch(`${CHARACTER_SERVICE}/character/v5/game-data/classes`);
-      if (!resp.ok) throw new Error(`Classes fetch failed: ${resp.status} ${resp.statusText}`);
-      const json = await resp.json() as { data?: DdbClass[] } | DdbClass[];
-      classes = (Array.isArray(json) ? json : json.data) ?? [];
-      referenceCache.set(cacheKey, JSON.stringify(classes));
-    }
+    const classes = await loadGameDataList<DdbClass>("game-data:classes", "classes");
 
     let matched = classes;
 
