@@ -236,7 +236,7 @@ A group with no edition entries yields its non-edition entries. A single lookup 
 2. **Exact:** if some entry's `twinName` equals it, the target group is that twin key. Because renames map to the 2024 side, "Acid Arrow" reaches the Melf's Acid Arrow group.
 3. **Partial:** otherwise, apply the tool's existing partial-match order across **every entry's name in both editions**. The target group is the group of the first match.
 4. `selectByEdition` within the target group.
-5. Add the rename line when the matched name's `twinName` differs from the returned entry's own normalized name.
+5. Add the rename line when the matched name's normalized form differs from the returned entry's normalized name, and only when the returned entry is 2014/2024 (non-edition picks get no rename line). When no entry carries the queried spelling, the rename table's spelling is shown.
 
 ### Searches (`search_*`): the pipeline
 
@@ -264,7 +264,7 @@ With a monster `source` filter, step 3 is skipped. All entries in the book are l
   2. lists every 2014 name with no same-named 2024 entry;
   3. proposes 2024 counterparts: a 2024 name containing the 2014 name, or the same level/rarity/CR/type with a similar description;
   4. prints candidates with that evidence.
-- **The phase-1 agent keeps only pairs it has verified** by reading both descriptions: same thing, same level/rarity/CR, text clearly a revision. It commits them with the evidence. The owner reviews asynchronously after commit. **This review never blocks later phases.** A wrong or missing pair is visible in output and fixed with one table line.
+- **The phase-1 agent keeps only pairs it has verified** by reading both descriptions: same thing, same level/rarity/CR, text clearly a revision. A creature-type change does not disqualify a pair (owner decision 2026-10-17). It commits them with the evidence. The owner reviews asynchronously after commit. **This review never blocks later phases.** A wrong or missing pair is visible in output and fixed with one table line.
 - The same script regenerates `src/source-snapshot.ts` and prints any `sourceCategoryId` missing from the category table above.
 - Document the refresh in CLAUDE.md beside the existing `dump-sourced-languages.mts` note.
 
