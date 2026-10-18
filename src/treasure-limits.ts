@@ -1,7 +1,7 @@
 // Shared work-budget policy for ddb_roll_treasure.
 //
 // Enforced at two independent entry points:
-//   1. The MCP Zod schema in src/index.ts — rejects malformed tool calls
+//   1. The MCP Zod schema in src/server.ts — rejects malformed tool calls
 //      before they ever reach generateTreasure().
 //   2. The runtime guard here, called directly by generateTreasure() in
 //      src/tools/treasure.ts — direct callers of generateTreasure() bypass

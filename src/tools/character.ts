@@ -21,7 +21,7 @@ import type { ParseSection } from "./character/types.js";
 import { levenshteinDistance } from "./character/helpers.js";
 import { parseCharacterData } from "./character/parse.js";
 
-// Re-export so MCP server registrations (src/index.ts) and tests
+// Re-export so MCP server registrations (src/server.ts) and tests
 // (tests/character-parser.test.ts, party.test.ts, character-snapshot.test.ts)
 // can keep importing from `./tools/character.js`. New code should prefer the
 // per-domain modules under `./character/`.

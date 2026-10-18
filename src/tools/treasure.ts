@@ -466,7 +466,7 @@ export async function generateTreasure(
   // maxOutputChars defaults to the real limit; it's overridable only so
   // tests can force the omission/truncation paths deterministically with a
   // small, cheap fixture instead of allocating a genuinely oversized
-  // request. Production callers (src/index.ts) never pass it.
+  // request. Production callers (src/server.ts) never pass it.
   const outputBudget = options.maxOutputChars ?? MAX_TREASURE_OUTPUT_CHARS;
 
   if (cr === undefined && (!monsters || monsters.length === 0)) {
@@ -478,7 +478,7 @@ export async function generateTreasure(
 
   // Work-budget check — must run before any monster lookup or dice roll.
   // Runtime validation is mandatory here (not just in the MCP Zod schema in
-  // index.ts) because direct callers of generateTreasure() bypass Zod.
+  // server.ts) because direct callers of generateTreasure() bypass Zod.
   const budgetError = validateTreasureBudget({ monsters, treasureType });
   if (budgetError) return budgetError;
 

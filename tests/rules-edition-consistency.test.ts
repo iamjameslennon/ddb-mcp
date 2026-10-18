@@ -12,12 +12,25 @@ const mocks = vi.hoisted(() => ({
   beginAuthenticatedSession: vi.fn(),
   captureSession: vi.fn(() => ({})),
   assertSessionCurrent: vi.fn(),
+  invalidationHooks: [] as Array<() => void>,
 }));
 
-vi.mock("../src/session-fetch.js", async (orig) => ({
-  ...(await orig<typeof import("../src/session-fetch.js")>()),
-  ...mocks,
-}));
+vi.mock("../src/session-fetch.js", async (orig) => {
+  const real = await orig<typeof import("../src/session-fetch.js")>();
+  return {
+    ...real,
+    hasValidSession: mocks.hasValidSession,
+    sessionFetch: mocks.sessionFetch,
+    beginAuthenticatedSession: mocks.beginAuthenticatedSession,
+    captureSession: mocks.captureSession,
+    assertSessionCurrent: mocks.assertSessionCurrent,
+    // Record each module's invalidation hook so beforeEach can drop module-level state (game config).
+    onSessionInvalidated: (cb: () => void) => {
+      mocks.invalidationHooks.push(cb);
+      return real.onSessionInvalidated(cb);
+    },
+  };
+});
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -42,6 +55,18 @@ const FIXTURES: Record<string, (ed: "2024" | "2014") => Record<string, unknown>>
   ddb_rate_encounter: ed => ({ party: [{ count: 4, level: 3 }], monsters: [{ name: "Goblin" }], rules_edition: ed }),
   ddb_encounter_cr: ed => ({ party: [{ count: 4, level: 3 }], difficulty: ed === "2024" ? "moderate" : "medium", rules_edition: ed }),
   ddb_roll_treasure: ed => ({ monsters: [{ name: "Goblin" }], treasure_type: "individual", rules_edition: ed }),
+};
+
+// Text only the intended path can produce, per mode, tool and edition.
+const PATH_MARKER: Record<"ddb" | "open5e", Record<string, Partial<Record<"2024" | "2014", string>>>> = {
+  ddb: {
+    ddb_get_spell: { "2024": "FIREBALL 2024", "2014": "FIREBALL 2014" },
+    ddb_get_monster: { "2024": "Monster Manual (2024)", "2014": "Basic Rules (2014)" },
+  },
+  open5e: {
+    ddb_get_spell: { "2024": "A bright streak.", "2014": "A bright streak." },
+    ddb_get_monster: { "2024": "Slash.", "2014": "Slash." },
+  },
 };
 
 // ── DDB fixtures ──────────────────────────────────────────────────────────────
@@ -140,6 +165,7 @@ beforeEach(async () => {
   clearReferenceCache();
   clearMonsterCache();
   clearOpen5eCache();
+  for (const hook of mocks.invalidationHooks) hook();
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   client = new Client({ name: "t", version: "0" });
   await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
@@ -181,6 +207,10 @@ describe.each(["ddb", "open5e"] as const)("labels (%s path)", mode => {
     const res = await client.callTool({ name: tool, arguments: FIXTURES[tool](ed) });
     const text = (res.content as Array<{ text: string }>)[0].text;
     expect(EXEMPT.test(text.split("\n")[0])).toBe(false); // fixtures must exercise a labelled answer
+    // Prove which path answered: only the open5e mode may carry the Open5e label.
+    if (mode === "ddb") expect(text).not.toContain("Open5e fallback");
+    const marker = PATH_MARKER[mode][tool]?.[ed];
+    if (marker) expect(text).toContain(marker);
     if (tool.startsWith("ddb_search_")) {
       const results = text.split("\n").filter(l => RESULT_LINE.test(l));
       expect(results.length).toBeGreaterThan(0);
