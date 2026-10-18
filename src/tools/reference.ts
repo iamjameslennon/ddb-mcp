@@ -23,7 +23,7 @@ import {
   twinName, classifyEdition, selectByEdition, definitionTiebreak, isEdition,
   lookupByName, groupAndSelect, normalizeName, rulesLine, renameLine, editionTag,
   searchHeader, searchFooter,
-  type RulesEdition, type EditionInfo, type EditionReason,
+  type RulesEdition, type EditionInfo, type SelectionReason,
 } from "../edition.js";
 import { peekSourceIndex, getSourceIndex } from "../game-config.js";
 import { createSpellStore, addSpells, spellList, type DdbSpell, type SpellStore } from "./spell-store.js";
@@ -489,7 +489,7 @@ export function isConcentrationSpell(def: Record<string, unknown>): boolean | nu
 
 function formatSpell(
   spell: DdbSpell,
-  edition: { info: EditionInfo; reason?: EditionReason; renamed?: { name2014: string; name2024: string } },
+  edition: { info: EditionInfo; reason?: SelectionReason; renamed?: { name2014: string; name2024: string } },
 ): string {
   const d = spell.definition;
   const ACTIVATION_TYPES: Record<number, string> = {

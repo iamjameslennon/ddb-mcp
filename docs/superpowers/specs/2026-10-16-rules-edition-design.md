@@ -106,7 +106,13 @@ All strings come from `src/edition.ts`. **No tool builds its own edition text**,
   - `(no 2024 version found — 2014 text shown)`
   - `(no 2014 version found — 2024 text shown)`
   - "Found", not "exists": D&D Beyond leaves content locked to the account out of its lists, so the data can't prove a version doesn't exist (live 2026-10-17: Befuddlement, the 2024 Feeblemind, is missing from the owner's spell lists).
-  - Locked monster twin (`ddb_get_monster` only, see [Monsters](#monsters-srctoolsmonsterts--phase-2)): `(the 2024 version isn't available to this account — 2014 text shown)` / `(the 2014 version isn't available to this account — 2024 text shown)`
+  - Locked monster twin (`ddb_get_monster`, see [Monsters](#monsters-srctoolsmonsterts--phase-2)): `(the 2024 version isn't available to this account — 2014 text shown)` / `(the 2014 version isn't available to this account — 2024 text shown)`
+- **Locked monster content** (owner decision 2026-10-18):
+  - Swapped search line suffix, after HP: `(2024 version isn't available to this account)` / `(2014 version isn't available to this account)`
+  - Swap summary, just before the search footer: `1 entry shows its 2014 version because the 2024 version isn't available to this account.` / `N entries show their 2014 versions because the 2024 versions aren't available to this account.` (mirrored for 2014 requested)
+  - Search header note: `1 entry isn't available to this account; its stat block falls back to the SRD or shows a restricted notice.` / `N entries aren't available to this account; their stat blocks fall back to the SRD or show a restricted notice.`
+  - `ddb_get_monster` with `source`: `(an available version is in Basic Rules (2014) [basic-rules-2014] — pass source: "basic-rules-2014" to see it)` / `(an available version is in The Sunless Citadel — pass source: "TSC" to see it)`
+  - `source: "homebrew"` search header: `Rules: showing every entry in homebrew content, each tagged with its edition.`
   - Rules sections: `(no matching 2024 rules section — 2014 text shown)` / `(no matching 2014 rules section — 2024 text shown)`
   - Treasure: `(no 2014 version exists — 2024 tables used)`
 - **Rename line**, appended when the query matched a different name in the same twin group than the entry returned: `(2014 name: Acid Arrow · 2024 name: Melf's Acid Arrow)`
@@ -340,7 +346,11 @@ These tools are not affected: `ddb_login`, `ddb_logout`, `ddb_close_browser`, `d
 - `getMonsterStats` gets the new return type. Its inline Open5e v1 fetch moves into `open5e.ts` (one place to migrate in phase 4).
 - The `[Legacy]` tag and the `**Source** … [Legacy]` text are replaced by the edition tag and rules line.
 - `searchMonsters` uses the search pipeline. CR/type/size are attribute filters; the 600-entry scan is unchanged.
-- **Locked twin** (owner decision 2026-10-17): when `getMonster`'s pick (no `source`) is the requested edition but its stat block is restricted (`accessType 4`, no stats), and the other edition's twin is owned, show that twin with the locked reason line. Live, about 1 in 55 twin groups (e.g. Twig Blight). With `source`, never swap. Searches can't tell, because the list response carries no `accessType`.
+- **Locked twin** (owner decision 2026-10-17): when `getMonster`'s pick (no `source`) is the requested edition but its stat block is restricted (`accessType 4`, no stats), and the other edition's twin is owned, show that twin with the locked reason line. Live, about 1 in 55 twin groups (e.g. Twig Blight). With `source`, never swap.
+  - **Owner decision 2026-10-18 (always give information when we can):** the list response carries a top-level `accessType` map, `{ "<id>": <number> }` (live: it agreed with the detail endpoint on 60 of 60 entries; only `4` means locked, a missing map or id means available). Per twin group the order is: the first available entry of the requested edition by tiebreak; else, when every requested-edition entry is locked, the first available other-edition entry with the `locked-…` reason; else today's selection (the other edition, when the requested one has no entry, keeps the `no-…-version` reason and prefers an available copy). `selectByEdition` / `lookupByName` / `groupAndSelect` take this as an optional `available` predicate.
+  - **Search** (no `source`): a swapped line keeps its edition tag and ends, after HP, with `(2024 version isn't available to this account)` / `(2014 version isn't available to this account)`; a swap summary line goes just before the footer; a swapped group isn't counted as hidden. With or without `source`, a header note counts the listed entries that are locked. With `source`, nothing is swapped.
+  - **`getMonster`** (no `source`) picks with the list map, so a locked pick's stat block is never fetched; the detail check stays the fallback when the map lacks the id or calls a restricted pick available (one more candidate, at most one extra detail request). With `source`, a restricted pick gets a hint naming the first official, available entry of its twin group outside the book (by short name when the book has no slug); a failed hint lookup gives no hint.
+  - **`source: "homebrew"`** (both tools, case-insensitive, checked before book resolution): homebrew entries only (`isHomebrew !== false`), labelled `Rules: homebrew (edition not stated)` / `[homebrew]`, no selection, swap or source note; a search's header uses `homebrew content` as the book. `getMonsterStats` still skips homebrew.
 
 ### Interim Open5e labels — phase 2
 

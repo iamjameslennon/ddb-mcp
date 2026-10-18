@@ -5,6 +5,7 @@ import {
   dedupeById, definitionTiebreak, monsterTiebreak,
   selectByEdition, lookupByName, groupAndSelect,
   rulesLine, renameLine, RULES_EDITION_TOOL_NOTE, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, editionTag, searchHeader, searchFooter, ambiguityMessage,
+  lockedLineSuffix, lockedSwapSummary, lockedEntriesNote, availableElsewhereHint, HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO,
   characterMainEdition, characterTag, characterRulesLine,
   type CategoryRecord, type CharacterEditionEntry, type CharacterEntryKind,
   type EditionInfo, type EditionMarkers, type Ruleset, type SourceRecord,
@@ -767,5 +768,109 @@ describe("source snapshot", () => {
     expect(at(145)).toEqual({ ruleset: "2024", book: "Player's Handbook (2024)" });
     expect(at(148, 1)).toEqual({ ruleset: "2024", book: "D&D Beyond Basic Rules" });
     expect(at(193).ruleset).toBe("third-party");
+  });
+});
+
+// ── Availability (locked content, owner decisions 2026-10-18) ─────────────────
+
+describe("selectByEdition with an availability predicate", () => {
+  const A24 = e(1, "Twig Blight", "2024");
+  const B24 = e(4, "Twig Blight", "2024");
+  const A14 = e(2, "Twig Blight", "2014");
+  const B14 = e(3, "Twig Blight", "2014");
+  const pick = (group: E[], requested: "2024" | "2014", locked: number[]) =>
+    selectByEdition(group, requested, infoOf, definitionTiebreak, c => !locked.includes(c.id));
+
+  it("1. the first available entry of the requested edition, even when a lower id is locked", () => {
+    expect(pick([A24, B24, A14], "2024", [1])).toEqual({ entry: B24 });
+    expect(pick([A14, B14, A24], "2014", [2])).toEqual({ entry: B14 });
+  });
+
+  it("2. every requested entry locked: the first available other-edition entry, with the locked reason", () => {
+    expect(pick([A24, A14, B14], "2024", [1, 2])).toEqual({ entry: B14, reason: "locked-2024" });
+    expect(pick([A24, B24, A14], "2014", [2, 1])).toEqual({ entry: B24, reason: "locked-2014" });
+  });
+
+  it("3. nothing available: today's selection (the requested edition's first, no reason)", () => {
+    expect(pick([A24, A14], "2024", [1, 2])).toEqual({ entry: A24 });
+    expect(pick([A24, A14], "2014", [1, 2])).toEqual({ entry: A14 });
+  });
+
+  it("no requested-edition entry at all: the no-version reason, preferring an available copy", () => {
+    expect(pick([A14, B14], "2024", [2])).toEqual({ entry: B14, reason: "no-2024-version" });
+    expect(pick([A14, B14], "2024", [2, 3])).toEqual({ entry: A14, reason: "no-2024-version" });
+  });
+
+  it("no predicate: unchanged", () => {
+    expect(selectByEdition([A24, A14], "2024", infoOf, definitionTiebreak)).toEqual({ entry: A24 });
+    expect(selectByEdition([A14], "2024", infoOf, definitionTiebreak)).toEqual({ entry: A14, reason: "no-2024-version" });
+  });
+
+  it("lookupByName passes the predicate through", () => {
+    expect(lookupByName([A24, A14], "Twig Blight", "2024", {
+      name: c => c.name, info: infoOf, tiebreak: definitionTiebreak, available: c => c.id !== 1,
+    })).toEqual({ entry: A14, reason: "locked-2024" });
+  });
+});
+
+describe("groupAndSelect with an availability predicate", () => {
+  const twinKey = (c: E) => twinName(c.name);
+  const run = (all: E[], requested: "2024" | "2014", locked: number[]) =>
+    groupAndSelect(all, requested, { info: infoOf, twinKey, tiebreak: definitionTiebreak, available: c => !locked.includes(c.id) });
+
+  it("a swapped group carries the locked reason and is not counted as hidden", () => {
+    const out = run([e(1, "Banshee", "2024"), e(2, "Banshee", "2014")], "2024", [1]);
+    expect(out.selected.map(s => [s.entry.id, s.reason])).toEqual([[2, "locked-2024"]]);
+    expect(out.hidden).toBe(0);
+    const mirror = run([e(1, "Banshee", "2024"), e(2, "Banshee", "2014")], "2014", [2]);
+    expect(mirror.selected.map(s => [s.entry.id, s.reason])).toEqual([[1, "locked-2014"]]);
+    expect(mirror.hidden).toBe(0);
+  });
+
+  it("both locked: the requested edition is listed and its twin still counts as hidden", () => {
+    const out = run([e(1, "Banshee", "2024"), e(2, "Banshee", "2014")], "2024", [1, 2]);
+    expect(out.selected.map(s => [s.entry.id, s.reason])).toEqual([[1, undefined]]);
+    expect(out.hidden).toBe(1);
+  });
+
+  it("the twin isn't counted as hidden when switching would swap straight back", () => {
+    // 2014 requested would find its own entry locked and show this 2024 one again.
+    const out = run([e(1, "Banshee", "2024"), e(2, "Banshee", "2014")], "2024", [2]);
+    expect(out.selected.map(s => s.entry.id)).toEqual([1]);
+    expect(out.hidden).toBe(0);
+  });
+});
+
+describe("locked-content labels", () => {
+  it("search line suffixes", () => {
+    expect(lockedLineSuffix("locked-2024")).toBe("(2024 version isn't available to this account)");
+    expect(lockedLineSuffix("locked-2014")).toBe("(2014 version isn't available to this account)");
+  });
+
+  it("swap summary", () => {
+    expect(lockedSwapSummary("2024", 1)).toBe("1 entry shows its 2014 version because the 2024 version isn't available to this account.");
+    expect(lockedSwapSummary("2024", 3)).toBe("3 entries show their 2014 versions because the 2024 versions aren't available to this account.");
+    expect(lockedSwapSummary("2014", 1)).toBe("1 entry shows its 2024 version because the 2014 version isn't available to this account.");
+    expect(lockedSwapSummary("2014", 2)).toBe("2 entries show their 2024 versions because the 2014 versions aren't available to this account.");
+    expect(lockedSwapSummary("2024", 0)).toBeNull();
+  });
+
+  it("locked-entries header note", () => {
+    expect(lockedEntriesNote(1)).toBe("1 entry isn't available to this account; its stat block falls back to the SRD or shows a restricted notice.");
+    expect(lockedEntriesNote(4)).toBe("4 entries aren't available to this account; their stat blocks fall back to the SRD or show a restricted notice.");
+    expect(lockedEntriesNote(0)).toBeNull();
+  });
+
+  it("available-elsewhere hint", () => {
+    expect(availableElsewhereHint("Basic Rules (2014) [basic-rules-2014]", "basic-rules-2014"))
+      .toBe('(an available version is in Basic Rules (2014) [basic-rules-2014] — pass source: "basic-rules-2014" to see it)');
+    expect(availableElsewhereHint("The Sunless Citadel", "TSC"))
+      .toBe('(an available version is in The Sunless Citadel — pass source: "TSC" to see it)');
+  });
+
+  it("homebrew source labels", () => {
+    expect(searchHeader({ sourceBook: HOMEBREW_SOURCE_BOOK })).toBe("Rules: showing every entry in homebrew content, each tagged with its edition.");
+    expect(rulesLine(HOMEBREW_INFO)).toBe("Rules: homebrew (edition not stated)");
+    expect(editionTag(HOMEBREW_INFO)).toBe("[homebrew]");
   });
 });

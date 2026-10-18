@@ -331,7 +331,8 @@ server.tool(
     source: z.string().optional()
       .describe("Restrict to one sourcebook — its short code (e.g. 'mm-2024', 'cos', 'rthw', as shown in " +
                 "brackets in results), short name, or full title. Matches reprints too. An unknown or " +
-                "non-matching book returns an error naming the alternatives. Wins over rules_edition."),
+                "non-matching book returns an error naming the alternatives. Wins over rules_edition. " +
+                "Pass 'homebrew' to list homebrew entries only."),
     rules_edition: RULES_EDITION_PARAM,
   },
   READ_ONLY_NET,
@@ -357,7 +358,7 @@ server.tool(
       .describe("Restrict to one sourcebook — its short code (e.g. 'mm-2024', 'cos', 'rthw', as shown in " +
                 "brackets in ddb_search_monsters results), short name, or full title. Matches reprints too. " +
                 "Many 2014 core monsters (e.g. Zombie) are filed under 'basic-rules-2014', not 'mm-2014'. " +
-                "Wins over rules_edition."),
+                "Wins over rules_edition. Pass 'homebrew' to look up a homebrew entry only."),
     rules_edition: RULES_EDITION_PARAM,
   },
   READ_ONLY_NET,

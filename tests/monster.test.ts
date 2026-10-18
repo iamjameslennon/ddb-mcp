@@ -225,6 +225,10 @@ const ALL_MONSTERS = [
 ];
 // Refilled with VAMPIRE_SPAWN_COS.id in beforeEach, so each test chooses what else is locked.
 const unownedIds = new Set<number>();
+// Locked in the detail endpoint but reported available (1) in the list's accessType map.
+const mapSaysAvailable = new Set<number>();
+// Leave the accessType map out of list responses, as before 2026-10-18's probe.
+let omitAccessMap = false;
 
 // Only reachable through FUZZY, so it can't shift any name search's counts.
 const GRAVE_MOTH_RTHW = monster({ id: 8_000_030, name: "Grave Moth", sourceId: 232, sources: sources(232) });
@@ -297,7 +301,16 @@ function setupFetch(): void {
         // equal-rank entries (edition twins) swap. Plain matches reorder freely.
         data = fuzzy ? [data[1], data[0], ...data.slice(2)] : [...data].reverse();
       }
-      return mockResponse({ pagination: { total: data.length, currentPage: 1, pages: 1 }, data: data.slice(skip, skip + take) });
+      const pageData = data.slice(skip, skip + take);
+      // The live list carries { "<id>": accessType } for its page: 4 = locked, 1 = available.
+      const accessType = Object.fromEntries(pageData.map(m => {
+        const id = m.id as number;
+        return [String(id), unownedIds.has(id) && !mapSaysAvailable.has(id) ? 4 : 1];
+      }));
+      return mockResponse({
+        ...(omitAccessMap ? {} : { accessType }),
+        pagination: { total: data.length, currentPage: 1, pages: 1 }, data: pageData,
+      });
     }
 
     const idMatch = url.match(/\/v1\/Monster\/(\d+)/);
@@ -329,6 +342,8 @@ beforeEach(() => {
   detailUrls.length = 0;
   unownedIds.clear();
   unownedIds.add(VAMPIRE_SPAWN_COS.id as number);
+  mapSaysAvailable.clear();
+  omitAccessMap = false;
   setupFetch();
 });
 
@@ -1040,7 +1055,98 @@ describe("a locked twin", () => {
 
   it("an owned pick makes no second detail request", async () => {
     await getMonster("Twig Blight");
+    expect(detailUrls.filter(u => /\/Monster\/8000401$/.test(u))).toHaveLength(1);
     expect(detailUrls.filter(u => /\/Monster\/8000400$/.test(u))).toEqual([]);
+  });
+
+  it("a pick the list map marks locked is never fetched: only the twin's detail is requested", async () => {
+    unownedIds.add(BLIGHT_2024.id as number);
+    expect(await getMonster("Twig Blight")).toContain("BLIGHT 2014");
+    expect(detailUrls.filter(u => /\/Monster\/8000401$/.test(u))).toEqual([]);
+  });
+
+  it("with no map, the detail check finds the locked pick and swaps, as before", async () => {
+    omitAccessMap = true;
+    unownedIds.add(BLIGHT_2024.id as number);
+    const out = await getMonster("Twig Blight");
+    expect(out).toContain("(the 2024 version isn't available to this account — 2014 text shown)");
+    expect(out).toContain("BLIGHT 2014");
+    expect(detailUrls.filter(u => /\/Monster\/800040[01]$/.test(u))).toHaveLength(2);
+  });
+
+  it("a pick the map calls available but whose detail is restricted falls back to the next candidate", async () => {
+    unownedIds.add(BLIGHT_2024.id as number);
+    mapSaysAvailable.add(BLIGHT_2024.id as number);
+    const out = await getMonster("Twig Blight");
+    expect(out).toContain("(the 2024 version isn't available to this account — 2014 text shown)");
+    expect(out).toContain("BLIGHT 2014");
+  });
+
+  it("at most one extra detail request: a second restricted candidate goes to Open5e", async () => {
+    extraMonsters = [{ ...BLIGHT_2014, stats: [], actionsDescription: "" }, BLIGHT_2024];
+    for (const id of [BLIGHT_2014.id, BLIGHT_2024.id] as number[]) { unownedIds.add(id); mapSaysAvailable.add(id); }
+    expect(await getMonster("Twig Blight")).toBe("O5 MONSTER RESULT");
+    expect(detailUrls).toHaveLength(2);
+  });
+
+  it("prefers an available copy of the requested edition over a locked one with a lower tiebreak", async () => {
+    extraMonsters = [
+      monster({ id: 8_000_420, name: "Gulthias Blight", sourceId: 147, sources: sources(147), stats: [], actionsDescription: "" }),
+      monster({ id: 8_000_421, name: "Gulthias Blight", sourceId: 232, sources: sources(232), actionsDescription: "<p>ADVENTURE GULTHIAS</p>" }),
+      monster({ id: 8_000_422, name: "Gulthias Blight", isLegacy: true, sourceId: 5, sources: sources(5), actionsDescription: "<p>GULTHIAS 2014</p>" }),
+    ];
+    unownedIds.add(8_000_420);
+    const out = await getMonster("Gulthias Blight");
+    expect(out).toContain("ADVENTURE GULTHIAS");
+    expect(out.split("\n")[1]).toBe("Rules: 2024 · Ravenloft: The Horrors Within");
+    expect(out).not.toContain("isn't available");
+  });
+
+  describe("with a source: no swap, but a hint where an available version is", () => {
+    it("names the book and the source value to pass", async () => {
+      unownedIds.add(BLIGHT_2024.id as number);
+      const lines = (await getMonster("Twig Blight", { source: "mm-2024" })).split("\n");
+      expect(lines[1]).toBe("Rules: 2024 · Monster Manual (2024)");
+      expect(lines[2]).toBe('(an available version is in Monster Manual (2014) [mm-2014] — pass source: "mm-2014" to see it)');
+      expect(lines.join("\n")).toContain("requires ownership");
+    });
+
+    it("a book with no slug is named by title, with its short name as the value", async () => {
+      extraMonsters = [BLIGHT_2024, monster({ id: 8_000_402, name: "Twig Blight", isLegacy: true, sourceId: 16, sources: sources(16) })];
+      unownedIds.add(BLIGHT_2024.id as number);
+      expect(await getMonster("Twig Blight", { source: "mm-2024" }))
+        .toContain('(an available version is in The Sunless Citadel — pass source: "TSC" to see it)');
+    });
+
+    it("no available twin: no hint", async () => {
+      extraMonsters = [{ ...BLIGHT_2014, stats: [], actionsDescription: "" }, BLIGHT_2024];
+      unownedIds.add(BLIGHT_2024.id as number);
+      unownedIds.add(BLIGHT_2014.id as number);
+      const out = await getMonster("Twig Blight", { source: "mm-2024" });
+      expect(out).toContain("requires ownership");
+      expect(out).not.toContain("an available version");
+    });
+
+    it("a homebrew copy is never hinted", async () => {
+      extraMonsters = [BLIGHT_2024, monster({ id: 8_000_403, name: "Twig Blight", isHomebrew: true, sourceId: 5, sources: sources(5) })];
+      unownedIds.add(BLIGHT_2024.id as number);
+      expect(await getMonster("Twig Blight", { source: "mm-2024" })).not.toContain("an available version");
+    });
+
+    it("the hint lookup failing gives no hint and no error", async () => {
+      failUnfilteredSearch = true;
+      unownedIds.add(BLIGHT_2024.id as number);
+      const out = await getMonster("Twig Blight", { source: "mm-2024" });
+      expect(out).toContain("# Twig Blight");
+      expect(out).toContain("requires ownership");
+      expect(out).not.toContain("an available version");
+      expect(o5GetMonster).not.toHaveBeenCalled();
+    });
+
+    it("an owned pick makes no hint lookup", async () => {
+      await getMonster("Twig Blight", { source: "mm-2024" });
+      expect(listUrls.filter(u => !u.includes("sources="))).toEqual([]);
+    });
   });
 
   it("the swapped twin's detail is cached", async () => {
@@ -1089,5 +1195,130 @@ describe("searchMonsters result lines", () => {
     expect(await searchMonsters({ name: "Tough" })).toContain("- **Tough** [2024]");
     expect(o5SearchMonsters).not.toHaveBeenCalled();
     expect(await searchMonsters({ name: "Thug" })).toContain("O5 SEARCH RESULT");
+  });
+});
+
+// ── Locked content in search (owner decisions 2026-10-18) ─────────────────────
+
+describe("searchMonsters and locked entries", () => {
+  const twins = (name: string, base: number) => [
+    monster({ id: base, name, sourceId: 147, sources: sources(147) }),
+    monster({ id: base + 1, name, isLegacy: true, sourceId: 1, sources: sources(1) }),
+  ];
+  const BANSHEE = twins("Banshee", 8_000_600);
+
+  it("2024 requested, 2024 locked: the 2014 twin is listed with the reason, a singular summary, and no hidden count", async () => {
+    extraMonsters = BANSHEE;
+    unownedIds.add(8_000_600);
+    const lines = (await searchMonsters({ name: "Banshee" })).split("\n");
+    expect(lines).toContain("- **Banshee** [2014] — Basic Rules (2014) [basic-rules-2014] — CR 1/4, Medium Undead, AC 8, 22 HP (2024 version isn't available to this account)");
+    expect(lines.filter(l => l.startsWith("- **Banshee**"))).toHaveLength(1);
+    expect(lines.at(-1)).toBe("1 entry shows its 2014 version because the 2024 version isn't available to this account.");
+    expect(lines.join("\n")).not.toContain("hidden");
+    expect(lines.join("\n")).not.toContain("entry isn't available");
+  });
+
+  it("2014 requested, 2014 locked: the mirror", async () => {
+    extraMonsters = BANSHEE;
+    unownedIds.add(8_000_601);
+    const lines = (await searchMonsters({ name: "Banshee", rulesEdition: "2014" })).split("\n");
+    expect(lines).toContain("- **Banshee** [2024] — Monster Manual [mm-2024] — CR 1/4, Medium Undead, AC 8, 22 HP (2014 version isn't available to this account)");
+    expect(lines.at(-1)).toBe("1 entry shows its 2024 version because the 2014 version isn't available to this account.");
+  });
+
+  it("both locked: the requested edition is listed, with no swap line, and the header note counts it", async () => {
+    extraMonsters = BANSHEE;
+    unownedIds.add(8_000_600);
+    unownedIds.add(8_000_601);
+    const lines = (await searchMonsters({ name: "Banshee" })).split("\n");
+    expect(lines[1]).toBe("1 entry isn't available to this account; its stat block falls back to the SRD or shows a restricted notice.");
+    expect(lines[2]).toMatch(/^\*\*Monster Search\*\*/);
+    expect(lines).toContain("- **Banshee** [2024] — Monster Manual [mm-2024] — CR 1/4, Medium Undead, AC 8, 22 HP");
+    expect(lines.join("\n")).not.toContain("shows its");
+    expect(lines.at(-1)).toBe('1 2014 version hidden — rules_edition: "2014" shows it.');
+  });
+
+  it("plural forms of the summary and the header note", async () => {
+    extraMonsters = [...twins("Gloom Banshee", 8_000_610), ...twins("Gloom Hag", 8_000_620),
+                     ...twins("Gloom Wight", 8_000_630), ...twins("Gloom Wraith", 8_000_640)];
+    for (const id of [8_000_610, 8_000_620, 8_000_630, 8_000_631, 8_000_640, 8_000_641]) unownedIds.add(id);
+    const lines = (await searchMonsters({ name: "Gloom" })).split("\n");
+    expect(lines[1]).toBe("2 entries aren't available to this account; their stat blocks fall back to the SRD or show a restricted notice.");
+    expect(lines.at(-2)).toBe("2 entries show their 2014 versions because the 2024 versions aren't available to this account.");
+    expect(lines.at(-1)).toBe('2 2014 versions hidden — rules_edition: "2014" shows them.');
+  });
+
+  it("no map in the response: output as before", async () => {
+    omitAccessMap = true;
+    extraMonsters = BANSHEE;
+    unownedIds.add(8_000_600);
+    const out = await searchMonsters({ name: "Banshee" });
+    expect(out).toContain("- **Banshee** [2024] — Monster Manual [mm-2024] — CR 1/4, Medium Undead, AC 8, 22 HP\n");
+    expect(out).not.toContain("available to this account");
+    expect(out.split("\n").at(-1)).toBe('1 2014 version hidden — rules_edition: "2014" shows it.');
+  });
+
+  it("with a source: the header note for a locked entry, and nothing swapped", async () => {
+    const lines = (await searchMonsters({ source: "cos" })).split("\n");
+    expect(lines[1]).toBe('(source "cos" is a 2014 book — rules_edition "2024" was ignored)');
+    expect(lines[2]).toBe("1 entry isn't available to this account; its stat block falls back to the SRD or shows a restricted notice.");
+    expect(lines.find(l => l.startsWith("- **Vampire Spawn**"))).not.toContain("version isn't available");
+    expect(lines.join("\n")).not.toContain("shows its");
+  });
+});
+
+describe("getMonster under a source keeps the rename line", () => {
+  it("Thug in mm-2024 shows Tough with the rename line", async () => {
+    extraMonsters = [monster({ id: 8_000_100, name: "Tough", typeId: 8, sourceId: 147, sources: sources(147), challengeRatingId: 4 })];
+    expect(await getMonster("Thug", { source: "mm-2024" })).toContain("(2014 name: Thug · 2024 name: Tough)");
+  });
+});
+
+// ── source: "homebrew" (owner decision 2026-10-18) ────────────────────────────
+
+describe('source: "homebrew"', () => {
+  it("getMonster returns the exact-name homebrew entry, wrapped, never the official one", async () => {
+    const out = await getMonster("Zombie", { source: " HomeBrew " });
+    expect(out).toContain("HOMEBREW SLAM");
+    expect(out).toContain("Rules: homebrew (edition not stated)");
+    expect(out).not.toContain("1d8 + 1");
+    expect(out.split("\n")[0]).toBe("<untrusted_dndbeyond_content>");
+    expect(listUrls.every(u => !u.includes("sources="))).toBe(true);
+  });
+
+  it("getMonster falls back to a partial homebrew name", async () => {
+    expect(await getMonster("Overlord", { source: "homebrew" })).toContain("Overlord");
+  });
+
+  it("getMonster with no homebrew match is a plain not-found", async () => {
+    const out = await getMonster("Wolf", { source: "homebrew" });
+    expect(out).toBe('No homebrew monster found matching "Wolf".');
+    expect(o5GetMonster).not.toHaveBeenCalled();
+  });
+
+  it("searchMonsters lists only homebrew entries, tagged and wrapped, with no hiding", async () => {
+    extraMonsters = [monster({ id: 8_000_070, name: "Zombie Wisp", isHomebrew: undefined, sourceId: 147, sources: sources(147) })];
+    const lines = (await searchMonsters({ name: "Zombie", source: "homebrew" })).split("\n");
+    expect(lines[0]).toBe("Rules: showing every entry in homebrew content, each tagged with its edition.");
+    const entries = lines.filter(l => l.startsWith("- **"));
+    expect(entries).toHaveLength(3); // ZOMBIE_HOMEBREW, HOMEBREW_IN_BOOK, and the isHomebrew-unset Zombie Wisp
+    for (const l of entries) {
+      expect(l).toMatch(/^- \*\*.+\*\* \[homebrew\] — /);
+      const i = lines.indexOf(l);
+      expect(lines[i - 1]).toBe("<untrusted_dndbeyond_content>");
+    }
+    expect(lines.join("\n")).not.toContain("hidden");
+    expect(lines.join("\n")).not.toContain("was ignored");
+  });
+
+  it("searchMonsters with no homebrew match is a plain not-found", async () => {
+    expect(await searchMonsters({ name: "Wolf", source: "homebrew" })).toBe('No homebrew monsters found matching "Wolf".');
+    expect(o5SearchMonsters).not.toHaveBeenCalled();
+  });
+
+  it("getMonsterStats still skips homebrew", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => mockResponse({ results: [] })));
+    extraMonsters = [monster({ id: 8_000_060, name: "Gutter Imp", isHomebrew: true, sourceId: 147, sources: sources(147) })];
+    expect(await getMonsterStats("Gutter Imp")).toEqual({ status: "not-found" });
   });
 });

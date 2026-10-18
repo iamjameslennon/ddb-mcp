@@ -17,7 +17,9 @@ import { getGameConfig, getSourceIndex, type GameConfig } from "../game-config.j
 import {
   classifyEdition, selectByEdition, lookupByName, groupAndSelect, monsterTiebreak, twinName, twinAliases,
   normalizeName, dedupeById, isEdition, rulesLine, renameLine, sourceNote, editionTag, searchHeader, searchFooter,
-  type EditionInfo, type IndexedSource, type RulesEdition, type RulesLineReason, type SourceIndex,
+  isLockedReason, lockedLineSuffix, lockedSwapSummary, lockedEntriesNote, availableElsewhereHint,
+  HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO,
+  type EditionInfo, type IndexedSource, type RulesEdition, type RulesLineReason, type SelectionReason, type SourceIndex,
 } from "../edition.js";
 import { TtlCache } from "../cache.js";
 import { wrapUntrusted } from "../utils.js";
@@ -277,6 +279,27 @@ interface DdbMonster {
 interface MonsterListResponse {
   pagination: { total: number; currentPage: number; pages: number };
   data: DdbMonster[];
+  /**
+   * id → accessType for the entries on this page (live 2026-10-18: agreed with
+   * the detail endpoint on 60 of 60). 4 = locked to the account; 1 = available.
+   */
+  accessType?: Record<string, number> | null;
+}
+
+/** Merged list accessType maps (id → accessType). A missing id means available. */
+type AccessMap = Map<number, number>;
+
+function mergeAccess(into: AccessMap, list: Pick<MonsterListResponse, "accessType"> | null | undefined): void {
+  const map = list?.accessType;
+  if (!map || typeof map !== "object") return;
+  for (const [id, value] of Object.entries(map)) {
+    if (typeof value === "number") into.set(Number(id), value);
+  }
+}
+
+/** Locked iff the list map says 4. Any other value, or no entry, counts as available. */
+function isLockedIn(access: AccessMap, id: number): boolean {
+  return access.get(id) === 4;
 }
 
 interface MonsterSingleResponse {
@@ -321,7 +344,7 @@ async function fetchMonsterList(search: string, take: number, sourceIds: number[
  * merged in alias order, first copy of each id kept. Only the typed name's own
  * query (the first alias) fails the call; a failed alias query contributes nothing.
  */
-async function fetchCandidates(name: string, take: number, sourceIds?: number[]): Promise<DdbMonster[]> {
+async function fetchCandidates(name: string, take: number, sourceIds?: number[]): Promise<{ data: DdbMonster[]; access: AccessMap }> {
   // One snapshot for every alias query, as in fetchMonsterPages: lists fetched
   // either side of an account change must not merge.
   const snapshot = captureSession();
@@ -331,7 +354,9 @@ async function fetchCandidates(name: string, take: number, sourceIds?: number[])
     ...others.map(alias => fetchMonsterList(alias, take, sourceIds).catch(() => null)),
   ]);
   assertSessionCurrent(snapshot);
-  return dedupeById([first, ...rest].flatMap(list => list?.data ?? []));
+  const access: AccessMap = new Map();
+  for (const list of [first, ...rest]) mergeAccess(access, list);
+  return { data: dedupeById([first, ...rest].flatMap(list => list?.data ?? [])), access };
 }
 
 /** Page size the monster service actually honours — larger `take` values are silently capped. */
@@ -346,7 +371,9 @@ const MAX_FILTER_SCAN = 600;
  * miss entries); each ID is kept once and callers compare the distinct count
  * with `total` to tell whether the scan was complete.
  */
-async function fetchMonsterPages(search: string, sourceIds: number[], limit: number): Promise<{ data: DdbMonster[]; total: number }> {
+async function fetchMonsterPages(
+  search: string, sourceIds: number[], limit: number,
+): Promise<{ data: DdbMonster[]; total: number; access: AccessMap }> {
   // One snapshot for the whole scan: each page checks only its own request,
   // so pages fetched either side of an account change would otherwise merge.
   const snapshot = captureSession();
@@ -358,7 +385,9 @@ async function fetchMonsterPages(search: string, sourceIds: number[], limit: num
   assertSessionCurrent(snapshot);
   const seen = new Set<number>();
   const data = [first, ...rest].flatMap(page => page.data ?? []).filter(m => !seen.has(m.id) && seen.add(m.id));
-  return { data, total };
+  const access: AccessMap = new Map();
+  for (const page of [first, ...rest]) mergeAccess(access, page);
+  return { data, total, access };
 }
 
 /** Fetch (or serve from cache) one monster's stat block. */
@@ -409,6 +438,10 @@ interface StatBlockExtras {
   renamed?: { name2014: string; name2024: string };
   /** A sourceNote() line. */
   note?: string | null;
+  /** An availableElsewhereHint() line. */
+  hint?: string | null;
+  /** Overrides the entry's own classification (source: "homebrew"). */
+  info?: EditionInfo;
 }
 
 function formatStatBlock(
@@ -423,9 +456,10 @@ function formatStatBlock(
 
   const lines: string[] = [];
   lines.push(`# ${m.name}`);
-  lines.push(rulesLine(classifyEdition(m, index), { reason: extras.reason }));
+  lines.push(rulesLine(extras.info ?? classifyEdition(m, index), { reason: extras.reason }));
   if (extras.renamed) lines.push(renameLine(extras.renamed.name2014, extras.renamed.name2024));
   if (extras.note) lines.push(extras.note);
+  if (extras.hint) lines.push(extras.hint);
   lines.push(`*${size} ${typeName}, ${alignment}*`);
   // Name the book (as ddb_search_monsters does) so same-named 2014/2024 blocks are distinguishable.
   if (m.sourceId) lines.push(`**Source** ${sourceLabel(index, m.sourceId)}`);
@@ -525,6 +559,11 @@ function formatStatBlock(
 
 // ── Exported tool functions ───────────────────────────────────────────────────
 
+/** `source: "homebrew"` is reserved: homebrew entries only. Checked before book resolution. */
+function isHomebrewSource(source: string | undefined): boolean {
+  return source?.trim().toLowerCase() === "homebrew";
+}
+
 export async function searchMonsters(params: {
   name?: string;
   cr?: number;
@@ -539,6 +578,7 @@ export async function searchMonsters(params: {
     );
   }
   const requested = params.rulesEdition ?? "2024";
+  const homebrew = isHomebrewSource(params.source);
 
   try {
   const config = await getGameConfig();
@@ -555,19 +595,22 @@ export async function searchMonsters(params: {
     ? config?.challengeRatings.find(cr => cr.value === params.cr)?.id
     : undefined;
   let sourceIds: number[] = [];
-  if (params.source) {
+  if (params.source && !homebrew) {
     sourceIds = resolveSourceIds(index, params.source);
     if (!sourceIds.length) return unknownSourceError(index, params.source);
   }
 
-  // Source filters server-side. CR/type/size filter client-side, so page
-  // through results (up to MAX_FILTER_SCAN) rather than judging one page.
-  const clientFilters = targetCrId !== undefined || Boolean(params.type) || Boolean(params.size);
+  // Source filters server-side. CR/type/size (and homebrew) filter client-side,
+  // so page through results (up to MAX_FILTER_SCAN) rather than judging one page.
+  const attributeFilters = targetCrId !== undefined || Boolean(params.type) || Boolean(params.size);
+  const clientFilters = attributeFilters || homebrew;
   const take = !searchTerm && params.source ? PAGE_SIZE : 20;
-  const fetchTerm = async (term: string): Promise<{ data: DdbMonster[]; total: number }> => {
+  const fetchTerm = async (term: string): Promise<{ data: DdbMonster[]; total: number; access: AccessMap }> => {
     if (clientFilters) return fetchMonsterPages(term, sourceIds, MAX_FILTER_SCAN);
     const page = await fetchMonsterList(term, take, sourceIds);
-    return { data: page.data ?? [], total: page.pagination.total };
+    const access: AccessMap = new Map();
+    mergeAccess(access, page);
+    return { data: page.data ?? [], total: page.pagination.total, access };
   };
   // Every spelling of the term's twin group (Thug and Tough are one creature,
   // but a search for one never returns the other), under one snapshot, as in
@@ -580,10 +623,12 @@ export async function searchMonsters(params: {
   // exact when every scan is complete, an upper bound otherwise.
   const seen = new Set<number>();
   const fetched: DdbMonster[] = [];
+  const access: AccessMap = new Map();
   let total = 0;
   for (const result of results) {
     if (!result) continue;
     total += result.total;
+    for (const [id, value] of result.access) access.set(id, value);
     for (const m of result.data) {
       if (seen.has(m.id)) total--;
       else { seen.add(m.id); fetched.push(m); }
@@ -599,25 +644,36 @@ export async function searchMonsters(params: {
     && (!searchType || (typeMap.get(m.typeId) ?? "").toLowerCase().includes(searchType))
     && (!searchSize || (sizeName(config, m.sizeId) ?? "").toLowerCase().includes(searchSize));
 
-  // With a source, every entry in the book is listed (no edition selection);
-  // otherwise one entry per twin group, the other edition's twins hidden.
-  let monsters: Array<{ m: DdbMonster; info: EditionInfo }>;
+  // With a source (a book, or homebrew), every matching entry is listed (no
+  // edition selection, no swap); otherwise one entry per twin group, the other
+  // edition's twins hidden, and a locked group shows its available twin.
+  type Row = { m: DdbMonster; info: EditionInfo; reason?: SelectionReason };
+  let monsters: Row[];
   let hidden = 0;
-  if (params.source) {
+  if (homebrew) {
+    // Fail closed, as the untrusted wrapping does: anything not explicitly official.
+    monsters = fetched.filter(m => m.isHomebrew !== false && passes(m)).map(m => ({ m, info: HOMEBREW_INFO }));
+  } else if (params.source) {
     monsters = fetched.filter(passes).map(m => ({ m, info: info(m) }));
   } else {
     const picked = groupAndSelect(fetched, requested, {
       info, twinKey: m => twinName(m.name), tiebreak: monsterTiebreak(index), passes,
+      available: m => !isLockedIn(access, m.id),
     });
-    monsters = picked.selected.map(s => ({ m: s.entry, info: s.info }));
+    monsters = picked.selected.map(s => ({ m: s.entry, info: s.info, reason: s.reason }));
     hidden = picked.hidden;
   }
 
   if (monsters.length === 0) {
+    const scope = partialScan ? ` (checked the first ${checked} of ${total} entries)` : "";
+    if (homebrew) {
+      return searchTerm
+        ? `No homebrew monsters found matching "${searchTerm}"${scope}.`
+        : `No homebrew monsters found matching the search criteria${scope}.`;
+    }
     if (params.source) {
       // Open5e only carries the SRD — never substitute it for a requested book.
       const where = sourceLabel(index, sourceIds[0]);
-      const scope = partialScan ? ` (checked the first ${checked} of ${total} entries)` : "";
       let msg = `No monsters matching the search criteria in ${where}${scope}.`;
       if (searchTerm) {
         const available = await availableSourcesFor(searchTerm, index);
@@ -628,8 +684,17 @@ export async function searchMonsters(params: {
     return await o5SearchMonsters(params, "not-found").catch(() => "No monsters found matching the search criteria.");
   }
 
+  const matchedBy = searchTerm && params.source ? "matched by name and source"
+    : searchTerm ? "matched by name"
+    : params.source ? "matched by source"
+    : "in the compendium";
+  const shown = monsters.slice(0, PAGE_SIZE);
+
   const lines: string[] = [];
-  if (params.source) {
+  if (homebrew) {
+    // Homebrew has no edition, so no sourceNote.
+    lines.push(searchHeader({ sourceBook: HOMEBREW_SOURCE_BOOK }));
+  } else if (params.source) {
     // Slugs aren't unique; the lowest ID is the main book, not a premade-character pack.
     lines.push(searchHeader({ sourceBook: index.sources.get(Math.min(...sourceIds))!.book }));
     const bookRuleset = classifyEdition({ sources: sourceIds.map(sourceId => ({ sourceId })) }, index).ruleset;
@@ -638,19 +703,17 @@ export async function searchMonsters(params: {
   } else {
     lines.push(searchHeader({ requested }));
   }
+  const lockedNote = lockedEntriesNote(shown.filter(r => isLockedIn(access, r.m.id)).length);
+  if (lockedNote) lines.push(lockedNote);
 
-  const matchedBy = searchTerm && params.source ? "matched by name and source"
-    : searchTerm ? "matched by name"
-    : params.source ? "matched by source"
-    : "in the compendium";
-  const shown = monsters.slice(0, PAGE_SIZE);
   // Totals count the result after hiding: the fetched entries the selection
   // dropped (hidden twins, same-edition duplicates) come off the service total.
   const header = clientFilters
     ? `${shown.length} shown of ${monsters.length} matching; checked ${checked} of ${total} ${matchedBy}`
     : `${shown.length} shown, ${total - (checked - monsters.length)} total ${matchedBy}`;
   lines.push(`**Monster Search** (${header})\n`);
-  for (const { m, info: mInfo } of shown) {
+  let swapped = 0;
+  for (const { m, info: mInfo, reason } of shown) {
     const cr = crMap.get(m.challengeRatingId);
     const crStr = cr ? crDisplay(cr.value) : "?";
     const typeName = typeMap.get(m.typeId) ?? "Unknown";
@@ -665,7 +728,11 @@ export async function searchMonsters(params: {
       const via = m.sources?.find(s => sourceIds.includes(s.sourceId))?.sourceId ?? sourceIds[0];
       sourceStr += `, reprinted in ${sourceLabel(index, via)}`;
     }
-    const line = `- **${m.name}** ${editionTag(mInfo)}${tagStr} — ${sourceStr} — CR ${crStr}, ${size} ${typeName}, AC ${m.armorClass}, ${m.averageHitPoints} HP`;
+    let line = `- **${m.name}** ${editionTag(mInfo)}${tagStr} — ${sourceStr} — CR ${crStr}, ${size} ${typeName}, AC ${m.armorClass}, ${m.averageHitPoints} HP`;
+    if (isLockedReason(reason)) {
+      line += ` ${lockedLineSuffix(reason)}`;
+      swapped++;
+    }
     // Homebrew names are user-authored — delimit them, as getMonster does for
     // homebrew stat blocks. Fail closed: only an explicitly official entry is left plain.
     lines.push(m.isHomebrew === false ? line : wrapUntrusted(line));
@@ -675,10 +742,14 @@ export async function searchMonsters(params: {
     lines.push(`\n*${monsters.length - shown.length} more matches not shown.*`);
   }
   if (partialScan) {
-    lines.push(`\n*Only the first ${checked} of ${total} were checked against the CR/type/size filters — add a name or source to narrow the search.*`);
+    lines.push(homebrew
+      ? `\n*Only the first ${checked} of ${total} were checked for homebrew entries — add a name to narrow the search.*`
+      : `\n*Only the first ${checked} of ${total} were checked against the CR/type/size filters — add a name or source to narrow the search.*`);
   } else if (!clientFilters && checked < total) {
     lines.push(`\n*Refine your search with a name term for more specific results.*`);
   }
+  const summary = lockedSwapSummary(requested, swapped);
+  if (summary) lines.push(summary);
   const footer = searchFooter(requested, hidden);
   if (footer) lines.push(footer);
 
@@ -717,8 +788,9 @@ export async function getMonster(
     const index = await getSourceIndex();
     const info = (m: DdbMonster) => classifyEdition(m, index);
     const tiebreak = monsterTiebreak(index);
+    const homebrew = isHomebrewSource(source);
     let sourceIds: number[] = [];
-    if (source) {
+    if (source && !homebrew) {
       sourceIds = resolveSourceIds(index, source);
       if (!sourceIds.length) return unknownSourceError(index, source);
     }
@@ -726,11 +798,22 @@ export async function getMonster(
     // 20 slots per spelling so a crowded name (e.g. "Zombie" has Ash/Beholder/
     // Girallon/Greater/Ogre/Strahd/Yellow Musk/plain across both editions)
     // doesn't miss the intended entry.
-    const candidates = await fetchCandidates(monsterName, 20, sourceIds);
+    const { data: candidates, access } = await fetchCandidates(monsterName, 20, sourceIds);
 
     let detail: MonsterSingleResponse;
     let extras: StatBlockExtras;
-    if (source) {
+    if (homebrew) {
+      // Homebrew only (fail closed: anything not explicitly official): exact
+      // name first, then partial, each by tiebreak. No twins, so no edition
+      // selection, swap, reason or note; a locked entry shows the restricted block.
+      const query = normalizeName(monsterName);
+      const own = candidates.filter(m => m.isHomebrew !== false);
+      const pick = own.filter(m => normalizeName(m.name) === query).sort(tiebreak)[0]
+        ?? own.filter(m => normalizeName(m.name).includes(query)).sort(tiebreak)[0];
+      if (!pick) return `No homebrew monster found matching "${monsterName}".`;
+      detail = await fetchMonsterDetail(pick.id);
+      extras = { info: HOMEBREW_INFO };
+    } else if (source) {
       // With a source, require an exact (twin) name: a partial match would
       // quietly turn "Zombie" in mm-2014 into Beholder Zombie. Near names are offered instead.
       const key = twinName(monsterName);
@@ -750,15 +833,21 @@ export async function getMonster(
       // `source` wins over rules_edition, so the reason is dropped; a book of
       // the other edition gets a note instead. A restricted pick is never
       // swapped or replaced with Open5e: the book was asked for, and the
-      // restricted block already says the content isn't owned.
+      // restricted block already says the content isn't owned. It does get a
+      // hint naming a book where an available version is.
       detail = await fetchMonsterDetail(picked.entry.id);
       const shown = info(detail.data);
       extras = {
         note: isEdition(shown.ruleset) ? sourceNote(source, shown.ruleset, requested) : null,
+        // Only 2014/2024 entries are twins, so only they can be shown under
+        // another name than the query's (as in lookupByName).
         renamed: isEdition(shown.ruleset) ? renamedFromQuery(monsterName, detail.data.name) : undefined,
+        hint: isRestricted(detail)
+          ? await availableElsewhere(monsterName, picked.entry, sourceIds, index).catch(() => null)
+          : null,
       };
     } else {
-      const found = lookupByName(candidates, monsterName, requested, {
+      const lookup = (available: (m: DdbMonster) => boolean) => lookupByName(candidates, monsterName, requested, {
         name: m => m.name,
         info,
         tiebreak,
@@ -766,37 +855,34 @@ export async function getMonster(
         // adult"), but the service ranks its fuzzy hits best-first: take the top
         // hit, whose whole twin group is then the target.
         partialMatch: (all, q) => all.filter(m => normalizeName(m.name).includes(q)).sort(tiebreak)[0] ?? all[0],
+        available,
       });
+      // The list map picks an available entry (the requested edition's first,
+      // else the other edition's with a locked-… reason) without fetching a
+      // locked one's stat block.
+      const mapAvailable = (m: DdbMonster) => !isLockedIn(access, m.id);
+      let found = lookup(mapAvailable);
       if (!found) {
         const o5Result = await o5GetMonster(monsterName, "not-found").catch(() => null);
         if (o5Result) return o5Result;
         return `Monster "${monsterName}" not found. Try ddb_search_monsters with a partial name.`;
       }
       detail = await fetchMonsterDetail(found.entry.id);
-      extras = { reason: found.reason, renamed: found.renamed };
-
-      // Locked twin: the requested edition's stat block is restricted to this
-      // account. Show the other edition's twin when that one is owned. Only
-      // this case costs an extra (cached) detail request.
-      const picked = info(found.entry).ruleset;
-      if (isRestricted(detail) && !found.reason && isEdition(picked)) {
-        const other: RulesEdition = picked === "2024" ? "2014" : "2024";
-        const key = twinName(found.entry.name);
-        const twin = candidates
-          .filter(m => twinName(m.name) === key && info(m).ruleset === other)
-          .sort(tiebreak)[0];
-        const twinDetail = twin ? await fetchMonsterDetail(twin.id) : null;
-        if (twin && twinDetail && !isRestricted(twinDetail)) {
-          detail = twinDetail;
-          const [name2014, name2024] = other === "2014" ? [twin.name, found.entry.name] : [found.entry.name, twin.name];
-          const showRename = normalizeName(name2014) !== normalizeName(name2024)
-            && normalizeName(twin.name) !== normalizeName(monsterName);
-          extras = {
-            reason: requested === "2024" ? "locked-2024" : "locked-2014",
-            renamed: showRename ? { name2014, name2024 } : undefined,
-          };
+      // The detail check is the fallback when the map lacked the id or called a
+      // restricted pick available: try the next candidate in the same order,
+      // at most one extra (cached) detail request.
+      const first = found;
+      if (isRestricted(detail) && !isLockedIn(access, first.entry.id)) {
+        const retry = lookup(m => mapAvailable(m) && m.id !== first.entry.id);
+        if (retry && retry.entry.id !== first.entry.id) {
+          const retryDetail = await fetchMonsterDetail(retry.entry.id);
+          if (!isRestricted(retryDetail)) {
+            found = retry;
+            detail = retryDetail;
+          }
         }
       }
+      extras = { reason: found.reason, renamed: found.renamed };
 
       // Still an empty stat block (unowned content): fall back to Open5e.
       if (isRestricted(detail)) {
@@ -815,6 +901,28 @@ export async function getMonster(
     if (o5Result) return withSourceCaveat(o5Result, source);
     return `Monster "${monsterName}" not found. DnD Beyond is unavailable and "${monsterName}" is not in the SRD.`;
   }
+}
+
+/**
+ * For a restricted pick in a requested book: the first official entry of its
+ * twin group, by tiebreak, that the list map doesn't mark locked and that isn't
+ * in that book, as a hint line. Books the index doesn't know are skipped (same
+ * filter as availableSourcesFor). A book with no slug is passed by short name.
+ */
+async function availableElsewhere(
+  name: string, pick: DdbMonster, sourceIds: number[], index: SourceIndex,
+): Promise<string | null> {
+  const { data, access } = await fetchCandidates(name, 20);
+  const key = twinName(pick.name);
+  const inBook = (m: DdbMonster) =>
+    sourceIds.includes(m.sourceId) || (m.sources ?? []).some(s => sourceIds.includes(s.sourceId));
+  const alt = data
+    .filter(m => twinName(m.name) === key && m.isHomebrew === false && index.sources.has(m.sourceId)
+      && !isLockedIn(access, m.id) && !inBook(m))
+    .sort(monsterTiebreak(index))[0];
+  if (!alt) return null;
+  const book = index.sources.get(alt.sourceId)!;
+  return availableElsewhereHint(sourceLabel(index, alt.sourceId), sourceSlug(book) || book.name);
 }
 
 /**
@@ -861,7 +969,7 @@ export async function getMonsterStats(name: string, opts: { rulesEdition?: Rules
       const info = (m: DdbMonster) => classifyEdition(m, index);
       const tiebreak = monsterTiebreak(index);
       const crById = new Map((config?.challengeRatings ?? []).map(cr => [cr.id, cr]));
-      const official = (await fetchCandidates(name, 20))
+      const official = (await fetchCandidates(name, 20)).data
         .filter(m => m.isHomebrew === false && crById.has(m.challengeRatingId));
       const stats = (m: DdbMonster) => {
         const cr = crById.get(m.challengeRatingId)!;

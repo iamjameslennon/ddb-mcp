@@ -18,6 +18,9 @@ export type RulesEdition = "2024" | "2014";
 export type Ruleset = RulesEdition | "third-party" | "homebrew" | "playtest" | "unstated";
 export interface EditionInfo { ruleset: Ruleset; book: string | null }
 export type EditionReason = "no-2024-version" | "no-2014-version";
+/** The requested edition exists but is locked to the account; the other edition is shown. */
+export type LockedReason = "locked-2024" | "locked-2014";
+export type SelectionReason = EditionReason | LockedReason;
 
 /** A game-config source in its raw (fetched or snapshotted) shape. */
 export interface SourceRecord {
@@ -279,27 +282,47 @@ export function monsterTiebreak(index: SourceIndex): (a: MonsterTiebreakFields, 
 
 // ── Selection ─────────────────────────────────────────────────────────────────
 
-export interface Selection<T> { entry: T; reason?: EditionReason }
+export interface Selection<T> { entry: T; reason?: SelectionReason }
 
 /**
  * Pick one entry from a twin group. The requested edition wins; failing that,
  * the other edition with a reason. Non-edition entries (third-party, homebrew,
  * playtest, unstated) are never compared against editions; a group with
  * none of either edition yields its first entry by tiebreak.
+ *
+ * `available` (owner decision 2026-10-18: always give information when we can)
+ * says whether the account can see an entry's content. With it, the order is:
+ * 1. the first available entry of the requested edition, by tiebreak;
+ * 2. else, when the requested edition has entries but every one is locked, the
+ *    first available other-edition entry, with the locked-… reason;
+ * 3. else today's selection: the requested edition's first entry, or (when the
+ *    requested edition has none) the other edition with the no-…-version
+ *    reason, an available copy first. A "locked" reason there would be false:
+ *    no entry of the requested edition was found at all.
+ * Without `available`, every entry counts as available: unchanged behaviour.
  */
 export function selectByEdition<T>(
   group: readonly T[],
   requested: RulesEdition,
   info: (c: T) => EditionInfo,
   tiebreak: (a: T, b: T) => number,
+  available: (c: T) => boolean = () => true,
 ): Selection<T> | null {
   if (!group.length) return null;
   const sorted = [...group].sort(tiebreak);
-  const first = (edition: RulesEdition) => sorted.find(c => info(c).ruleset === edition);
-  const wanted = first(requested);
-  if (wanted) return { entry: wanted };
-  const other = first(requested === "2024" ? "2014" : "2024");
-  if (other) return { entry: other, reason: requested === "2024" ? "no-2024-version" : "no-2014-version" };
+  const ofEdition = (edition: RulesEdition) => sorted.filter(c => info(c).ruleset === edition);
+  const wanted = ofEdition(requested);
+  const others = ofEdition(requested === "2024" ? "2014" : "2024");
+  const wantedAvailable = wanted.find(available);
+  if (wantedAvailable) return { entry: wantedAvailable };
+  const otherAvailable = others.find(available);
+  if (wanted.length) {
+    if (otherAvailable) return { entry: otherAvailable, reason: requested === "2024" ? "locked-2024" : "locked-2014" };
+    return { entry: wanted[0] };
+  }
+  if (others.length) {
+    return { entry: otherAvailable ?? others[0], reason: requested === "2024" ? "no-2024-version" : "no-2014-version" };
+  }
   return { entry: sorted[0] };
 }
 
@@ -311,6 +334,8 @@ export interface LookupOptions<T> {
   partialMatch?: (all: readonly T[], normalizedQuery: string) => T | undefined;
   /** Defaults to twinName (the committed rename table). Tests inject their own. */
   twinName?: TwinNamer;
+  /** Whether the account can see an entry; see selectByEdition. Omit: every entry is available. */
+  available?: (c: T) => boolean;
 }
 
 export interface LookupResult<T> extends Selection<T> {
@@ -348,7 +373,7 @@ export function lookupByName<T>(
   }
 
   const group = all.filter(c => namer(opts.name(c)) === key);
-  const picked = selectByEdition(group, requested, opts.info, opts.tiebreak);
+  const picked = selectByEdition(group, requested, opts.info, opts.tiebreak, opts.available);
   if (!picked) return null;
 
   // No entry carries the typed name: use the table's spelling, else the query cleaned up but not lowercased.
@@ -373,6 +398,12 @@ export interface SearchOptions<T> {
   nameMatches?: (c: T) => boolean;
   /** Step 4: attribute filters, applied to the selected entry (and to other-edition twins, for the count). */
   passes?: (c: T) => boolean;
+  /**
+   * Whether the account can see an entry; see selectByEdition. A group whose
+   * requested edition is all locked shows the other edition with a locked-…
+   * reason and is not counted as hidden: switching would show the same entry.
+   */
+  available?: (c: T) => boolean;
 }
 
 export interface SearchSelection<T> extends Selection<T> { info: EditionInfo }
@@ -409,14 +440,14 @@ export function groupAndSelect<T>(
   for (const group of groups.values()) {
     if (opts.nameMatches && !group.some(opts.nameMatches)) continue;
     const editions = group.filter(x => isEdition(opts.info(x).ruleset));
-    const pick = selectByEdition(editions, requested, opts.info, opts.tiebreak);
+    const pick = selectByEdition(editions, requested, opts.info, opts.tiebreak, opts.available);
     if (pick && passes(pick.entry)) {
       const info = opts.info(pick.entry);
       selected.push({ ...pick, info });
       const otherEdition = requested === "2024" ? "2014" : "2024";
       // A fallback pick (this group has only the other edition) is not hidden: the other request shows the same entry.
       if (info.ruleset !== otherEdition) {
-        const other = selectByEdition(editions, otherEdition, opts.info, opts.tiebreak);
+        const other = selectByEdition(editions, otherEdition, opts.info, opts.tiebreak, opts.available);
         if (other && opts.info(other.entry).ruleset === otherEdition && passes(other.entry)) hidden++;
       }
     }
@@ -528,6 +559,49 @@ export function searchFooter(requested: RulesEdition, hidden: number): string | 
     ? `${counted} — rules_edition: "2014" shows ${one ? "it" : "them"}.`
     : `${counted} — omit rules_edition to show ${one ? "it" : "them"}.`;
 }
+
+// ── Locked content (monsters, owner decisions 2026-10-18) ─────────────────────
+
+const LOCKED_LINE_SUFFIX: Record<LockedReason, string> = {
+  "locked-2024": "(2024 version isn't available to this account)",
+  "locked-2014": "(2014 version isn't available to this account)",
+};
+
+export function isLockedReason(reason: string | undefined): reason is LockedReason {
+  return reason === "locked-2024" || reason === "locked-2014";
+}
+
+/** Appended after HP on a search line that shows the other edition because the requested one is locked. */
+export function lockedLineSuffix(reason: LockedReason): string {
+  return LOCKED_LINE_SUFFIX[reason];
+}
+
+/** Printed just before the search footer when listed lines were swapped; null when none were. */
+export function lockedSwapSummary(requested: RulesEdition, swapped: number): string | null {
+  if (swapped <= 0) return null;
+  const shown = requested === "2024" ? "2014" : "2024";
+  return swapped === 1
+    ? `1 entry shows its ${shown} version because the ${requested} version isn't available to this account.`
+    : `${swapped} entries show their ${shown} versions because the ${requested} versions aren't available to this account.`;
+}
+
+/** Under the search header when listed entries are locked to the account; null when none are. */
+export function lockedEntriesNote(locked: number): string | null {
+  if (locked <= 0) return null;
+  return locked === 1
+    ? "1 entry isn't available to this account; its stat block falls back to the SRD or shows a restricted notice."
+    : `${locked} entries aren't available to this account; their stat blocks fall back to the SRD or show a restricted notice.`;
+}
+
+/** ddb_get_monster with a source whose pick is locked: where an available version is. */
+export function availableElsewhereHint(book: string, source: string): string {
+  return `(an available version is in ${book} — pass source: "${source}" to see it)`;
+}
+
+/** The "book" of a monster search with source: "homebrew". */
+export const HOMEBREW_SOURCE_BOOK = "homebrew content";
+/** What every entry under source: "homebrew" is labelled. */
+export const HOMEBREW_INFO: EditionInfo = { ruleset: "homebrew", book: null };
 
 /** Encounter/treasure: a partial monster name that spans several distinct creatures. */
 export function ambiguityMessage(query: string, candidates: ReadonlyArray<{ name: string; cr: string }>): string {
