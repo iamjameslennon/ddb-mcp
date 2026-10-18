@@ -564,6 +564,11 @@ function isHomebrewSource(source: string | undefined): boolean {
   return source?.trim().toLowerCase() === "homebrew";
 }
 
+// `source: "homebrew"` never returns official entries, so when D&D Beyond
+// can't be used these replace the Open5e (SRD) fallback, for get and search alike.
+const HOMEBREW_LOGIN_REQUIRED = "Homebrew monster lookup requires login. Run ddb_login first.";
+const HOMEBREW_UNREACHABLE = "Homebrew monsters are unavailable: D&D Beyond could not be reached.";
+
 export async function searchMonsters(params: {
   name?: string;
   cr?: number;
@@ -572,13 +577,14 @@ export async function searchMonsters(params: {
   source?: string;
   rulesEdition?: RulesEdition;
 }): Promise<string> {
+  const homebrew = isHomebrewSource(params.source);
   if (!hasValidSession()) {
+    if (homebrew) return HOMEBREW_LOGIN_REQUIRED;
     return await o5SearchMonsters(params, "unavailable").then(r => withSourceCaveat(r, params.source)).catch(
       () => "Monster search requires login. Run ddb_login first."
     );
   }
   const requested = params.rulesEdition ?? "2024";
-  const homebrew = isHomebrewSource(params.source);
 
   try {
   const config = await getGameConfig();
@@ -604,7 +610,9 @@ export async function searchMonsters(params: {
   // so page through results (up to MAX_FILTER_SCAN) rather than judging one page.
   const attributeFilters = targetCrId !== undefined || Boolean(params.type) || Boolean(params.size);
   const clientFilters = attributeFilters || homebrew;
-  const take = !searchTerm && params.source ? PAGE_SIZE : 20;
+  // A name search takes the service's cap per spelling, so twin grouping sees
+  // as much of each group as one request can; a bare browse keeps 20.
+  const take = searchTerm || params.source ? PAGE_SIZE : 20;
   const fetchTerm = async (term: string): Promise<{ data: DdbMonster[]; total: number; access: AccessMap }> => {
     if (clientFilters) return fetchMonsterPages(term, sourceIds, MAX_FILTER_SCAN);
     const page = await fetchMonsterList(term, take, sourceIds);
@@ -703,7 +711,9 @@ export async function searchMonsters(params: {
   } else {
     lines.push(searchHeader({ requested }));
   }
-  const lockedNote = lockedEntriesNote(shown.filter(r => isLockedIn(access, r.m.id)).length);
+  // The note and the swap summary count every selected entry, as the header
+  // total does, not just the lines shown.
+  const lockedNote = lockedEntriesNote(monsters.filter(r => isLockedIn(access, r.m.id)).length);
   if (lockedNote) lines.push(lockedNote);
 
   // Totals count the result after hiding: the fetched entries the selection
@@ -712,7 +722,6 @@ export async function searchMonsters(params: {
     ? `${shown.length} shown of ${monsters.length} matching; checked ${checked} of ${total} ${matchedBy}`
     : `${shown.length} shown, ${total - (checked - monsters.length)} total ${matchedBy}`;
   lines.push(`**Monster Search** (${header})\n`);
-  let swapped = 0;
   for (const { m, info: mInfo, reason } of shown) {
     const cr = crMap.get(m.challengeRatingId);
     const crStr = cr ? crDisplay(cr.value) : "?";
@@ -729,10 +738,7 @@ export async function searchMonsters(params: {
       sourceStr += `, reprinted in ${sourceLabel(index, via)}`;
     }
     let line = `- **${m.name}** ${editionTag(mInfo)}${tagStr} — ${sourceStr} — CR ${crStr}, ${size} ${typeName}, AC ${m.armorClass}, ${m.averageHitPoints} HP`;
-    if (isLockedReason(reason)) {
-      line += ` ${lockedLineSuffix(reason)}`;
-      swapped++;
-    }
+    if (isLockedReason(reason)) line += ` ${lockedLineSuffix(reason)}`;
     // Homebrew names are user-authored — delimit them, as getMonster does for
     // homebrew stat blocks. Fail closed: only an explicitly official entry is left plain.
     lines.push(m.isHomebrew === false ? line : wrapUntrusted(line));
@@ -748,13 +754,14 @@ export async function searchMonsters(params: {
   } else if (!clientFilters && checked < total) {
     lines.push(`\n*Refine your search with a name term for more specific results.*`);
   }
-  const summary = lockedSwapSummary(requested, swapped);
+  const summary = lockedSwapSummary(requested, monsters.filter(r => isLockedReason(r.reason)).length);
   if (summary) lines.push(summary);
   const footer = searchFooter(requested, hidden);
   if (footer) lines.push(footer);
 
   return lines.join("\n");
   } catch {
+    if (homebrew) return HOMEBREW_UNREACHABLE;
     return await o5SearchMonsters(params, "unavailable").then(r => withSourceCaveat(r, params.source)).catch(
       () => "Monster search unavailable — DnD Beyond and Open5e both failed."
     );
@@ -776,7 +783,9 @@ export async function getMonster(
   const requested = opts.rulesEdition ?? "2024";
   monsterName = monsterName.trim();
   if (!monsterName) return "Monster name is required.";
+  const homebrew = isHomebrewSource(source);
   if (!hasValidSession()) {
+    if (homebrew) return HOMEBREW_LOGIN_REQUIRED;
     const o5Result = await o5GetMonster(monsterName, "unavailable").catch(() => null);
     if (o5Result) return withSourceCaveat(o5Result, source);
     return "Monster lookup requires login. Run ddb_login first.";
@@ -788,7 +797,6 @@ export async function getMonster(
     const index = await getSourceIndex();
     const info = (m: DdbMonster) => classifyEdition(m, index);
     const tiebreak = monsterTiebreak(index);
-    const homebrew = isHomebrewSource(source);
     let sourceIds: number[] = [];
     if (source && !homebrew) {
       sourceIds = resolveSourceIds(index, source);
@@ -797,8 +805,11 @@ export async function getMonster(
 
     // 20 slots per spelling so a crowded name (e.g. "Zombie" has Ash/Beholder/
     // Girallon/Greater/Ogre/Strahd/Yellow Musk/plain across both editions)
-    // doesn't miss the intended entry.
-    const { data: candidates, access } = await fetchCandidates(monsterName, 20, sourceIds);
+    // doesn't miss the intended entry. Homebrew pages through the same
+    // MAX_FILTER_SCAN entries as searchMonsters, so get and search agree.
+    const { data: candidates, access } = homebrew
+      ? await fetchMonsterPages(monsterName, [], MAX_FILTER_SCAN)
+      : await fetchCandidates(monsterName, 20, sourceIds);
 
     let detail: MonsterSingleResponse;
     let extras: StatBlockExtras;
@@ -897,6 +908,7 @@ export async function getMonster(
     // Fail closed: only an explicitly official entry is left plain.
     return detail.data.isHomebrew === false ? statBlock : wrapUntrusted(statBlock);
   } catch {
+    if (homebrew) return HOMEBREW_UNREACHABLE;
     const o5Result = await o5GetMonster(monsterName, "unavailable").catch(() => null);
     if (o5Result) return withSourceCaveat(o5Result, source);
     return `Monster "${monsterName}" not found. DnD Beyond is unavailable and "${monsterName}" is not in the SRD.`;

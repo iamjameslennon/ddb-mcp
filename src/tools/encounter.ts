@@ -307,7 +307,7 @@ export async function rateEncounter(
   }
 
   if (totalMonsterCount === 0) {
-    return ["No valid monsters provided. Check names or supply cr values directly.", ...ambiguous.map(a => `⚠ ${a}`)].join("\n");
+    return ["No valid monsters provided. Check names or supply cr values directly.", ...warningLines(notFound, ambiguous)].join("\n");
   }
   const rules = encounterRulesLine(rulesEdition);
 

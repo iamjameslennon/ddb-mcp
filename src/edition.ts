@@ -576,7 +576,7 @@ export function lockedLineSuffix(reason: LockedReason): string {
   return LOCKED_LINE_SUFFIX[reason];
 }
 
-/** Printed just before the search footer when listed lines were swapped; null when none were. */
+/** Printed just before the search footer when selected entries were swapped; null when none were. */
 export function lockedSwapSummary(requested: RulesEdition, swapped: number): string | null {
   if (swapped <= 0) return null;
   const shown = requested === "2024" ? "2014" : "2024";
@@ -585,7 +585,7 @@ export function lockedSwapSummary(requested: RulesEdition, swapped: number): str
     : `${swapped} entries show their ${shown} versions because the ${requested} versions aren't available to this account.`;
 }
 
-/** Under the search header when listed entries are locked to the account; null when none are. */
+/** Under the search header when selected entries are locked to the account; null when none are. */
 export function lockedEntriesNote(locked: number): string | null {
   if (locked <= 0) return null;
   return locked === 1

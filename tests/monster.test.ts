@@ -787,7 +787,7 @@ describe("exact-name matching tolerates incidental differences", () => {
   });
 });
 
-describe("rankCandidates final tie-break", () => {
+describe("monsterTiebreak final tie-break", () => {
   it.each([false, true])("picks the lowest ID among otherwise-identical entries (reversed: %s)", async (reversed) => {
     reverseOrder = reversed;
     extraMonsters = [
@@ -965,6 +965,17 @@ describe("getMonsterStats result union", () => {
     const out = await rateEncounter([{ count: 4, level: 5 }], [{ name: "Red Dragon" }], "2024");
     expect(out).toContain("No valid monsters provided");
     expect(out).toContain('Ambiguous: "Red Dragon" could be');
+  });
+
+  it("rateEncounter with nothing resolved names the not-found monsters as well as the ambiguous ones", async () => {
+    extraMonsters = RED_DRAGONS;
+    const out = await rateEncounter([{ count: 4, level: 5 }], [{ name: "Zzyzx Nothing" }, { name: "Red Dragon" }], "2024");
+    expect(out).toBe([
+      "No valid monsters provided. Check names or supply cr values directly.",
+      "",
+      "⚠ Not found in compendium (supply cr manually): Zzyzx Nothing",
+      '⚠ Ambiguous: "Red Dragon" could be Red Dragon Wyrmling (CR 4), Young Red Dragon (CR 10), Adult Red Dragon (CR 17), Ancient Red Dragon (CR 24) — use the full name.',
+    ].join("\n"));
   });
 
   it("rateEncounter with 2014 rules tags the Legacy entry it rated", async () => {
@@ -1320,5 +1331,87 @@ describe('source: "homebrew"', () => {
     vi.stubGlobal("fetch", vi.fn(async () => mockResponse({ results: [] })));
     extraMonsters = [monster({ id: 8_000_060, name: "Gutter Imp", isHomebrew: true, sourceId: 147, sources: sources(147) })];
     expect(await getMonsterStats("Gutter Imp")).toEqual({ status: "not-found" });
+  });
+});
+
+// ── Final review fix wave (owner decisions 2026-10-18) ────────────────────────
+
+describe('source: "homebrew" never falls back to official content', () => {
+  it("logged out: get and search say login is required, with no Open5e fallback", async () => {
+    vi.mocked(hasValidSession).mockReturnValue(false);
+    expect(await getMonster("Zombie", { source: "homebrew" })).toBe("Homebrew monster lookup requires login. Run ddb_login first.");
+    expect(await searchMonsters({ name: "Zombie", source: " Homebrew " })).toBe("Homebrew monster lookup requires login. Run ddb_login first.");
+    expect(o5GetMonster).not.toHaveBeenCalled();
+    expect(o5SearchMonsters).not.toHaveBeenCalled();
+  });
+
+  it("D&D Beyond failing: get and search say it could not be reached, with no Open5e fallback", async () => {
+    failSearchTerms.add("zombie");
+    expect(await getMonster("Zombie", { source: "homebrew" })).toBe("Homebrew monsters are unavailable: D&D Beyond could not be reached.");
+    expect(await searchMonsters({ name: "Zombie", source: "homebrew" })).toBe("Homebrew monsters are unavailable: D&D Beyond could not be reached.");
+    expect(o5GetMonster).not.toHaveBeenCalled();
+    expect(o5SearchMonsters).not.toHaveBeenCalled();
+  });
+});
+
+describe('getMonster with source: "homebrew" scans like search', () => {
+  it("finds a homebrew entry listed after more than the first page of official hits", async () => {
+    extraMonsters = [
+      ...Array.from({ length: 120 }, (_, i) => monster({ id: 8_100_000 + i, name: "Shade Wisp", sourceId: 147, sources: sources(147) })),
+      monster({ id: 8_100_500, name: "Shade Wisp", isHomebrew: true, sourceId: 147, sources: sources(147), actionsDescription: "<p>HOMEBREW WISP</p>" }),
+    ];
+    const out = await getMonster("Shade Wisp", { source: "homebrew" });
+    expect(out).toContain("HOMEBREW WISP");
+    expect(listUrls.some(u => u.includes("skip=100"))).toBe(true);
+    // The search lists the same entry.
+    expect(await searchMonsters({ name: "Shade Wisp", source: "homebrew" })).toContain("- **Shade Wisp** [homebrew]");
+  });
+
+  it("a normal lookup still asks for 20 candidates per spelling", async () => {
+    await getMonster("Zombie");
+    expect(listUrls[0]).toContain("take=20");
+  });
+});
+
+describe("monster name searches take 100 per spelling", () => {
+  it("a twin beyond the first 20 hits is still grouped and hidden", async () => {
+    extraMonsters = [
+      monster({ id: 8_200_000, name: "Hollow Knight", isLegacy: true, sourceId: 1, sources: sources(1) }),
+      ...Array.from({ length: 30 }, (_, i) => monster({ id: 8_200_100 + i, name: `Hollow Filler ${i}`, sourceId: 147, sources: sources(147) })),
+      monster({ id: 8_200_001, name: "Hollow Knight", sourceId: 147, sources: sources(147) }),
+    ];
+    const out = await searchMonsters({ name: "Hollow" });
+    expect(listUrls[0]).toContain("take=100");
+    expect(out).toContain("- **Hollow Knight** [2024]");
+    expect(out).not.toContain("- **Hollow Knight** [2014]");
+    expect(out.split("\n").at(-1)).toBe('1 2014 version hidden — rules_edition: "2014" shows it.');
+  });
+
+  it("the header total and the refine note stay honest when the service has more than 100 hits", async () => {
+    const out = await searchMonsters({ name: "Filler" });
+    expect(out).toContain("(100 shown, 652 total matched by name)");
+    expect(out).toContain("*Refine your search with a name term for more specific results.*");
+  });
+});
+
+describe("the locked-entry note and the swap summary count every selected entry", () => {
+  it("counts entries beyond the first PAGE_SIZE lines shown", async () => {
+    const twins = (name: string, base: number) => [
+      monster({ id: base, name, sourceId: 147, sources: sources(147) }),
+      monster({ id: base + 1, name, isLegacy: true, sourceId: 1, sources: sources(1) }),
+    ];
+    extraMonsters = [
+      ...Array.from({ length: 105 }, (_, i) => monster({ id: 8_300_000 + i, name: `Gloomling ${String(i).padStart(3, "0")}`, sourceId: 147, sources: sources(147) })),
+      ...twins("Gloomling Banshee", 8_300_500), ...twins("Gloomling Hag", 8_300_510), // 2024 locked: swapped
+      ...twins("Gloomling Wight", 8_300_520), ...twins("Gloomling Wraith", 8_300_530), // both locked
+    ];
+    for (const id of [8_300_500, 8_300_510, 8_300_520, 8_300_521, 8_300_530, 8_300_531]) unownedIds.add(id);
+    const lines = (await searchMonsters({ name: "Gloomling", cr: 0.25 })).split("\n");
+    expect(lines[1]).toBe("2 entries aren't available to this account; their stat blocks fall back to the SRD or show a restricted notice.");
+    expect(lines[2]).toMatch(/^\*\*Monster Search\*\* \(100 shown of 109 matching; /);
+    expect(lines.filter(l => l.startsWith("- **"))).toHaveLength(100);
+    expect(lines.join("\n")).not.toContain("Gloomling Banshee"); // beyond the lines shown
+    expect(lines.at(-2)).toBe("2 entries show their 2014 versions because the 2024 versions aren't available to this account.");
+    expect(lines.at(-1)).toBe('2 2014 versions hidden — rules_edition: "2014" shows them.');
   });
 });

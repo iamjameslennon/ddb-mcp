@@ -69,6 +69,23 @@ const PATH_MARKER: Record<"ddb" | "open5e", Record<string, Partial<Record<"2024"
   },
 };
 
+// D&D Beyond path: text only a correctly wired rules_edition can produce, so a
+// registration in src/server.ts that stops passing it through fails here.
+// `absent` is text that must not appear for that edition.
+type EditionCheck = { present: string[]; absent?: string[]; resultTag?: boolean };
+const hiddenFooter = (ed: "2024" | "2014") => ed === "2024"
+  ? '1 2014 version hidden — rules_edition: "2014" shows it.'
+  : "1 2024 version hidden — omit rules_edition to show it.";
+const dmgRulesLine = (ed: "2024" | "2014") => `Rules: ${ed} · Dungeon Master's Guide (${ed})`;
+const TREASURE_NO_2014 = "(no 2014 version exists — 2024 tables used)";
+const EDITION_CHECK: Record<string, (ed: "2024" | "2014") => EditionCheck> = {
+  ddb_search_spells: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
+  ddb_search_monsters: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
+  ddb_rate_encounter: ed => ({ present: [dmgRulesLine(ed)] }),
+  ddb_encounter_cr: ed => ({ present: [dmgRulesLine(ed)] }),
+  ddb_roll_treasure: ed => (ed === "2014" ? { present: [TREASURE_NO_2014] } : { present: [], absent: [TREASURE_NO_2014] }),
+};
+
 // ── DDB fixtures ──────────────────────────────────────────────────────────────
 
 function mockResponse(body: unknown, status = 200): Response {
@@ -211,6 +228,14 @@ describe.each(["ddb", "open5e"] as const)("labels (%s path)", mode => {
     if (mode === "ddb") expect(text).not.toContain("Open5e fallback");
     const marker = PATH_MARKER[mode][tool]?.[ed];
     if (marker) expect(text).toContain(marker);
+    const check = mode === "ddb" ? EDITION_CHECK[tool]?.(ed) : undefined;
+    if (check) {
+      for (const s of check.present) expect(text).toContain(s);
+      for (const s of check.absent ?? []) expect(text).not.toContain(s);
+      if (check.resultTag) {
+        for (const l of text.split("\n").filter(l => RESULT_LINE.test(l))) expect(l).toContain(`[${ed}]`);
+      }
+    }
     if (tool.startsWith("ddb_search_")) {
       const results = text.split("\n").filter(l => RESULT_LINE.test(l));
       expect(results.length).toBeGreaterThan(0);
