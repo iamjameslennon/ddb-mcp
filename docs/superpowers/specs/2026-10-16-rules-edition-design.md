@@ -1,6 +1,6 @@
 # Rules edition across all tools: design
 
-**Status:** approved design. Phase 1 (foundation) implemented 2026-10-17. Its real signatures are in the "Signatures that differ from the spec's sketch" table of [the phase-1 plan](../plans/2026-10-16-rules-edition-phase-1-foundation.md), plus `twinAliases()`, which was added after review. Phases 2–5 are not started. Revised 2026-10-17 with the owner's phase-2 decisions: reasons say "found", not "exists"; a locked monster pick yields to an owned other-edition twin; a failed game-config fetch is remembered for 60 s; registrations move to `src/server.ts`; the Open5e fallback label stands in for a reason line until phase 4.
+**Status:** approved design. Phase 1 (foundation) implemented 2026-10-17. Its real signatures are in the "Signatures that differ from the spec's sketch" table of [the phase-1 plan](../plans/2026-10-16-rules-edition-phase-1-foundation.md), plus `twinAliases()`, which was added after review. Phase 2 implemented 2026-10-17. Phases 3–5 are not started. Revised 2026-10-17 with the owner's phase-2 decisions: reasons say "found", not "exists"; a locked monster pick yields to an owned other-edition twin; a failed game-config fetch is remembered for 60 s; registrations move to `src/server.ts`; the Open5e fallback label stands in for a reason line until phase 4.
 **Date:** 2026-10-16 (revised the same day after an adversarial review)
 **Supersedes:** CLAUDE.md "Next steps" work item 1 (`rules_edition` for spells and monsters) and item 3 (ambiguous partial monster names). They are now phase 2 of this spec. Where this spec and CLAUDE.md's "Decisions" differ in wording, **this spec wins**.
 
@@ -113,8 +113,8 @@ All strings come from `src/edition.ts`. **No tool builds its own edition text**,
   - Search header note: `1 entry isn't available to this account; its stat block falls back to the SRD or shows a restricted notice.` / `N entries aren't available to this account; their stat blocks fall back to the SRD or show a restricted notice.`
   - `ddb_get_monster` with `source`: `(an available version is in Basic Rules (2014) [basic-rules-2014] — pass source: "basic-rules-2014" to see it)` / `(an available version is in The Sunless Citadel — pass source: "TSC" to see it)`
   - `source: "homebrew"` search header: `Rules: showing every entry in homebrew content, each tagged with its edition.`
-  - Rules sections: `(no matching 2024 rules section — 2014 text shown)` / `(no matching 2014 rules section — 2024 text shown)`
-  - Treasure: `(no 2014 version exists — 2024 tables used)`
+- Rules sections: `(no matching 2024 rules section — 2014 text shown)` / `(no matching 2014 rules section — 2024 text shown)`
+- Treasure: `(no 2014 version exists — 2024 tables used)`
 - **Rename line**, appended when the query matched a different name in the same twin group than the entry returned: `(2014 name: Acid Arrow · 2024 name: Melf's Acid Arrow)`
 - **Source note** (monsters): `(source "mm-2024" is a 2024 book — rules_edition "2014" was ignored)`
 - **Inline tag**, placed **immediately after the entry's name** on search lines and minority-edition character entries: `[2024]`, `[2014]`, `[third-party]`, `[homebrew]`, `[playtest]`, `[edition not stated]`. Example search line: `- **Fireball** [2024] — 3rd-level Evocation`.

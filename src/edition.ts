@@ -675,3 +675,7 @@ export function characterRulesLine(entries: readonly CharacterEditionEntry[]): s
   }
   return [head, ...groups].join(" · ");
 }
+
+/** Server-level instructions sent to every MCP client at initialize. */
+export const SERVER_INSTRUCTIONS =
+  "Every rules answer carries a 'Rules:' line or an inline tag — [2024], [2014], [third-party], [homebrew], [playtest] or [edition not stated] — naming the ruleset, and says when the edition shown differs from the one requested. Pass this on to the user. Content defaults to 2024; if the user's table plays 2014, pass rules_edition: '2014'.";

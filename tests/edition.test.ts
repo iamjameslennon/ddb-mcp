@@ -4,7 +4,7 @@ import {
   normalizeName, createTwinNamer, twinName, twinAliases, classFeatureTwinKey, racialTraitTwinKey,
   dedupeById, definitionTiebreak, monsterTiebreak,
   selectByEdition, lookupByName, groupAndSelect,
-  rulesLine, renameLine, RULES_EDITION_TOOL_NOTE, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, editionTag, searchHeader, searchFooter, ambiguityMessage,
+  rulesLine, renameLine, RULES_EDITION_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, editionTag, searchHeader, searchFooter, ambiguityMessage,
   lockedLineSuffix, lockedSwapSummary, lockedEntriesNote, availableElsewhereHint, HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO,
   characterMainEdition, characterTag, characterRulesLine,
   type CategoryRecord, type CharacterEditionEntry, type CharacterEntryKind,
@@ -624,6 +624,10 @@ describe("search labels", () => {
     ["homebrew", "[homebrew]"], ["playtest", "[playtest]"], ["unstated", "[edition not stated]"],
   ] as const)("editionTag %s → %s", (ruleset, tag) => {
     expect(editionTag(info(ruleset, "any book"))).toBe(tag);
+  });
+
+  it("SERVER_INSTRUCTIONS", () => {
+    expect(SERVER_INSTRUCTIONS).toBe("Every rules answer carries a 'Rules:' line or an inline tag — [2024], [2014], [third-party], [homebrew], [playtest] or [edition not stated] — naming the ruleset, and says when the edition shown differs from the one requested. Pass this on to the user. Content defaults to 2024; if the user's table plays 2014, pass rules_edition: '2014'.");
   });
 
   it("RULES_EDITION_TOOL_NOTE", () => {

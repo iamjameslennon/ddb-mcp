@@ -438,7 +438,7 @@ describe("repeated and unresolved names within budget", () => {
 // the BoundedAccumulator/omission mechanism actually does anything; it
 // would pass even if that mechanism were deleted entirely. generateTreasure()
 // accepts a second, options-object parameter with a `maxOutputChars`
-// override — test-only, production callers (src/index.ts) never pass it —
+// override — test-only, production callers (src/server.ts) never pass it —
 // so these tests can force the same accumulator logic to actually omit
 // content on a small, cheap fixture instead of a giant real payload.
 

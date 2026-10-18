@@ -10,7 +10,7 @@ import {
 // This suite exercises the validator in isolation, independent of
 // generateTreasure() / getMonsterStats(). It establishes schema/runtime
 // agreement: the same limits enforced here must also be enforced by the
-// Zod schema in src/index.ts and by generateTreasure()'s early guard.
+// Zod schema in src/server.ts and by generateTreasure()'s early guard.
 //
 // All just-over-limit values here are small (101, 21 entries, 201 chars)
 // so this suite is safe to run against any implementation, including one
