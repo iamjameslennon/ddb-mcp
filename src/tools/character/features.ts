@@ -8,6 +8,7 @@
  * to preserve byte-for-byte parity with the original inline code.
  */
 
+import { wrapIfHomebrew, wrapUntrusted } from "../../utils.js";
 import { arr, hasTag, num, obj, str, stripHtml } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
 import type { TemplateResolver } from "./templates.js";
@@ -16,6 +17,8 @@ export interface BackgroundFeature {
   name: string;        // empty string when there's no background feature to show
   isFeat: boolean;     // true means it overlaps a feat — rendered elsewhere
   descSnippet: string; // pre-resolved, pre-stripped, sliced to 300 chars
+  /** Homebrew, or a custom background the player wrote. The name and description are user-authored. */
+  untrusted: boolean;
 }
 
 export interface Features {
@@ -42,9 +45,13 @@ function buildFeatLines(char: CharData, resolveTemplates: TemplateResolver): {
   const featLines = realFeats.map(f => {
     const def = obj(f.definition);
     const snippet = resolveTemplates(stripHtml(str(def.snippet || def.description))).slice(0, 120);
-    return `• ${str(def.name)}${snippet ? `: ${snippet}${snippet.length >= 120 ? "…" : ""}` : ""}`;
+    const line = `• ${str(def.name)}${snippet ? `: ${snippet}${snippet.length >= 120 ? "…" : ""}` : ""}`;
+    return wrapIfHomebrew(line, def.isHomebrew === true);
   });
-  const disguisedFeatLines = disguisedFeats.map(f => `• ${str(obj(f.definition).name)}`);
+  const disguisedFeatLines = disguisedFeats.map(f => {
+    const def = obj(f.definition);
+    return wrapIfHomebrew(`• ${str(def.name)}`, def.isHomebrew === true);
+  });
   return { featLines, disguisedFeatLines, realFeatCount: realFeats.length };
 }
 
@@ -54,12 +61,14 @@ function buildClassFeatureLines(classes: readonly ClassEntry[]): string[] {
   const seen = new Set<string>();
   for (const c of classes) {
     const charLevel = num(c.level);
+    const classDef = obj(c.definition);
+    const classHomebrew = classDef.isHomebrew === true;
     for (const cf of arr<Record<string, unknown>>(c.classFeatures)) {
       const def = obj(cf.definition);
-      const line = `• ${str(def.name)} (${str(obj(c.definition).name)} ${num(def.requiredLevel || 1)})`;
+      const line = `• ${str(def.name)} (${str(classDef.name)} ${num(def.requiredLevel || 1)})`;
       if (num(def.requiredLevel || 0) <= charLevel && !seen.has(line)) {
         seen.add(line);
-        lines.push(line);
+        lines.push(wrapIfHomebrew(line, classHomebrew || def.isHomebrew === true));
       }
     }
   }
@@ -68,9 +77,12 @@ function buildClassFeatureLines(classes: readonly ClassEntry[]): string[] {
 
 // ── Racial traits ────────────────────────────────────────────────────────────
 function buildRacialTraitLines(char: CharData): string[] {
-  return arr<Record<string, unknown>>(obj(char.race).racialTraits).map(
-    t => `• ${str(obj(t.definition).name)}`
-  );
+  const race = obj(char.race);
+  const raceHomebrew = race.isHomebrew === true;
+  return arr<Record<string, unknown>>(race.racialTraits).map(t => {
+    const def = obj(t.definition);
+    return wrapIfHomebrew(`• ${str(def.name)}`, raceHomebrew || def.isHomebrew === true);
+  });
 }
 
 // ── Background feature ───────────────────────────────────────────────────────
@@ -83,13 +95,17 @@ function buildBackgroundFeature(char: CharData, resolveTemplates: TemplateResolv
   const customBgDef = Object.keys(featuresBackgroundDef).length > 0
     ? featuresBackgroundDef
     : obj(customBg.definition);
-  const bgDef = Object.keys(customBgDef).length > 0 ? customBgDef : obj(bgObj.definition);
+  const usedCustom = Object.keys(customBgDef).length > 0;
+  const bgDef = usedCustom ? customBgDef : obj(bgObj.definition);
   return {
     name: str(bgDef.featureName),
     isFeat: bgDef.featureIsFeat === true,
     descSnippet: bgDef.featureDescription
       ? resolveTemplates(stripHtml(str(bgDef.featureDescription))).slice(0, 300)
       : "",
+    // A custom background's feature text is written by the player. Homebrew
+    // backgrounds can come from someone else's shared collection.
+    untrusted: usedCustom || bgDef.isHomebrew === true || bgObj.isHomebrew === true,
   };
 }
 
@@ -126,9 +142,10 @@ export function formatFeaturesBlock(f: Features): string[] {
     ...(!f.background.name || f.background.isFeat ? [] : (() => {
       const desc = f.background.descSnippet;
       const descSnippet = desc ? `${desc}${desc.length >= 300 ? "…" : ""}` : "";
+      const line = `  ${f.background.name}${descSnippet ? `: ${descSnippet}` : ""}`;
       return [
         `BACKGROUND FEATURE`,
-        `  ${f.background.name}${descSnippet ? `: ${descSnippet}` : ""}`,
+        f.background.untrusted ? wrapUntrusted(line) : line,
         ``,
       ];
     })()),

@@ -18,7 +18,7 @@ import {
   captureSession, assertSessionCurrent, onSessionInvalidated, SessionChangedError,
 } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
-import { stripHtml } from "../utils.js";
+import { stripHtml, wrapIfHomebrew } from "../utils.js";
 import {
   twinName, classifyEdition, selectByEdition, definitionTiebreak, isEdition,
   lookupByName, groupAndSelect, normalizeName, rulesLine, renameLine, editionTag,
@@ -538,7 +538,9 @@ function formatSpell(
     "",
     stripHtml(d.description),
   ];
-  return lines.join("\n");
+  // Homebrew spell text (name and description) can come from another player's
+  // shared collection. Official spells are left plain.
+  return wrapIfHomebrew(lines.join("\n"), d.isHomebrew);
 }
 
 export async function searchSpells(params: {
@@ -604,7 +606,10 @@ export async function searchSpells(params: {
       if (d.concentration) tags.push("Conc.");
       if (d.ritual) tags.push("Ritual");
       const tagStr = tags.length ? ` (${tags.join(", ")})` : "";
-      lines.push(`- **${d.name}** ${editionTag(sel.info)} — ${level} ${d.school}${tagStr}`);
+      lines.push(wrapIfHomebrew(
+        `- **${d.name}** ${editionTag(sel.info)} — ${level} ${d.school}${tagStr}`,
+        d.isHomebrew,
+      ));
     }
     if (total > offset + limit) {
       lines.push(`\n*Use offset: ${offset + limit} to see more.*`);
@@ -680,6 +685,7 @@ interface DdbItem {
   strengthRequirement?: number | null;
   stealthCheck?: number | null;           // 2 = stealth disadvantage, null = no penalty
   magic: boolean;
+  isHomebrew?: boolean | null;
 }
 
 let itemCompendium: DdbItem[] | null = null;
@@ -745,7 +751,7 @@ function formatItem(item: DdbItem): string {
     lines.push(`Properties: ${item.properties.map(p => p.name).join(", ")}`);
   }
   lines.push("", stripHtml(item.description || item.snippet || "No description available."));
-  return lines.join("\n");
+  return wrapIfHomebrew(lines.join("\n"), item.isHomebrew);
 }
 
 export async function searchItems(params: {
@@ -787,7 +793,7 @@ export async function searchItems(params: {
     const rarity = item.rarity || "Common";
     const type = item.filterType || item.type || "Item";
     const attune = item.requiresAttunement ? " (attunement)" : "";
-    lines.push(`- **${item.name}** — ${rarity} ${type}${attune}`);
+    lines.push(wrapIfHomebrew(`- **${item.name}** — ${rarity} ${type}${attune}`, item.isHomebrew));
   }
   if (total > 30) lines.push(`\n*Refine your search to see more results.*`);
   return lines.join("\n");
@@ -888,7 +894,8 @@ export async function searchRaces(name?: string, limit?: number, offset?: number
         if (race.isHomebrew) tags.push("Homebrew");
         const tagStr = tags.length ? ` *(${tags.join(", ")})*` : "";
         const desc = stripHtml(race.description || "").slice(0, 100);
-        return `- **${raceName}**${tagStr}${desc ? ` — ${desc}${desc.length >= 100 ? "..." : ""}` : ""}`;
+        const line = `- **${raceName}**${tagStr}${desc ? ` — ${desc}${desc.length >= 100 ? "..." : ""}` : ""}`;
+        return wrapIfHomebrew(line, race.isHomebrew);
       },
       limit ?? 30,
       offset ?? 0,
@@ -948,7 +955,8 @@ export async function searchClasses(name?: string, limit?: number, offset?: numb
           ? `\n  Subclasses: ${cls.subclasses.map(s => s.name).join(", ")}`
           : "";
         const desc = stripHtml(cls.description || "").slice(0, 120);
-        return `- **${cls.name}**${homebrew} — Hit Die: ${hitDie}${spellcasting}${desc ? `\n  ${desc}${desc.length >= 120 ? "..." : ""}` : ""}${subclasses}`;
+        const line = `- **${cls.name}**${homebrew} — Hit Die: ${hitDie}${spellcasting}${desc ? `\n  ${desc}${desc.length >= 120 ? "..." : ""}` : ""}${subclasses}`;
+        return wrapIfHomebrew(line, cls.isHomebrew);
       },
       limit ?? 30,
       offset ?? 0,
@@ -1006,7 +1014,8 @@ export async function searchBackgrounds(name?: string, limit?: number, offset?: 
       bg => {
         const homebrew = bg.isHomebrew ? " *(Homebrew)*" : "";
         const desc = stripHtml(bg.description || "").slice(0, 120);
-        return `- **${bg.name}**${homebrew}${desc ? ` — ${desc}${desc.length >= 120 ? "..." : ""}` : ""}`;
+        const line = `- **${bg.name}**${homebrew}${desc ? ` — ${desc}${desc.length >= 120 ? "..." : ""}` : ""}`;
+        return wrapIfHomebrew(line, bg.isHomebrew);
       },
       limit ?? 30,
       offset ?? 0,
@@ -1077,7 +1086,8 @@ export async function searchFeats(params: {
         const prereq = feat.prerequisite ? ` *(Requires: ${feat.prerequisite})*` : "";
         const homebrew = feat.isHomebrew ? " *(Homebrew)*" : "";
         const desc = stripHtml(feat.snippet || feat.description || "").slice(0, 100);
-        return `- **${feat.name}**${homebrew}${prereq}${desc ? ` — ${desc}${desc.length >= 100 ? "..." : ""}` : ""}`;
+        const line = `- **${feat.name}**${homebrew}${prereq}${desc ? ` — ${desc}${desc.length >= 100 ? "..." : ""}` : ""}`;
+        return wrapIfHomebrew(line, feat.isHomebrew);
       },
       params.limit ?? 30,
       params.offset ?? 0,

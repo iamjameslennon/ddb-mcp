@@ -13,6 +13,15 @@ export function wrapUntrusted(text: string): string {
 }
 
 /**
+ * Delimit an entry D&D Beyond marked homebrew. Official entries (`isHomebrew`
+ * not strictly true) stay plain. Shared homebrew collections are other
+ * people's text — the same rule as homebrew monsters.
+ */
+export function wrapIfHomebrew(text: string, isHomebrew: boolean | null | undefined): string {
+  return isHomebrew === true ? wrapUntrusted(text) : text;
+}
+
+/**
  * Strip HTML tags and decode common HTML entities from a string.
  */
 export function stripHtml(s: string | null | undefined): string {

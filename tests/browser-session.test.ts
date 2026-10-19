@@ -230,6 +230,49 @@ describe("login cannot recreate a session revoked while it was in flight", () =>
   });
 });
 
+describe("saveSession keeps only D&D Beyond cookies and storage", () => {
+  it("drops Google, Apple and lookalike cookies and origins before writing", async () => {
+    const ctx = await browser.beginLoginSession() as unknown as FakeContext;
+    ctx.storageState.mockResolvedValue({
+      cookies: [
+        {
+          name: "CobaltSession", value: "SECRET", domain: ".dndbeyond.com", path: "/",
+          expires: 1, httpOnly: true, secure: true, sameSite: "Lax",
+        },
+        {
+          name: "CobaltSession", value: "ALSO", domain: "auth-service.dndbeyond.com", path: "/",
+          expires: 1, httpOnly: true, secure: true,
+        },
+        { name: "SID", value: "GOOGLE", domain: ".google.com", path: "/", expires: 1, httpOnly: true, secure: true },
+        { name: "aid", value: "APPLE", domain: ".apple.com", path: "/", expires: 1, httpOnly: true, secure: true },
+        { name: "wiz", value: "WIZ", domain: "signin.wizards.com", path: "/", expires: 1, httpOnly: true, secure: true },
+        { name: "x", value: "EVIL", domain: "dndbeyond.com.evil.example", path: "/", expires: 1, httpOnly: true, secure: true },
+      ],
+      origins: [
+        { origin: "https://accounts.google.com", localStorage: [{ name: "t", value: "G" }] },
+        { origin: "https://appleid.apple.com", localStorage: [{ name: "t", value: "A" }] },
+        { origin: "https://www.dndbeyond.com", localStorage: [{ name: "theme", value: "dark" }] },
+      ],
+    });
+
+    await browser.saveSession(ctx as never);
+
+    const written = fsMock.writeFileSync.mock.calls.map(c => c[1]).find(v => typeof v === "string") as string;
+    const saved = JSON.parse(written) as {
+      cookies: Array<{ domain: string; value: string; sameSite?: string }>;
+      origins: Array<{ origin: string }>;
+    };
+    expect(saved.cookies.map(c => c.domain)).toEqual([".dndbeyond.com", "auth-service.dndbeyond.com"]);
+    expect(saved.cookies[0].sameSite).toBe("Lax");
+    expect(saved.origins.map(o => o.origin)).toEqual(["https://www.dndbeyond.com"]);
+    expect(written).not.toContain("GOOGLE");
+    expect(written).not.toContain("APPLE");
+    expect(written).not.toContain("WIZ");
+    expect(written).not.toContain("EVIL");
+    await browser.endLoginSession();
+  });
+});
+
 describe("concurrent logins are serialized", () => {
   it("rejects a second login while one is in progress, and hands out a fresh context afterward", async () => {
     setSessionFile(sessionJson("SECRET_A"));

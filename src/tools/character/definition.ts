@@ -11,7 +11,7 @@
  * the other way around).
  */
 
-import { stripHtml as stripHtmlFull } from "../../utils.js";
+import { stripHtml as stripHtmlFull, wrapUntrusted } from "../../utils.js";
 import { fetchCharacter, withNotice } from "../character.js";
 import { levenshteinDistance } from "./helpers.js";
 
@@ -108,9 +108,21 @@ function formatItemResult(item: Record<string, unknown>): string {
   return `${name} (${type}, ${rarity})\n${weight}\n${desc}`;
 }
 
+function isHomebrew(record: Record<string, unknown>): boolean {
+  return record.isHomebrew === true;
+}
+
 interface DefinitionHit {
   type: string;
+  /** First line of the unwrapped body — the name — used when the hit list is summarized. */
+  summary: string;
   text: string;
+  /** Homebrew or a player-written custom background. The body is user-authored. */
+  untrusted: boolean;
+}
+
+function hit(type: string, text: string, untrusted: boolean): DefinitionHit {
+  return { type, summary: text.split("\n")[0] ?? "", text, untrusted };
 }
 
 function searchDefinitions(char: Record<string, unknown>, query: string): DefinitionHit[] {
@@ -135,7 +147,8 @@ function searchDefinitions(char: Record<string, unknown>, query: string): Defini
   for (const spell of allSpells) {
     const name = str(obj(spell.definition).name || spell.name);
     if (name && matchesDefinitionQuery(name, query)) {
-      results.push({ type: "Spell", text: formatSpellResult(spell) });
+      const def = obj(spell.definition);
+      results.push(hit("Spell", formatSpellResult(spell), isHomebrew(def) || isHomebrew(spell)));
     }
   }
 
@@ -143,7 +156,7 @@ function searchDefinitions(char: Record<string, unknown>, query: string): Defini
   for (const feat of arr<Record<string, unknown>>(char.feats)) {
     const name = str(obj(feat.definition).name);
     if (name && matchesDefinitionQuery(name, query)) {
-      results.push({ type: "Feat", text: formatFeatResult(feat) });
+      results.push(hit("Feat", formatFeatResult(feat), isHomebrew(obj(feat.definition)) || isHomebrew(feat)));
     }
   }
 
@@ -151,7 +164,9 @@ function searchDefinitions(char: Record<string, unknown>, query: string): Defini
   const seen = new Set<string>();
   for (const cls of arr<Record<string, unknown>>(char.classes)) {
     const charLevel = num(cls.level);
-    const className = str(obj(cls.definition).name);
+    const classDef = obj(cls.definition);
+    const className = str(classDef.name);
+    const classHomebrew = isHomebrew(classDef) || isHomebrew(cls);
 
     for (const cf of arr<Record<string, unknown>>(cls.classFeatures)) {
       const d = obj(cf.definition);
@@ -159,15 +174,17 @@ function searchDefinitions(char: Record<string, unknown>, query: string): Defini
       const requiredLevel = num(d.requiredLevel || 1);
       if (requiredLevel <= charLevel && name && matchesDefinitionQuery(name, query) && !seen.has(name)) {
         seen.add(name);
-        results.push({
-          type: "Class Feature",
-          text: formatClassFeatureResult(cf, className, requiredLevel),
-        });
+        results.push(hit(
+          "Class Feature",
+          formatClassFeatureResult(cf, className, requiredLevel),
+          classHomebrew || isHomebrew(d) || isHomebrew(cf),
+        ));
       }
     }
 
     const subDef = obj(cls.subclassDefinition);
     const subName = str(subDef.name);
+    const subHomebrew = classHomebrew || isHomebrew(subDef);
     for (const cf of arr<Record<string, unknown>>(subDef.classFeatures)) {
       const d = obj(cf.definition);
       const name = str(d.name);
@@ -175,33 +192,51 @@ function searchDefinitions(char: Record<string, unknown>, query: string): Defini
       const label = subName ? `${className} / ${subName}` : className;
       if (requiredLevel <= charLevel && name && matchesDefinitionQuery(name, query) && !seen.has(name)) {
         seen.add(name);
-        results.push({
-          type: "Subclass Feature",
-          text: formatClassFeatureResult(cf, label, requiredLevel),
-        });
+        results.push(hit(
+          "Subclass Feature",
+          formatClassFeatureResult(cf, label, requiredLevel),
+          subHomebrew || isHomebrew(d) || isHomebrew(cf),
+        ));
       }
     }
   }
 
   // ── Racial Traits ─────────────────────────────────────────────────────────
-  const raceName = str(obj(char.race).fullName || obj(char.race).baseName);
-  for (const trait of arr<Record<string, unknown>>(obj(char.race).racialTraits)) {
-    const name = str(obj(trait.definition).name);
+  const race = obj(char.race);
+  const raceName = str(race.fullName || race.baseName);
+  const raceHomebrew = isHomebrew(race);
+  for (const trait of arr<Record<string, unknown>>(race.racialTraits)) {
+    const def = obj(trait.definition);
+    const name = str(def.name);
     if (name && matchesDefinitionQuery(name, query)) {
-      results.push({ type: "Racial Trait", text: formatRacialTraitResult(trait, raceName) });
+      results.push(hit(
+        "Racial Trait",
+        formatRacialTraitResult(trait, raceName),
+        raceHomebrew || isHomebrew(def) || isHomebrew(trait),
+      ));
     }
   }
 
   // ── Background Feature ────────────────────────────────────────────────────
-  const bgDef = obj(obj(char.background).definition);
+  // Same resolution as the character sheet: a custom background's feature text
+  // is the player's, and it wins over the stock definition.
+  const bgObj = obj(char.background);
+  const customBg = obj(bgObj.customBackground);
+  const featuresBackgroundDef = obj(obj(customBg.featuresBackground).definition);
+  const customBgDef = Object.keys(featuresBackgroundDef).length > 0
+    ? featuresBackgroundDef
+    : obj(customBg.definition);
+  const usedCustom = Object.keys(customBgDef).length > 0;
+  const bgDef = usedCustom ? customBgDef : obj(bgObj.definition);
   const bgFeatureName = str(bgDef.featureName);
   if (bgFeatureName && matchesDefinitionQuery(bgFeatureName, query)) {
-    const bgName = str(bgDef.name);
+    const bgName = str(bgDef.name || obj(bgObj.definition).name);
     const bgDesc = stripHtmlFull(str(bgDef.featureDescription));
-    results.push({
-      type: "Background Feature",
-      text: `${bgFeatureName} (${bgName})\n\n${bgDesc}`,
-    });
+    results.push(hit(
+      "Background Feature",
+      `${bgFeatureName} (${bgName})\n\n${bgDesc}`,
+      usedCustom || isHomebrew(bgDef) || isHomebrew(bgObj),
+    ));
   }
 
   // ── Equipped Items ────────────────────────────────────────────────────────
@@ -209,7 +244,11 @@ function searchDefinitions(char: Record<string, unknown>, query: string): Defini
     if (!item.equipped) continue;
     const name = str(obj(item.definition).name);
     if (name && matchesDefinitionQuery(name, query)) {
-      results.push({ type: "Item", text: formatItemResult(item) });
+      results.push(hit(
+        "Item",
+        formatItemResult(item),
+        isHomebrew(obj(item.definition)) || isHomebrew(item),
+      ));
     }
   }
 
@@ -224,7 +263,16 @@ export async function getDefinition(
   const raw = JSON.parse(json) as Record<string, unknown>;
   const char = (raw?.data ?? raw) as Record<string, unknown>;
 
-  return withNotice(formatDefinitionHits(searchDefinitions(char, query), query), notice);
+  return withNotice(formatCharacterLookup(char, query), notice);
+}
+
+/** Format definition hits for a character object already in memory. */
+export function formatCharacterLookup(char: Record<string, unknown>, query: string): string {
+  return formatDefinitionHits(searchDefinitions(char, query), query);
+}
+
+function present(text: string, untrusted: boolean): string {
+  return untrusted ? wrapUntrusted(text) : text;
 }
 
 function formatDefinitionHits(hits: ReturnType<typeof searchDefinitions>, query: string): string {
@@ -233,9 +281,9 @@ function formatDefinitionHits(hits: ReturnType<typeof searchDefinitions>, query:
   }
 
   if (hits.length > 3) {
-    const list = hits.map((h, i) => `${i + 1}. [${h.type}] ${h.text.split("\n")[0]}`).join("\n");
+    const list = hits.map((h, i) => present(`${i + 1}. [${h.type}] ${h.summary}`, h.untrusted)).join("\n");
     return `Found ${hits.length} matches for "${query}". Be more specific, or here are the matches:\n\n${list}`;
   }
 
-  return hits.map(h => `[${h.type}]\n${h.text}`).join("\n\n===\n\n");
+  return hits.map(h => `[${h.type}]\n${present(h.text, h.untrusted)}`).join("\n\n===\n\n");
 }
