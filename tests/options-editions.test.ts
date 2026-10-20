@@ -271,6 +271,20 @@ describe("source and failures", () => {
     expect(text.endsWith('*Note: source filtering is not available via the Open5e SRD fallback — "phb-2024" was requested but could not be honoured.*')).toBe(true);
   });
 
+  it("when the load and Open5e both fail, the reply says both failed, with the source caveat", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === COBALT_URL) return jsonResponse({ token: makeJwt("99") });
+      if (url.startsWith(GAME_DATA)) return jsonResponse({}, 403);
+      if (url.includes("open5e")) throw new Error("open5e down");
+      return jsonResponse({});
+    });
+    expect(await reference.searchBackgrounds({ name: "acolyte" }))
+      .toBe("Backgrounds unavailable — DnD Beyond and Open5e both failed.");
+    expect(await reference.searchFeats({ name: "alert", source: "phb-2024" })).toBe(
+      'Feats unavailable — DnD Beyond and Open5e both failed.\n\n*Note: source filtering is not available via the Open5e SRD fallback — "phb-2024" was requested but could not be honoured.*',
+    );
+  });
+
   it("an empty list is never cached", async () => {
     install({ feats: [] });
     await reference.searchFeats({});

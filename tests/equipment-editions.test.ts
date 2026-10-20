@@ -169,4 +169,14 @@ describe("ddb_search_equipment rules_edition and source", () => {
     expect(withSource).toContain("Longsword");
     expect(withSource.endsWith('*Note: source filtering is not available via the Open5e SRD fallback — "phb-2024" was requested but could not be honoured.*')).toBe(true);
   });
+
+  it("when the load and Open5e both fail, the compendium's own error is thrown", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === COBALT_URL) return jsonResponse({ token: makeJwt("99") });
+      if (url.startsWith(GAME_DATA)) return jsonResponse({}, 403);
+      if (url.includes("open5e")) throw new Error("open5e down");
+      return jsonResponse({});
+    });
+    await expect(reference.searchItems({ name: "longsword" })).rejects.toThrow("Item compendium fetch failed: 403");
+  });
 });

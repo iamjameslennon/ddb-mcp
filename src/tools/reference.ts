@@ -28,7 +28,7 @@ import { peekSourceIndex, getSourceIndex } from "../game-config.js";
 import { resolveSource, unknownSourceError, withSourceCaveat, GENERIC_SOURCE_HINT, type ResolvedSource } from "../source-filter.js";
 import {
   paginateResults, renderSection, plainSection, selectCatalog, lookupCatalog,
-  type CatalogAdapter, type SearchSection,
+  type CatalogAdapter, type CatalogHit, type SearchSection,
 } from "./edition-search.js";
 import { createSpellStore, addSpells, spellList, type DdbSpell, type SpellStore } from "./spell-store.js";
 import {
@@ -813,56 +813,35 @@ export async function searchItems(params: ItemSearchParams): Promise<string> {
 }
 
 export async function searchItemsSection(params: ItemSearchParams): Promise<SearchSection> {
-  const source = await resolveSourceParam(params.source);
-  if (typeof source === "string") return plainSection(source);
-  const requested = params.rulesEdition ?? "2024";
   const nameQuery = params.name ? normalizeName(params.name) : "";
   const rarityQuery = params.rarity?.toLowerCase();
   const typeQuery = params.type?.toLowerCase();
-
-  let selection;
-  try {
-    const items = await loadItemCompendium();
-    const index = await getSourceIndex();
-    selection = selectCatalog(items, requested, {
+  return searchCatalogList<DdbItem>(params, {
+    load: loadItemCompendium,
+    plural: "items",
+    adapter: {
       ...ITEM_ADAPTER,
       nameMatches: nameQuery ? i => normalizeName(i.name).includes(nameQuery) : undefined,
       passes: i => (!rarityQuery || !!i.rarity?.toLowerCase().includes(rarityQuery))
         && (!typeQuery || !!i.type?.toLowerCase().includes(typeQuery) || !!i.filterType?.toLowerCase().includes(typeQuery)),
-    }, index, source, { bookNotes: params.bookNotes });
-  } catch (err) {
-    try {
-      return plainSection(withSourceCaveat(await o5SearchItems(params.name ?? "", "unavailable"), params.source));
-    } catch {
-      throw err;
-    }
-  }
-
-  const { hits, hidden, header, note } = selection;
-  if (hits.length === 0) {
-    if (source) return plainSection(`No items found matching the criteria in ${source.book}.`);
-    if (hidden > 0) return hiddenOnlySection(header, "No items found matching the criteria.", requested, hidden);
-    return plainSection(await o5SearchItems(params.name ?? "", "not-found").catch(
-      () => "No items found matching the criteria."
-    ));
-  }
-
-  const total = hits.length;
-  const lines = [`**Item Search** (${total > 30 ? `showing 30 of ${total}` : `${total} found`})\n`];
-  for (const { entry: item, label } of hits.slice(0, 30)) {
-    const rarity = item.rarity || "Common";
-    const type = item.filterType || item.type || "Item";
-    const attune = item.requiresAttunement ? " (attunement)" : "";
-    lines.push(`- **${item.name}** ${label} — ${rarity} ${type}${attune}`);
-  }
-  if (total > 30) lines.push(`\n*Refine your search to see more results.*`);
-  const results = lines.join("\n");
-  return {
-    header,
-    body: note ? `${note}\n${results}` : results,
-    footer: searchFooter(requested, hidden),
-    hidden,
-  };
+    },
+    // No paging: the first 30, then a hint to refine.
+    render: hits => {
+      const total = hits.length;
+      const lines = [`**Item Search** (${total > 30 ? `showing 30 of ${total}` : `${total} found`})\n`];
+      for (const { entry: item, label } of hits.slice(0, 30)) {
+        const rarity = item.rarity || "Common";
+        const type = item.filterType || item.type || "Item";
+        const attune = item.requiresAttunement ? " (attunement)" : "";
+        lines.push(`- **${item.name}** ${label} — ${rarity} ${type}${attune}`);
+      }
+      if (total > 30) lines.push(`\n*Refine your search to see more results.*`);
+      return lines.join("\n");
+    },
+    notFound: "No items found matching the criteria.",
+    fallback: kind => o5SearchItems(params.name ?? "", kind),
+    // No `unavailable`: when Open5e fails too, the compendium's own error is thrown.
+  });
 }
 
 export async function getItem(itemName: string, rulesEdition: RulesEdition = "2024", source?: string): Promise<string> {
@@ -914,9 +893,65 @@ interface OptionSearchParams {
 }
 
 /**
- * Species, classes, backgrounds and feats share one search: load the game-data
- * list, choose editions through selectCatalog, then page and render. `plural`
- * and `heading` name the entries in messages; `fallback` is the Open5e search.
+ * The search flow items, species, classes, backgrounds and feats share:
+ * resolve `source`; load and choose editions through selectCatalog (a failure
+ * falls back to Open5e, with the source caveat); with no hits, the book's
+ * no-match line, a hidden-only section, else Open5e; otherwise the rendered
+ * hits under the header, the source note first. `plural` names the entries in
+ * messages; `notFound` is the no-match text when Open5e fails.
+ */
+async function searchCatalogList<T>(
+  params: { source?: string; rulesEdition?: RulesEdition; bookNotes?: boolean },
+  spec: {
+    load: () => Promise<T[]>;
+    plural: string;
+    adapter: CatalogAdapter<T>;
+    render: (hits: CatalogHit<T>[]) => string;
+    notFound: string;
+    fallback: (kind: "not-found" | "unavailable") => Promise<string>;
+    /** The reply when the load and Open5e both fail; omitted, the load error is rethrown. */
+    unavailable?: string;
+  },
+): Promise<SearchSection> {
+  const source = await resolveSourceParam(params.source);
+  if (typeof source === "string") return plainSection(source);
+  const requested = params.rulesEdition ?? "2024";
+
+  let selection;
+  try {
+    const all = await spec.load();
+    const index = await getSourceIndex();
+    selection = selectCatalog(all, requested, spec.adapter, index, source, { bookNotes: params.bookNotes });
+  } catch (err) {
+    let text: string;
+    try {
+      text = await spec.fallback("unavailable");
+    } catch {
+      if (spec.unavailable === undefined) throw err;
+      text = spec.unavailable;
+    }
+    return plainSection(withSourceCaveat(text, params.source));
+  }
+
+  const { hits, hidden, header, note } = selection;
+  if (hits.length === 0) {
+    if (source) return plainSection(`No ${spec.plural} found matching the criteria in ${source.book}.`);
+    if (hidden > 0) return hiddenOnlySection(header, `No ${spec.plural} found matching the criteria.`, requested, hidden);
+    return plainSection(await spec.fallback("not-found").catch(() => spec.notFound));
+  }
+
+  const results = spec.render(hits);
+  return {
+    header,
+    body: note ? `${note}\n${results}` : results,
+    footer: searchFooter(requested, hidden),
+    hidden,
+  };
+}
+
+/**
+ * Species, classes, backgrounds and feats: searchCatalogList over a game-data
+ * list, paged. `heading` titles the page; `fallback` is the Open5e search.
  */
 async function searchOptionList<T>(
   params: OptionSearchParams,
@@ -936,42 +971,18 @@ async function searchOptionList<T>(
     fallback: (kind: "not-found" | "unavailable") => Promise<string>;
   },
 ): Promise<SearchSection> {
-  const source = await resolveSourceParam(params.source);
-  if (typeof source === "string") return plainSection(source);
-  const requested = params.rulesEdition ?? "2024";
-
-  let selection;
-  try {
-    const loaded = await loadGameDataList<T>(spec.cacheKey, spec.path);
-    const all = spec.usable ? loaded.filter(spec.usable) : loaded;
-    const index = await getSourceIndex();
-    selection = selectCatalog(all, requested, {
-      ...spec.adapter,
-      passes: spec.passes,
-    }, index, source, { bookNotes: params.bookNotes });
-  } catch {
-    return plainSection(withSourceCaveat(
-      await spec.fallback("unavailable").catch(
-        () => `${spec.plural[0].toUpperCase()}${spec.plural.slice(1)} unavailable — DnD Beyond and Open5e both failed.`
-      ),
-      params.source,
-    ));
-  }
-
-  const { hits, hidden, header, note } = selection;
-  if (hits.length === 0) {
-    if (source) return plainSection(`No ${spec.plural} found matching the criteria in ${source.book}.`);
-    if (hidden > 0) return hiddenOnlySection(header, `No ${spec.plural} found matching the criteria.`, requested, hidden);
-    return plainSection(await spec.fallback("not-found").catch(() => spec.notFound));
-  }
-
-  const results = paginateResults(spec.heading, hits, spec.format, params.limit ?? spec.defaultLimit, params.offset ?? 0);
-  return {
-    header,
-    body: note ? `${note}\n${results}` : results,
-    footer: searchFooter(requested, hidden),
-    hidden,
-  };
+  return searchCatalogList<T>(params, {
+    load: async () => {
+      const loaded = await loadGameDataList<T>(spec.cacheKey, spec.path);
+      return spec.usable ? loaded.filter(spec.usable) : loaded;
+    },
+    plural: spec.plural,
+    adapter: { ...spec.adapter, passes: spec.passes },
+    render: hits => paginateResults(spec.heading, hits, spec.format, params.limit ?? spec.defaultLimit, params.offset ?? 0),
+    notFound: spec.notFound,
+    fallback: spec.fallback,
+    unavailable: `${spec.plural[0].toUpperCase()}${spec.plural.slice(1)} unavailable — DnD Beyond and Open5e both failed.`,
+  });
 }
 
 /** `nameMatches` for an adapter: the display name contains the query; none without a query. */
