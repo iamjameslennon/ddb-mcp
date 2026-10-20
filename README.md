@@ -201,8 +201,8 @@ Can a character use the Help action to assist with a skill check?
 
 | Tool | Description |
 |------|-------------|
-| `ddb_search_spells` | Search the full D&D Beyond spell compendium by name, level, school, concentration, or ritual. Defaults to 2024 spells; set `rules_edition: "2014"` for the 2014 versions. Each result is tagged `[2024]` / `[2014]`, and the output says when the other edition is shown instead. |
-| `ddb_get_spell` | Get the full description of any spell by name. Defaults to 2024; set `rules_edition: "2014"` for the 2014 text. A `Rules:` line names the ruleset, with a reason when the other edition is shown. |
+| `ddb_search_spells` | Search the full D&D Beyond spell compendium by name, level, school, concentration, or ritual. Defaults to 2024 spells; set `rules_edition: "2014"` for the 2014 versions. Each result is tagged `[2024]` / `[2014]`, and the output says when the other edition is shown instead. Pass `source` (a book's slug, short name or title) to list that book's spells of either edition. |
+| `ddb_get_spell` | Get the full description of any spell by name. Defaults to 2024; set `rules_edition: "2014"` for the 2014 text. A `Rules:` line names the ruleset, with a reason when the other edition is shown. Pass `source` to choose a specific book's version. |
 | `ddb_search_equipment` | Search the item/equipment compendium by name, rarity, or type. Covers mundane weapons, armour, and magic items. |
 | `ddb_get_equipment` | Get the full stats and description of any item — weapon damage, properties, range, STR requirement, etc. |
 | `ddb_get_condition` | Look up the rules text for a condition (Poisoned, Stunned, Grappled, etc.). No login required. |

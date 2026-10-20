@@ -480,7 +480,7 @@ Every phase:
 
 ### Phase 3: equipment and character options
 
-**Touches:** `src/tools/reference.ts` (items, races, classes, backgrounds, feats, class features, racial traits), `src/tools/search.ts`, `src/index.ts`, tests.
+**Touches:** `src/tools/reference.ts` (items, races, classes, backgrounds, feats, class features, racial traits), `src/tools/search.ts`, `src/server.ts` (registrations), new `src/tools/edition-search.ts` and `src/source-filter.ts`, `src/edition.ts`, tests.
 
 **Done when:**
 - Every tool in the phase-3 rows of the tool contract has the param, header, tags, pipeline and footer, with tests per tool, and passes the consistency test.
