@@ -60,6 +60,7 @@ const FIXTURES: Record<string, (ed: "2024" | "2014") => Record<string, unknown>>
   ddb_search_feats: ed => ({ name: "alert", rules_edition: ed }),
   ddb_search_class_features: ed => ({ name: "action surge", rules_edition: ed }),
   ddb_search_racial_traits: ed => ({ name: "darkvision", rules_edition: ed }),
+  ddb_search_site: ed => ({ query: "Fireball", rules_edition: ed }),
   ddb_rate_encounter: ed => ({ party: [{ count: 4, level: 3 }], monsters: [{ name: "Goblin" }], rules_edition: ed }),
   ddb_encounter_cr: ed => ({ party: [{ count: 4, level: 3 }], difficulty: ed === "2024" ? "moderate" : "medium", rules_edition: ed }),
   ddb_roll_treasure: ed => ({ monsters: [{ name: "Goblin" }], treasure_type: "individual", rules_edition: ed }),
@@ -100,6 +101,7 @@ const EDITION_CHECK: Record<string, (ed: "2024" | "2014") => EditionCheck> = {
   ddb_search_feats: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
   ddb_search_class_features: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
   ddb_search_racial_traits: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
+  ddb_search_site: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
   ddb_rate_encounter: ed => ({ present: [dmgRulesLine(ed)] }),
   ddb_encounter_cr: ed => ({ present: [dmgRulesLine(ed)] }),
   ddb_roll_treasure: ed => (ed === "2014" ? { present: [TREASURE_NO_2014] } : { present: [], absent: [TREASURE_NO_2014] }),
@@ -324,6 +326,8 @@ describe.each(["ddb", "open5e"] as const)("labels (%s path)", mode => {
         for (const l of text.split("\n").filter(l => RESULT_LINE.test(l))) expect(l).toContain(`[${ed}]`);
       }
     }
+    // The combined reply carries the Rules line once, not once per category.
+    if (mode === "ddb" && tool === "ddb_search_site") expect(text.match(/^Rules: /gm)).toHaveLength(1);
     if (tool.startsWith("ddb_search_")) {
       const results = text.split("\n").filter(l => RESULT_LINE.test(l));
       expect(results.length).toBeGreaterThan(0);

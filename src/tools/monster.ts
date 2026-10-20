@@ -27,6 +27,7 @@ import {
 import { TtlCache } from "../cache.js";
 import { wrapUntrusted, stripHtmlRich } from "../utils.js";
 import { o5SearchMonsters, o5GetMonster, o5GetMonsterStats } from "../open5e.js";
+import { renderSection, plainSection, type SearchSection } from "./edition-search.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -473,14 +474,29 @@ function isHomebrewSource(source: string | undefined): boolean {
 const HOMEBREW_LOGIN_REQUIRED = "Homebrew monster lookup requires login. Run ddb_login first.";
 const HOMEBREW_UNREACHABLE = "Homebrew monsters are unavailable: D&D Beyond could not be reached.";
 
-export async function searchMonsters(params: {
+export interface MonsterSearchParams {
   name?: string;
   cr?: number;
   type?: string;
   size?: string;
   source?: string;
   rulesEdition?: RulesEdition;
-}): Promise<string> {
+}
+
+export async function searchMonsters(params: MonsterSearchParams): Promise<string> {
+  return renderSection(await searchMonstersSection(params));
+}
+
+export async function searchMonstersSection(params: MonsterSearchParams): Promise<SearchSection> {
+  return plainOrSection(await monsterSearchParts(params));
+}
+
+/** The search as a SearchSection, or as a plain reply when it has no edition framing. */
+function plainOrSection(r: string | SearchSection): SearchSection {
+  return typeof r === "string" ? plainSection(r) : r;
+}
+
+async function monsterSearchParts(params: MonsterSearchParams): Promise<string | SearchSection> {
   const homebrew = isHomebrewSource(params.source);
   if (!hasValidSession()) {
     if (homebrew) return HOMEBREW_LOGIN_REQUIRED;
@@ -603,17 +619,18 @@ export async function searchMonsters(params: {
   const shown = monsters.slice(0, PAGE_SIZE);
 
   const lines: string[] = [];
+  let header: string;
   if (homebrew) {
     // Homebrew has no edition, so no sourceNote.
-    lines.push(searchHeader({ sourceBook: HOMEBREW_SOURCE_BOOK }));
+    header = searchHeader({ sourceBook: HOMEBREW_SOURCE_BOOK });
   } else if (params.source) {
     // Slugs aren't unique; the lowest ID is the main book, not a premade-character pack.
-    lines.push(searchHeader({ sourceBook: index.sources.get(Math.min(...sourceIds))!.book }));
+    header = searchHeader({ sourceBook: index.sources.get(Math.min(...sourceIds))!.book });
     const bookRuleset = classifyEdition({ sources: sourceIds.map(sourceId => ({ sourceId })) }, index).ruleset;
     const note = isEdition(bookRuleset) ? sourceNote(params.source, bookRuleset, requested) : null;
     if (note) lines.push(note);
   } else {
-    lines.push(searchHeader({ requested }));
+    header = searchHeader({ requested });
   }
   // The note and the swap summary count every selected entry, as the header
   // total does, not just the lines shown.
@@ -622,10 +639,10 @@ export async function searchMonsters(params: {
 
   // Totals count the result after hiding: the fetched entries the selection
   // dropped (hidden twins, same-edition duplicates) come off the service total.
-  const header = clientFilters
+  const countText = clientFilters
     ? `${shown.length} shown of ${monsters.length} matching; checked ${checked} of ${total} ${matchedBy}`
     : `${shown.length} shown, ${total - (checked - monsters.length)} total ${matchedBy}`;
-  lines.push(`**Monster Search** (${header})\n`);
+  lines.push(`**Monster Search** (${countText})\n`);
   for (const { m, info: mInfo, reason } of shown) {
     const cr = crMap.get(m.challengeRatingId);
     const crStr = cr ? crDisplay(cr.value) : "?";
@@ -660,10 +677,8 @@ export async function searchMonsters(params: {
   }
   const summary = lockedSwapSummary(requested, monsters.filter(r => isLockedReason(r.reason)).length);
   if (summary) lines.push(summary);
-  const footer = searchFooter(requested, hidden);
-  if (footer) lines.push(footer);
 
-  return lines.join("\n");
+  return { header, body: lines.join("\n"), footer: searchFooter(requested, hidden), hidden };
   } catch {
     if (homebrew) return HOMEBREW_UNREACHABLE;
     return await o5SearchMonsters(params, "unavailable").then(r => withSourceCaveat(r, params.source)).catch(

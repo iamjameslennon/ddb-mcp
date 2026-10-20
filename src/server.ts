@@ -531,18 +531,19 @@ server.tool(
 // ─── ddb_search_site ──────────────────────────────────────────────────────────
 server.tool(
   "ddb_search_site",
-  "Search D&D Beyond for spells, monsters, magic items, races, classes, or feats.",
+  "Search D&D Beyond for spells, monsters, magic items, races, classes, or feats. Each category lists the rules_edition version of an entry and counts the other edition's twins in one combined footer. " + RULES_EDITION_TOOL_NOTE,
   {
     query: z.string().min(1).describe("The search query (e.g. 'Fireball', 'Beholder', 'Vorpal Sword')"),
     category: z
       .enum(["spells", "monsters", "items", "races", "classes", "feats", "all"])
       .optional()
       .describe("Category to search within (defaults to 'all')"),
+    rules_edition: RULES_EDITION_PARAM,
   },
   READ_ONLY_NET,
-  async ({ query, category }) => {
+  async ({ query, category, rules_edition }) => {
     try {
-      const results = await search(query, category ?? "all");
+      const results = await search(query, category ?? "all", rules_edition);
       return { content: [{ type: "text", text: results }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

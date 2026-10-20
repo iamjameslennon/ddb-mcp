@@ -1,5 +1,9 @@
-import { searchSpells, searchItems, searchRaces, searchClasses, searchFeats } from "./reference.js";
-import { searchMonsters } from "./monster.js";
+import {
+  searchSpellsSection, searchItemsSection, searchRacesSection, searchClassesSection, searchFeatsSection,
+} from "./reference.js";
+import { searchMonstersSection } from "./monster.js";
+import { renderSection, plainSection, type SearchSection } from "./edition-search.js";
+import { searchHeader, searchFooter, type RulesEdition } from "../edition.js";
 
 export type SearchCategory = "spells" | "monsters" | "items" | "races" | "classes" | "feats" | "all";
 
@@ -16,38 +20,55 @@ const CATEGORY_LABELS: Record<SpecificCategory, string> = {
 };
 
 // Each underlying search returns its own "no results" sentence. Detect them so
-// we can omit empty sections in the "all" rollup.
-const EMPTY_RESULT_PATTERN = /^no\s+\w+\s+found/i;
+// we can omit empty sections in the "all" rollup. Open5e's item fallback says
+// "No magic items found", hence the several words.
+const EMPTY_RESULT_PATTERN = /^no\s+[\w\s]+?\s+found/i;
 
-export async function search(query: string, category: SearchCategory = "all"): Promise<string> {
+export async function search(
+  query: string,
+  category: SearchCategory = "all",
+  rulesEdition: RulesEdition = "2024"
+): Promise<string> {
   if (category !== "all") {
-    return runCategory(category, query);
+    return renderSection(await runCategory(category, query, rulesEdition));
   }
 
   const results = await Promise.all(
     ALL_CATEGORIES.map(c =>
-      runCategory(c, query).catch(err => `_${err instanceof Error ? err.message : String(err)}_`)
+      runCategory(c, query, rulesEdition).catch(err => plainSection(`_${err instanceof Error ? err.message : String(err)}_`))
     )
   );
 
   const sections: string[] = [];
+  let anyHeader = false;
+  let hidden = 0;
   for (let i = 0; i < ALL_CATEGORIES.length; i++) {
-    const body = results[i].trim();
+    const body = results[i].body.trim();
     if (!body || EMPTY_RESULT_PATTERN.test(body)) continue;
     sections.push(`## ${CATEGORY_LABELS[ALL_CATEGORIES[i]]}\n\n${body}`);
+    if (results[i].header !== null) anyHeader = true;
+    hidden += results[i].hidden;
   }
 
   if (sections.length === 0) return `No results found for "${query}".`;
-  return [`# Search results for "${query}"`, ...sections].join("\n\n");
+  // One header and one footer for the whole reply; an all-Open5e reply has no
+  // combined header, each section keeps its own Rules line.
+  const footer = searchFooter(rulesEdition, hidden);
+  return [
+    ...(anyHeader ? [searchHeader({ requested: rulesEdition })] : []),
+    `# Search results for "${query}"`,
+    ...sections,
+    ...(footer ? [footer] : []),
+  ].join("\n\n");
 }
 
-async function runCategory(category: SpecificCategory, query: string): Promise<string> {
+async function runCategory(category: SpecificCategory, query: string, rulesEdition: RulesEdition): Promise<SearchSection> {
   switch (category) {
-    case "spells":   return searchSpells({ name: query, limit: 10 });
-    case "monsters": return searchMonsters({ name: query });
-    case "items":    return searchItems({ name: query });
-    case "races":    return searchRaces({ name: query, limit: 10, offset: 0 });
-    case "classes":  return searchClasses({ name: query, limit: 10, offset: 0 });
-    case "feats":    return searchFeats({ name: query, limit: 10, offset: 0 });
+    case "spells":   return searchSpellsSection({ name: query, limit: 10, rulesEdition });
+    case "monsters": return searchMonstersSection({ name: query, rulesEdition });
+    case "items":    return searchItemsSection({ name: query, rulesEdition });
+    case "races":    return searchRacesSection({ name: query, limit: 10, offset: 0, rulesEdition });
+    case "classes":  return searchClassesSection({ name: query, limit: 10, offset: 0, rulesEdition });
+    case "feats":    return searchFeatsSection({ name: query, limit: 10, offset: 0, rulesEdition });
   }
 }
