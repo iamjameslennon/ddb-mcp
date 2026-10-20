@@ -62,13 +62,15 @@ export async function search(
   ].join("\n\n");
 }
 
+// The site search has no `source` param, so a "pass source to choose" book note would point nowhere.
 async function runCategory(category: SpecificCategory, query: string, rulesEdition: RulesEdition): Promise<SearchSection> {
+  const bookNotes = false;
   switch (category) {
-    case "spells":   return searchSpellsSection({ name: query, limit: 10, rulesEdition });
+    case "spells":   return searchSpellsSection({ name: query, limit: 10, rulesEdition, bookNotes });
     case "monsters": return searchMonstersSection({ name: query, rulesEdition });
-    case "items":    return searchItemsSection({ name: query, rulesEdition });
-    case "races":    return searchRacesSection({ name: query, limit: 10, offset: 0, rulesEdition });
-    case "classes":  return searchClassesSection({ name: query, limit: 10, offset: 0, rulesEdition });
-    case "feats":    return searchFeatsSection({ name: query, limit: 10, offset: 0, rulesEdition });
+    case "items":    return searchItemsSection({ name: query, rulesEdition, bookNotes });
+    case "races":    return searchRacesSection({ name: query, limit: 10, offset: 0, rulesEdition, bookNotes });
+    case "classes":  return searchClassesSection({ name: query, limit: 10, offset: 0, rulesEdition, bookNotes });
+    case "feats":    return searchFeatsSection({ name: query, limit: 10, offset: 0, rulesEdition, bookNotes });
   }
 }

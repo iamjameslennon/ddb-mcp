@@ -1,4 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+import { searchHeader } from "../src/edition.js";
 
 /**
  * spell-editions.test.ts — rules_edition on ddb_get_spell / ddb_search_spells.
@@ -121,12 +122,12 @@ describe("ddb_search_spells rules_edition", () => {
     expect(old.at(-1)).toBe("1 2024 version hidden — omit rules_edition to show it.");
   });
 
-  it("attribute filters apply to the selected entry", async () => {
+  it("attribute filters apply to the selected entry; a twin only the other edition passes is counted, not listed", async () => {
     installBasics();
-    const conc = await reference.searchSpells({ concentration: true });
-    expect(conc).not.toContain("**Barkskin**");
-    // groupAndSelect counts a twin as hidden only when the group's selected entry passed the filters.
-    expect(conc).not.toContain("hidden");
+    // Only the 2014 Barkskin is concentration: nothing listed, so the no-match text under the header, and the footer.
+    expect(await reference.searchSpells({ concentration: true })).toBe(
+      `${searchHeader({ requested: "2024" })}\nNo spells found matching the criteria.\n1 2014 version hidden — rules_edition: "2014" shows it.`,
+    );
     expect(await reference.searchSpells({ concentration: true, rulesEdition: "2014" })).toContain("- **Barkskin** [2014]");
   });
 

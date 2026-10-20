@@ -66,10 +66,10 @@ const ITEMS = [
   item(15, "Moon Blade", { isHomebrew: true }),
 ];
 
-function installItems() {
+function installItems(items: unknown[] = ITEMS) {
   fetchMock.mockImplementation(async (url: string) => {
     if (url === COBALT_URL) return jsonResponse({ token: makeJwt("99") });
-    if (url.startsWith(`${GAME_DATA}/items`)) return jsonResponse({ data: ITEMS });
+    if (url.startsWith(`${GAME_DATA}/items`)) return jsonResponse({ data: items });
     if (url.includes("api.open5e.com")) return jsonResponse({ count: 0, results: [] });
     return jsonResponse({});
   });
@@ -126,6 +126,14 @@ describe("ddb_search_equipment rules_edition and source", () => {
     expect(lines[2]).toBe("**Item Search** (1 found)");
     expect(lines).toContain("- **Studded Leather** [2024] — Common Armor");
     expect(lines.some(l => l.includes("hidden"))).toBe(false);
+  });
+
+  it("a filter only the 2014 twin passes: header, a no-match body and the footer counting it, no Open5e", async () => {
+    installItems([item(11, "Longsword", { isLegacy: true, rarity: "Uncommon" }, [1]), item(12, "Longsword", {}, [148])]);
+    expect(await reference.searchItems({ name: "longsword", rarity: "uncommon" })).toBe(
+      `${searchHeader({ requested: "2024" })}\nNo items found matching the criteria.\n1 2014 version hidden — rules_edition: "2014" shows it.`,
+    );
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("open5e"))).toBe(false);
   });
 
   it("homebrew with no sources is tagged [homebrew]", async () => {

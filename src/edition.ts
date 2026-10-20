@@ -439,6 +439,12 @@ export interface SearchOptions<T> {
    * reason and is not counted as hidden: switching would show the same entry.
    */
   available?: (c: T) => boolean;
+  /**
+   * Also count a group as hidden when its requested-edition pick fails
+   * `passes` but the other edition's pick passes: the other request lists it.
+   * The catalog searches set this; monster searches do not.
+   */
+  countFilteredPicks?: boolean;
 }
 
 export interface SearchSelection<T> extends Selection<T> { info: EditionInfo }
@@ -476,9 +482,10 @@ export function groupAndSelect<T>(
     if (opts.nameMatches && !group.some(opts.nameMatches)) continue;
     const editions = group.filter(x => isEdition(opts.info(x).ruleset));
     const pick = selectByEdition(editions, requested, opts.info, opts.tiebreak, opts.available);
-    if (pick && passes(pick.entry)) {
+    const shown = !!pick && passes(pick.entry);
+    if (pick && (shown || opts.countFilteredPicks)) {
       const info = opts.info(pick.entry);
-      selected.push({ ...pick, info });
+      if (shown) selected.push({ ...pick, info });
       const otherEdition = requested === "2024" ? "2014" : "2024";
       // A fallback pick (this group has only the other edition) is not hidden: the other request shows the same entry.
       if (info.ruleset !== otherEdition) {

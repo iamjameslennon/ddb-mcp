@@ -208,6 +208,44 @@ describe("ddb_search_feats", () => {
   });
 });
 
+describe("a filter only the other edition's twin passes (Grappler)", () => {
+  const GRAPPLER_2014 = named(10, "Grappler", [2], { prerequisite: "Strength 13 or higher", snippet: "" });
+  const GRAPPLER_2024 = named(11, "Grappler", [145], { prerequisite: "Level 4+; Strength or Dexterity 13+", snippet: "" });
+  const HEAVY = named(12, "Heavy Armor Master", [145], { prerequisite: "Level 4+; Strength 13+", snippet: "" });
+  const open5eCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).includes("open5e"));
+
+  it("alone: header, a no-match body and the footer counting it, with no Open5e request", async () => {
+    install({ feats: [GRAPPLER_2014, GRAPPLER_2024] });
+    expect(await reference.searchFeats({ prerequisite: "strength 13" })).toBe(
+      `${searchHeader({ requested: "2024" })}\nNo feats found matching the criteria.\n${HIDDEN_2014(1)}`,
+    );
+    expect(open5eCalls()).toHaveLength(0);
+  });
+
+  it("beside another match: that feat listed, the Grappler counted", async () => {
+    install({ feats: [GRAPPLER_2014, GRAPPLER_2024, HEAVY] });
+    const text = await reference.searchFeats({ prerequisite: "strength 13" });
+    expect(entryLines(text)).toEqual(["- **Heavy Armor Master** [2024] *(Requires: Level 4+; Strength 13+)* — Heavy Armor Master description"]);
+    expect(text.split("\n").at(-1)).toBe(HIDDEN_2014(1));
+  });
+
+  it("rules_edition 2014 lists the 2014 Grappler, no footer", async () => {
+    install({ feats: [GRAPPLER_2014, GRAPPLER_2024] });
+    const text = await reference.searchFeats({ prerequisite: "strength 13", rulesEdition: "2014" });
+    expect(entryLines(text)).toEqual(["- **Grappler** [2014] *(Requires: Strength 13 or higher)* — Grappler description"]);
+    expect(text.split("\n").some(l => l.includes("hidden"))).toBe(false);
+  });
+});
+
+describe("bookNotes: false (ddb_search_site)", () => {
+  it("keeps the tag and drops the book note", async () => {
+    install();
+    const section = await reference.searchRacesSection({ name: "goblin", bookNotes: false });
+    expect(entryLines(section.body)).toEqual(["- **Goblin** [2014] — Goblin description"]);
+    expect(section.body).not.toContain("pass source to choose");
+  });
+});
+
 describe("source and failures", () => {
   it("a source of the other edition adds the source note", async () => {
     install();

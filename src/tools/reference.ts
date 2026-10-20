@@ -104,6 +104,16 @@ async function resolveSourceParam(source: string | undefined): Promise<ResolvedS
   return resolveSource(index, source) ?? unknownSourceError(index, source, GENERIC_SOURCE_HINT);
 }
 
+/**
+ * A flat search that listed nothing because the filters let through only the
+ * other edition's twins (`hidden` > 0, so no `source`): the no-match text
+ * under the search header, with the footer saying how to see them, instead of
+ * an Open5e fallback.
+ */
+function hiddenOnlySection(header: string, noMatch: string, requested: RulesEdition, hidden: number): SearchSection {
+  return { header, body: noMatch, footer: searchFooter(requested, hidden), hidden };
+}
+
 // ── HTML strip — imported from src/utils.ts ───────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -578,6 +588,8 @@ export interface SpellSearchParams {
   rulesEdition?: RulesEdition;
   /** A book: slug, short name or title. Lists that book's spells of either edition. */
   source?: string;
+  /** See SelectOptions.bookNotes. */
+  bookNotes?: boolean;
 }
 
 export async function searchSpells(params: SpellSearchParams): Promise<string> {
@@ -604,10 +616,13 @@ export async function searchSpellsSection(params: SpellSearchParams): Promise<Se
           && (params.concentration === undefined || d.concentration === params.concentration)
           && (params.ritual === undefined || d.ritual === params.ritual);
       },
-    }, index, source);
+    }, index, source, { bookNotes: params.bookNotes });
 
     const limit = params.limit ?? 20;
     const offset = params.offset ?? 0;
+    if (hits.length === 0 && hidden > 0) {
+      return hiddenOnlySection(header, "No spells found matching the criteria.", requested, hidden);
+    }
     // An offset past the end is "none found" too, not an empty heading.
     if (hits.slice(offset, offset + limit).length === 0) {
       return plainSection(source
@@ -789,6 +804,8 @@ export interface ItemSearchParams {
   rulesEdition?: RulesEdition;
   /** A book: slug, short name or title. Lists that book's items of either edition. */
   source?: string;
+  /** See SelectOptions.bookNotes. */
+  bookNotes?: boolean;
 }
 
 export async function searchItems(params: ItemSearchParams): Promise<string> {
@@ -812,7 +829,7 @@ export async function searchItemsSection(params: ItemSearchParams): Promise<Sear
       nameMatches: nameQuery ? i => normalizeName(i.name).includes(nameQuery) : undefined,
       passes: i => (!rarityQuery || !!i.rarity?.toLowerCase().includes(rarityQuery))
         && (!typeQuery || !!i.type?.toLowerCase().includes(typeQuery) || !!i.filterType?.toLowerCase().includes(typeQuery)),
-    }, index, source);
+    }, index, source, { bookNotes: params.bookNotes });
   } catch (err) {
     try {
       return plainSection(withSourceCaveat(await o5SearchItems(params.name ?? "", "unavailable"), params.source));
@@ -824,6 +841,7 @@ export async function searchItemsSection(params: ItemSearchParams): Promise<Sear
   const { hits, hidden, header, note } = selection;
   if (hits.length === 0) {
     if (source) return plainSection(`No items found matching the criteria in ${source.book}.`);
+    if (hidden > 0) return hiddenOnlySection(header, "No items found matching the criteria.", requested, hidden);
     return plainSection(await o5SearchItems(params.name ?? "", "not-found").catch(
       () => "No items found matching the criteria."
     ));
@@ -891,6 +909,8 @@ interface OptionSearchParams {
   rulesEdition?: RulesEdition;
   /** A book: slug, short name or title. Lists that book's entries of either edition. */
   source?: string;
+  /** See SelectOptions.bookNotes. */
+  bookNotes?: boolean;
 }
 
 /**
@@ -928,7 +948,7 @@ async function searchOptionList<T>(
     selection = selectCatalog(all, requested, {
       ...spec.adapter,
       passes: spec.passes,
-    }, index, source);
+    }, index, source, { bookNotes: params.bookNotes });
   } catch {
     return plainSection(withSourceCaveat(
       await spec.fallback("unavailable").catch(
@@ -941,6 +961,7 @@ async function searchOptionList<T>(
   const { hits, hidden, header, note } = selection;
   if (hits.length === 0) {
     if (source) return plainSection(`No ${spec.plural} found matching the criteria in ${source.book}.`);
+    if (hidden > 0) return hiddenOnlySection(header, `No ${spec.plural} found matching the criteria.`, requested, hidden);
     return plainSection(await spec.fallback("not-found").catch(() => spec.notFound));
   }
 

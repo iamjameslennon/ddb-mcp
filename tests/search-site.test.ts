@@ -49,6 +49,17 @@ describe("search (ddb_search_site)", () => {
     for (const fn of Object.values(sections)) expect(fn.mock.calls[0][0]).toMatchObject({ name: "x", rulesEdition: "2014" });
   });
 
+  it("asks every catalog category for no book notes (ddb_search_site has no source param)", async () => {
+    for (const category of ["all", "spells", "items", "races", "classes", "feats"] as const) {
+      for (const fn of Object.values(sections)) fn.mockClear();
+      await search("x", category, "2024");
+      for (const [name, fn] of Object.entries(sections)) {
+        if (name === "monsters" || fn.mock.calls.length === 0) continue;
+        expect(fn.mock.calls[0][0]).toMatchObject({ bookNotes: false });
+      }
+    }
+  });
+
   it("all empty: plain no-results text with no header", async () => {
     expect(await search("zzz", "all", "2024")).toBe('No results found for "zzz".');
   });

@@ -72,6 +72,30 @@ describe("selectCatalog, flat mode", () => {
     expect(sel.hits.map(h => h.label)).toEqual(["[2014]"]);
   });
 
+  it("an alternative that fails the filters names no other book", () => {
+    const sel = selectCatalog([GOBLIN_VGTM, GOBLIN_MOTM], "2024", { ...flat(), passes: e => e.id === GOBLIN_MOTM.id }, INDEX);
+    expect(sel.hits.map(h => h.entry)).toEqual([GOBLIN_MOTM]);
+    expect(sel.hits[0].label).toBe("[2014]");
+  });
+
+  it("bookNotes: false keeps the tag and drops the book note", () => {
+    const sel = selectCatalog([GOBLIN_VGTM, GOBLIN_MOTM], "2024", flat(), INDEX, undefined, { bookNotes: false });
+    expect(sel.hits.map(h => h.entry)).toEqual([GOBLIN_MOTM]);
+    expect(sel.hits[0].label).toBe("[2014]");
+  });
+
+  it("counts a twin group whose requested pick fails the filters as hidden, and lists nothing for it", () => {
+    const grappler14 = entry(30, "Grappler", [1], { isLegacy: true });
+    const grappler24 = entry(31, "Grappler", [145]);
+    const passes = (e: Entry) => e.id === grappler14.id;
+    const def = selectCatalog([grappler14, grappler24], "2024", { ...flat(), passes }, INDEX);
+    expect(def.hits).toEqual([]);
+    expect(def.hidden).toBe(1);
+    const old = selectCatalog([grappler14, grappler24], "2014", { ...flat(), passes }, INDEX);
+    expect(old.hits.map(h => `${h.entry.name} ${h.label}`)).toEqual(["Grappler [2014]"]);
+    expect(old.hidden).toBe(0);
+  });
+
   it("hides the other edition's twin and sorts by compare", () => {
     const sel = selectCatalog(
       [entry(20, "Zeta", [145]), entry(11, "Alpha", [1], { isLegacy: true }), entry(21, "Alpha", [145])],
@@ -218,6 +242,25 @@ describe("selectCatalog, nested mode by owner (features)", () => {
     }
   });
 
+  it("lists the requested edition's owners first, then the other edition's, then non-edition owners", () => {
+    const samurai = owner("c10/s1", 1, [1]);
+    const brew = owner("hb", 5, [], { isHomebrew: true });
+    const all = [
+      feature(samurai, "Fighting Spirit", 3),
+      feature(brew, "Riposte", 3),
+      feature(F24, "Second Wind", 1),
+      feature(F24, "Action Surge", 2),
+    ];
+    // Each owner is its own group, so nothing is hidden; compare alone would interleave them by level.
+    const adapter = { ...features(""), groupKey: (f: Feature) => f.owner.id, twinKey: (f: Feature) => f.owner.id };
+    expect(lines(selectCatalog(all, "2024", adapter, INDEX))).toEqual([
+      "Second Wind L1 [2024]", "Action Surge L2 [2024]", "Fighting Spirit L3 [2014]", "Riposte L3 [homebrew]",
+    ]);
+    expect(lines(selectCatalog(all, "2014", adapter, INDEX))).toEqual([
+      "Fighting Spirit L3 [2014]", "Second Wind L1 [2024]", "Action Surge L2 [2024]", "Riposte L3 [homebrew]",
+    ]);
+  });
+
   it("a duplicated owner lists one book's features with the book note on each line", () => {
     const vgtm = owner("r15", 3, [15], { isLegacy: true });
     const motm = owner("r85", 9, [85]);
@@ -226,6 +269,8 @@ describe("selectCatalog, nested mode by owner (features)", () => {
     expect(sel.hits.map(h => h.entry.owner)).toEqual([motm]);
     expect(sel.hits[0].label).toBe(`[2014] · ${MOTM} (also in ${VGTM} — pass source to choose)`);
     expect(sel.hidden).toBe(0);
+    const bare = selectCatalog(all, "2024", { ...features("fury"), twinKey: () => "goblin", groupKey: () => "goblin" }, INDEX, undefined, { bookNotes: false });
+    expect(bare.hits.map(h => h.label)).toEqual(["[2014]"]);
   });
 
   it("an optional feature is selected with its owner and tagged by its own sources", () => {

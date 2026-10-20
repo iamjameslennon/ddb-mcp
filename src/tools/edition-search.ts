@@ -8,7 +8,7 @@
  *
  * Two selection modes:
  * - flat (no `groupKey`, no `owner`): one entry per twin group, exactly
- *   groupAndSelect's semantics;
+ *   groupAndSelect's semantics (with `countFilteredPicks`);
  * - nested (`groupKey` and/or `owner`): filter first, then choose one edition
  *   per edition group, picking whole owners (a class, subclass or species)
  *   rather than single entries. See selectCatalog.
@@ -89,6 +89,11 @@ export interface CatalogAdapter<T> {
 export interface CatalogHit<T> { entry: T; info: EditionInfo; label: string }
 export interface CatalogSelection<T> { hits: CatalogHit<T>[]; hidden: number; header: string; note: string | null }
 
+export interface SelectOptions {
+  /** Name the chosen book when one edition has several versions (default true). ddb_search_site, which has no `source` param, turns it off. */
+  bookNotes?: boolean;
+}
+
 // ── Book choice ───────────────────────────────────────────────────────────────
 
 /**
@@ -125,10 +130,13 @@ function bookNoteSuffix<U>(pick: U, alternatives: readonly U[] | undefined, mark
 
 /**
  * Choose what a catalog search lists. Without `source`, flat mode is
- * groupAndSelect; nested mode filters first and then picks per edition group
- * (selectNested). With `source`, every entry in the book that passes the
- * filters is listed with its own tag: no grouping, no hiding. Hits are sorted
- * by `compare`; paging is the caller's.
+ * groupAndSelect, also counting a group whose requested pick fails the
+ * filters while the other edition's passes; nested mode filters first and
+ * then picks per edition group (selectNested). With `source`, every entry in
+ * the book that passes the filters is listed with its own tag: no grouping,
+ * no hiding. Hits are sorted by `compare`, and with `owner` (and no `source`)
+ * first by the owner's ruleset: the requested edition, the other, then
+ * non-edition owners. Paging is the caller's.
  */
 export function selectCatalog<T>(
   all: readonly T[],
@@ -136,6 +144,7 @@ export function selectCatalog<T>(
   adapter: CatalogAdapter<T>,
   index: SourceIndex,
   source?: ResolvedSource,
+  options: SelectOptions = {},
 ): CatalogSelection<T> {
   const info = (t: T) => classifyEdition(adapter.markers(t), index);
 
@@ -154,11 +163,21 @@ export function selectCatalog<T>(
     };
   }
 
+  const bookNotes = options.bookNotes ?? true;
   const nested = adapter.groupKey !== undefined || adapter.owner !== undefined;
   const { hits, hidden } = nested
-    ? selectNested(all, requested, adapter, index)
-    : selectFlat(all, requested, adapter, index);
-  hits.sort((a, b) => adapter.compare(a.entry, b.entry));
+    ? selectNested(all, requested, adapter, index, bookNotes)
+    : selectFlat(all, requested, adapter, index, bookNotes);
+  const owner = adapter.owner;
+  if (owner) {
+    const band = new Map(hits.map(h => {
+      const ruleset = classifyEdition(owner(h.entry).markers, index).ruleset;
+      return [h, ruleset === requested ? 0 : isEdition(ruleset) ? 1 : 2];
+    }));
+    hits.sort((a, b) => band.get(a)! - band.get(b)! || adapter.compare(a.entry, b.entry));
+  } else {
+    hits.sort((a, b) => adapter.compare(a.entry, b.entry));
+  }
   return { hits, hidden, header: searchHeader({ requested }), note: null };
 }
 
@@ -167,19 +186,26 @@ function selectFlat<T>(
   requested: RulesEdition,
   adapter: CatalogAdapter<T>,
   index: SourceIndex,
+  bookNotes: boolean,
 ): { hits: CatalogHit<T>[]; hidden: number } {
+  const passes = adapter.passes;
   const { selected, hidden } = groupAndSelect(all, requested, {
     info: t => classifyEdition(adapter.markers(t), index),
     twinKey: adapter.twinKey,
     tiebreak: adapter.tiebreak,
     nameMatches: adapter.nameMatches,
-    passes: adapter.passes,
+    passes,
+    countFilteredPicks: true,
   });
-  const hits = selected.map(sel => ({
-    entry: sel.entry,
-    info: sel.info,
-    label: editionTag(sel.info) + bookNoteSuffix(sel.entry, sel.alternatives, adapter.markers, index),
-  }));
+  const hits = selected.map(sel => {
+    // Only a version the filters let through is a real alternative for the note.
+    const alternatives = passes ? sel.alternatives?.filter(passes) : sel.alternatives;
+    return {
+      entry: sel.entry,
+      info: sel.info,
+      label: editionTag(sel.info) + (bookNotes ? bookNoteSuffix(sel.entry, alternatives, adapter.markers, index) : ""),
+    };
+  });
   return { hits, hidden };
 }
 
@@ -216,6 +242,7 @@ function selectNested<T>(
   requested: RulesEdition,
   adapter: CatalogAdapter<T>,
   index: SourceIndex,
+  bookNotes: boolean,
 ): { hits: CatalogHit<T>[]; hidden: number } {
   const passes = adapter.passes ?? (() => true);
   const groupKeyOf = adapter.groupKey ?? adapter.twinKey;
@@ -285,7 +312,7 @@ function selectNested<T>(
     const other: RulesEdition = requested === "2024" ? "2014" : "2024";
     const chosen = editions.some(u => u.ruleset === requested) ? requested : other;
     for (const [pick, ...alternatives] of byTwinKey(editions.filter(u => u.ruleset === chosen))) {
-      hits.push(...linesOf(pick, bookNoteSuffix(pick, alternatives, u => u.markers, index)));
+      hits.push(...linesOf(pick, bookNotes ? bookNoteSuffix(pick, alternatives, u => u.markers, index) : ""));
     }
     if (chosen === requested) {
       for (const [first] of byTwinKey(editions.filter(u => u.ruleset === other))) hidden += first.entries.length;

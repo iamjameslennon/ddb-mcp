@@ -605,6 +605,37 @@ describe("searchClassFeatures — rules_edition and source", () => {
     expect(fighter.filter((l) => l.includes("[2014]") && !l.includes("(Samurai)"))).toEqual([]);
   });
 
+  it("fighter: the requested edition's owners first, then the other edition's, then homebrew", async () => {
+    fetchMock.mockImplementation(editionClassService());
+    const fighter = entryLines(await reference.searchClassFeatures({ className: "fighter", limit: 100 }));
+    expect(fighter).toEqual([
+      "- **Second Wind** [2024] — Fighter level 1",
+      "- **Action Surge** [2024] — Fighter level 2",
+      "- **Ability Score Improvement** [2024] — Fighter level 4",
+      "- **Extra Attack** [2024] — Fighter level 5",
+      "- **6: Ability Score Improvement** [2024] — Fighter level 6",
+      "- **8: Ability Score Improvement** [2024] — Fighter level 8",
+      "- **Two Extra Attacks** [2024] — Fighter level 11",
+      "- **12: Ability Score Improvement** [2024] — Fighter level 12",
+      "- **14: Ability Score Improvement** [2024] — Fighter level 14",
+      "- **16: Ability Score Improvement** [2024] — Fighter level 16",
+      "- **Three Extra Attacks** [2024] — Fighter level 20",
+      "- **Improved Critical** [2024] — Fighter (Champion) level 3",
+      "- **Heroic Warrior** [2024] — Fighter (Champion) level 10",
+      "- **Fighting Spirit** [2014] — Fighter (Samurai) level 3",
+      "- **Elegant Courtier** [2014] — Fighter (Samurai) level 7",
+      "- **Riposte Flourish** [homebrew] — Fighter (Homebrew Duelist) level 3",
+    ]);
+
+    const old = entryLines(await reference.searchClassFeatures({ className: "fighter", limit: 100, rulesEdition: "2014" }));
+    expect(old.slice(-1)).toEqual(["- **Riposte Flourish** [homebrew] — Fighter (Homebrew Duelist) level 3"]);
+    expect(old.slice(0, -1).every((l) => l.includes("[2014]"))).toBe(true);
+    expect(old.slice(-3, -1)).toEqual([
+      "- **Martial Versatility** [2014] — Fighter level 4, optional",
+      "- **Synthetic Option** [2014] — Fighter level 4, optional",
+    ]);
+  });
+
   it("School of Evocation and Evoker are one owner pair through the rename table", async () => {
     fetchMock.mockImplementation(editionClassService());
     const out = await reference.searchClassFeatures({ name: "sculpt spells" });

@@ -516,6 +516,19 @@ describe("groupAndSelect", () => {
     expect(hidden).toBe(1);                       // only 2014 Bless: it passes and its group survived
   });
 
+  it("countFilteredPicks: a group whose requested pick fails the filter but whose other-edition pick passes counts as hidden", () => {
+    // Barkskin: 2024 fails (not concentration), 2014 passes. Off (monsters): the group vanishes uncounted.
+    // On (catalog searches): counted once, as an ordinary hidden twin, and still not listed.
+    const off = search("2024", { passes: c => c.conc === true });
+    expect(off.hidden).toBe(1);
+    const on = groupAndSelect(ALL, "2024", { ...base, passes: c => c.conc === true, countFilteredPicks: true });
+    expect(ids(on.selected)).toEqual([13, 17, 18]);
+    expect(on.hidden).toBe(2);
+    // The mirror: 2014 requested, 2014 Barkskin fails, 2024 Barkskin passes (Feeblemind is the ordinary hidden twin).
+    expect(groupAndSelect(ALL, "2014", { ...base, passes: c => c.conc === false, countFilteredPicks: true }).hidden).toBe(2);
+    expect(groupAndSelect(ALL, "2014", { ...base, passes: c => c.conc === false }).hidden).toBe(1);
+  });
+
   it("hidden counts only other-edition entries that pass the filters", () => {
     const { selected, hidden } = search("2014", { passes: c => c.conc === true });
     expect(ids(selected)).toEqual([10, 12, 17, 18]);
