@@ -203,17 +203,17 @@ Can a character use the Help action to assist with a skill check?
 |------|-------------|
 | `ddb_search_spells` | Search the full D&D Beyond spell compendium by name, level, school, concentration, or ritual. Defaults to 2024 spells; set `rules_edition: "2014"` for the 2014 versions. Each result is tagged `[2024]` / `[2014]`, and the output says when the other edition is shown instead. Pass `source` (a book's slug, short name or title) to list that book's spells of either edition. |
 | `ddb_get_spell` | Get the full description of any spell by name. Defaults to 2024; set `rules_edition: "2014"` for the 2014 text. A `Rules:` line names the ruleset, with a reason when the other edition is shown. Pass `source` to choose a specific book's version. |
-| `ddb_search_equipment` | Search the item/equipment compendium by name, rarity, or type. Covers mundane weapons, armour, and magic items. |
-| `ddb_get_equipment` | Get the full stats and description of any item — weapon damage, properties, range, STR requirement, etc. |
+| `ddb_search_equipment` | Search the item/equipment compendium by name, rarity, or type. Covers mundane weapons, armour, and magic items. Defaults to 2024; set `rules_edition: "2014"` for the 2014 versions. Each result is tagged `[2024]` / `[2014]`. Pass `source` (a book's slug, short name or title) to list that book's items of either edition. |
+| `ddb_get_equipment` | Get the full stats and description of any item — weapon damage, properties, range, STR requirement, etc. Defaults to 2024; set `rules_edition: "2014"` for the 2014 version. A `Rules:` line names the ruleset, with a reason when the other edition is shown. Pass `source` to choose a specific book's version. |
 | `ddb_get_condition` | Look up the rules text for a condition (Poisoned, Stunned, Grappled, etc.). No login required. |
 | `ddb_search_rules` | Search all 45 SRD rules sections by keyword. No login required. |
 | `ddb_get_rules` | Read the full text of any SRD rules section (Spellcasting, Attacking, Combat, Multiclassing, Rest, Environment, etc.). Supports `query` to jump to a keyword within long sections. No login required. |
-| `ddb_search_races` | Search all races and subraces in the D&D Beyond compendium (including homebrew). |
-| `ddb_search_classes` | Search all classes with hit die and spellcasting info. |
-| `ddb_search_backgrounds` | Search all backgrounds (including homebrew). |
-| `ddb_search_feats` | Search feats by name or prerequisite. |
-| `ddb_search_class_features` | Search class, subclass, and optional class features by name, class or subclass, or level gained. |
-| `ddb_search_racial_traits` | Search racial traits, including optional ones, by name or species. |
+| `ddb_search_races` | Search all races and subraces in the D&D Beyond compendium (including homebrew). Defaults to 2024; set `rules_edition: "2014"` for the 2014 versions. Each result is tagged `[2024]` / `[2014]`. Pass `source` (a book's slug, short name or title) to list that book's species of either edition. By default a 2024 species hides the 2014 subraces of the same base race (the 2024 Elf replaces High Elf and Wood Elf); name the subrace or use `rules_edition: "2014"` to see them. |
+| `ddb_search_classes` | Search all classes with hit die and spellcasting info. Defaults to 2024; set `rules_edition: "2014"` for the 2014 versions. Each result is tagged `[2024]` / `[2014]`. Pass `source` (a book's slug, short name or title) to list that book's classes of either edition. |
+| `ddb_search_backgrounds` | Search all backgrounds (including homebrew). Defaults to 2024; set `rules_edition: "2014"` for the 2014 versions. Each result is tagged `[2024]` / `[2014]`. Pass `source` (a book's slug, short name or title) to list that book's backgrounds of either edition. |
+| `ddb_search_feats` | Search feats by name or prerequisite. Defaults to 2024; set `rules_edition: "2014"` for the 2014 versions. Each result is tagged `[2024]` / `[2014]`. Pass `source` (a book's slug, short name or title) to list that book's feats of either edition. |
+| `ddb_search_class_features` | Search class, subclass, and optional class features by name, class or subclass, or level gained. Defaults to 2024; set `rules_edition: "2014"` for the 2014 versions. Each result is tagged `[2024]` / `[2014]`. Pass `source` (a book's slug, short name or title) to list that book's features of either edition. |
+| `ddb_search_racial_traits` | Search racial traits, including optional ones, by name or species. Defaults to 2024; set `rules_edition: "2014"` for the 2014 versions. Each result is tagged `[2024]` / `[2014]`. Pass `source` (a book's slug, short name or title) to list that book's traits of either edition. By default a 2024 species hides the 2014 subraces of the same base race; name the subrace or use `rules_edition: "2014"` to see their traits. |
 
 ### Library & Navigation Tools
 
@@ -221,7 +221,7 @@ Can a character use the Help action to assist with a skill check?
 |------|-------------|
 | `ddb_list_library` | List all sourcebooks you own, purchased, or have shared with you. |
 | `ddb_read_book` | Read content from an owned sourcebook by book slug and optional chapter. |
-| `ddb_search_site` | Search D&D Beyond by keyword across spells, monsters, items, races, classes, and feats. |
+| `ddb_search_site` | Search D&D Beyond by keyword across spells, monsters, items, races, classes, and feats. Defaults to 2024; set `rules_edition: "2014"` for the 2014 versions. Each result is tagged `[2024]` / `[2014]`. |
 | `ddb_navigate` | Navigate to any D&D Beyond URL and return its text content. Keeps the browser open for follow-up calls. |
 | `ddb_interact` | Click, fill (requires `confirm_fill: true`), or screenshot the currently loaded page. |
 | `ddb_get_page` | Return the text content of the currently loaded page. |
