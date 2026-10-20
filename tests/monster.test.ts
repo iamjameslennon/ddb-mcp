@@ -1447,6 +1447,18 @@ describe("searchMonsters counts a twin whose requested pick fails the filters", 
     expect(o5SearchMonsters).not.toHaveBeenCalled();
   });
 
+  it("a partial scan: the no-match line names how much was checked", async () => {
+    // No name: a CR filter scans the first 600 entries. The 2024 Psychic Gray
+    // Ooze is CR 1, its 2014 twin CR 1/2, and nothing else in the scan is CR 1/2.
+    const lines = (await searchMonsters({ cr: 0.5 })).split("\n");
+    expect(lines).toEqual([
+      HEADER,
+      `No monsters found matching the search criteria (checked the first 600 of ${ALL_MONSTERS.length} entries).`,
+      FOOTER,
+    ]);
+    expect(o5SearchMonsters).not.toHaveBeenCalled();
+  });
+
   it("a locked 2024 pick swapped to its 2014 twin that passes is listed with the swap, not counted", async () => {
     extraMonsters = [HOUND_2024, HOUND_2014];
     unownedIds.add(HOUND_2024.id as number);

@@ -93,20 +93,29 @@ function startConfigFetch(snapshot: SessionSnapshot): PendingConfigFetch {
   // Deferred one microtask so the fetch runs only after the entry is stored: if
   // its first authority check fires the invalidation hook, the hook finds and
   // clears the entry (as in session-fetch.ts's startCobaltTokenExchange).
+  // A rejection (only the boundary check below can throw past fetchGameConfig's
+  // own try) resolves every caller to null, so getGameConfig never rejects.
   const entry: PendingConfigFetch = {
     generation: snapshot.generation,
-    promise: Promise.resolve().then(() => fetchGameConfig(snapshot)),
+    promise: Promise.resolve().then(() => fetchGameConfig(snapshot)).catch(() => null),
   };
   configPending = entry;
-  // fetchGameConfig never rejects, so one handler covers every settlement.
-  void entry.promise.then(() => {
+  // Clear only our own entry, on either settlement: after an invalidation the
+  // slot may hold a newer generation's fetch.
+  const release = () => {
     if (configPending === entry) configPending = null;
-  });
+  };
+  void entry.promise.then(release, release);
   return entry;
 }
 
-/** One config fetch under `snapshot`. Never rejects: a failure resolves null. */
+/** One config fetch under `snapshot`. A failure resolves null. */
 async function fetchGameConfig(snapshot: SessionSnapshot): Promise<GameConfig | null> {
+  // The session changed between publishing the entry and this run: send
+  // nothing (sessionFetch would otherwise send the request under the new
+  // session) and return what a stale fetch returns. captureSession re-reads
+  // the session file; a throw from it rejects, which startConfigFetch turns into null.
+  if (captureSession().generation !== snapshot.generation) return null;
   const fail = (): null => {
     try {
       // A late failure from an old session must not suppress the new one's fetch.

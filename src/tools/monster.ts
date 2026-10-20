@@ -619,7 +619,7 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
     if (hidden > 0) {
       return {
         header: searchHeader({ requested }),
-        body: "No monsters found matching the search criteria.",
+        body: `No monsters found matching the search criteria${scope}.`,
         footer: searchFooter(requested, hidden),
         hidden,
       };

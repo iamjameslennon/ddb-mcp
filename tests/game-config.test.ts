@@ -248,9 +248,10 @@ describe("getGameConfig failure cache", () => {
 
   it("does not apply a failure record from an older generation", async () => {
     configResponse = () => response({}, 503);
-    vi.mocked(captureSession).mockReturnValueOnce({ generation: 1 } as never);
+    // Two captures per call: getGameConfig's own, and the fetch's boundary check before it sends.
+    vi.mocked(captureSession).mockReturnValueOnce({ generation: 1 } as never).mockReturnValueOnce({ generation: 1 } as never);
     await getGameConfig();
-    vi.mocked(captureSession).mockReturnValueOnce({ generation: 2 } as never);
+    vi.mocked(captureSession).mockReturnValueOnce({ generation: 2 } as never).mockReturnValueOnce({ generation: 2 } as never);
     configResponse = () => response({ data: LIVE });
     expect(await getGameConfig()).not.toBeNull();
     expect(sessionFetch).toHaveBeenCalledTimes(2);
@@ -353,7 +354,10 @@ describe("getGameConfig shares one in-flight fetch per session generation", () =
 
   it("the invalidation hook drops the pending fetch", async () => {
     const first = deferred<Response>();
-    vi.mocked(sessionFetch).mockImplementationOnce(() => first.promise);
+    const FRESH = { ...LIVE, challengeRatings: [{ id: 2, value: 2, xp: 450, proficiencyBonus: 2 }] };
+    vi.mocked(sessionFetch)
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(async () => response({ data: FRESH }));
     const a = getGameConfig();
     await flush();
     S.hooks.forEach(hook => hook()); // same generation number: only the hook can keep b out
@@ -361,7 +365,36 @@ describe("getGameConfig shares one in-flight fetch per session generation", () =
     await flush();
     expect(sessionFetch).toHaveBeenCalledTimes(2);
     first.resolve(response({ data: LIVE }));
-    await Promise.all([a, b]);
+    // Same generation, so each fetch's own result stands: b got its own, not a's.
+    const [gotA, gotB] = await Promise.all([a, b]);
+    expect(gotA?.challengeRatings).toEqual(LIVE.challengeRatings);
+    expect(gotB?.challengeRatings).toEqual(FRESH.challengeRatings);
+  });
+
+  it("a session change between publishing the fetch and running it sends no request for the old call", async () => {
+    const a = getGameConfig();
+    generation = 2; // before the deferred fetch runs
+    expect(await a).toBeNull();
+    expect(sessionFetch).not.toHaveBeenCalled();
+    // The new generation fetches for itself.
+    expect(await getGameConfig()).not.toBeNull();
+    expect(sessionFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("a fetch that rejects resolves every caller to null and frees the slot for a fresh fetch", async () => {
+    // The third capture is the fetch's own boundary check: make it throw, past the fetch's try.
+    let captures = 0;
+    vi.mocked(captureSession).mockImplementation(() => {
+      if (++captures === 3) throw new Error("session file unreadable");
+      return { generation } as never;
+    });
+    const [a, b] = await Promise.all([getGameConfig(), getGameConfig()]);
+    expect(a).toBeNull();
+    expect(b).toBeNull();
+    expect(sessionFetch).not.toHaveBeenCalled();
+    // Not stuck on the rejected fetch, and not recorded as a failure: the next call fetches.
+    expect(await getGameConfig()).not.toBeNull();
+    expect(sessionFetch).toHaveBeenCalledTimes(1);
   });
 
   it("a failure is shared by every joiner and recorded once in the 60 s failure cache", async () => {
