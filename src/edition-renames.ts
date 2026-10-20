@@ -151,6 +151,22 @@ export const EDITION_RENAMES: ReadonlyArray<readonly [name2014: string, name2024
   // 2014 id 8 (BR14) → 2024 id 406474 (PHB24); orphan lists: the 2014 Criminal (with its Spy variant) revised; Stealth, thieves' tools, crowbar kept
   ["Criminal / Spy", "Criminal"],
 
+  // ── Subclasses ── (read from /game-data/subclasses?baseClassId=N, 2026-10-17; class features select by owner,
+  // so these pairs let the 2024 subclass stand in for the 2014 one. "Evoker" is also a 2014 Volo's NPC monster:
+  // monster lookups for it gain one "School of Evocation" query and print the same output)
+  // 2014 id 24 (class 6 Sorcerer, BR14) → 2024 id 2190990 (class 2190884 Sorcerer, PHB24); both: innate magic from dragons;
+  // same Draconic Resilience, Elemental Affinity and Dragon Wings
+  ["Draconic Bloodline", "Draconic Sorcery"],
+  // 2014 id 25 (class 7 Warlock, BR14) → 2024 id 2190994 (class 2190885 Warlock, PHB24); both: a pact with a fiend of the Lower Planes;
+  // same Dark One's Blessing, Dark One's Own Luck, Fiendish Resilience and Hurl Through Hell
+  ["The Fiend", "Fiend Patron"],
+  // 2014 id 26 (class 8 Wizard, BR14) → 2024 id 2190998 (class 2190886 Wizard, PHB24); near-verbatim "magic that creates powerful
+  // elemental effects such as bitter cold, searing flame, …"; same Evocation Savant, Potent Cantrip, Sculpt Spells, Empowered Evocation, Overchannel
+  ["School of Evocation", "Evoker"],
+  // 2014 id 17 (class 11 Monk, BR14) → 2024 id 2190975 (class 2190880 Monk, PHB24); both: masters of unarmed combat who push and trip
+  // their opponents; same Open Hand Technique, Wholeness of Body and Quivering Palm (Tranquility became Fleet Step)
+  ["Way of the Open Hand", "Warrior of the Open Hand"],
+
   // ── Monsters ── (all: same CR and size, and the only 2024 entry of that family at that CR. The creature type
   // is unchanged unless a comment says "type changed"; the spec allows that. Pairs with a type change were checked
   // against full public stat blocks from /v1/Monster/{id}.)

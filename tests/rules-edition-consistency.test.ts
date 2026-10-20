@@ -58,6 +58,8 @@ const FIXTURES: Record<string, (ed: "2024" | "2014") => Record<string, unknown>>
   ddb_search_classes: ed => ({ name: "fighter", rules_edition: ed }),
   ddb_search_backgrounds: ed => ({ name: "acolyte", rules_edition: ed }),
   ddb_search_feats: ed => ({ name: "alert", rules_edition: ed }),
+  ddb_search_class_features: ed => ({ name: "action surge", rules_edition: ed }),
+  ddb_search_racial_traits: ed => ({ name: "darkvision", rules_edition: ed }),
   ddb_rate_encounter: ed => ({ party: [{ count: 4, level: 3 }], monsters: [{ name: "Goblin" }], rules_edition: ed }),
   ddb_encounter_cr: ed => ({ party: [{ count: 4, level: 3 }], difficulty: ed === "2024" ? "moderate" : "medium", rules_edition: ed }),
   ddb_roll_treasure: ed => ({ monsters: [{ name: "Goblin" }], treasure_type: "individual", rules_edition: ed }),
@@ -86,6 +88,8 @@ const hiddenFooter = (ed: "2024" | "2014") => ed === "2024"
   : "1 2024 version hidden — omit rules_edition to show it.";
 const dmgRulesLine = (ed: "2024" | "2014") => `Rules: ${ed} · Dungeon Master's Guide (${ed})`;
 const TREASURE_NO_2014 = "(no 2014 version exists — 2024 tables used)";
+// Built from D&D Beyond only (no Open5e path): logged out, they report an error.
+const NO_OPEN5E = new Set(["ddb_search_class_features", "ddb_search_racial_traits"]);
 const EDITION_CHECK: Record<string, (ed: "2024" | "2014") => EditionCheck> = {
   ddb_search_spells: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
   ddb_search_monsters: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
@@ -94,6 +98,8 @@ const EDITION_CHECK: Record<string, (ed: "2024" | "2014") => EditionCheck> = {
   ddb_search_classes: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
   ddb_search_backgrounds: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
   ddb_search_feats: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
+  ddb_search_class_features: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
+  ddb_search_racial_traits: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
   ddb_rate_encounter: ed => ({ present: [dmgRulesLine(ed)] }),
   ddb_encounter_cr: ed => ({ present: [dmgRulesLine(ed)] }),
   ddb_roll_treasure: ed => (ed === "2014" ? { present: [TREASURE_NO_2014] } : { present: [], absent: [TREASURE_NO_2014] }),
@@ -162,9 +168,12 @@ function option(id: number, name: string, legacy: boolean, sourceId: number): Re
     prerequisite: null, snippet: "", sources: [{ sourceId }],
   };
 }
+// Classes carry one base feature and races one trait each, for the class-feature and racial-trait searches.
 const OPTIONS: Record<string, Array<Record<string, unknown>>> = {
-  races: [option(1, "Human", true, 1), option(2, "Human", false, 145)],
-  classes: [option(1, "Fighter", true, 1), option(2, "Fighter", false, 145)],
+  races: [option(1, "Human", true, 1), option(2, "Human", false, 145)]
+    .map(r => ({ ...r, racialTraits: [{ definition: { id: Number(r.id) * 10, name: "Darkvision", snippet: "See in the dark." } }] })),
+  classes: [option(1, "Fighter", true, 1), option(2, "Fighter", false, 145)]
+    .map(c => ({ ...c, classFeatures: [{ id: Number(c.id) * 10, name: "Action Surge", requiredLevel: 2, summary: "One more action." }] })),
   backgrounds: [option(1, "Acolyte", true, 1), option(2, "Acolyte", false, 145)],
   feats: [option(1, "Alert", true, 1), option(2, "Alert", false, 145)],
 };
@@ -185,6 +194,10 @@ async function route(input: unknown): Promise<Response> {
   if (idMatch) return mockResponse({ accessType: 1, data: GOBLINS.find(m => m.id === Number(idMatch[1])) });
   if (url.startsWith(`${GAME_DATA}/items`)) return jsonResponse({ data: LONGSWORDS });
   if (url.startsWith(GAME_DATA)) {
+    // Both optional-feature endpoints end in /collection: route them on the full path.
+    if (/\/(class-feature|racial-trait)\/collection$/.test(new URL(url).pathname)) {
+      return jsonResponse({ data: { definitionData: [], accessTypes: {} } });
+    }
     const endpoint = new URL(url).pathname.split("/").pop();
     const classId = new URL(url).searchParams.get("classId");
     if (endpoint && endpoint in OPTIONS) return jsonResponse({ data: OPTIONS[endpoint] });
@@ -288,8 +301,16 @@ describe.each(["ddb", "open5e"] as const)("labels (%s path)", mode => {
   beforeEach(() => useMode(mode));
 
   it.each(Object.keys(FIXTURES).flatMap(t => [[t, "2024"], [t, "2014"]] as const))("%s (%s)", async (tool, ed) => {
+    const noOpen5e = mode === "open5e" && NO_OPEN5E.has(tool);
+    // The server logs the expected error to stderr; keep test output clean.
+    const stderr = noOpen5e ? vi.spyOn(process.stderr, "write").mockReturnValue(true) : null;
     const res = await client.callTool({ name: tool, arguments: FIXTURES[tool](ed) });
+    stderr?.mockRestore();
     const text = (res.content as Array<{ text: string }>)[0].text;
+    if (noOpen5e) {
+      expect(res.isError).toBe(true);
+      return;
+    }
     expect(EXEMPT.test(text.split("\n")[0])).toBe(false); // fixtures must exercise a labelled answer
     // Prove which path answered: only the open5e mode may carry the Open5e label.
     if (mode === "ddb") expect(text).not.toContain("Open5e fallback");

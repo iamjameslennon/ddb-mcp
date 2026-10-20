@@ -810,18 +810,20 @@ server.tool(
 
 server.tool(
   "ddb_search_class_features",
-  "Search class, subclass and optional class features by name, class or subclass, or level gained. Requires login — run ddb_login first if you haven't already.",
+  "Search class, subclass and optional class features by name, class or subclass, or level gained. Requires login — run ddb_login first if you haven't already. A source lists one book's entries and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().optional().describe("Partial feature name (e.g. 'action surge', 'sneak attack')"),
     class_name: z.string().optional().describe("Class or subclass name filter (e.g. 'fighter', 'champion')"),
     level: z.number().int().min(1).max(20).optional().describe("Level at which the feature is gained"),
     limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
     offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
+    rules_edition: RULES_EDITION_PARAM,
+    source: SOURCE_PARAM,
   },
   READ_ONLY_NET,
-  async ({ name, class_name, level, limit, offset }) => {
+  async ({ name, class_name, level, limit, offset, rules_edition, source }) => {
     try {
-      const result = await searchClassFeatures({ name, className: class_name, level, limit, offset });
+      const result = await searchClassFeatures({ name, className: class_name, level, limit, offset, rulesEdition: rules_edition, source });
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -833,17 +835,19 @@ server.tool(
 
 server.tool(
   "ddb_search_racial_traits",
-  "Search racial traits, including optional ones, by name or species. Requires login — run ddb_login first if you haven't already.",
+  "Search racial traits, including optional ones, by name or species. Requires login — run ddb_login first if you haven't already. A source lists one book's entries and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().optional().describe("Partial trait name (e.g. 'darkvision', 'breath weapon')"),
     race_name: z.string().optional().describe("Species or race filter; also matches a subrace's base race (e.g. 'elf' matches High Elf)"),
     limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
     offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
+    rules_edition: RULES_EDITION_PARAM,
+    source: SOURCE_PARAM,
   },
   READ_ONLY_NET,
-  async ({ name, race_name, limit, offset }) => {
+  async ({ name, race_name, limit, offset, rules_edition, source }) => {
     try {
-      const result = await searchRacialTraits({ name, raceName: race_name, limit, offset });
+      const result = await searchRacialTraits({ name, raceName: race_name, limit, offset, rulesEdition: rules_edition, source });
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

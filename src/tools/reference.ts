@@ -20,7 +20,7 @@ import {
 import { TtlCache } from "../cache.js";
 import { stripHtml } from "../utils.js";
 import {
-  twinName, classifyEdition, selectByEdition, definitionTiebreak, isEdition,
+  twinName, classOwnerTwinKey, classifyEdition, selectByEdition, definitionTiebreak, isEdition,
   normalizeName, searchFooter, dedupeById,
   type RulesEdition,
 } from "../edition.js";
@@ -32,8 +32,8 @@ import {
 } from "./edition-search.js";
 import { createSpellStore, addSpells, spellList, type DdbSpell, type SpellStore } from "./spell-store.js";
 import {
-  buildClassFeatures, filterClassFeatures, formatClassFeatureLine,
-  buildRacialTraits, filterRacialTraits, formatRacialTraitLine, raceKeyOf,
+  buildClassFeatures, classFeatureFilters, compareClassFeatures, formatClassFeatureLine,
+  buildRacialTraits, racialTraitFilters, compareRacialTraits, formatRacialTraitLine, raceKeyOf,
   type ClassFeatureEntry, type RacialTraitEntry, type OptionalCollection,
 } from "./features-traits.js";
 import {
@@ -1285,29 +1285,101 @@ function describeCriteria(parts: Array<[string, string | number | undefined]>): 
     .join(", ");
 }
 
-export async function searchClassFeatures(params: {
-  name?: string;
-  className?: string;
-  level?: number;
+interface OwnedSearchParams {
   limit?: number;
   offset?: number;
-}): Promise<string> {
-  const { source, entries } = await loadClassFeatures();
-  const note = source === "ddb-partial" ? `${PARTIAL_NOTE_CLASS_FEATURES}\n\n` : "";
-  const matched = filterClassFeatures(entries, params);
+  rulesEdition?: RulesEdition;
+  /** A book: slug, short name or title. Lists that book's entries of either edition. */
+  source?: string;
+}
 
-  if (matched.length === 0) {
-    const criteria = describeCriteria([["name", params.name], ["class", params.className], ["level", params.level]]);
-    return `${note}No class features found matching ${criteria || "the search criteria"} (searched ${entries.length} class features). D&D Beyond lists only the classes and subclasses available to your account.`;
-  }
+/**
+ * Class features and racial traits share one search: load the build, choose
+ * one edition per owner (class, class + subclass, species) through
+ * selectCatalog's nested mode, then page and render. A failed load throws,
+ * as before: neither has an Open5e path. With results, a partial build's
+ * note is the first line under the header; a no-match reply is plain text.
+ */
+async function searchOwnedEntries<T>(
+  params: OwnedSearchParams,
+  spec: {
+    load: () => Promise<CachedBuild<T>>;
+    partialNote: string;
+    heading: string;
+    adapter: CatalogAdapter<T>;
+    format: (entry: T, label: string) => string;
+    /** The no-match message, given the build's size and the `source` book. */
+    noMatch: (searched: number, book: string | undefined) => string;
+  },
+): Promise<SearchSection> {
+  const source = await resolveSourceParam(params.source);
+  if (typeof source === "string") return plainSection(source);
+  const requested = params.rulesEdition ?? "2024";
 
-  return note + paginateResults(
-    "Class Feature",
-    matched,
-    formatClassFeatureLine,
+  const build = await spec.load();
+  const partial = build.source === "ddb-partial" ? `${spec.partialNote}\n\n` : "";
+  const index = await getSourceIndex();
+  const { hits, hidden, header, note } = selectCatalog(build.entries, requested, spec.adapter, index, source);
+  if (hits.length === 0) return plainSection(partial + spec.noMatch(build.entries.length, source?.book));
+
+  const results = paginateResults(
+    spec.heading,
+    hits,
+    hit => spec.format(hit.entry, hit.label),
     params.limit ?? 30,
     params.offset ?? 0,
   );
+  return {
+    header,
+    body: partial + (note ? `${note}\n` : "") + results,
+    footer: searchFooter(requested, hidden),
+    hidden,
+  };
+}
+
+const classFeatureOwnerKey = (e: ClassFeatureEntry) =>
+  classOwnerTwinKey(e.className, e.kind === "subclass" ? e.subclassName : null);
+
+/**
+ * Class features, picked per owner: the class (base and optional features) or
+ * the class + subclass (subclass features). The owner's edition comes from its
+ * own sources; each line is tagged by the feature's (an optional feature keeps its own).
+ */
+const CLASS_FEATURE_ADAPTER: CatalogAdapter<ClassFeatureEntry> = {
+  markers: e => ({ sources: e.sources, isHomebrew: e.isHomebrew }),
+  twinKey: classFeatureOwnerKey,
+  groupKey: classFeatureOwnerKey,
+  owner: e => ({
+    id: e.kind === "subclass" ? `c${e.classId}/s${e.subclassId}` : `c${e.classId}`,
+    markers: { sources: e.ownerSources, isHomebrew: e.isHomebrew },
+    tiebreak: { id: e.subclassId ?? e.classId, isHomebrew: e.isHomebrew },
+  }),
+  tiebreak: definitionTiebreak,
+  compare: compareClassFeatures,
+};
+
+export interface ClassFeatureSearchParams extends OwnedSearchParams {
+  name?: string;
+  className?: string;
+  level?: number;
+}
+
+export async function searchClassFeatures(params: ClassFeatureSearchParams): Promise<string> {
+  return renderSection(await searchClassFeaturesSection(params));
+}
+
+export async function searchClassFeaturesSection(params: ClassFeatureSearchParams): Promise<SearchSection> {
+  return searchOwnedEntries(params, {
+    load: loadClassFeatures,
+    partialNote: PARTIAL_NOTE_CLASS_FEATURES,
+    heading: "Class Feature",
+    adapter: { ...CLASS_FEATURE_ADAPTER, ...classFeatureFilters(params) },
+    format: formatClassFeatureLine,
+    noMatch: (searched, book) => {
+      const criteria = describeCriteria([["name", params.name], ["class", params.className], ["level", params.level]]);
+      return `No class features found matching ${criteria || "the search criteria"}${book ? ` in ${book}` : ""} (searched ${searched} class features). D&D Beyond lists only the classes and subclasses available to your account.`;
+    },
+  });
 }
 
 async function loadRacialTraits(): Promise<CachedBuild<RacialTraitEntry>> {
@@ -1346,28 +1418,46 @@ async function loadRacialTraits(): Promise<CachedBuild<RacialTraitEntry>> {
   return build;
 }
 
-export async function searchRacialTraits(params: {
+/**
+ * Racial traits, picked per species and edition-grouped by base race (as the
+ * species search), so the 2024 Elf's traits replace the 2014 High Elf's by
+ * default. A trait is tagged by its own markers: a standard trait's sources
+ * are the race's, an optional trait keeps its own.
+ */
+const RACIAL_TRAIT_ADAPTER: CatalogAdapter<RacialTraitEntry> = {
+  markers: e => ({ sources: e.sources, isLegacy: e.isLegacy, isHomebrew: e.isHomebrew }),
+  twinKey: e => twinName(e.speciesName),
+  groupKey: e => twinName(e.baseRaceName || e.speciesName),
+  owner: e => ({
+    id: e.raceKey,
+    markers: { sources: e.ownerSources, isLegacy: e.isLegacy, isHomebrew: e.isHomebrew },
+    tiebreak: { id: e.entityRaceId, isLegacy: e.isLegacy, isHomebrew: e.isHomebrew },
+  }),
+  tiebreak: definitionTiebreak,
+  compare: compareRacialTraits,
+};
+
+export interface RacialTraitSearchParams extends OwnedSearchParams {
   name?: string;
   raceName?: string;
-  limit?: number;
-  offset?: number;
-}): Promise<string> {
-  const { source, entries } = await loadRacialTraits();
-  const note = source === "ddb-partial" ? `${PARTIAL_NOTE_RACIAL_TRAITS}\n\n` : "";
-  const matched = filterRacialTraits(entries, params);
+}
 
-  if (matched.length === 0) {
-    const criteria = describeCriteria([["name", params.name], ["race", params.raceName]]);
-    return `${note}No racial traits found matching ${criteria || "the search criteria"} (searched ${entries.length} racial traits). D&D Beyond lists only the species available to your account.`;
-  }
+export async function searchRacialTraits(params: RacialTraitSearchParams): Promise<string> {
+  return renderSection(await searchRacialTraitsSection(params));
+}
 
-  return note + paginateResults(
-    "Racial Trait",
-    matched,
-    formatRacialTraitLine,
-    params.limit ?? 30,
-    params.offset ?? 0,
-  );
+export async function searchRacialTraitsSection(params: RacialTraitSearchParams): Promise<SearchSection> {
+  return searchOwnedEntries(params, {
+    load: loadRacialTraits,
+    partialNote: PARTIAL_NOTE_RACIAL_TRAITS,
+    heading: "Racial Trait",
+    adapter: { ...RACIAL_TRAIT_ADAPTER, ...racialTraitFilters(params) },
+    format: formatRacialTraitLine,
+    noMatch: (searched, book) => {
+      const criteria = describeCriteria([["name", params.name], ["race", params.raceName]]);
+      return `No racial traits found matching ${criteria || "the search criteria"}${book ? ` in ${book}` : ""} (searched ${searched} racial traits). D&D Beyond lists only the species available to your account.`;
+    },
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

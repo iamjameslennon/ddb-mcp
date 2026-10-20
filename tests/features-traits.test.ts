@@ -68,7 +68,7 @@ describe("buildClassFeatures", () => {
     const e = all.find((x) => x.name === "Martial Versatility");
     expect(e?.kind).toBe("optional");
     expect(e?.locked).toBe(true);
-    expect(formatClassFeatureLine(e!).endsWith("\n  *locked — not available to this account*")).toBe(true);
+    expect(formatClassFeatureLine(e!, "[2014]").endsWith("\n  *locked — not available to this account*")).toBe(true);
   });
 
   it("uses the snippet for an unlocked optional feature", () => {
@@ -141,23 +141,23 @@ describe("formatClassFeatureLine", () => {
 
   it("wraps homebrew lines and only those", () => {
     const e = all.find((x) => x.name === "Riposte Flourish")!;
-    expect(formatClassFeatureLine(e)).toBe(
-      wrapUntrusted("- **Riposte Flourish** — Fighter (Homebrew Duelist) level 3\n  Riposte Flourish description"),
+    expect(formatClassFeatureLine(e, "[homebrew]")).toBe(
+      wrapUntrusted("- **Riposte Flourish** [homebrew] — Fighter (Homebrew Duelist) level 3\n  Riposte Flourish description"),
     );
     const base = all.find((x) => x.name === "Second Wind" && x.classId === 10)!;
-    expect(formatClassFeatureLine(base)).not.toContain("untrusted_dndbeyond_content");
+    expect(formatClassFeatureLine(base, "[2014]")).not.toContain("untrusted_dndbeyond_content");
   });
 
   it("truncates long descriptions to 100 characters plus ellipsis", () => {
     const e = all.find((x) => x.name === "Remarkable Athlete" && x.subclassName === "Champion" && x.classId === 10)!;
     expect(e.text.length).toBeGreaterThan(120);
-    expect(formatClassFeatureLine(e).split("\n  ")[1]).toBe(`${e.text.slice(0, 100)}...`);
+    expect(formatClassFeatureLine(e, "[2014]").split("\n  ")[1]).toBe(`${e.text.slice(0, 100)}...`);
   });
 
   it("marks optional entries", () => {
     const e = all.find((x) => x.name === "Synthetic Option")!;
-    expect(formatClassFeatureLine(e)).toBe(
-      "- **Synthetic Option** — Fighter level 4, optional\n  Synthetic Option snippet",
+    expect(formatClassFeatureLine(e, "[2014]")).toBe(
+      "- **Synthetic Option** [2014] — Fighter level 4, optional\n  Synthetic Option snippet",
     );
   });
 });
@@ -181,7 +181,7 @@ describe("buildClassFeatures rules (synthetic inputs)", () => {
       none,
       opt([{ id: 7, name: "Locked", requiredLevel: 2, snippet: "snip", description: "<p>desc</p>" }], { "7": 4 }),
     ).filter((x) => x.kind === "optional");
-    expect(formatClassFeatureLine(e).split("\n")[1]).toBe("  *locked — not available to this account*");
+    expect(formatClassFeatureLine(e, "[2024]").split("\n")[1]).toBe("  *locked — not available to this account*");
   });
 
   it("drops an optional entry that repeats a base id and keeps others", () => {
@@ -215,7 +215,7 @@ describe("buildClassFeatures rules (synthetic inputs)", () => {
 
   it("formats a null requiredLevel as ?", () => {
     const [e] = buildClassFeatures([cls({ classFeatures: [{ id: 3, name: "NoLevel", requiredLevel: null }] })], none, new Map());
-    expect(formatClassFeatureLine(e)).toBe("- **NoLevel** — Testclass level ?");
+    expect(formatClassFeatureLine(e, "[2024]")).toBe("- **NoLevel** [2024] — Testclass level ?");
   });
 
   it("propagates sources from class, subclass and optional entry", () => {
@@ -235,12 +235,25 @@ describe("buildClassFeatures rules (synthetic inputs)", () => {
     expect(r.find((x) => x.name === "SF")?.sources).toEqual([{ sourceId: 9 }]);
   });
 
+  it("sets ownerSources: the subclass's for a subclass feature, the class's for base and optional features", () => {
+    const r = buildClassFeatures(
+      [cls()],
+      new Map([[1, [{ id: 2, name: "Sub", sources: [{ sourceId: 9 }], classFeatures: [{ id: 200, name: "SF" }] }]]]),
+      opt([{ id: 300, name: "Opt", snippet: "x", sources: [{ sourceId: 67 }] }]),
+    );
+    expect(r.find((x) => x.name === "Base One")?.ownerSources).toEqual([{ sourceId: 5 }]);
+    expect(r.find((x) => x.name === "SF")?.ownerSources).toEqual([{ sourceId: 9 }]);
+    const o = r.find((x) => x.name === "Opt")!;
+    expect(o.sources).toEqual([{ sourceId: 67 }]);
+    expect(o.ownerSources).toEqual([{ sourceId: 5 }]);
+  });
+
   it("marks optional entries under a homebrew class as homebrew and wraps the line", () => {
     const [e] = buildClassFeatures([cls({ isHomebrew: true })], none, opt([{ id: 11, name: "HB", requiredLevel: 1, snippet: "x" }])).filter(
       (x) => x.kind === "optional",
     );
     expect(e.isHomebrew).toBe(true);
-    expect(formatClassFeatureLine(e)).toBe(wrapUntrusted("- **HB** — Testclass level 1, optional\n  x"));
+    expect(formatClassFeatureLine(e, "[homebrew]")).toBe(wrapUntrusted("- **HB** [homebrew] — Testclass level 1, optional\n  x"));
   });
 
   it("does not mutate the input when filtering", () => {
@@ -262,7 +275,7 @@ describe("buildClassFeatures rules (synthetic inputs)", () => {
 
   it("omits the description line when the text is empty", () => {
     const [e] = buildClassFeatures([cls({ classFeatures: [{ id: 4, name: "Empty", requiredLevel: 1, summary: " ", description: "" }] })], none, new Map());
-    expect(formatClassFeatureLine(e)).toBe("- **Empty** — Testclass level 1");
+    expect(formatClassFeatureLine(e, "[2024]")).toBe("- **Empty** [2024] — Testclass level 1");
   });
 
   it("breaks ties between same-named subclasses by subclassId", () => {
@@ -278,7 +291,7 @@ describe("buildClassFeatures rules (synthetic inputs)", () => {
 describe("racial traits", () => {
   const optByKey = new Map(Object.entries(OPTIONAL_TRAITS_BY_RACE_KEY).map(([k, v]) => [k, v as OptionalCollection]));
   const all = buildRacialTraits(RACES, optByKey);
-  const label = (e: RacialTraitEntry) => formatRacialTraitLine(e);
+  const label = (e: RacialTraitEntry) => formatRacialTraitLine(e, e.isHomebrew ? "[homebrew]" : "[2024]");
 
   it("builds raceKey from type and race ids", () => {
     expect(raceKeyOf({ entityRaceTypeId: 5, entityRaceId: 7 })).toBe("5:7");
@@ -297,9 +310,9 @@ describe("racial traits", () => {
     const dv = all.filter((e) => e.id === 13856159);
     expect(dv).toHaveLength(2);
     expect(label(dv.find((e) => e.isHomebrew)!)).toBe(
-      "<untrusted_dndbeyond_content>\n- **Darkvision** *(Tiefling — subrace of Tiefling, Homebrew)* — Darkvision snippet\n</untrusted_dndbeyond_content>",
+      "<untrusted_dndbeyond_content>\n- **Darkvision** [homebrew] *(Tiefling — subrace of Tiefling)* — Darkvision snippet\n</untrusted_dndbeyond_content>",
     );
-    expect(label(dv.find((e) => !e.isHomebrew)!)).toBe("- **Darkvision** *(Tiefling)* — Darkvision snippet");
+    expect(label(dv.find((e) => !e.isHomebrew)!)).toBe("- **Darkvision** [2024] *(Tiefling)* — Darkvision snippet");
   });
 
   it("keeps separate raceKeys for Human and High Elf", () => {
@@ -381,7 +394,7 @@ describe("racial traits", () => {
     ]);
     const e = buildRacialTraits([race()], opt).find((x) => x.id === 2)!;
     expect(e.locked).toBe(true);
-    expect(label(e)).toBe("- **Lk** *(Synth)* *(optional)* — *locked — not available to this account*");
+    expect(label(e)).toBe("- **Lk** [2024] *(Synth)* *(optional)* — *locked — not available to this account*");
   });
 
   it("propagates sources: race's for standard, own for optional", () => {
@@ -392,6 +405,18 @@ describe("racial traits", () => {
     expect(r.find((x) => x.id === 1)?.sources).toEqual([{ sourceId: 111 }]);
     expect(r.find((x) => x.id === 2)?.sources).toEqual([{ sourceId: 222 }]);
     expect(r.find((x) => x.id === 3)?.sources).toEqual([]);
+  });
+
+  it("sets ownerSources and entityRaceId from the race, for standard and optional traits", () => {
+    const opt = new Map<string, OptionalCollection>([
+      ["9:9", { definitionData: [{ id: 2, name: "Op", sources: [{ sourceId: 222 }] }], accessTypes: {} }],
+    ]);
+    const r = buildRacialTraits([race({ racialTraits: [{ definition: { id: 1, name: "Std", sources: [{ sourceId: 333 }] } }] })], opt);
+    for (const id of [1, 2]) {
+      expect(r.find((x) => x.id === id)).toMatchObject({ ownerSources: [{ sourceId: 111 }], entityRaceId: 9 });
+    }
+    expect(r.find((x) => x.id === 1)?.sources).toEqual([{ sourceId: 111 }]);
+    expect(r.find((x) => x.id === 2)?.sources).toEqual([{ sourceId: 222 }]);
   });
 
   it("is independent of input order", () => {
@@ -454,8 +479,8 @@ describe("racial traits", () => {
       kind: "optional", speciesName: "Tiefling", baseRaceName: "Tiefling",
       isSubRace: true, isHomebrew: true, raceKey: "1228963568:976786",
     });
-    expect(formatRacialTraitLine(e)).toBe(
-      "<untrusted_dndbeyond_content>\n- **Infernal Gift** *(Tiefling — subrace of Tiefling, Homebrew)* *(optional)* — Gift\n</untrusted_dndbeyond_content>",
+    expect(formatRacialTraitLine(e, "[homebrew]")).toBe(
+      "<untrusted_dndbeyond_content>\n- **Infernal Gift** [homebrew] *(Tiefling — subrace of Tiefling)* *(optional)* — Gift\n</untrusted_dndbeyond_content>",
     );
   });
 

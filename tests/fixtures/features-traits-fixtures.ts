@@ -998,3 +998,68 @@ export const OPTIONAL_TRAITS_BY_RACE_KEY: Record<string, unknown> = {
     accessTypes: {},
   },
 };
+
+// ── Rules-edition fixtures ───────────────────────────────────────────────────
+// Used only by the rules_edition / source tests of the class-feature and racial-trait
+// searches; the shared CLASSES / RACES above stay unchanged. Ids are live (2026-10-17)
+// where the free account sees the entry; the rest are marked `// synthetic`.
+
+const src = (...ids: number[]) => ids.map((sourceId) => ({ sourceId, pageNumber: null, sourceType: 1 }));
+const feature = (id: number, name: string, requiredLevel: number, displayOrder = 1) => ({
+  id, name, description: `<p>${name} description</p>`, summary: null, requiredLevel, displayOrder,
+});
+const editionClass = (id: number, name: string, sourceId: number, classFeatures: unknown[] = []) => ({
+  id, name, description: `<p>${name} description</p>`, hitDice: 8, isHomebrew: false,
+  spellCastingAbilityId: null, subclassDefinition: null, parentClassId: null, sources: src(sourceId), classFeatures,
+});
+const editionSubclass = (id: number, name: string, parentClassId: number, sourceId: number, classFeatures: unknown[]) => ({
+  id, name, parentClassId, isHomebrew: false, sources: src(sourceId), classFeatures,
+});
+
+// 2014 Cleric / Wizard / Ranger (Basic Rules, sourceId 1) and 2024 Wizard / Ranger (PHB 2024, 145).
+export const EDITION_CLASSES = [
+  editionClass(2, "Cleric", 1),
+  editionClass(8, "Wizard", 1),
+  editionClass(2190886, "Wizard", 145),
+  editionClass(5, "Ranger", 1, [feature(294, "Favored Enemy", 1, 1), feature(295, "Natural Explorer", 1, 2)]),
+  editionClass(2190882, "Ranger", 145, [feature(10292304, "Favored Enemy", 1, 1), feature(10292306, "Deft Explorer", 2, 2)]),
+];
+
+// Merged over SUBCLASSES_BY_CLASS_ID by the tests ("10" is appended to the shared Fighter's list).
+export const EDITION_SUBCLASSES_BY_CLASS_ID: Record<string, unknown[]> = {
+  "2": [
+    editionSubclass(19, "Life Domain", 2, 1, [feature(130, "Bonus Proficiency", 1)]),
+    editionSubclass(900101, "Tempest Domain", 2, 1, [feature(900102, "Bonus Proficiency", 1)]), // synthetic
+  ],
+  // synthetic: Samurai is Xanathar's (27), a 2014-only subclass under the 2014 Fighter
+  "10": [
+    editionSubclass(900103, "Samurai", 10, 27, [feature(900104, "Fighting Spirit", 3), feature(900105, "Elegant Courtier", 7, 2)]),
+  ],
+  "8": [editionSubclass(26, "School of Evocation", 8, 1, [feature(436, "Sculpt Spells", 2)])],
+  "2190886": [editionSubclass(2190998, "Evoker", 2190886, 145, [feature(10292989, "Sculpt Spells", 6)])],
+};
+
+const trait = (id: number, name: string, sources: unknown[]) => ({
+  definition: { id, name, description: `<p>${name} description</p>`, snippet: `${name} snippet`, displayOrder: 1, requiredLevel: null, sources },
+});
+const editionRace = (
+  entityRaceId: number, entityRaceTypeId: number, fullName: string,
+  extra: { baseRaceName?: string; isLegacy?: boolean; isSubRace?: boolean; sources: unknown[]; racialTraits: unknown[] },
+) => ({
+  entityRaceId, entityRaceTypeId, fullName, baseName: extra.baseRaceName ?? fullName, baseRaceName: extra.baseRaceName ?? fullName,
+  description: `<p>${fullName} description</p>`, isHomebrew: false, isLegacy: extra.isLegacy ?? false,
+  isSubRace: extra.isSubRace ?? false, size: null, sources: extra.sources, racialTraits: extra.racialTraits,
+});
+
+// 2024 Elf, 2014 High Elf, and the two 2014 Goblins (Volo's, Legacy; Monsters of the Multiverse).
+export const EDITION_RACES = [
+  // synthetic: the Elf's Darkvision carries its own 2014 sources (live it is [145]), so its tag must come from the race
+  editionRace(1751437, 1743923279, "Elf", { sources: src(145), racialTraits: [trait(13856109, "Darkvision", src(1))] }),
+  editionRace(1, 1228963568, "High Elf", {
+    baseRaceName: "Elf", isLegacy: true, isSubRace: true, sources: src(1),
+    racialTraits: [trait(11, "Darkvision", src(1)), trait(118, "Age", src(1))],
+  }),
+  // synthetic: both Goblins
+  editionRace(900201, 900200, "Goblin", { isLegacy: true, sources: src(15), racialTraits: [trait(900202, "Fury of the Small", src(15))] }),
+  editionRace(900203, 900200, "Goblin", { sources: src(85), racialTraits: [trait(900204, "Fury of the Small", src(85))] }),
+];

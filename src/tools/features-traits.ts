@@ -34,6 +34,7 @@ export interface ClassFeatureEntry {
   subclassId: number | null;
   subclassName: string | null;
   sources: SourceRef[]; // owning subclass's, else class's; an optional feature's own
+  ownerSources: SourceRef[]; // owning subclass's, else class's (optional features too): decides the owner's edition
   isHomebrew: boolean; // class or subclass isHomebrew
 }
 
@@ -122,6 +123,7 @@ export function buildClassFeatures(
         subclassId: null,
         subclassName: null,
         sources: sourcesOf(cls.sources),
+        ownerSources: sourcesOf(cls.sources),
         isHomebrew: cls.isHomebrew === true,
       });
     }
@@ -157,6 +159,7 @@ export function buildClassFeatures(
           subclassId: sub.id,
           subclassName: sub.name,
           sources: sourcesOf(sub.sources),
+          ownerSources: sourcesOf(sub.sources),
           isHomebrew: cls.isHomebrew === true || sub.isHomebrew === true,
         });
       }
@@ -184,6 +187,7 @@ export function buildClassFeatures(
         subclassId: null,
         subclassName: null,
         sources: sourcesOf(f.sources),
+        ownerSources: sourcesOf(cls.sources),
         isHomebrew: cls.isHomebrew === true,
       });
     }
@@ -201,36 +205,50 @@ function cmpNullable(a: number | null, b: number | null): number {
 }
 
 /** className, classId, kind, subclassName, level, displayOrder, name, id, then subclassId (nulls last). */
-function sortEntries(entries: ClassFeatureEntry[]): ClassFeatureEntry[] {
-  return entries.sort(
-    (a, b) =>
-      a.className.localeCompare(b.className) ||
-      a.classId - b.classId ||
-      KIND_ORDER[a.kind] - KIND_ORDER[b.kind] ||
-      (a.subclassName ?? "").localeCompare(b.subclassName ?? "") ||
-      cmpNullable(a.requiredLevel, b.requiredLevel) ||
-      cmpNullable(a.displayOrder, b.displayOrder) ||
-      a.name.localeCompare(b.name) ||
-      a.id - b.id ||
-      cmpNullable(a.subclassId, b.subclassId),
+export function compareClassFeatures(a: ClassFeatureEntry, b: ClassFeatureEntry): number {
+  return (
+    a.className.localeCompare(b.className) ||
+    a.classId - b.classId ||
+    KIND_ORDER[a.kind] - KIND_ORDER[b.kind] ||
+    (a.subclassName ?? "").localeCompare(b.subclassName ?? "") ||
+    cmpNullable(a.requiredLevel, b.requiredLevel) ||
+    cmpNullable(a.displayOrder, b.displayOrder) ||
+    a.name.localeCompare(b.name) ||
+    a.id - b.id ||
+    cmpNullable(a.subclassId, b.subclassId)
   );
+}
+
+function sortEntries(entries: ClassFeatureEntry[]): ClassFeatureEntry[] {
+  return entries.sort(compareClassFeatures);
+}
+
+/**
+ * The search filters as predicates: `nameMatches` is the feature-name filter
+ * (none without a name), `passes` the class/subclass and level filters.
+ */
+export function classFeatureFilters(f: { name?: string; className?: string; level?: number }): {
+  nameMatches?: (e: ClassFeatureEntry) => boolean;
+  passes: (e: ClassFeatureEntry) => boolean;
+} {
+  const name = f.name?.toLowerCase();
+  const cls = f.className?.toLowerCase();
+  return {
+    nameMatches: name === undefined ? undefined : (e) => e.name.toLowerCase().includes(name),
+    passes: (e) =>
+      (cls === undefined ||
+        e.className.toLowerCase().includes(cls) ||
+        (e.subclassName?.toLowerCase().includes(cls) ?? false)) &&
+      (f.level === undefined || e.requiredLevel === f.level),
+  };
 }
 
 export function filterClassFeatures(
   entries: readonly ClassFeatureEntry[],
   f: { name?: string; className?: string; level?: number },
 ): ClassFeatureEntry[] {
-  const name = f.name?.toLowerCase();
-  const cls = f.className?.toLowerCase();
-  const matched = entries.filter(
-    (e) =>
-      (name === undefined || e.name.toLowerCase().includes(name)) &&
-      (cls === undefined ||
-        e.className.toLowerCase().includes(cls) ||
-        (e.subclassName?.toLowerCase().includes(cls) ?? false)) &&
-      (f.level === undefined || e.requiredLevel === f.level),
-  );
-  return sortEntries(matched);
+  const { nameMatches, passes } = classFeatureFilters(f);
+  return sortEntries(entries.filter((e) => (nameMatches?.(e) ?? true) && passes(e)));
 }
 
 /** Description part of a line: the locked marker, else the first 100 characters of text (plus "..." from 100 up), else "". */
@@ -239,8 +257,9 @@ function descriptionPart(e: { locked: boolean; text: string }): string {
   return `${e.text.slice(0, 100)}${e.text.length >= 100 ? "..." : ""}`;
 }
 
-export function formatClassFeatureLine(e: ClassFeatureEntry): string {
-  let line = `- **${e.name}** — ${e.className}`;
+/** `label` is the entry's edition tag (plus any book note), placed right after the name. */
+export function formatClassFeatureLine(e: ClassFeatureEntry, label: string): string {
+  let line = `- **${e.name}** ${label} — ${e.className}`;
   if (e.subclassName) line += ` (${e.subclassName})`;
   line += ` level ${e.requiredLevel ?? "?"}`;
   if (e.kind === "optional") line += ", optional";
@@ -260,12 +279,14 @@ export interface RacialTraitEntry {
   text: string; // plain text, untruncated
   locked: boolean;
   raceKey: string; // `${entityRaceTypeId}:${entityRaceId}` of the race it is listed under
+  entityRaceId: number; // of that race
   speciesName: string; // race fullName
   baseRaceName: string;
   isSubRace: boolean;
   isLegacy: boolean;
   isHomebrew: boolean;
   sources: SourceRef[]; // the race's; an optional trait's own
+  ownerSources: SourceRef[]; // the race's (optional traits too): decides the species' edition
 }
 
 const TRAIT_KIND_ORDER: Record<TraitKind, number> = { standard: 0, optional: 1 };
@@ -321,12 +342,14 @@ export function buildRacialTraits(
     text,
     locked,
     raceKey: raceKeyOf(race),
+    entityRaceId: race.entityRaceId,
     speciesName: race.fullName,
     baseRaceName: str(race.baseRaceName),
     isSubRace: race.isSubRace === true,
     isLegacy: race.isLegacy === true,
     isHomebrew: race.isHomebrew === true,
     sources,
+    ownerSources: sourcesOf(race.sources),
   });
 
   for (const raw of races) {
@@ -364,38 +387,53 @@ export function buildRacialTraits(
 }
 
 /** speciesName, raceKey, kind, name, id. */
-function sortTraits(entries: RacialTraitEntry[]): RacialTraitEntry[] {
-  return entries.sort(
-    (a, b) =>
-      a.speciesName.localeCompare(b.speciesName) ||
-      a.raceKey.localeCompare(b.raceKey) ||
-      TRAIT_KIND_ORDER[a.kind] - TRAIT_KIND_ORDER[b.kind] ||
-      a.name.localeCompare(b.name) ||
-      a.id - b.id,
+export function compareRacialTraits(a: RacialTraitEntry, b: RacialTraitEntry): number {
+  return (
+    a.speciesName.localeCompare(b.speciesName) ||
+    a.raceKey.localeCompare(b.raceKey) ||
+    TRAIT_KIND_ORDER[a.kind] - TRAIT_KIND_ORDER[b.kind] ||
+    a.name.localeCompare(b.name) ||
+    a.id - b.id
   );
+}
+
+function sortTraits(entries: RacialTraitEntry[]): RacialTraitEntry[] {
+  return entries.sort(compareRacialTraits);
+}
+
+/**
+ * The search filters as predicates: `nameMatches` is the trait-name filter
+ * (none without a name), `passes` the species filter, which also matches a
+ * subrace's base race.
+ */
+export function racialTraitFilters(f: { name?: string; raceName?: string }): {
+  nameMatches?: (e: RacialTraitEntry) => boolean;
+  passes: (e: RacialTraitEntry) => boolean;
+} {
+  const name = f.name?.toLowerCase();
+  const race = f.raceName?.toLowerCase();
+  return {
+    nameMatches: name === undefined ? undefined : (e) => e.name.toLowerCase().includes(name),
+    passes: (e) =>
+      race === undefined ||
+      e.speciesName.toLowerCase().includes(race) ||
+      e.baseRaceName.toLowerCase().includes(race),
+  };
 }
 
 export function filterRacialTraits(
   entries: readonly RacialTraitEntry[],
   f: { name?: string; raceName?: string },
 ): RacialTraitEntry[] {
-  const name = f.name?.toLowerCase();
-  const race = f.raceName?.toLowerCase();
-  const matched = entries.filter(
-    (e) =>
-      (name === undefined || e.name.toLowerCase().includes(name)) &&
-      (race === undefined ||
-        e.speciesName.toLowerCase().includes(race) ||
-        e.baseRaceName.toLowerCase().includes(race)),
-  );
-  return sortTraits(matched);
+  const { nameMatches, passes } = racialTraitFilters(f);
+  return sortTraits(entries.filter((e) => (nameMatches?.(e) ?? true) && passes(e)));
 }
 
-export function formatRacialTraitLine(e: RacialTraitEntry): string {
-  let label = e.speciesName;
-  if (e.isSubRace && e.baseRaceName !== "") label += ` — subrace of ${e.baseRaceName}`;
-  if (e.isHomebrew) label += ", Homebrew";
-  let line = `- **${e.name}** *(${label})*`;
+/** `label` is the entry's edition tag (plus any book note), placed right after the name; it marks homebrew too. */
+export function formatRacialTraitLine(e: RacialTraitEntry, label: string): string {
+  let species = e.speciesName;
+  if (e.isSubRace && e.baseRaceName !== "") species += ` — subrace of ${e.baseRaceName}`;
+  let line = `- **${e.name}** ${label} *(${species})*`;
   if (e.kind === "optional") line += " *(optional)*";
   const desc = descriptionPart(e);
   if (desc) line += ` — ${desc}`;

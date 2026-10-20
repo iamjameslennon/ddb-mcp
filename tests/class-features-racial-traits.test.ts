@@ -1,6 +1,7 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   CLASSES, RACES, SUBCLASSES_BY_CLASS_ID, OPTIONAL_FEATURES_BY_CLASS_ID, OPTIONAL_TRAITS_BY_RACE_KEY,
+  EDITION_CLASSES, EDITION_SUBCLASSES_BY_CLASS_ID, EDITION_RACES,
 } from "./fixtures/features-traits-fixtures.js";
 import { buildClassFeatures, buildRacialTraits } from "../src/tools/features-traits.js";
 
@@ -54,15 +55,15 @@ function jsonResponse(body: unknown, status = 200): Response {
   } as unknown as Response;
 }
 
-/** Route game-data URLs by pathname; `overrides` replaces a path's `data`. */
-function serviceMock(overrides: Record<string, unknown> = {}) {
+/** Route game-data URLs by pathname; `overrides` replaces a path's `data`, `subclasses` the subclass lists. */
+function serviceMock(overrides: Record<string, unknown> = {}, subclasses: Record<string, unknown[]> = SUBCLASSES_BY_CLASS_ID) {
   return async (url: string) => {
     if (url === COBALT_URL) return jsonResponse({ token: makeJwt("99") });
     if (url.startsWith(GAME_DATA)) {
       const u = new URL(url);
       const path = u.pathname.split("/").pop() ?? "";
       if (path === "subclasses") {
-        return jsonResponse({ data: SUBCLASSES_BY_CLASS_ID[u.searchParams.get("baseClassId") ?? ""] ?? [] });
+        return jsonResponse({ data: subclasses[u.searchParams.get("baseClassId") ?? ""] ?? [] });
       }
       if (u.pathname.endsWith("/class-feature/collection")) {
         return jsonResponse({ data: OPTIONAL_FEATURES_BY_CLASS_ID[u.searchParams.get("classId") ?? ""] ?? { definitionData: [] } });
@@ -168,6 +169,16 @@ const CF_UNAVAILABLE = "Class feature data is unavailable from D&D Beyond right 
 const RT_UNAVAILABLE = "Racial trait data is unavailable from D&D Beyond right now: it returned no racial traits. Try again later, or run ddb_login if your session has expired.";
 const CF_PARTIAL = "> ⚠ Some subclass or optional-feature lists failed to load from D&D Beyond, so results may be incomplete. Run `ddb_clear_cache` to retry.";
 const RT_PARTIAL = "> ⚠ Some optional-trait lists failed to load from D&D Beyond, so results may be incomplete. Run `ddb_clear_cache` to retry.";
+const HEADER_2024 = "Rules: 2024 by default — 2014 entries appear only where no 2024 version was found. Use rules_edition: \"2014\" for 2014 versions.";
+const HEADER_2014 = "Rules: 2014 requested — 2024 entries appear only where no 2014 version was found.";
+const HIDDEN_2014 = (n: number) => `${n} 2014 ${n === 1 ? "version" : "versions"} hidden — rules_edition: "2014" shows ${n === 1 ? "it" : "them"}.`;
+
+/** A search with results: the search header, then the partial-build note. */
+function expectHeaderThenNote(out: string, note: string): void {
+  const [first, second] = out.split("\n");
+  expect(first).toBe(HEADER_2024);
+  expect(second.startsWith(note)).toBe(true);
+}
 
 const FULL_CLASS_ENTRIES = buildClassFeatures(
   CLASSES,
@@ -199,7 +210,9 @@ describe("searchClassFeatures", () => {
       `${GAME_DATA}/class-feature/collection?classId=10`,
       `${GAME_DATA}/class-feature/collection?classId=2190879`,
     ].sort());
-    expect(out.split("**Action Surge** — Fighter level 2")).toHaveLength(3);
+    // The two Fighters are one owner pair: the 2024 line, the 2014 one counted as hidden.
+    expect(out.split("**Action Surge** [2024] — Fighter level 2")).toHaveLength(2);
+    expect(out.endsWith(`\n${HIDDEN_2014(1)}`)).toBe(true);
   });
 
   it("never requests a collection endpoint without its query string", async () => {
@@ -249,8 +262,8 @@ describe("searchClassFeatures", () => {
     try {
       withOverride((u) => u.includes("/subclasses?baseClassId=10"), () => jsonResponse({}, 403));
       const out = await reference.searchClassFeatures({ name: "action surge" });
-      expect(out.startsWith(`${CF_PARTIAL}\n\n`)).toBe(true);
-      expect(out).toContain("**Action Surge** — Fighter level 2");
+      expect(out.startsWith(`${HEADER_2024}\n${CF_PARTIAL}\n\n`)).toBe(true);
+      expect(out).toContain("**Action Surge** [2024] — Fighter level 2");
 
       const before = requestsTo("subclasses").length;
       await reference.searchClassFeatures({ name: "action surge" });
@@ -270,7 +283,7 @@ describe("searchClassFeatures", () => {
     const before = gameDataRequests().length;
     const second = await reference.searchClassFeatures({ name: "action surge" });
     expect(gameDataRequests()).toHaveLength(before);
-    expect(second.startsWith(CF_PARTIAL)).toBe(true);
+    expectHeaderThenNote(second, CF_PARTIAL);
   });
 
   it("prepends the partial note to a no-matches reply", async () => {
@@ -283,26 +296,26 @@ describe("searchClassFeatures", () => {
   it("a 404 on a class-feature collection counts as partial, not a throw", async () => {
     withOverride((u) => u.includes("/class-feature/collection?classId=10"), () => jsonResponse({}, 404));
     const out = await reference.searchClassFeatures({ name: "action surge" });
-    expect(out.startsWith(CF_PARTIAL)).toBe(true);
-    expect(out).toContain("**Action Surge** — Fighter level 2");
+    expectHeaderThenNote(out, CF_PARTIAL);
+    expect(out).toContain("**Action Surge** [2024] — Fighter level 2");
   });
 
   it("a collection with data: null is partial", async () => {
     withOverride((u) => u.includes("/class-feature/collection?classId=10"), () => jsonResponse({ data: null }));
     const out = await reference.searchClassFeatures({ name: "action surge" });
-    expect(out.startsWith(CF_PARTIAL)).toBe(true);
+    expectHeaderThenNote(out, CF_PARTIAL);
   });
 
   it("a collection with data: {} (no definitionData) is partial", async () => {
     withOverride((u) => u.includes("/class-feature/collection?classId=10"), () => jsonResponse({ data: {} }));
     const out = await reference.searchClassFeatures({ name: "action surge" });
-    expect(out.startsWith(CF_PARTIAL)).toBe(true);
+    expectHeaderThenNote(out, CF_PARTIAL);
   });
 
   it("a subclasses response with data: {} is partial", async () => {
     withOverride((u) => u.includes("/subclasses?baseClassId=10"), () => jsonResponse({ data: {} }));
     const out = await reference.searchClassFeatures({ name: "action surge" });
-    expect(out.startsWith(CF_PARTIAL)).toBe(true);
+    expectHeaderThenNote(out, CF_PARTIAL);
   });
 
   it("abandons the build when the account changes mid-fan-out, and caches nothing", async () => {
@@ -407,12 +420,12 @@ describe("searchRacialTraits", () => {
     try {
       withOverride((u) => u.includes("/racial-trait/collection?entityRaceId=1&entityRaceTypeId=1743923279"), () => jsonResponse({}, 403));
       const out = await reference.searchRacialTraits({ name: "darkvision" });
-      expect(out.startsWith(`${RT_PARTIAL}\n\n`)).toBe(true);
+      expect(out.startsWith(`${HEADER_2024}\n${RT_PARTIAL}\n\n`)).toBe(true);
 
       const before = requestsTo("racial-trait/collection").length;
       const again = await reference.searchRacialTraits({ name: "darkvision" });
       expect(requestsTo("racial-trait/collection")).toHaveLength(before); // cached
-      expect(again.startsWith(RT_PARTIAL)).toBe(true);
+      expectHeaderThenNote(again, RT_PARTIAL);
 
       vi.setSystemTime(Date.now() + 5 * 60_000 + 1);
       await reference.searchRacialTraits({ name: "darkvision" });
@@ -434,7 +447,7 @@ describe("searchRacialTraits", () => {
   it("an optional-trait response with data: {} is partial", async () => {
     withOverride((u) => u.includes("/racial-trait/collection?entityRaceId=1&entityRaceTypeId=1743923279"), () => jsonResponse({ data: {} }));
     const out = await reference.searchRacialTraits({ name: "darkvision" });
-    expect(out.startsWith(RT_PARTIAL)).toBe(true);
+    expectHeaderThenNote(out, RT_PARTIAL);
   });
 
   it("abandons the build when the account changes mid-fan-out, and caches nothing", async () => {
@@ -475,5 +488,183 @@ describe("searchRacialTraits", () => {
     const out = await reference.searchRaces();
     expect(requestsTo("races")).toHaveLength(1);
     expect(out).toBe(EXPECTED.racesAll);
+  });
+});
+
+// ── rules_edition and source: one edition per owner (class, class + subclass, species) ──
+
+/** The first line of each listed entry. */
+function entryLines(out: string): string[] {
+  return out.split("\n").filter((l) => l.startsWith("- **"));
+}
+
+const EDITION_SUBCLASSES: Record<string, unknown[]> = {
+  ...SUBCLASSES_BY_CLASS_ID,
+  ...EDITION_SUBCLASSES_BY_CLASS_ID,
+  "10": [...SUBCLASSES_BY_CLASS_ID["10"], ...EDITION_SUBCLASSES_BY_CLASS_ID["10"]],
+};
+const editionClassService = () => serviceMock({ classes: [...CLASSES, ...EDITION_CLASSES] }, EDITION_SUBCLASSES);
+
+describe("searchClassFeatures — rules_edition and source", () => {
+  beforeEach(() => { fetchMock.mockImplementation(serviceMock()); });
+
+  it("action surge: header, the 2024 Fighter's line, the 2014 one hidden", async () => {
+    const out = await reference.searchClassFeatures({ name: "action surge" });
+    const lines = out.split("\n");
+    expect(lines[0]).toBe(HEADER_2024);
+    expect(lines[1]).toBe("**Class Feature Search** (1 found)");
+    expect(entryLines(out)).toEqual(["- **Action Surge** [2024] — Fighter level 2"]);
+    expect(lines.at(-1)).toBe('1 2014 version hidden — rules_edition: "2014" shows it.');
+  });
+
+  it("ability score, fighter: the six 2024 lines; 2014 lists the seven 2014 lines", async () => {
+    const out = await reference.searchClassFeatures({ name: "ability score", className: "fighter" });
+    expect(entryLines(out)).toEqual([
+      "- **Ability Score Improvement** [2024] — Fighter level 4",
+      "- **6: Ability Score Improvement** [2024] — Fighter level 6",
+      "- **8: Ability Score Improvement** [2024] — Fighter level 8",
+      "- **12: Ability Score Improvement** [2024] — Fighter level 12",
+      "- **14: Ability Score Improvement** [2024] — Fighter level 14",
+      "- **16: Ability Score Improvement** [2024] — Fighter level 16",
+    ]);
+    expect(out).not.toContain("[2014]");
+    expect(out.split("\n").at(-1)).toBe('7 2014 versions hidden — rules_edition: "2014" shows them.');
+
+    const old = await reference.searchClassFeatures({ name: "ability score", className: "fighter", rulesEdition: "2014" });
+    expect(old.split("\n")[0]).toBe(HEADER_2014);
+    expect(entryLines(old)).toEqual([4, 6, 8, 12, 14, 16, 19].map((n) => `- **Ability Score Improvement** [2014] — Fighter level ${n}`));
+    expect(old.split("\n").at(-1)).toBe("6 2024 versions hidden — omit rules_edition to show them.");
+  });
+
+  it("level 6, fighter: the 2024 Fighter's level-6 features; the footer counts the 2014 Fighter's", async () => {
+    const out = await reference.searchClassFeatures({ className: "fighter", level: 6 });
+    expect(entryLines(out)).toEqual(["- **6: Ability Score Improvement** [2024] — Fighter level 6"]);
+    expect(out.split("\n").at(-1)).toBe(HIDDEN_2014(1));
+  });
+
+  it("martial versatility (only the 2014 Fighter has it): listed [2014], no footer", async () => {
+    const out = await reference.searchClassFeatures({ name: "martial versatility" });
+    expect(entryLines(out)).toEqual(["- **Martial Versatility** [2014] — Fighter level 4, optional"]);
+    expect(out).not.toContain("hidden");
+  });
+
+  it("source phb-2024: only the 2024 Fighter's features, tagged, under the source header", async () => {
+    const out = await reference.searchClassFeatures({ source: "phb-2024" });
+    expect(out.split("\n")[0]).toBe("Rules: showing every entry in Player's Handbook (2024), each tagged with its edition.");
+    const lines = entryLines(out);
+    expect(lines).toHaveLength(FULL_CLASS_ENTRIES.filter((e) => e.classId === 2190879).length);
+    for (const l of lines) expect(l).toMatch(/^- \*\*[^*]+\*\* \[2024\] — Fighter/);
+    expect(out).not.toContain("hidden");
+  });
+
+  it("source naming no book is reported before any request", async () => {
+    const out = await reference.searchClassFeatures({ source: "no-such-book" });
+    expect(out).toMatch(/no-such-book/);
+    expect(requestsTo("classes")).toHaveLength(0);
+  });
+
+  it("homebrew owners are never hidden and stay wrapped", async () => {
+    const out = await reference.searchClassFeatures({ name: "riposte" });
+    expect(out).toContain("<untrusted_dndbeyond_content>\n- **Riposte Flourish** [homebrew] — Fighter (Homebrew Duelist) level 3");
+  });
+
+  it("Cleric Bonus Proficiency in Life and Tempest: two owners, both listed, no footer", async () => {
+    fetchMock.mockImplementation(editionClassService());
+    const expected = [
+      "- **Bonus Proficiency** [2014] — Cleric (Life Domain) level 1",
+      "- **Bonus Proficiency** [2014] — Cleric (Tempest Domain) level 1",
+    ];
+    for (const rulesEdition of ["2014", "2024"] as const) {
+      const out = await reference.searchClassFeatures({ name: "bonus proficiency", className: "cleric", rulesEdition });
+      expect(entryLines(out)).toEqual(expected);
+      expect(out).not.toContain("hidden");
+    }
+  });
+
+  it("improved critical: the 2024 Champion's, the 2014 Champion's hidden", async () => {
+    fetchMock.mockImplementation(editionClassService());
+    const out = await reference.searchClassFeatures({ name: "improved critical" });
+    expect(entryLines(out)).toEqual(["- **Improved Critical** [2024] — Fighter (Champion) level 3"]);
+    expect(out.split("\n").at(-1)).toBe(HIDDEN_2014(1));
+  });
+
+  it("a 2014-only subclass is listed [2014], also beside the 2024 Fighter's base features", async () => {
+    fetchMock.mockImplementation(editionClassService());
+    const samurai = await reference.searchClassFeatures({ className: "samurai" });
+    expect(entryLines(samurai)).toEqual([
+      "- **Fighting Spirit** [2014] — Fighter (Samurai) level 3",
+      "- **Elegant Courtier** [2014] — Fighter (Samurai) level 7",
+    ]);
+    expect(samurai).not.toContain("hidden");
+
+    const fighter = entryLines(await reference.searchClassFeatures({ className: "fighter", limit: 100 }));
+    expect(fighter).toContain("- **Action Surge** [2024] — Fighter level 2");
+    expect(fighter).toContain("- **Fighting Spirit** [2014] — Fighter (Samurai) level 3");
+    expect(fighter).toContain("- **Improved Critical** [2024] — Fighter (Champion) level 3");
+    // The 2014 Fighter's own features and its Champion are hidden.
+    expect(fighter.filter((l) => l.includes("[2014]") && !l.includes("(Samurai)"))).toEqual([]);
+  });
+
+  it("School of Evocation and Evoker are one owner pair through the rename table", async () => {
+    fetchMock.mockImplementation(editionClassService());
+    const out = await reference.searchClassFeatures({ name: "sculpt spells" });
+    expect(entryLines(out)).toEqual(["- **Sculpt Spells** [2024] — Wizard (Evoker) level 6"]);
+    expect(out.split("\n").at(-1)).toBe(HIDDEN_2014(1));
+    expect(out).not.toContain("2014 name");
+  });
+
+  it("ranger: the 2024 Ranger's features only; a feature only the 2014 Ranger has is listed [2014]", async () => {
+    fetchMock.mockImplementation(editionClassService());
+    const out = await reference.searchClassFeatures({ className: "ranger" });
+    expect(entryLines(out)).toEqual([
+      "- **Favored Enemy** [2024] — Ranger level 1",
+      "- **Deft Explorer** [2024] — Ranger level 2",
+    ]);
+    expect(out.split("\n").at(-1)).toBe('2 2014 versions hidden — rules_edition: "2014" shows them.');
+
+    const natural = await reference.searchClassFeatures({ name: "natural explorer" });
+    expect(entryLines(natural)).toEqual(["- **Natural Explorer** [2014] — Ranger level 1"]);
+    expect(natural).not.toContain("hidden");
+  });
+});
+
+describe("searchRacialTraits — rules_edition and source", () => {
+  beforeEach(() => { fetchMock.mockImplementation(serviceMock({ races: EDITION_RACES })); });
+
+  it("elf: only the 2024 Elf's traits, tagged from the race; the High Elf's hidden", async () => {
+    const out = await reference.searchRacialTraits({ raceName: "elf" });
+    expect(out.split("\n")[0]).toBe(HEADER_2024);
+    expect(entryLines(out)).toEqual(["- **Darkvision** [2024] *(Elf)* — Darkvision snippet"]);
+    expect(out.split("\n").at(-1)).toBe('2 2014 versions hidden — rules_edition: "2014" shows them.');
+  });
+
+  it("high elf: the High Elf's traits [2014], no footer", async () => {
+    const out = await reference.searchRacialTraits({ raceName: "high elf" });
+    expect(entryLines(out)).toEqual([
+      "- **Age** [2014] *(High Elf — subrace of Elf)* — Age snippet",
+      "- **Darkvision** [2014] *(High Elf — subrace of Elf)* — Darkvision snippet",
+    ]);
+    expect(out).not.toContain("hidden");
+  });
+
+  it("age (only the High Elf has it): Age [2014], no footer", async () => {
+    const out = await reference.searchRacialTraits({ name: "age" });
+    expect(entryLines(out)).toEqual(["- **Age** [2014] *(High Elf — subrace of Elf)* — Age snippet"]);
+    expect(out).not.toContain("hidden");
+  });
+
+  it("goblin: one Fury of the Small line naming the chosen book and the other, no rename line", async () => {
+    const out = await reference.searchRacialTraits({ raceName: "goblin" });
+    expect(entryLines(out)).toEqual([
+      "- **Fury of the Small** [2014] · Mordenkainen Presents: Monsters of the Multiverse [motm] (also in Volo's Guide to Monsters [vgtm] — pass source to choose) *(Goblin)* — Fury of the Small snippet",
+    ]);
+    expect(out).not.toContain("2014 name");
+    expect(out).not.toContain("hidden");
+  });
+
+  it("source vgtm lists the Volo's Goblin's trait, tagged", async () => {
+    const out = await reference.searchRacialTraits({ raceName: "goblin", source: "vgtm" });
+    expect(out.split("\n")[0]).toBe("Rules: showing every entry in Volo's Guide to Monsters, each tagged with its edition.");
+    expect(entryLines(out)).toEqual(["- **Fury of the Small** [2014] *(Goblin)* — Fury of the Small snippet"]);
   });
 });
