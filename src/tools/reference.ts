@@ -21,11 +21,15 @@ import { TtlCache } from "../cache.js";
 import { stripHtml } from "../utils.js";
 import {
   twinName, classifyEdition, selectByEdition, definitionTiebreak, isEdition,
-  lookupByName, groupAndSelect, normalizeName, rulesLine, renameLine, editionTag,
-  searchHeader, searchFooter,
-  type RulesEdition, type EditionInfo, type SelectionReason,
+  normalizeName, searchFooter,
+  type RulesEdition,
 } from "../edition.js";
 import { peekSourceIndex, getSourceIndex } from "../game-config.js";
+import { resolveSource, unknownSourceError, withSourceCaveat, GENERIC_SOURCE_HINT, type ResolvedSource } from "../source-filter.js";
+import {
+  paginateResults, renderSection, plainSection, selectCatalog, lookupCatalog,
+  type CatalogAdapter, type SearchSection,
+} from "./edition-search.js";
 import { createSpellStore, addSpells, spellList, type DdbSpell, type SpellStore } from "./spell-store.js";
 import {
   buildClassFeatures, filterClassFeatures, formatClassFeatureLine,
@@ -86,6 +90,18 @@ async function loadGameDataList<T>(cacheKey: string, path: string): Promise<T[]>
   if (!Array.isArray(list)) return [];
   if (list.length > 0) referenceCache.set(cacheKey, JSON.stringify(list));
   return list;
+}
+
+/**
+ * A tool's `source` param, resolved before any catalog request so an unknown
+ * book is reported even when D&D Beyond is down: undefined when none was
+ * given, the unknown-source message when it names no book. Without a source
+ * no index is fetched here, so the no-source path's requests are unchanged.
+ */
+async function resolveSourceParam(source: string | undefined): Promise<ResolvedSource | string | undefined> {
+  if (!source) return undefined;
+  const index = await getSourceIndex();
+  return resolveSource(index, source) ?? unknownSourceError(index, source, GENERIC_SOURCE_HINT);
 }
 
 // ── HTML strip — imported from src/utils.ts ───────────────────────────────────
@@ -487,10 +503,8 @@ export function isConcentrationSpell(def: Record<string, unknown>): boolean | nu
   return null;
 }
 
-function formatSpell(
-  spell: DdbSpell,
-  edition: { info: EditionInfo; reason?: SelectionReason; renamed?: { name2014: string; name2024: string } },
-): string {
+/** `rulesLines` (from lookupCatalog) go directly under the title. */
+function formatSpell(spell: DdbSpell, rulesLines: string[]): string {
   const d = spell.definition;
   const ACTIVATION_TYPES: Record<number, string> = {
     1: "Action", 3: "Bonus Action", 6: "Reaction",
@@ -529,8 +543,7 @@ function formatSpell(
 
   const lines = [
     `**${d.name}** — ${levelLabel} ${d.school}${tagStr}`,
-    rulesLine(edition.info, { reason: edition.reason }),
-    ...(edition.renamed ? [renameLine(edition.renamed.name2014, edition.renamed.name2024)] : []),
+    ...rulesLines,
     `Casting Time: ${castingTime}`,
     `Range: ${range}`,
     `Components: ${components || "None"}${matNote}`,
@@ -541,7 +554,20 @@ function formatSpell(
   return lines.join("\n");
 }
 
-export async function searchSpells(params: {
+/** The spell catalog: classified by the definition, twinned by name, listed by level then name. */
+const SPELL_ADAPTER: CatalogAdapter<DdbSpell> & { name: (s: DdbSpell) => string } = {
+  markers: s => s.definition,
+  twinKey: s => twinName(s.definition.name),
+  tiebreak: (a, b) => definitionTiebreak(a.definition, b.definition),
+  compare: (a, b) => {
+    const da = a.definition, db = b.definition;
+    if (da.level !== db.level) return da.level - db.level;
+    return da.name.localeCompare(db.name);
+  },
+  name: s => s.definition.name,
+};
+
+export interface SpellSearchParams {
   name?: string;
   level?: number;
   school?: string;
@@ -550,7 +576,17 @@ export async function searchSpells(params: {
   limit?: number;
   offset?: number;
   rulesEdition?: RulesEdition;
-}): Promise<string> {
+  /** A book: slug, short name or title. Lists that book's spells of either edition. */
+  source?: string;
+}
+
+export async function searchSpells(params: SpellSearchParams): Promise<string> {
+  return renderSection(await searchSpellsSection(params));
+}
+
+export async function searchSpellsSection(params: SpellSearchParams): Promise<SearchSection> {
+  const source = await resolveSourceParam(params.source);
+  if (typeof source === "string") return plainSection(source);
   try {
     const requested = params.rulesEdition ?? "2024";
     const store = await loadSpellCompendium();
@@ -558,10 +594,8 @@ export async function searchSpells(params: {
     const nameQuery = params.name ? normalizeName(params.name) : "";
     const schoolQuery = params.school?.toLowerCase();
 
-    const { selected, hidden } = groupAndSelect(spellList(store), requested, {
-      info: s => classifyEdition(s.definition, index),
-      twinKey: s => twinName(s.definition.name),
-      tiebreak: (a, b) => definitionTiebreak(a.definition, b.definition),
+    const { hits, hidden, header, note } = selectCatalog(spellList(store), requested, {
+      ...SPELL_ADAPTER,
       nameMatches: nameQuery ? s => normalizeName(s.definition.name).includes(nameQuery) : undefined,
       passes: s => {
         const d = s.definition;
@@ -570,24 +604,16 @@ export async function searchSpells(params: {
           && (params.concentration === undefined || d.concentration === params.concentration)
           && (params.ritual === undefined || d.ritual === params.ritual);
       },
-    });
+    }, index, source);
 
-    selected.sort((a, b) => {
-      const da = a.entry.definition, db = b.entry.definition;
-      if (da.level !== db.level) return da.level - db.level;
-      return da.name.localeCompare(db.name);
-    });
-
-    const total = selected.length;
     const limit = params.limit ?? 20;
     const offset = params.offset ?? 0;
-    const page = selected.slice(offset, offset + limit);
-
-    if (page.length === 0) return "No spells found matching the criteria.";
-
-    const header = total > limit
-      ? `**Spell Search** — showing ${offset + 1}–${offset + page.length} of ${total}`
-      : `**Spell Search** (${total} found)`;
+    // An offset past the end is "none found" too, not an empty heading.
+    if (hits.slice(offset, offset + limit).length === 0) {
+      return plainSection(source
+        ? `No spells found matching the criteria in ${source.book}.`
+        : "No spells found matching the criteria.");
+    }
 
     // When the compendium build was incomplete (one or more class-list
     // requests failed), tell the caller so they can re-run `ddb_login` and
@@ -596,57 +622,51 @@ export async function searchSpells(params: {
       ? "\n> ⚠ Compendium build was incomplete — one or more class spell-list requests to D&D Beyond failed, so spells from those classes may be missing. If you've just re-logged in, run `ddb_clear_cache` to retry.\n"
       : "";
 
-    const lines = [searchHeader({ requested }), header + "\n" + provenanceNote];
-    for (const sel of page) {
-      const d = sel.entry.definition;
+    const results = paginateResults("Spell", hits, hit => {
+      const d = hit.entry.definition;
       const level = d.level === 0 ? "Cantrip" : `Level ${d.level}`;
       const tags: string[] = [];
       if (d.concentration) tags.push("Conc.");
       if (d.ritual) tags.push("Ritual");
       const tagStr = tags.length ? ` (${tags.join(", ")})` : "";
-      lines.push(`- **${d.name}** ${editionTag(sel.info)} — ${level} ${d.school}${tagStr}`);
-    }
-    if (total > offset + limit) {
-      lines.push(`\n*Use offset: ${offset + limit} to see more.*`);
-    }
-    const footer = searchFooter(requested, hidden);
-    if (footer) lines.push(footer);
-    return lines.join("\n");
+      return `- **${d.name}** ${hit.label} — ${level} ${d.school}${tagStr}`;
+    }, limit, offset, provenanceNote);
+    return {
+      header,
+      body: note ? `${note}\n${results}` : results,
+      footer: searchFooter(requested, hidden),
+      hidden,
+    };
   } catch (err) {
     try {
-      return await o5SearchSpells(params, "unavailable");
+      return plainSection(withSourceCaveat(await o5SearchSpells(params, "unavailable"), params.source));
     } catch {
       throw err;
     }
   }
 }
 
-export async function getSpell(spellName: string, rulesEdition: RulesEdition = "2024"): Promise<string> {
+export async function getSpell(spellName: string, rulesEdition: RulesEdition = "2024", source?: string): Promise<string> {
+  const resolved = await resolveSourceParam(source);
+  if (typeof resolved === "string") return resolved;
   try {
     const store = await loadSpellCompendium();
     const index = await getSourceIndex();
-
-    const found = lookupByName(spellList(store), spellName, rulesEdition, {
-      name: s => s.definition.name,
-      info: s => classifyEdition(s.definition, index),
-      tiebreak: (a, b) => definitionTiebreak(a.definition, b.definition),
-    });
+    const found = lookupCatalog(spellList(store), spellName, rulesEdition, SPELL_ADAPTER, index, resolved);
 
     if (!found) {
+      // A book the caller asked for is never swapped for SRD content.
+      if (resolved) return `Spell "${spellName}" not found in ${resolved.book}.`;
       const o5Result = await o5GetSpell(spellName, "not-found").catch(() => null);
       if (o5Result) return o5Result;
       return `Spell "${spellName}" not found in the compendium. Try ddb_search_spells with a partial name.`;
     }
 
-    return formatSpell(found.entry, {
-      info: classifyEdition(found.entry.definition, index),
-      reason: found.reason,
-      renamed: found.renamed,
-    });
+    return formatSpell(found.entry, found.rulesLines);
   } catch (err) {
     try {
       const o5Result = await o5GetSpell(spellName, "unavailable");
-      if (o5Result) return o5Result;
+      if (o5Result) return withSourceCaveat(o5Result, source);
     } catch {
       // fall through
     }
@@ -825,28 +845,6 @@ export async function getItem(itemName: string): Promise<string> {
 // ─────────────────────────────────────────────────────────────────────────────
 // COMPENDIUM TOOLS — races, classes, backgrounds, feats, features, traits
 // ─────────────────────────────────────────────────────────────────────────────
-
-function paginateResults<T>(
-  label: string,
-  items: T[],
-  format: (item: T) => string,
-  limit = 30,
-  offset = 0
-): string {
-  const total = items.length;
-  if (total === 0) return "";
-
-  const page = items.slice(offset, offset + limit);
-  const header = total > limit
-    ? `**${label} Search** — showing ${offset + 1}–${offset + page.length} of ${total}`
-    : `**${label} Search** (${total} found)`;
-
-  const lines = [header + "\n", ...page.map(format)];
-  if (total > offset + limit) {
-    lines.push(`\n*Use offset: ${offset + limit} to see more.*`);
-  }
-  return lines.join("\n");
-}
 
 // ── Races ─────────────────────────────────────────────────────────────────────
 

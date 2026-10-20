@@ -33,6 +33,8 @@ export const server = new McpServer(
 // not treat them as a security boundary.
 /** Shared by every tool that can return either rules edition. */
 const RULES_EDITION_PARAM = z.enum(["2024", "2014"]).default("2024").describe("Ruleset: '2024' (default) or '2014'.");
+/** Shared by every catalog tool that takes a book filter (monsters keep their own wording). */
+const SOURCE_PARAM = z.string().optional().describe("Book: slug (phb-2024), short name or title. Lists or picks that book's version, of either edition; wins over rules_edition.");
 
 const READ_ONLY_NET: ToolAnnotations = { readOnlyHint: true, openWorldHint: true };
 const READ_ONLY_LOCAL: ToolAnnotations = { readOnlyHint: true, openWorldHint: false };
@@ -621,7 +623,7 @@ server.tool(
 
 server.tool(
   "ddb_search_spells",
-  "Search the full D&D Beyond spell compendium by name, level, school, concentration, or ritual. First call builds the compendium (slow); subsequent calls are instant. Requires login. " + RULES_EDITION_TOOL_NOTE,
+  "Search the full D&D Beyond spell compendium by name, level, school, concentration, or ritual. First call builds the compendium (slow); subsequent calls are instant. Requires login. A source picks one book's version and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().optional().describe("Partial spell name (e.g. 'fire' finds Fireball, Fire Storm, etc.)"),
     level: z.number().int().min(0).max(9).optional().describe("Spell level (0 = cantrip)"),
@@ -631,11 +633,12 @@ server.tool(
     limit: z.number().int().min(1).max(100).default(20).describe("Max results to return (default 20)"),
     offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
     rules_edition: RULES_EDITION_PARAM,
+    source: SOURCE_PARAM,
   },
   READ_ONLY_NET,
-  async ({ name, level, school, concentration, ritual, limit, offset, rules_edition }) => {
+  async ({ name, level, school, concentration, ritual, limit, offset, rules_edition, source }) => {
     try {
-      const result = await searchSpells({ name, level, school, concentration, ritual, limit, offset, rulesEdition: rules_edition });
+      const result = await searchSpells({ name, level, school, concentration, ritual, limit, offset, rulesEdition: rules_edition, source });
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -647,15 +650,16 @@ server.tool(
 
 server.tool(
   "ddb_get_spell",
-  "Get the full description of any spell in the D&D Beyond compendium by name. Not limited to a character's known spells. Requires login. " + RULES_EDITION_TOOL_NOTE,
+  "Get the full description of any spell in the D&D Beyond compendium by name. Not limited to a character's known spells. Requires login. A source picks one book's version and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().min(1).describe("Spell name (e.g. 'Fireball', 'Hunter\\'s Mark')"),
     rules_edition: RULES_EDITION_PARAM,
+    source: SOURCE_PARAM,
   },
   READ_ONLY_NET,
-  async ({ name, rules_edition }) => {
+  async ({ name, rules_edition, source }) => {
     try {
-      const result = await getSpell(name, rules_edition);
+      const result = await getSpell(name, rules_edition, source);
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

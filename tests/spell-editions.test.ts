@@ -55,6 +55,7 @@ function installBasics(extra: unknown[] = []) {
       "8": [
         spell("Sleep", 1, { id: 101, ...OLD, description: "SLEEP 2014" }),
         spell("Sleep", 1, { id: 201, ...NEW, description: "SLEEP 2024" }),
+        spell("Sleep", 1, { id: 400, isLegacy: true, sources: [27], description: "SLEEP XGTE" }),
         spell("Toll the Dead", 0, { id: 102, sources: [27] }),
         spell("Starry Wisp", 0, { id: 202, ...NEW }),
         spell("Acid Arrow", 2, { id: 103, ...OLD, description: "ACID 2014" }),
@@ -144,6 +145,68 @@ describe("ddb_search_spells rules_edition", () => {
     const out = await reference.searchSpells({ name: "page", limit: 20 });
     expect(out).toContain("showing 1–20 of 25");
     expect(out.split("\n").at(-1)).toBe('25 2014 versions hidden — rules_edition: "2014" shows them.');
+  });
+});
+
+describe("source on the spell tools", () => {
+  it("a same-edition duplicate in another book adds an also-in line", async () => {
+    installBasics();
+    const { getSourceIndex } = await import("../src/game-config.js");
+    const index = await getSourceIndex();
+    const { sourceLabel } = await import("../src/source-filter.js");
+    const lines = (await reference.getSpell("Sleep", "2014")).split("\n");
+    expect(lines[1]).toBe("Rules: 2014 · Player's Handbook (2014)");
+    expect(lines[2]).toBe(`(also in ${sourceLabel(index, 27)} — pass source to choose)`);
+    expect(lines.join("\n")).toContain("SLEEP 2014");
+  });
+
+  it("get with a source of the other edition shows that book's version with a note", async () => {
+    installBasics();
+    const lines = (await reference.getSpell("Sleep", "2024", "phb-2014")).split("\n");
+    expect(lines[1]).toBe("Rules: 2014 · Player's Handbook (2014)");
+    expect(lines[2]).toBe('(source "phb-2014" is a 2014 book — rules_edition "2024" was ignored)');
+    expect(lines.join("\n")).toContain("SLEEP 2014");
+  });
+
+  it("search with a source lists the book's entries, tagged, with no hidden footer", async () => {
+    installBasics();
+    const lines = (await reference.searchSpells({ source: "phb-2024" })).split("\n");
+    expect(lines[0]).toBe("Rules: showing every entry in Player's Handbook (2024), each tagged with its edition.");
+    const results = lines.filter(l => l.startsWith("- **"));
+    expect(results.length).toBe(4);
+    expect(results.every(l => l.includes("** [2024] — "))).toBe(true);
+    expect(lines.some(l => l.includes("hidden"))).toBe(false);
+  });
+
+  it("an unknown source is an error, for search and get", async () => {
+    installBasics();
+    expect(await reference.searchSpells({ source: "nope" })).toContain('Unknown source "nope"');
+    expect(await reference.getSpell("Sleep", "2024", "nope")).toContain('Unknown source "nope"');
+  });
+
+  it("an empty result in a book says so and never asks Open5e", async () => {
+    installBasics();
+    expect(await reference.searchSpells({ name: "zzz", source: "phb-2024" }))
+      .toBe("No spells found matching the criteria in Player's Handbook (2024).");
+    expect(await reference.getSpell("Zzz", "2024", "phb-2024")).toBe('Spell "Zzz" not found in Player\'s Handbook (2024).');
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("open5e"))).toBe(false);
+  });
+
+  it("a load failure still falls back to Open5e, with the source caveat", async () => {
+    // 403, not 500: a 5xx is retried with backoff, which only slows the test down.
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.startsWith(GAME_DATA)) return jsonResponse({}, 403);
+      if (url.includes("open5e")) {
+        return jsonResponse({ count: 1, results: [{
+          name: "Fireball", level_int: 3, school: "Evocation", casting_time: "1 action", range: "150 feet",
+          components: "V, S, M", duration: "Instantaneous", requires_concentration: false, ritual: "no", desc: "Boom.",
+        }] });
+      }
+      return serviceMock({})(url);
+    });
+    const out = await reference.searchSpells({ name: "fireball", source: "phb-2024" });
+    expect(out).toContain("Fireball");
+    expect(out.endsWith('*Note: source filtering is not available via the Open5e SRD fallback — "phb-2024" was requested but could not be honoured.*')).toBe(true);
   });
 });
 
