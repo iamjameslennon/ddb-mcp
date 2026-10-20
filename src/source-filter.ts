@@ -3,7 +3,9 @@
  * filtering entries by it. Pure: shared by every tool that takes `source`.
  */
 
-import { stripHtml } from "./utils.js";
+import { stripHtmlRich as stripHtml } from "./utils.js";
+import { entrySourceIds } from "./edition.js";
+export { entrySourceIds };
 import type { EditionMarkers, IndexedSource, SourceIndex } from "./edition.js";
 
 /** Loosely normalize a source string for comparison — case- and punctuation-insensitive. */
@@ -80,15 +82,6 @@ export function resolveSource(index: SourceIndex, query: string): ResolvedSource
   const ids = resolveSourceIds(index, query);
   if (!ids.length) return null;
   return { query, ids, book: index.sources.get(Math.min(...ids))!.book };
-}
-
-/** Every source id an entry names: its own `sourceId` (when numeric) plus each of its `sources`. */
-export function entrySourceIds(entry: EditionMarkers): number[] {
-  const ids: number[] = [];
-  for (const id of [entry.sourceId, ...(entry.sources ?? []).map(s => s?.sourceId)]) {
-    if (typeof id === "number" && !ids.includes(id)) ids.push(id);
-  }
-  return ids;
 }
 
 /** Whether any of the entry's sources is one of `ids` (a reprint counts). */

@@ -25,7 +25,7 @@ import {
   resolveSourceIds, sourceLabel, sourceSlug, unknownSourceError, withSourceCaveat,
 } from "../source-filter.js";
 import { TtlCache } from "../cache.js";
-import { wrapUntrusted } from "../utils.js";
+import { wrapUntrusted, stripHtmlRich } from "../utils.js";
 import { o5SearchMonsters, o5GetMonster, o5GetMonsterStats } from "../open5e.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -62,41 +62,6 @@ onSessionInvalidated(() => {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const NAMED_ENTITIES: Record<string, string> = {
-  nbsp: " ", amp: "&", lt: "<", gt: ">", quot: '"', apos: "'",
-  ndash: "–", mdash: "—", lsquo: "‘", rsquo: "’", ldquo: "“", rdquo: "”",
-  hellip: "…", times: "×", minus: "−",
-};
-
-/**
- * Decode HTML entities in one pass (so "&amp;#160;" stays "&#160;"). DDB stat
- * blocks use numeric entities such as "&#160;" — non-breaking spaces become
- * plain spaces. Unknown named entities are left as-is.
- */
-function decodeEntities(s: string): string {
-  return s
-    .replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (match, ref: string) => {
-      if (ref[0] !== "#") return NAMED_ENTITIES[ref.toLowerCase()] ?? match;
-      const code = ref[1] === "x" || ref[1] === "X" ? parseInt(ref.slice(2), 16) : parseInt(ref.slice(1), 10);
-      return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
-    })
-    .replace(/\u00a0/g, " ");
-}
-
-function stripHtml(html: string | null | undefined): string {
-  if (!html) return "";
-  return decodeEntities(html
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<\/li>/gi, "\n")
-    .replace(/<li>/gi, "• ")
-    // [^<>] rather than [^>]: a scan stops at the next "<", so a run of
-    // unterminated "<" in homebrew text stays linear instead of quadratic.
-    .replace(/<[^<>]+>/g, ""))
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
 /**
  * Stat-block prose (traits, actions, reactions…): like stripHtml, but keeps
  * DDB's <strong> feature names ("Bite.", "Multiattack.") as Markdown bold.
@@ -106,7 +71,7 @@ function stripHtml(html: string | null | undefined): string {
  */
 function statBlockText(html: string | null | undefined): string {
   if (!html) return "";
-  return stripHtml(html.replace(/<(strong|b)\b[^<>]*>((?:(?!<\/?\1\b)[\s\S])*)<\/\1>/gi,
+  return stripHtmlRich(html.replace(/<(strong|b)\b[^<>]*>((?:(?!<\/?\1\b)[\s\S])*)<\/\1>/gi,
     (_m, _tag, inner: string) => boldInner(inner)));
 }
 
@@ -155,7 +120,7 @@ function namedCandidates(candidates: DdbMonster[], name: string, allowFuzzy = tr
  */
 function sizeName(config: GameConfig | null, sizeId: number): string | undefined {
   const name = config?.creatureSizes?.find(s => s.id === sizeId)?.name ?? SIZE_MAP[sizeId];
-  return name ? stripHtml(name) : undefined;
+  return name ? stripHtmlRich(name) : undefined;
 }
 
 /**
@@ -166,15 +131,15 @@ function sizeName(config: GameConfig | null, sizeId: number): string | undefined
  * can't speak"), on others a repeat of languageDescription, which is dropped.
  */
 function languagesLine(m: DdbMonster, config: GameConfig | null): string {
-  const description = stripHtml(m.languageDescription);
+  const description = stripHtmlRich(m.languageDescription);
   const listed = description || (m.languages ?? [])
     .map(l => {
-      const name = stripHtml(config?.languages?.find(c => c.id === l.languageId)?.name) || `Language #${l.languageId}`;
-      const notes = stripHtml(l.notes);
+      const name = stripHtmlRich(config?.languages?.find(c => c.id === l.languageId)?.name) || `Language #${l.languageId}`;
+      const notes = stripHtmlRich(l.notes);
       return notes ? `${name} ${notes}` : name;
     })
     .join(", ");
-  const note = stripHtml(m.languageNote);
+  const note = stripHtmlRich(m.languageNote);
   const extra = note && note.toLowerCase() !== listed.toLowerCase() ? note : "";
   return [listed, extra].filter(Boolean).join(", ");
 }
@@ -442,7 +407,7 @@ function formatStatBlock(
   }
 
   if (m.skillsHtml) {
-    lines.push(`**Skills** ${stripHtml(m.skillsHtml)}`);
+    lines.push(`**Skills** ${stripHtmlRich(m.skillsHtml)}`);
   }
 
   if (m.senses?.length) {

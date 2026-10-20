@@ -31,3 +31,39 @@ export function stripHtml(s: string | null | undefined): string {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
+
+const NAMED_ENTITIES: Record<string, string> = {
+  nbsp: " ", amp: "&", lt: "<", gt: ">", quot: '"', apos: "'",
+  ndash: "–", mdash: "—", lsquo: "‘", rsquo: "’", ldquo: "“", rdquo: "”",
+  hellip: "…", times: "×", minus: "−",
+};
+
+/**
+ * Decode HTML entities in one pass (so "&amp;#160;" stays "&#160;"). DDB stat
+ * blocks use numeric entities such as "&#160;" — non-breaking spaces become
+ * plain spaces. Unknown named entities are left as-is.
+ */
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (match, ref: string) => {
+      if (ref[0] !== "#") return NAMED_ENTITIES[ref.toLowerCase()] ?? match;
+      const code = ref[1] === "x" || ref[1] === "X" ? parseInt(ref.slice(2), 16) : parseInt(ref.slice(1), 10);
+      return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
+    })
+    .replace(/\u00a0/g, " ");
+}
+
+/** Like stripHtml, but decodes named/hex entities and keeps line breaks and list bullets (monster stat blocks, source titles). */
+export function stripHtmlRich(html: string | null | undefined): string {
+  if (!html) return "";
+  return decodeEntities(html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<li>/gi, "• ")
+    // [^<>] rather than [^>]: a scan stops at the next "<", so a run of
+    // unterminated "<" in homebrew text stays linear instead of quadratic.
+    .replace(/<[^<>]+>/g, ""))
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}

@@ -154,6 +154,15 @@ export function classifyEdition(entry: EditionMarkers, index: SourceIndex): Edit
   return { ruleset, book: book?.s.book ?? null };
 }
 
+/** Every source id an entry names: its own `sourceId` (when numeric) plus each of its `sources`, deduped. */
+export function entrySourceIds(entry: EditionMarkers): number[] {
+  const ids: number[] = [];
+  for (const id of [entry.sourceId, ...(entry.sources ?? []).map(s => s?.sourceId)]) {
+    if (typeof id === "number" && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
 /** The id of the source whose book `classifyEdition` reports; null exactly when its `book` is null. */
 export function editionSourceId(entry: EditionMarkers, index: SourceIndex): number | null {
   return classifyWithSource(entry, index).book?.id ?? null;
@@ -166,10 +175,7 @@ function classifyWithSource(
 ): { ruleset: Ruleset; book: { id: number; s: IndexedSource } | null } {
   if (entry.isHomebrew === true) return { ruleset: "homebrew", book: null };
 
-  const ids: number[] = [];
-  for (const id of [entry.sourceId, ...(entry.sources ?? []).map(s => s?.sourceId)]) {
-    if (typeof id === "number" && !ids.includes(id)) ids.push(id);
-  }
+  const ids = entrySourceIds(entry);
   const known: Array<{ id: number; s: IndexedSource }> = [];
   for (const id of ids) {
     const s = index.sources.get(id);

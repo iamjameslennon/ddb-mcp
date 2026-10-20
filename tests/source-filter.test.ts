@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildSourceIndex } from "../src/edition.js";
 import {
-  resolveSource, inSources, entrySourceIds, unknownSourceError, GENERIC_SOURCE_HINT,
+  resolveSource, sourceLabel, inSources, entrySourceIds, unknownSourceError, GENERIC_SOURCE_HINT,
 } from "../src/source-filter.js";
 
 const index = buildSourceIndex(
@@ -29,6 +29,17 @@ describe("resolveSource", () => {
   });
 });
 
+describe("named entities in source descriptions", () => {
+  const idx = buildSourceIndex(
+    [{ id: 7, name: "DMG", description: "Dungeon Master&rsquo;s Guide", sourceURL: "sources/dnd/dmg-2014", sourceCategoryId: 1 }],
+    [{ id: 1, name: "Core Rules" }],
+  );
+  it("resolves a title written with a named entity and labels it decoded", () => {
+    expect(resolveSource(idx, "Dungeon Master’s Guide")?.ids).toEqual([7]);
+    expect(sourceLabel(idx, 7)).toBe("Dungeon Master’s Guide [dmg-2014]");
+  });
+});
+
 describe("entry sources", () => {
   it("inSources matches any of the entry's sources", () => {
     expect(inSources({ sources: [{ sourceId: 148 }, { sourceId: 1 }] }, [1])).toBe(true);
@@ -43,6 +54,7 @@ describe("unknownSourceError", () => {
   it("keeps the monster sentence by default and swaps in a hint", () => {
     expect(unknownSourceError(index, "zzz")).toContain("ddb_search_monsters results");
     const generic = unknownSourceError(index, "zzz", GENERIC_SOURCE_HINT);
+    expect(GENERIC_SOURCE_HINT).toBe("Pass a book's short code or title, e.g. phb-2024, xgte or \"Player's Handbook\".");
     expect(generic.endsWith(GENERIC_SOURCE_HINT)).toBe(true);
     expect(generic).not.toContain("monsters");
   });
