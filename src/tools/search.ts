@@ -46,8 +46,8 @@ async function runCategory(category: SpecificCategory, query: string): Promise<s
     case "spells":   return searchSpells({ name: query, limit: 10 });
     case "monsters": return searchMonsters({ name: query });
     case "items":    return searchItems({ name: query });
-    case "races":    return searchRaces(query, 10, 0);
-    case "classes":  return searchClasses(query, 10, 0);
+    case "races":    return searchRaces({ name: query, limit: 10, offset: 0 });
+    case "classes":  return searchClasses({ name: query, limit: 10, offset: 0 });
     case "feats":    return searchFeats({ name: query, limit: 10, offset: 0 });
   }
 }

@@ -717,16 +717,18 @@ server.tool(
 
 server.tool(
   "ddb_search_races",
-  "Search all D&D Beyond races and subraces (including homebrew). Not character-specific. Requires login — run ddb_login first if you haven't already.",
+  "Search all D&D Beyond races and subraces (including homebrew). Not character-specific. Requires login — run ddb_login first if you haven't already. A source lists one book's entries and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().optional().describe("Partial race name (e.g. 'elf', 'tiefling')"),
     limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
     offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
+    rules_edition: RULES_EDITION_PARAM,
+    source: SOURCE_PARAM,
   },
   READ_ONLY_NET,
-  async ({ name, limit, offset }) => {
+  async ({ name, limit, offset, rules_edition, source }) => {
     try {
-      const result = await searchRaces(name, limit, offset);
+      const result = await searchRaces({ name, limit, offset, rulesEdition: rules_edition, source });
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -738,16 +740,18 @@ server.tool(
 
 server.tool(
   "ddb_search_classes",
-  "Search all D&D Beyond classes with hit die, spellcasting, and subclasses. Requires login — run ddb_login first if you haven't already.",
+  "Search all D&D Beyond classes with hit die and spellcasting. Requires login — run ddb_login first if you haven't already. A source lists one book's entries and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().optional().describe("Partial class name (e.g. 'fighter', 'wizard')"),
     limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
     offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
+    rules_edition: RULES_EDITION_PARAM,
+    source: SOURCE_PARAM,
   },
   READ_ONLY_NET,
-  async ({ name, limit, offset }) => {
+  async ({ name, limit, offset, rules_edition, source }) => {
     try {
-      const result = await searchClasses(name, limit, offset);
+      const result = await searchClasses({ name, limit, offset, rulesEdition: rules_edition, source });
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -759,16 +763,18 @@ server.tool(
 
 server.tool(
   "ddb_search_backgrounds",
-  "Search all D&D Beyond backgrounds (including homebrew). Requires login — run ddb_login first if you haven't already.",
+  "Search all D&D Beyond backgrounds (including homebrew). Requires login — run ddb_login first if you haven't already. A source lists one book's entries and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().optional().describe("Partial background name (e.g. 'sage', 'criminal')"),
     limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
     offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
+    rules_edition: RULES_EDITION_PARAM,
+    source: SOURCE_PARAM,
   },
   READ_ONLY_NET,
-  async ({ name, limit, offset }) => {
+  async ({ name, limit, offset, rules_edition, source }) => {
     try {
-      const result = await searchBackgrounds(name, limit, offset);
+      const result = await searchBackgrounds({ name, limit, offset, rulesEdition: rules_edition, source });
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -780,17 +786,19 @@ server.tool(
 
 server.tool(
   "ddb_search_feats",
-  "Search feats by name or prerequisite text. Requires login — run ddb_login first if you haven't already.",
+  "Search feats by name or prerequisite text. Requires login — run ddb_login first if you haven't already. A source lists one book's entries and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().optional().describe("Partial feat name (e.g. 'sharpshooter', 'magic')"),
     prerequisite: z.string().optional().describe("Filter by prerequisite text (e.g. 'spellcaster', 'level 4')"),
     limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
     offset: z.number().int().min(0).default(0).describe("Skip N results for pagination"),
+    rules_edition: RULES_EDITION_PARAM,
+    source: SOURCE_PARAM,
   },
   READ_ONLY_NET,
-  async ({ name, prerequisite, limit, offset }) => {
+  async ({ name, prerequisite, limit, offset, rules_edition, source }) => {
     try {
-      const result = await searchFeats({ name, prerequisite, limit, offset });
+      const result = await searchFeats({ name, prerequisite, limit, offset, rulesEdition: rules_edition, source });
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

@@ -105,19 +105,21 @@ afterEach(() => {
 });
 
 const EXPECTED = {
-  classesAll: "**Class Search** (2 found)\n\n- **Fighter** — Hit Die: d10\n  Fighter description\n- **Fighter** — Hit Die: d10\n  Fighter description — long placeholder text, padded past the 120-character cut-off so the truncation path is exercised i...",
+  // The shared fixture's 2014 Fighter (id 10) and 2024 Fighter are one twin group: the 2024 line, one hidden.
+  classesAll: "Rules: 2024 by default — 2014 entries appear only where no 2024 version was found. Use rules_edition: \"2014\" for 2014 versions.\n**Class Search** (1 found)\n\n- **Fighter** [2024] — Hit Die: d10\n  Fighter description — long placeholder text, padded past the 120-character cut-off so the truncation path is exercised i...\n1 2014 version hidden — rules_edition: \"2014\" shows it.",
   // Equals classesAll: both fixture classes are named "Fighter", so "fight" matches both.
-  classesFight: "**Class Search** (2 found)\n\n- **Fighter** — Hit Die: d10\n  Fighter description\n- **Fighter** — Hit Die: d10\n  Fighter description — long placeholder text, padded past the 120-character cut-off so the truncation path is exercised i...",
-  racesAll: "**Race Search** (7 found)\n\n- **Elf** — Elf description\n- **Goliath** — Goliath description — long placeholder text, padded past the 120-character cut-off so the truncation...\n- **High Elf** *(Subrace, Legacy)* — High Elf description\n- **Human** *(Legacy)* — Human description\n- **Tiefling** — Tiefling description\n- **Tiefling** *(Subrace, Homebrew)* — Tiefling description\n- **Wood Elf** *(Subrace, Legacy)* — Wood Elf description",
-  racesElf: "**Race Search** (3 found)\n\n- **Elf** — Elf description\n- **High Elf** *(Subrace, Legacy)* — High Elf description\n- **Wood Elf** *(Subrace, Legacy)* — Wood Elf description",
+  classesFight: "Rules: 2024 by default — 2014 entries appear only where no 2024 version was found. Use rules_edition: \"2014\" for 2014 versions.\n**Class Search** (1 found)\n\n- **Fighter** [2024] — Hit Die: d10\n  Fighter description — long placeholder text, padded past the 120-character cut-off so the truncation path is exercised i...\n1 2014 version hidden — rules_edition: \"2014\" shows it.",
+  // The 2024 Elf hides the 2014 High Elf and Wood Elf (base-race grouping); Human has only a 2014 entry.
+  racesAll: "Rules: 2024 by default — 2014 entries appear only where no 2024 version was found. Use rules_edition: \"2014\" for 2014 versions.\n**Race Search** (5 found)\n\n- **Elf** [2024] — Elf description\n- **Goliath** [2024] — Goliath description — long placeholder text, padded past the 120-character cut-off so the truncation...\n- **Human** [2014] — Human description\n- **Tiefling** [homebrew] *(Subrace)* — Tiefling description\n- **Tiefling** [2024] — Tiefling description\n2 2014 versions hidden — rules_edition: \"2014\" shows them.",
+  racesElf: "Rules: 2024 by default — 2014 entries appear only where no 2024 version was found. Use rules_edition: \"2014\" for 2014 versions.\n**Race Search** (1 found)\n\n- **Elf** [2024] — Elf description\n2 2014 versions hidden — rules_edition: \"2014\" shows them.",
 };
 
 describe("searchClasses / searchRaces output (characterization)", () => {
   beforeEach(() => { fetchMock.mockImplementation(serviceMock()); });
   it("classes, unfiltered", async () => { expect(await reference.searchClasses()).toBe(EXPECTED.classesAll); });
-  it("classes, name filter", async () => { expect(await reference.searchClasses("fight")).toBe(EXPECTED.classesFight); });
+  it("classes, name filter", async () => { expect(await reference.searchClasses({ name: "fight" })).toBe(EXPECTED.classesFight); });
   it("races, unfiltered", async () => { expect(await reference.searchRaces()).toBe(EXPECTED.racesAll); });
-  it("races, name filter", async () => { expect(await reference.searchRaces("elf")).toBe(EXPECTED.racesElf); });
+  it("races, name filter", async () => { expect(await reference.searchRaces({ name: "elf" })).toBe(EXPECTED.racesElf); });
 });
 
 describe("shared game-data list loader", () => {

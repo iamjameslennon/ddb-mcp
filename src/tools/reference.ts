@@ -882,6 +882,88 @@ export async function getItem(itemName: string, rulesEdition: RulesEdition = "20
 // COMPENDIUM TOOLS — races, classes, backgrounds, feats, features, traits
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── Shared option-list search ─────────────────────────────────────────────────
+
+interface OptionSearchParams {
+  name?: string;
+  limit?: number;
+  offset?: number;
+  rulesEdition?: RulesEdition;
+  /** A book: slug, short name or title. Lists that book's entries of either edition. */
+  source?: string;
+}
+
+/**
+ * Species, classes, backgrounds and feats share one search: load the game-data
+ * list, choose editions through selectCatalog, then page and render. `plural`
+ * and `heading` name the entries in messages; `fallback` is the Open5e search.
+ */
+async function searchOptionList<T>(
+  params: OptionSearchParams,
+  spec: {
+    cacheKey: string;
+    path: string;
+    plural: string;
+    heading: string;
+    defaultLimit: number;
+    adapter: CatalogAdapter<T>;
+    /** Entries dropped before selection. */
+    usable?: (t: T) => boolean;
+    passes?: (t: T) => boolean;
+    format: (hit: { entry: T; label: string }) => string;
+    /** The text for "no match" (Open5e fallback first). */
+    notFound: string;
+    fallback: (kind: "not-found" | "unavailable") => Promise<string>;
+  },
+): Promise<SearchSection> {
+  const source = await resolveSourceParam(params.source);
+  if (typeof source === "string") return plainSection(source);
+  const requested = params.rulesEdition ?? "2024";
+
+  let selection;
+  try {
+    const loaded = await loadGameDataList<T>(spec.cacheKey, spec.path);
+    const all = spec.usable ? loaded.filter(spec.usable) : loaded;
+    const index = await getSourceIndex();
+    selection = selectCatalog(all, requested, {
+      ...spec.adapter,
+      passes: spec.passes,
+    }, index, source);
+  } catch {
+    return plainSection(withSourceCaveat(
+      await spec.fallback("unavailable").catch(
+        () => `${spec.plural[0].toUpperCase()}${spec.plural.slice(1)} unavailable — DnD Beyond and Open5e both failed.`
+      ),
+      params.source,
+    ));
+  }
+
+  const { hits, hidden, header, note } = selection;
+  if (hits.length === 0) {
+    if (source) return plainSection(`No ${spec.plural} found matching the criteria in ${source.book}.`);
+    return plainSection(await spec.fallback("not-found").catch(() => spec.notFound));
+  }
+
+  const results = paginateResults(spec.heading, hits, spec.format, params.limit ?? spec.defaultLimit, params.offset ?? 0);
+  return {
+    header,
+    body: note ? `${note}\n${results}` : results,
+    footer: searchFooter(requested, hidden),
+    hidden,
+  };
+}
+
+/** `nameMatches` for an adapter: the display name contains the query; none without a query. */
+function nameFilter<T>(name: string | undefined, displayName: (t: T) => string): ((t: T) => boolean) | undefined {
+  const query = name ? normalizeName(name) : "";
+  return query ? t => normalizeName(displayName(t)).includes(query) : undefined;
+}
+
+function clip(text: string | null | undefined, max: number): string {
+  const desc = stripHtml(text || "").slice(0, max);
+  return desc ? `${desc}${desc.length >= max ? "..." : ""}` : "";
+}
+
 // ── Races ─────────────────────────────────────────────────────────────────────
 
 interface DdbRace {
@@ -898,45 +980,46 @@ interface DdbRace {
   sources: Array<{ sourceId: number }>;
 }
 
-export async function searchRaces(name?: string, limit?: number, offset?: number): Promise<string> {
-  try {
-    const races = await loadGameDataList<DdbRace>("game-data:races", "races");
+const raceName = (r: DdbRace) => r.fullName || r.baseName;
 
-    let matched = races.filter(r => r.fullName || r.baseName);
+/**
+ * The species catalog: classified by the race, twinned by name, and edition-
+ * grouped by base race (nested mode), so the 2024 Elf replaces the 2014 High
+ * Elf and Wood Elf by default.
+ */
+const RACE_ADAPTER: CatalogAdapter<DdbRace> = {
+  markers: r => r,
+  twinKey: r => twinName(raceName(r)),
+  groupKey: r => twinName(r.baseRaceName || r.baseName || raceName(r)),
+  tiebreak: (a, b) => definitionTiebreak(
+    { id: a.entityRaceId, isHomebrew: a.isHomebrew, isLegacy: a.isLegacy },
+    { id: b.entityRaceId, isHomebrew: b.isHomebrew, isLegacy: b.isLegacy },
+  ),
+  compare: (a, b) => raceName(a).localeCompare(raceName(b)),
+};
 
-    if (name) {
-      const q = name.toLowerCase();
-      matched = matched.filter(r => (r.fullName || r.baseName).toLowerCase().includes(q));
-    }
+export type RaceSearchParams = OptionSearchParams;
 
-    matched.sort((a, b) => (a.fullName || a.baseName).localeCompare(b.fullName || b.baseName));
+export async function searchRaces(params: RaceSearchParams = {}): Promise<string> {
+  return renderSection(await searchRacesSection(params));
+}
 
-    const result = paginateResults(
-      "Race",
-      matched,
-      race => {
-        const raceName = race.fullName || race.baseName;
-        const tags: string[] = [];
-        if (race.isSubRace) tags.push("Subrace");
-        if (race.isLegacy) tags.push("Legacy");
-        if (race.isHomebrew) tags.push("Homebrew");
-        const tagStr = tags.length ? ` *(${tags.join(", ")})*` : "";
-        const desc = stripHtml(race.description || "").slice(0, 100);
-        return `- **${raceName}**${tagStr}${desc ? ` — ${desc}${desc.length >= 100 ? "..." : ""}` : ""}`;
-      },
-      limit ?? 30,
-      offset ?? 0,
-    );
-
-    if (!result) {
-      return await o5SearchRaces(name, "not-found").catch(() => `No races found matching "${name}".`);
-    }
-    return result;
-  } catch {
-    return await o5SearchRaces(name, "unavailable").catch(
-      () => "Races unavailable — DnD Beyond and Open5e both failed."
-    );
-  }
+export async function searchRacesSection(params: RaceSearchParams = {}): Promise<SearchSection> {
+  return searchOptionList<DdbRace>(params, {
+    cacheKey: "game-data:races",
+    path: "races",
+    plural: "races",
+    heading: "Race",
+    defaultLimit: 30,
+    adapter: { ...RACE_ADAPTER, nameMatches: nameFilter(params.name, raceName) },
+    usable: r => !!(r.fullName || r.baseName),
+    format: ({ entry: race, label }) => {
+      const desc = clip(race.description, 100);
+      return `- **${raceName(race)}** ${label}${race.isSubRace ? " *(Subrace)*" : ""}${desc ? ` — ${desc}` : ""}`;
+    },
+    notFound: `No races found matching "${params.name}".`,
+    fallback: kind => o5SearchRaces(params.name, kind),
+  });
 }
 
 // ── Classes ───────────────────────────────────────────────────────────────────
@@ -951,52 +1034,43 @@ interface DdbClass {
   description: string;
   hitDice: number;
   isHomebrew: boolean;
+  isLegacy?: boolean;
   spellCastingAbilityId: number | null;
-  subclasses?: Array<{ id: number; name: string; description: string }>;
   sources: Array<{ sourceId: number }>;
 }
 
-export async function searchClasses(name?: string, limit?: number, offset?: number): Promise<string> {
-  try {
-    const classes = await loadGameDataList<DdbClass>("game-data:classes", "classes");
+const CLASS_ADAPTER: CatalogAdapter<DdbClass> = {
+  markers: c => c,
+  twinKey: c => twinName(c.name),
+  tiebreak: definitionTiebreak,
+  compare: (a, b) => a.name.localeCompare(b.name),
+};
 
-    let matched = classes;
+export type ClassSearchParams = OptionSearchParams;
 
-    if (name) {
-      const q = name.toLowerCase();
-      matched = matched.filter(c => c.name.toLowerCase().includes(q));
-    }
+export async function searchClasses(params: ClassSearchParams = {}): Promise<string> {
+  return renderSection(await searchClassesSection(params));
+}
 
-    matched.sort((a, b) => a.name.localeCompare(b.name));
-
-    const result = paginateResults(
-      "Class",
-      matched,
-      cls => {
-        const hitDie = cls.hitDice ? `d${cls.hitDice}` : "?";
-        const spellcasting = cls.spellCastingAbilityId
-          ? ` | Spellcasting: ${SPELLCASTING_ABILITY[cls.spellCastingAbilityId] ?? "Yes"}`
-          : "";
-        const homebrew = cls.isHomebrew ? " *(Homebrew)*" : "";
-        const subclasses = cls.subclasses?.length
-          ? `\n  Subclasses: ${cls.subclasses.map(s => s.name).join(", ")}`
-          : "";
-        const desc = stripHtml(cls.description || "").slice(0, 120);
-        return `- **${cls.name}**${homebrew} — Hit Die: ${hitDie}${spellcasting}${desc ? `\n  ${desc}${desc.length >= 120 ? "..." : ""}` : ""}${subclasses}`;
-      },
-      limit ?? 30,
-      offset ?? 0,
-    );
-
-    if (!result) {
-      return await o5SearchClasses(name, "not-found").catch(() => `No classes found matching "${name}".`);
-    }
-    return result;
-  } catch {
-    return await o5SearchClasses(name, "unavailable").catch(
-      () => "Classes unavailable — DnD Beyond and Open5e both failed."
-    );
-  }
+export async function searchClassesSection(params: ClassSearchParams = {}): Promise<SearchSection> {
+  return searchOptionList<DdbClass>(params, {
+    cacheKey: "game-data:classes",
+    path: "classes",
+    plural: "classes",
+    heading: "Class",
+    defaultLimit: 30,
+    adapter: { ...CLASS_ADAPTER, nameMatches: nameFilter(params.name, c => c.name) },
+    format: ({ entry: cls, label }) => {
+      const hitDie = cls.hitDice ? `d${cls.hitDice}` : "?";
+      const spellcasting = cls.spellCastingAbilityId
+        ? ` | Spellcasting: ${SPELLCASTING_ABILITY[cls.spellCastingAbilityId] ?? "Yes"}`
+        : "";
+      const desc = clip(cls.description, 120);
+      return `- **${cls.name}** ${label} — Hit Die: ${hitDie}${spellcasting}${desc ? `\n  ${desc}` : ""}`;
+    },
+    notFound: `No classes found matching "${params.name}".`,
+    fallback: kind => o5SearchClasses(params.name, kind),
+  });
 }
 
 // ── Backgrounds ───────────────────────────────────────────────────────────────
@@ -1006,55 +1080,38 @@ interface DdbBackground {
   name: string;
   description: string;
   isHomebrew: boolean;
+  isLegacy?: boolean;
   sources: Array<{ sourceId: number }>;
 }
 
-export async function searchBackgrounds(name?: string, limit?: number, offset?: number): Promise<string> {
-  try {
-    const cacheKey = "game-data:backgrounds";
-    const cached = referenceCache.get(cacheKey);
+const BACKGROUND_ADAPTER: CatalogAdapter<DdbBackground> = {
+  markers: b => b,
+  twinKey: b => twinName(b.name),
+  tiebreak: definitionTiebreak,
+  compare: (a, b) => a.name.localeCompare(b.name),
+};
 
-    let backgrounds: DdbBackground[];
-    if (cached) {
-      backgrounds = JSON.parse(cached) as DdbBackground[];
-    } else {
-      const resp = await refFetch(`${CHARACTER_SERVICE}/character/v5/game-data/backgrounds`);
-      if (!resp.ok) throw new Error(`Backgrounds fetch failed: ${resp.status} ${resp.statusText}`);
-      const json = await resp.json() as { data?: DdbBackground[] } | DdbBackground[];
-      backgrounds = (Array.isArray(json) ? json : json.data) ?? [];
-      referenceCache.set(cacheKey, JSON.stringify(backgrounds));
-    }
+export type BackgroundSearchParams = OptionSearchParams;
 
-    let matched = backgrounds;
+export async function searchBackgrounds(params: BackgroundSearchParams = {}): Promise<string> {
+  return renderSection(await searchBackgroundsSection(params));
+}
 
-    if (name) {
-      const q = name.toLowerCase();
-      matched = matched.filter(b => b.name.toLowerCase().includes(q));
-    }
-
-    matched.sort((a, b) => a.name.localeCompare(b.name));
-
-    const result = paginateResults(
-      "Background",
-      matched,
-      bg => {
-        const homebrew = bg.isHomebrew ? " *(Homebrew)*" : "";
-        const desc = stripHtml(bg.description || "").slice(0, 120);
-        return `- **${bg.name}**${homebrew}${desc ? ` — ${desc}${desc.length >= 120 ? "..." : ""}` : ""}`;
-      },
-      limit ?? 30,
-      offset ?? 0,
-    );
-
-    if (!result) {
-      return await o5SearchBackgrounds(name, "not-found").catch(() => `No backgrounds found matching "${name}".`);
-    }
-    return result;
-  } catch {
-    return await o5SearchBackgrounds(name, "unavailable").catch(
-      () => "Backgrounds unavailable — DnD Beyond and Open5e both failed."
-    );
-  }
+export async function searchBackgroundsSection(params: BackgroundSearchParams = {}): Promise<SearchSection> {
+  return searchOptionList<DdbBackground>(params, {
+    cacheKey: "game-data:backgrounds",
+    path: "backgrounds",
+    plural: "backgrounds",
+    heading: "Background",
+    defaultLimit: 30,
+    adapter: { ...BACKGROUND_ADAPTER, nameMatches: nameFilter(params.name, b => b.name) },
+    format: ({ entry: bg, label }) => {
+      const desc = clip(bg.description, 120);
+      return `- **${bg.name}** ${label}${desc ? ` — ${desc}` : ""}`;
+    },
+    notFound: `No backgrounds found matching "${params.name}".`,
+    fallback: kind => o5SearchBackgrounds(params.name, kind),
+  });
 }
 
 // ── Feats ─────────────────────────────────────────────────────────────────────
@@ -1066,66 +1123,41 @@ interface DdbFeat {
   snippet: string;
   prerequisite: string | null;
   isHomebrew: boolean;
+  isLegacy?: boolean;
   sources: Array<{ sourceId: number }>;
 }
 
-export async function searchFeats(params: {
-  name?: string;
-  prerequisite?: string;
-  limit?: number;
-  offset?: number;
-}): Promise<string> {
-  try {
-    const cacheKey = "game-data:feats";
-    const cached = referenceCache.get(cacheKey);
+const FEAT_ADAPTER: CatalogAdapter<DdbFeat> = {
+  markers: f => f,
+  twinKey: f => twinName(f.name),
+  tiebreak: definitionTiebreak,
+  compare: (a, b) => a.name.localeCompare(b.name),
+};
 
-    let feats: DdbFeat[];
-    if (cached) {
-      feats = JSON.parse(cached) as DdbFeat[];
-    } else {
-      const resp = await refFetch(`${CHARACTER_SERVICE}/character/v5/game-data/feats`);
-      if (!resp.ok) throw new Error(`Feats fetch failed: ${resp.status} ${resp.statusText}`);
-      const json = await resp.json() as { data?: DdbFeat[] } | DdbFeat[];
-      feats = (Array.isArray(json) ? json : json.data) ?? [];
-      referenceCache.set(cacheKey, JSON.stringify(feats));
-    }
+export interface FeatSearchParams extends OptionSearchParams { prerequisite?: string }
 
-    let matched = feats;
+export async function searchFeats(params: FeatSearchParams = {}): Promise<string> {
+  return renderSection(await searchFeatsSection(params));
+}
 
-    if (params.name) {
-      const q = params.name.toLowerCase();
-      matched = matched.filter(f => f.name.toLowerCase().includes(q));
-    }
-
-    if (params.prerequisite) {
-      const q = params.prerequisite.toLowerCase();
-      matched = matched.filter(f => f.prerequisite?.toLowerCase().includes(q));
-    }
-
-    matched.sort((a, b) => a.name.localeCompare(b.name));
-
-    const result = paginateResults(
-      "Feat",
-      matched,
-      feat => {
-        const prereq = feat.prerequisite ? ` *(Requires: ${feat.prerequisite})*` : "";
-        const homebrew = feat.isHomebrew ? " *(Homebrew)*" : "";
-        const desc = stripHtml(feat.snippet || feat.description || "").slice(0, 100);
-        return `- **${feat.name}**${homebrew}${prereq}${desc ? ` — ${desc}${desc.length >= 100 ? "..." : ""}` : ""}`;
-      },
-      params.limit ?? 30,
-      params.offset ?? 0,
-    );
-
-    if (!result) {
-      return await o5SearchFeats(params.name, "not-found").catch(() => "No feats found matching the search criteria.");
-    }
-    return result;
-  } catch {
-    return await o5SearchFeats(params.name, "unavailable").catch(
-      () => "Feats unavailable — DnD Beyond and Open5e both failed."
-    );
-  }
+export async function searchFeatsSection(params: FeatSearchParams = {}): Promise<SearchSection> {
+  const prereqQuery = params.prerequisite?.toLowerCase();
+  return searchOptionList<DdbFeat>(params, {
+    cacheKey: "game-data:feats",
+    path: "feats",
+    plural: "feats",
+    heading: "Feat",
+    defaultLimit: 30,
+    adapter: { ...FEAT_ADAPTER, nameMatches: nameFilter(params.name, f => f.name) },
+    passes: prereqQuery ? f => !!f.prerequisite?.toLowerCase().includes(prereqQuery) : undefined,
+    format: ({ entry: feat, label }) => {
+      const prereq = feat.prerequisite ? ` *(Requires: ${feat.prerequisite})*` : "";
+      const desc = clip(feat.snippet || feat.description, 100);
+      return `- **${feat.name}** ${label}${prereq}${desc ? ` — ${desc}` : ""}`;
+    },
+    notFound: "No feats found matching the search criteria.",
+    fallback: kind => o5SearchFeats(params.name, kind),
+  });
 }
 
 // ── Class Features and Racial Traits ─────────────────────────────────────────

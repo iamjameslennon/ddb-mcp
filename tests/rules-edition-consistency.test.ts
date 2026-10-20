@@ -54,6 +54,10 @@ const FIXTURES: Record<string, (ed: "2024" | "2014") => Record<string, unknown>>
   ddb_get_monster: ed => ({ name: "Goblin", rules_edition: ed }),
   ddb_search_equipment: ed => ({ name: "longsword", rules_edition: ed }),
   ddb_get_equipment: ed => ({ name: "Longsword", rules_edition: ed }),
+  ddb_search_races: ed => ({ name: "human", rules_edition: ed }),
+  ddb_search_classes: ed => ({ name: "fighter", rules_edition: ed }),
+  ddb_search_backgrounds: ed => ({ name: "acolyte", rules_edition: ed }),
+  ddb_search_feats: ed => ({ name: "alert", rules_edition: ed }),
   ddb_rate_encounter: ed => ({ party: [{ count: 4, level: 3 }], monsters: [{ name: "Goblin" }], rules_edition: ed }),
   ddb_encounter_cr: ed => ({ party: [{ count: 4, level: 3 }], difficulty: ed === "2024" ? "moderate" : "medium", rules_edition: ed }),
   ddb_roll_treasure: ed => ({ monsters: [{ name: "Goblin" }], treasure_type: "individual", rules_edition: ed }),
@@ -86,6 +90,10 @@ const EDITION_CHECK: Record<string, (ed: "2024" | "2014") => EditionCheck> = {
   ddb_search_spells: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
   ddb_search_monsters: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
   ddb_search_equipment: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
+  ddb_search_races: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
+  ddb_search_classes: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
+  ddb_search_backgrounds: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
+  ddb_search_feats: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
   ddb_rate_encounter: ed => ({ present: [dmgRulesLine(ed)] }),
   ddb_encounter_cr: ed => ({ present: [dmgRulesLine(ed)] }),
   ddb_roll_treasure: ed => (ed === "2014" ? { present: [TREASURE_NO_2014] } : { present: [], absent: [TREASURE_NO_2014] }),
@@ -146,6 +154,21 @@ const SPELLS = [
   spell("Fireball", 3, { id: 401, sources: [145], description: "FIREBALL 2024" }),
 ];
 
+// One entry per edition for each option list: the 2014 one is Legacy in the Basic Rules, the 2024 one in the PHB (2024).
+function option(id: number, name: string, legacy: boolean, sourceId: number): Record<string, unknown> {
+  return {
+    id, entityRaceId: id, entityRaceTypeId: id, name, fullName: name, baseName: name, baseRaceName: name,
+    description: `${name} description`, isHomebrew: false, isLegacy: legacy, isSubRace: false, hitDice: 10,
+    prerequisite: null, snippet: "", sources: [{ sourceId }],
+  };
+}
+const OPTIONS: Record<string, Array<Record<string, unknown>>> = {
+  races: [option(1, "Human", true, 1), option(2, "Human", false, 145)],
+  classes: [option(1, "Fighter", true, 1), option(2, "Fighter", false, 145)],
+  backgrounds: [option(1, "Acolyte", true, 1), option(2, "Acolyte", false, 145)],
+  feats: [option(1, "Alert", true, 1), option(2, "Alert", false, 145)],
+};
+
 async function route(input: unknown): Promise<Response> {
   const url = String(input);
   if (url === COBALT_URL) return jsonResponse({ token: makeJwt("99") });
@@ -164,6 +187,7 @@ async function route(input: unknown): Promise<Response> {
   if (url.startsWith(GAME_DATA)) {
     const endpoint = new URL(url).pathname.split("/").pop();
     const classId = new URL(url).searchParams.get("classId");
+    if (endpoint && endpoint in OPTIONS) return jsonResponse({ data: OPTIONS[endpoint] });
     return jsonResponse({ data: endpoint === "spells" && classId === "8" ? SPELLS : [] });
   }
   return mockResponse({}, 404);
@@ -185,12 +209,30 @@ const O5_MONSTER = {
 
 const O5_ITEM = { name: "Longsword", type: "Weapon", rarity: "common", desc: "A fine blade." };
 
+// Two records per endpoint, both matching the query: a single hit would render a detail block with no result line.
+const O5_RACES = ["Human", "Human (Variant)"].map(name => ({
+  name, desc: "", asi_desc: "", asi: [{ attributes: ["Strength"], value: 1 }], size: "Medium",
+  speed: { walk: 30 }, languages: "Common", vision: "", traits: "A trait.",
+}));
+const O5_CLASSES = ["Fighter", "Fighter (Champion)"].map(name => ({
+  name, hit_dice: "1d10", hp_at_1st_level: "10", hp_at_higher_levels: "1d10", prof_armor: "All",
+  prof_weapons: "All", prof_saving_throws: "STR", prof_skills: "Any", desc: "A warrior.",
+}));
+const O5_BACKGROUNDS = ["Acolyte", "Acolyte (Temple)"].map(name => ({
+  name, skill_proficiencies: "Insight", equipment: "A holy symbol", feature: "Shelter", feature_desc: "Help.",
+}));
+const O5_FEATS = ["Alert", "Alert (Variant)"].map(name => ({ name, desc: "Stay sharp." }));
+
 /** Open5e answers each endpoint with its fixtures, filtered by the request's search/name query like the real API. */
 function o5Fetch(input: unknown): Promise<Response> {
   const url = String(input);
   const fixtures = url.includes("/spells/") ? [O5_SPELL]
     : url.includes("/monsters/") ? [O5_MONSTER]
     : /\/(magicitems|weapons|armor)\//.test(url) ? [O5_ITEM]
+    : url.includes("/races/") ? O5_RACES
+    : url.includes("/classes/") ? O5_CLASSES
+    : url.includes("/backgrounds/") ? O5_BACKGROUNDS
+    : url.includes("/feats/") ? O5_FEATS
     : [];
   const params = new URL(url).searchParams;
   const term = (params.get("search") ?? params.get("name"))?.toLowerCase();
