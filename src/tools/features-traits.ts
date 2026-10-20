@@ -243,14 +243,6 @@ export function classFeatureFilters(f: { name?: string; className?: string; leve
   };
 }
 
-export function filterClassFeatures(
-  entries: readonly ClassFeatureEntry[],
-  f: { name?: string; className?: string; level?: number },
-): ClassFeatureEntry[] {
-  const { nameMatches, passes } = classFeatureFilters(f);
-  return sortEntries(entries.filter((e) => (nameMatches?.(e) ?? true) && passes(e)));
-}
-
 /** Description part of a line: the locked marker, else the first 100 characters of text (plus "..." from 100 up), else "". */
 function descriptionPart(e: { locked: boolean; text: string }): string {
   if (e.locked) return "*locked — not available to this account*";
@@ -419,14 +411,6 @@ export function racialTraitFilters(f: { name?: string; raceName?: string }): {
       e.speciesName.toLowerCase().includes(race) ||
       e.baseRaceName.toLowerCase().includes(race),
   };
-}
-
-export function filterRacialTraits(
-  entries: readonly RacialTraitEntry[],
-  f: { name?: string; raceName?: string },
-): RacialTraitEntry[] {
-  const { nameMatches, passes } = racialTraitFilters(f);
-  return sortTraits(entries.filter((e) => (nameMatches?.(e) ?? true) && passes(e)));
 }
 
 /** `label` is the entry's edition tag (plus any book note), placed right after the name; it marks homebrew too. */

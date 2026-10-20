@@ -1,12 +1,15 @@
 import { describe, it, expect } from "vitest";
 import {
   buildClassFeatures,
-  filterClassFeatures,
+  classFeatureFilters,
+  compareClassFeatures,
   formatClassFeatureLine,
   buildRacialTraits,
-  filterRacialTraits,
+  racialTraitFilters,
+  compareRacialTraits,
   formatRacialTraitLine,
   raceKeyOf,
+  type ClassFeatureEntry,
   type OptionalCollection,
   type RacialTraitEntry,
 } from "../src/tools/features-traits.js";
@@ -18,6 +21,17 @@ import {
   RACES,
   OPTIONAL_TRAITS_BY_RACE_KEY,
 } from "./fixtures/features-traits-fixtures.js";
+
+/** A filter set's predicates applied to a list, in display order. */
+function filterClassFeatures(entries: readonly ClassFeatureEntry[], f: Parameters<typeof classFeatureFilters>[0]): ClassFeatureEntry[] {
+  const { nameMatches, passes } = classFeatureFilters(f);
+  return entries.filter((e) => (nameMatches?.(e) ?? true) && passes(e)).sort(compareClassFeatures);
+}
+
+function filterRacialTraits(entries: readonly RacialTraitEntry[], f: Parameters<typeof racialTraitFilters>[0]): RacialTraitEntry[] {
+  const { nameMatches, passes } = racialTraitFilters(f);
+  return entries.filter((e) => (nameMatches?.(e) ?? true) && passes(e)).sort(compareRacialTraits);
+}
 
 function toMap<T>(rec: Record<string, unknown>): Map<number, T> {
   return new Map(Object.entries(rec).map(([k, v]) => [Number(k), v as T]));
@@ -115,7 +129,7 @@ describe("buildClassFeatures", () => {
   });
 });
 
-describe("filterClassFeatures", () => {
+describe("classFeatureFilters", () => {
   const all = build();
 
   it("filters className against class or subclass name", () => {
@@ -428,7 +442,7 @@ describe("racial traits", () => {
     expect(buildRacialTraits(races, new Map(entries))).toEqual(all);
   });
 
-  it("filterRacialTraits does not mutate its input", () => {
+  it("racialTraitFilters: filtering does not mutate its input", () => {
     const copy = [...all].reverse();
     const before = [...copy];
     const out = filterRacialTraits(copy, {});

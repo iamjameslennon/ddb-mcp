@@ -624,7 +624,7 @@ server.tool(
 
 server.tool(
   "ddb_search_spells",
-  "Search the full D&D Beyond spell compendium by name, level, school, concentration, or ritual. First call builds the compendium (slow); subsequent calls are instant. Requires login. A source picks one book's version and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
+  "Search the full D&D Beyond spell compendium by name, level, school, concentration, or ritual. First call builds the compendium (slow); subsequent calls are instant. Requires login. A source lists one book's entries and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().optional().describe("Partial spell name (e.g. 'fire' finds Fireball, Fire Storm, etc.)"),
     level: z.number().int().min(0).max(9).optional().describe("Spell level (0 = cantrip)"),
@@ -673,7 +673,7 @@ server.tool(
 // ─── ddb_search_equipment ────────────────────────────────────────────────────
 server.tool(
   "ddb_search_equipment",
-  "Search the D&D Beyond item/equipment compendium by name, rarity, or type. Covers mundane weapons (Longsword, Shortbow), armour (Plate, Chain Mail), adventuring gear, and magic items. Filter by rarity='common' to see only mundane equipment. Requires login. A source picks one book's version and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
+  "Search the D&D Beyond item/equipment compendium by name, rarity, or type. Covers mundane weapons (Longsword, Shortbow), armour (Plate, Chain Mail), adventuring gear, and magic items. Filter by rarity='common' to see only mundane equipment. Requires login. A source lists one book's entries and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().optional().describe("Partial item name (e.g. 'sword', 'cloak')"),
     rarity: z.string().optional().describe("Rarity filter (e.g. 'rare', 'legendary', 'uncommon')"),
