@@ -1,6 +1,6 @@
 # Rules edition across all tools: design
 
-**Status:** approved design. Phase 1 (foundation) implemented 2026-10-17. Its real signatures are in the "Signatures that differ from the spec's sketch" table of [the phase-1 plan](../plans/2026-10-16-rules-edition-phase-1-foundation.md), plus `twinAliases()`, which was added after review. Phase 2 implemented 2026-10-18. Phases 3–5 are not started. Revised 2026-10-17 with the owner's phase-2 decisions: reasons say "found", not "exists"; a locked monster pick yields to an owned other-edition twin; a failed game-config fetch is remembered for 60 s; registrations move to `src/server.ts`; the Open5e fallback label stands in for a reason line until phase 4.
+**Status:** approved design. Phase 1 (foundation) implemented 2026-10-17. Its real signatures are in the "Signatures that differ from the spec's sketch" table of [the phase-1 plan](../plans/2026-10-16-rules-edition-phase-1-foundation.md), plus `twinAliases()`, which was added after review. Phase 2 implemented 2026-10-18. Phase 3 planned 2026-10-19 with owner decisions on book choice and `source`. Phases 3–5 are not started. Revised 2026-10-17 with the owner's phase-2 decisions: reasons say "found", not "exists"; a locked monster pick yields to an owned other-edition twin; a failed game-config fetch is remembered for 60 s; registrations move to `src/server.ts`; the Open5e fallback label stands in for a reason line until phase 4.
 **Date:** 2026-10-16 (revised the same day after an adversarial review)
 **Supersedes:** CLAUDE.md "Next steps" work item 1 (`rules_edition` for spells and monsters) and item 3 (ambiguous partial monster names). They are now phase 2 of this spec. Where this spec and CLAUDE.md's "Decisions" differ in wording, **this spec wins**.
 
@@ -62,7 +62,7 @@ This spec is written for agents who arrive cold. Each phase in [Phases](#phases)
 
 ## Non-goals
 
-- No `source` (book) filter on tools other than monsters.
+- No `source` filter on `ddb_search_site`, encounter, treasure, conditions or rules.
 - No edition conversion: we never rewrite 2014 text into 2024 terms.
 - No change to *which* content a character has. Character tools label what the player built; they take no `rules_edition`.
 - No 2014 treasure tables (yet). `ddb_roll_treasure` takes `rules_edition` but has only 2024 tables, and says so (see [Tool contract](#tool-contract)).
@@ -116,6 +116,7 @@ All strings come from `src/edition.ts`. **No tool builds its own edition text**,
   - `ddb_get_monster` with `source`: `(an available version is in Basic Rules (2014) [basic-rules-2014] — pass source: "basic-rules-2014" to see it)` / `(an available version is in The Sunless Citadel — pass source: "TSC" to see it)`
   - `source: "homebrew"` search header: `Rules: showing every entry in homebrew content, each tagged with its edition.`
 - **Rename line**, appended when the query matched a different name in the same twin group than the entry returned: `(2014 name: Acid Arrow · 2024 name: Melf's Acid Arrow)`
+- **Book-choice labels** (a same-edition entry exists in several books; owner decision 2026-10-19): a search line ends with `· Monsters of the Multiverse [motm] (also in Volo's Guide to Monsters [vgtm] — pass source to choose)`; a single lookup adds the line `(also in Volo's Guide to Monsters [vgtm] — pass source to choose)`.
 - **Source note** (monsters): `(source "mm-2024" is a 2024 book — rules_edition "2014" was ignored)`
 - **Inline tag**, placed **immediately after the entry's name** on search lines and minority-edition character entries: `[2024]`, `[2014]`, `[third-party]`, `[homebrew]`, `[playtest]`, `[edition not stated]`. Example search line: `- **Fireball** [2024] — 3rd-level Evocation`.
 - **Search header**, as the first line of every search result, above the tool's existing heading (e.g. `**Spell Search** (N found)`, which stays):
@@ -211,8 +212,8 @@ A **twin group** is every entry (of any ruleset) sharing one twin key. Twins are
 | Content | Twin key |
 |---|---|
 | Spells, items, monsters, feats, backgrounds, races, classes | `twinName(name)` |
-| Class features | `twinName(className) + "/" + twinName(featureName)`. "Extra Attack" for Paladin 2014 is not a twin of "Extra Attack" for Fighter 2024 |
-| Racial traits | `twinName(speciesName) + "/" + twinName(traitName)` |
+| Class features | not twinned per feature; they select by owner (owner decision 2026-10-20): `classOwnerTwinKey` is `twinName(className)` (base and optional features) or `twinName(className) + "/" + twinName(subclassName)` (subclass features). "Extra Attack" for Paladin 2014 never meets Fighter 2024 |
+| Racial traits, species (races search) | the species by `twinName(fullName)` within an edition group of `twinName(baseRaceName \|\| baseName \|\| fullName)`, so the 2024 Elf replaces the 2014 High Elf, Wood Elf and Eladrin (Variant) |
 | Rules sections, conditions | not grouped (see phase 4) |
 
 `twinName` works in four steps:
@@ -236,7 +237,7 @@ A group with no edition entries yields its non-edition entries. A single lookup 
 
 **Tiebreak** among several entries of the chosen ruleset in one group:
 - **Monsters:** #58's existing order: official → Core Rules book → lowest ID.
-- **Every other type:** first dedupe by definition `id` (the same spell arrives from several class lists), then official before homebrew, then lowest definition `id`.
+- **Every other type:** first dedupe by definition `id` (the same spell arrives from several class lists), then official before homebrew, then non-Legacy before Legacy, then lowest definition `id`.
 
 ### Single lookups (`get_*`): the gather algorithm
 
@@ -304,7 +305,8 @@ These tools are not affected: `ddb_login`, `ddb_logout`, `ddb_close_browser`, `d
 
 - **Single lookups (`get_*`)**: title, then the rules line, then the reason/rename/source-note lines that apply, then the body.
 - **Searches (`search_*`)**: search header, the tool's existing heading, result lines with the tag after each name, then the footer when twins were hidden.
-- **`ddb_search_site`**: one search header at the very top and one combined footer summing hidden counts. Each category section calls its search in an embedded mode that omits that search's own header and footer, and its lines keep their tags.
+- **`ddb_search_site`**: one search header at the very top and one combined footer summing hidden counts. Each category section calls its search in an embedded mode that omits that search's own header and footer, and its lines keep their tags. The combined header is printed only when at least one included section came from D&D Beyond (has a non-null header); an all-Open5e reply keeps each section's own `Rules:` line, as today (owner decision 2026-10-20).
+- **Catalog `source` and index** (owner decisions 2026-10-19/20): `ddb_search_equipment`, `ddb_get_equipment`, the spell tools and the races, classes, backgrounds, feats, class-feature and racial-trait searches take an optional `source`, resolved like the monster one (`src/source-filter.ts`). Every catalog search calls `getSourceIndex()` (cached per session), because classifying an entry needs it, not only searches given a `source`.
 - **Monster `source` vs `rules_edition`**: `source` wins. When the chosen entry's book edition differs from `rules_edition`, `sourceNote` is added, on single lookups under the rules line and on searches under the header. It is not an error.
 - **Ambiguous partial names** (`getMonsterStats` only):
   - The new return type is `{ status: "found"; name; crValue; xp; info: EditionInfo } | { status: "not-found" } | { status: "ambiguous"; candidates: Array<{ name; crValue; xp }> }`.
@@ -364,7 +366,9 @@ These tools are not affected: `ddb_login`, `ddb_logout`, `ddb_close_browser`, `d
   - widen each `Ddb*` interface for any marker it lacks;
   - the existing "Legacy"/"Homebrew" text tags are replaced by `editionTag`;
   - an entry with no sources is `unstated` and stays listed.
-  - class-feature and racial-trait entries are now `ClassFeatureEntry` / `RacialTraitEntry` (`src/tools/features-traits.ts`). Class and subclass features carry no `sources` of their own, so their entries take the owning subclass's or class's. Standard racial traits do carry their own `sources` (live 2026-10-17: 149 of 313 differ from their race's; e.g. 2014 Human lists sourceIds [1, 2], its traits [1]), but `buildRacialTraits` deliberately uses the race's; an optional entry keeps its own. Open phase-3 decision: classify standard traits from their own `sources` or from the race's.
+  - class-feature and racial-trait entries are now `ClassFeatureEntry` / `RacialTraitEntry` (`src/tools/features-traits.ts`). Class and subclass features carry no `sources` of their own, so their entries take the owning subclass's or class's. Standard racial traits do carry their own `sources` (live 2026-10-17: 149 of 313 differ from their race's; e.g. 2014 Human lists sourceIds [1, 2], its traits [1]), but `buildRacialTraits` deliberately uses the race's; an optional entry keeps its own. Decided: racial traits classify from the race's sources, because the species is the owner and decides the edition, and a trait's own `sources` only name the book that printed its text (under a 2024 species they can name a 2014 book).
+- **Book choice and `source`** (owner decisions 1 and 2, 2026-10-19): when one twin group holds several entries of the chosen edition, the tiebreak is official → non-Legacy → lowest id, the pick's search line names its book and the books of the set-aside versions (`bookChoiceNote`), and a single lookup adds an `alsoInLine`. `source` on these tools works like the monster one: resolved through the source index (slug → short name → title, every matching id), it wins over `rules_edition`, hides no twins, lists every entry in the book with its tag, uses the `searchHeader({ sourceBook })` header, and adds `sourceNote` when the book's edition differs from `rules_edition`.
+- **Owner selection** (owner decisions 4–7, 2026-10-20): class features and racial traits choose the edition per owner (class, class/subclass, or species), not per feature. Filter first, then pick the owner, so the edition is chosen among owners with a matching feature: a name only the 2014 owner has is listed `[2014]`. An owner with no version in the requested edition is listed with its own tag; third-party, homebrew and unstated owners are never hidden. Every line of a duplicated owner carries the book-choice note. Species are grouped by base race, so the 2024 Elf replaces the 2014 High Elf, Wood Elf and Eladrin (Variant) by default, in both the races and racial-trait searches; naming the subrace finds it under either edition. Mixed setups (a 2024 Bard who is a 2014 High Elf) are served by naming the species, per-call `rules_edition`, or `source`.
 - `ddb_search_site` (`src/tools/search.ts`): thread `rulesEdition` through `search()` / `runCategory` and use the embedded mode.
 
 ### Open5e, rules and conditions (`src/open5e.ts`, `src/tools/reference.ts`) — phase 4

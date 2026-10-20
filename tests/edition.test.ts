@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildSourceIndex, categoryRuleset, classifyEdition, KNOWN_CATEGORY_IDS,
-  normalizeName, createTwinNamer, twinName, twinAliases, classFeatureTwinKey, racialTraitTwinKey,
+  normalizeName, createTwinNamer, twinName, twinAliases, classOwnerTwinKey, editionSourceId, bookChoiceNote, alsoInLine,
   dedupeById, definitionTiebreak, monsterTiebreak,
   selectByEdition, lookupByName, groupAndSelect,
   rulesLine, renameLine, RULES_EDITION_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, editionTag, searchHeader, searchFooter, ambiguityMessage,
@@ -218,11 +218,11 @@ describe("twin names", () => {
     expect(twin("Fireball")).toBe("fireball");
   });
 
-  it("keys class features and racial traits by owner + name", () => {
-    expect(classFeatureTwinKey("Paladin", "Extra Attack", twin)).not.toBe(classFeatureTwinKey("Fighter", "Extra Attack", twin));
-    expect(classFeatureTwinKey(" fighter", "EXTRA  attack", twin)).toBe("fighter/extra attack");
-    expect(racialTraitTwinKey("Elf", "Darkvision", twin)).not.toBe(racialTraitTwinKey("Dwarf", "Darkvision", twin));
-    expect(racialTraitTwinKey("Elf", "Fey Ancestry", twin)).toBe("elf/fey ancestry");
+  it("class-feature owners twin by class, and by class and subclass", () => {
+    expect(classOwnerTwinKey("Cleric", "Life Domain", twin)).toBe("cleric/life domain");
+    expect(classOwnerTwinKey("Cleric", null, twin)).toBe("cleric");
+    expect(classOwnerTwinKey(" fighter", undefined, twin)).toBe("fighter");
+    expect(classOwnerTwinKey("Paladin", null, twin)).not.toBe(classOwnerTwinKey("Fighter", null, twin));
   });
 });
 
@@ -281,7 +281,7 @@ describe("EDITION_RENAMES table", () => {
 
 // ── Selection fixtures ────────────────────────────────────────────────────────
 
-type E = { id: number; name: string; r: Ruleset; isHomebrew?: boolean; conc?: boolean };
+type E = { id: number; name: string; r: Ruleset; isHomebrew?: boolean; isLegacy?: boolean; conc?: boolean };
 const e = (id: number, name: string, r: Ruleset, extra: Partial<E> = {}): E => ({ id, name, r, ...extra });
 const infoOf = (c: E): EditionInfo => ({ ruleset: c.r, book: null });
 const ids = (xs: Array<{ entry: E }>) => xs.map(x => x.entry.id);
@@ -294,6 +294,32 @@ describe("tiebreaks", () => {
   it("definitions: official before homebrew, then lowest id", () => {
     const sorted = [e(9, "X", "2024", { isHomebrew: true }), e(7, "X", "2024"), e(3, "X", "2024")].sort(definitionTiebreak);
     expect(sorted.map(x => x.id)).toEqual([3, 7, 9]);
+  });
+
+  it("definitions: official → non-Legacy → lowest id", () => {
+    const sorted = [e(9, "X", "2014", { isHomebrew: true }), e(3, "X", "2014", { isLegacy: true }), e(7, "X", "2014")].sort(definitionTiebreak);
+    expect(sorted.map(x => x.id)).toEqual([7, 3, 9]);
+  });
+
+  it("selectByEdition reports same-edition alternatives in tiebreak order", () => {
+    const pick = selectByEdition([e(3, "Goblin", "2014", { isLegacy: true }), e(7, "Goblin", "2014"), e(5, "Goblin", "2014")], "2024", infoOf, definitionTiebreak);
+    expect(pick?.entry.id).toBe(5);
+    expect(pick?.alternatives?.map(x => x.id)).toEqual([7, 3]);
+    expect(pick?.reason).toBe("no-2024-version");
+    expect(selectByEdition([e(1, "A", "2024"), e(2, "A", "2014")], "2024", infoOf, definitionTiebreak)).toEqual({ entry: expect.objectContaining({ id: 1 }) });
+    expect("alternatives" in selectByEdition([e(1, "H", "homebrew", { isHomebrew: true }), e(2, "H", "homebrew", { isHomebrew: true })], "2024", infoOf, definitionTiebreak)!).toBe(false);
+  });
+
+  it("editionSourceId names the source classifyEdition took its book from", () => {
+    expect(editionSourceId({ sources: from(148, 1) }, INDEX)).toBe(148);
+    expect(editionSourceId({ isLegacy: true, sources: from(145, 2) }, INDEX)).toBe(2);
+    expect(editionSourceId({ sources: from(999) }, INDEX)).toBeNull();
+  });
+
+  it("book-choice labels", () => {
+    expect(bookChoiceNote("Monsters of the Multiverse [motm]", ["Volo's Guide to Monsters [vgtm]"]))
+      .toBe("· Monsters of the Multiverse [motm] (also in Volo's Guide to Monsters [vgtm] — pass source to choose)");
+    expect(alsoInLine(["A [a]", "B [b]"])).toBe("(also in A [a], B [b] — pass source to choose)");
   });
 
   it("monsters: official → Core Rules book → lowest id", () => {
@@ -786,13 +812,13 @@ describe("selectByEdition with an availability predicate", () => {
     selectByEdition(group, requested, infoOf, definitionTiebreak, c => !locked.includes(c.id));
 
   it("1. the first available entry of the requested edition, even when a lower id is locked", () => {
-    expect(pick([A24, B24, A14], "2024", [1])).toEqual({ entry: B24 });
-    expect(pick([A14, B14, A24], "2014", [2])).toEqual({ entry: B14 });
+    expect(pick([A24, B24, A14], "2024", [1])).toEqual({ entry: B24, alternatives: [A24] });
+    expect(pick([A14, B14, A24], "2014", [2])).toEqual({ entry: B14, alternatives: [A14] });
   });
 
   it("2. every requested entry locked: the first available other-edition entry, with the locked reason", () => {
-    expect(pick([A24, A14, B14], "2024", [1, 2])).toEqual({ entry: B14, reason: "locked-2024" });
-    expect(pick([A24, B24, A14], "2014", [2, 1])).toEqual({ entry: B24, reason: "locked-2014" });
+    expect(pick([A24, A14, B14], "2024", [1, 2])).toEqual({ entry: B14, reason: "locked-2024", alternatives: [A14] });
+    expect(pick([A24, B24, A14], "2014", [2, 1])).toEqual({ entry: B24, reason: "locked-2014", alternatives: [A24] });
   });
 
   it("3. nothing available: today's selection (the requested edition's first, no reason)", () => {
@@ -801,8 +827,8 @@ describe("selectByEdition with an availability predicate", () => {
   });
 
   it("no requested-edition entry at all: the no-version reason, preferring an available copy", () => {
-    expect(pick([A14, B14], "2024", [2])).toEqual({ entry: B14, reason: "no-2024-version" });
-    expect(pick([A14, B14], "2024", [2, 3])).toEqual({ entry: A14, reason: "no-2024-version" });
+    expect(pick([A14, B14], "2024", [2])).toEqual({ entry: B14, reason: "no-2024-version", alternatives: [A14] });
+    expect(pick([A14, B14], "2024", [2, 3])).toEqual({ entry: A14, reason: "no-2024-version", alternatives: [B14] });
   });
 
   it("no predicate: unchanged", () => {

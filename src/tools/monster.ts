@@ -19,8 +19,11 @@ import {
   normalizeName, dedupeById, isEdition, rulesLine, renameLine, sourceNote, editionTag, searchHeader, searchFooter,
   isLockedReason, lockedLineSuffix, lockedSwapSummary, lockedEntriesNote, availableElsewhereHint,
   HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO,
-  type EditionInfo, type IndexedSource, type RulesEdition, type RulesLineReason, type SelectionReason, type SourceIndex,
+  type EditionInfo, type RulesEdition, type RulesLineReason, type SelectionReason, type SourceIndex,
 } from "../edition.js";
+import {
+  resolveSourceIds, sourceLabel, sourceSlug, unknownSourceError, withSourceCaveat,
+} from "../source-filter.js";
 import { TtlCache } from "../cache.js";
 import { wrapUntrusted } from "../utils.js";
 import { o5SearchMonsters, o5GetMonster, o5GetMonsterStats } from "../open5e.js";
@@ -125,70 +128,6 @@ function crDisplay(crValue: number): string {
   if (crValue === 0.25) return "1/4";
   if (crValue === 0.5) return "1/2";
   return String(crValue);
-}
-
-/** Loosely normalize a source string for comparison — case- and punctuation-insensitive. */
-function normalizeSourceQuery(s: string | null | undefined): string {
-  return stripHtml(s).toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-/** The book's URL slug ("sources/dnd/mm-2024" → "mm-2024") — the form users and labels quote. */
-function sourceSlug(s: { sourceURL: string | null }): string {
-  return (s.sourceURL ?? "").replace(/\/+$/, "").split("/").pop() ?? "";
-}
-
-/**
- * Resolve a user-supplied source string (e.g. "mm-2024", "MM-2024", "Curse of
- * Strahd") to source IDs. Tries the URL slug first (most unambiguous — e.g.
- * "mm-2024" vs "mm-2014"), then the short name, then the full title, stopping
- * at the first tier that matches. Returns every ID in that tier — slugs are not
- * unique (four sources share "basic-rules-2014"), and the monster service
- * accepts several `sources` at once. Never hardcoded — always resolved through
- * the source index, which merges the live config over the generated snapshot,
- * so resolution survives a game-config outage.
- */
-function resolveSourceIds(index: SourceIndex, query: string): number[] {
-  const norm = normalizeSourceQuery(query);
-  if (!norm) return [];
-  const sources = [...index.sources];
-  const tiers: Array<(s: IndexedSource) => string> = [
-    s => normalizeSourceQuery(sourceSlug(s)),
-    s => normalizeSourceQuery(s.name),
-    s => normalizeSourceQuery(s.description),
-  ];
-  for (const key of tiers) {
-    const ids = sources.filter(([, s]) => key(s) === norm).map(([id]) => id);
-    if (ids.length) return ids;
-  }
-  return [];
-}
-
-/** Human-readable label for a source ID, with the slug to pass back as `source`. */
-function sourceLabel(index: SourceIndex, sourceId: number): string {
-  const s = index.sources.get(sourceId);
-  if (!s) return `source ${sourceId}`;
-  const title = stripHtml(s.description) || stripHtml(s.name);
-  const slug = sourceSlug(s);
-  return slug ? `${title} [${slug}]` : title;
-}
-
-/** Sources whose slug, short name, or title loosely contains (or is contained by) the query. */
-function suggestSources(index: SourceIndex, query: string): string[] {
-  const norm = normalizeSourceQuery(query);
-  if (norm.length < 2) return [];
-  return [...index.sources]
-    .filter(([, s]) => [sourceSlug(s), s.name, s.description]
-      .map(normalizeSourceQuery)
-      .some(v => v.length >= 2 && (v.includes(norm) || norm.includes(v))))
-    .slice(0, 8)
-    .map(([id]) => sourceLabel(index, id));
-}
-
-function unknownSourceError(index: SourceIndex, source: string): string {
-  const suggestions = suggestSources(index, source);
-  return `Unknown source "${source}". ` + (suggestions.length
-    ? `Did you mean: ${suggestions.join(", ")}?`
-    : "Pass a book's short code as shown in brackets in ddb_search_monsters results (e.g. mm-2024, cos).");
 }
 
 /** A monster name for comparison: case-, edge-whitespace- and apostrophe-insensitive. */
@@ -768,12 +707,6 @@ export async function searchMonsters(params: {
   }
 }
 
-
-/** Open5e has no concept of sources — flag that the filter wasn't honoured when one was requested. */
-function withSourceCaveat(o5Result: string, source: string | undefined): string {
-  if (!source) return o5Result;
-  return `${o5Result}\n\n*Note: source filtering is not available via the Open5e SRD fallback — "${source}" was requested but could not be honoured.*`;
-}
 
 export async function getMonster(
   monsterName: string,

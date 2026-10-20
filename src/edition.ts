@@ -150,24 +150,40 @@ export function buildSourceIndex(sources: readonly SourceRecord[], categories: r
  * isLegacy always wins.
  */
 export function classifyEdition(entry: EditionMarkers, index: SourceIndex): EditionInfo {
+  const { ruleset, book } = classifyWithSource(entry, index);
+  return { ruleset, book: book?.s.book ?? null };
+}
+
+/** The id of the source whose book `classifyEdition` reports; null exactly when its `book` is null. */
+export function editionSourceId(entry: EditionMarkers, index: SourceIndex): number | null {
+  return classifyWithSource(entry, index).book?.id ?? null;
+}
+
+/** The one classification walk behind classifyEdition and editionSourceId, so they cannot disagree. */
+function classifyWithSource(
+  entry: EditionMarkers,
+  index: SourceIndex,
+): { ruleset: Ruleset; book: { id: number; s: IndexedSource } | null } {
   if (entry.isHomebrew === true) return { ruleset: "homebrew", book: null };
 
   const ids: number[] = [];
   for (const id of [entry.sourceId, ...(entry.sources ?? []).map(s => s?.sourceId)]) {
     if (typeof id === "number" && !ids.includes(id)) ids.push(id);
   }
-  const known = ids
-    .map(id => index.sources.get(id))
-    .filter((s): s is IndexedSource => s !== undefined);
-  const firstIn = (ruleset: Ruleset) => known.find(s => categoryRuleset(s.categoryId) === ruleset);
-  const firstDescribed = () => known.find(s => s.description != null && s.description.trim() !== "")?.book ?? null;
+  const known: Array<{ id: number; s: IndexedSource }> = [];
+  for (const id of ids) {
+    const s = index.sources.get(id);
+    if (s) known.push({ id, s });
+  }
+  const firstIn = (ruleset: Ruleset) => known.find(k => categoryRuleset(k.s.categoryId) === ruleset);
+  const firstDescribed = () => known.find(k => k.s.description != null && k.s.description.trim() !== "") ?? null;
 
   if (entry.isLegacy === true) {
-    return { ruleset: "2014", book: firstIn("2014")?.book ?? firstDescribed() };
+    return { ruleset: "2014", book: firstIn("2014") ?? firstDescribed() };
   }
   for (const ruleset of ["2024", "2014", "playtest", "third-party"] as const) {
-    const s = firstIn(ruleset);
-    if (s) return { ruleset, book: s.book };
+    const k = firstIn(ruleset);
+    if (k) return { ruleset, book: k };
   }
   return { ruleset: "unstated", book: firstDescribed() };
 }
@@ -233,19 +249,19 @@ export function twinAliases(name: string, namer: TwinNamer = twinName): string[]
   return namer.aliases ? namer.aliases(name) : [name];
 }
 
-/** Class features twin only within one class: Paladin's Extra Attack is not Fighter's. */
-export function classFeatureTwinKey(className: string, featureName: string, namer = twinName): string {
-  return `${namer(className)}/${namer(featureName)}`;
-}
-
-/** Racial traits twin only within one species. */
-export function racialTraitTwinKey(speciesName: string, traitName: string, namer = twinName): string {
-  return `${namer(speciesName)}/${namer(traitName)}`;
+/**
+ * The owner of a class feature: the class, or class/subclass for a subclass
+ * feature. Features select by owner, so the Fighter's Extra Attack never twins
+ * with the Paladin's.
+ */
+export function classOwnerTwinKey(className: string, subclassName?: string | null, namer = twinName): string {
+  const cls = namer(className);
+  return subclassName && subclassName.trim() ? `${cls}/${namer(subclassName)}` : cls;
 }
 
 // ── Tiebreaks ─────────────────────────────────────────────────────────────────
 
-export interface TiebreakFields { id: number; isHomebrew?: boolean | null }
+export interface TiebreakFields { id: number; isHomebrew?: boolean | null; isLegacy?: boolean | null }
 export interface MonsterTiebreakFields extends TiebreakFields { sourceId?: number | null }
 
 /** First occurrence of each definition id (one spell arrives from several class lists). */
@@ -260,9 +276,11 @@ export function dedupeById<T extends { id: number }>(entries: readonly T[]): T[]
   return out;
 }
 
-/** Every non-monster type: official before homebrew, then lowest definition id. Dedupe by id first. */
+/** Every non-monster type: official before homebrew, then non-Legacy before Legacy, then lowest definition id. Dedupe by id first. */
 export function definitionTiebreak(a: TiebreakFields, b: TiebreakFields): number {
-  return (a.isHomebrew ? 1 : 0) - (b.isHomebrew ? 1 : 0) || a.id - b.id;
+  return (a.isHomebrew ? 1 : 0) - (b.isHomebrew ? 1 : 0)
+    || (a.isLegacy === true ? 1 : 0) - (b.isLegacy === true ? 1 : 0)
+    || a.id - b.id;
 }
 
 /**
@@ -282,7 +300,12 @@ export function monsterTiebreak(index: SourceIndex): (a: MonsterTiebreakFields, 
 
 // ── Selection ─────────────────────────────────────────────────────────────────
 
-export interface Selection<T> { entry: T; reason?: SelectionReason }
+export interface Selection<T> {
+  entry: T;
+  reason?: SelectionReason;
+  /** Other entries of the pick's own ruleset (2024/2014 only), in tiebreak order, regardless of `available`. Absent when none. */
+  alternatives?: T[];
+}
 
 /**
  * Pick one entry from a twin group. The requested edition wins; failing that,
@@ -313,15 +336,21 @@ export function selectByEdition<T>(
   const ofEdition = (edition: RulesEdition) => sorted.filter(c => info(c).ruleset === edition);
   const wanted = ofEdition(requested);
   const others = ofEdition(requested === "2024" ? "2014" : "2024");
+  const withAlternatives = (sel: Selection<T>): Selection<T> => {
+    const ruleset = info(sel.entry).ruleset;
+    if (ruleset !== "2024" && ruleset !== "2014") return sel;
+    const alternatives = sorted.filter(c => c !== sel.entry && info(c).ruleset === ruleset);
+    return alternatives.length ? { ...sel, alternatives } : sel;
+  };
   const wantedAvailable = wanted.find(available);
-  if (wantedAvailable) return { entry: wantedAvailable };
+  if (wantedAvailable) return withAlternatives({ entry: wantedAvailable });
   const otherAvailable = others.find(available);
   if (wanted.length) {
-    if (otherAvailable) return { entry: otherAvailable, reason: requested === "2024" ? "locked-2024" : "locked-2014" };
-    return { entry: wanted[0] };
+    if (otherAvailable) return withAlternatives({ entry: otherAvailable, reason: requested === "2024" ? "locked-2024" : "locked-2014" });
+    return withAlternatives({ entry: wanted[0] });
   }
   if (others.length) {
-    return { entry: otherAvailable ?? others[0], reason: requested === "2024" ? "no-2024-version" : "no-2014-version" };
+    return withAlternatives({ entry: otherAvailable ?? others[0], reason: requested === "2024" ? "no-2024-version" : "no-2014-version" });
   }
   return { entry: sorted[0] };
 }
@@ -596,6 +625,16 @@ export function lockedEntriesNote(locked: number): string | null {
 /** ddb_get_monster with a source whose pick is locked: where an available version is. */
 export function availableElsewhereHint(book: string, source: string): string {
   return `(an available version is in ${book} — pass source: "${source}" to see it)`;
+}
+
+/** Search line suffix: the book chosen, and the other books holding a same-edition version. */
+export function bookChoiceNote(chosen: string, others: readonly string[]): string {
+  return `· ${chosen} (also in ${others.join(", ")} — pass source to choose)`;
+}
+
+/** Single-lookup line: the other books holding a same-edition version. */
+export function alsoInLine(others: readonly string[]): string {
+  return `(also in ${others.join(", ")} — pass source to choose)`;
 }
 
 /** The "book" of a monster search with source: "homebrew". */
