@@ -129,6 +129,23 @@ function bookNoteSuffix<U>(pick: U, alternatives: readonly U[] | undefined, mark
 // ── Selection ─────────────────────────────────────────────────────────────────
 
 /**
+ * A `source` search's framing: the search header naming the book (the
+ * lowest-id one, see resolveSource), and the source note when the book's
+ * edition differs from `requested`. Shared by selectCatalog and monster search.
+ */
+export function sourceFraming(
+  source: ResolvedSource,
+  requested: RulesEdition,
+  index: SourceIndex,
+): { header: string; note: string | null } {
+  const bookRuleset = classifyEdition({ sources: source.ids.map(sourceId => ({ sourceId })) }, index).ruleset;
+  return {
+    header: searchHeader({ sourceBook: source.book }),
+    note: isEdition(bookRuleset) ? sourceNote(source.query, bookRuleset, requested) : null,
+  };
+}
+
+/**
  * Choose what a catalog search lists. Without `source`, flat mode is
  * groupAndSelect, also counting a group whose requested pick fails the
  * filters while the other edition's passes; nested mode filters first and
@@ -154,13 +171,7 @@ export function selectCatalog<T>(
         && (adapter.nameMatches?.(t) ?? true) && (adapter.passes?.(t) ?? true))
       .sort(adapter.compare)
       .map(entry => { const i = info(entry); return { entry, info: i, label: editionTag(i) }; });
-    const bookRuleset = classifyEdition({ sources: source.ids.map(sourceId => ({ sourceId })) }, index).ruleset;
-    return {
-      hits,
-      hidden: 0,
-      header: searchHeader({ sourceBook: source.book }),
-      note: isEdition(bookRuleset) ? sourceNote(source.query, bookRuleset, requested) : null,
-    };
+    return { hits, hidden: 0, ...sourceFraming(source, requested, index) };
   }
 
   const bookNotes = options.bookNotes ?? true;

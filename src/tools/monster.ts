@@ -22,12 +22,13 @@ import {
   type EditionInfo, type RulesEdition, type RulesLineReason, type SelectionReason, type SourceIndex,
 } from "../edition.js";
 import {
-  resolveSourceIds, sourceLabel, sourceSlug, unknownSourceError, withSourceCaveat,
+  resolveSource, resolveSourceIds, sourceLabel, sourceSlug, unknownSourceError, withSourceCaveat,
+  type ResolvedSource,
 } from "../source-filter.js";
 import { TtlCache } from "../cache.js";
 import { wrapUntrusted, stripHtmlRich } from "../utils.js";
 import { o5SearchMonsters, o5GetMonster, o5GetMonsterStats } from "../open5e.js";
-import { renderSection, plainSection, type SearchSection } from "./edition-search.js";
+import { renderSection, plainSection, sourceFraming, type SearchSection } from "./edition-search.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -520,11 +521,12 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
   const targetCrId = params.cr !== undefined
     ? config?.challengeRatings.find(cr => cr.value === params.cr)?.id
     : undefined;
-  let sourceIds: number[] = [];
+  let book: ResolvedSource | null = null;
   if (params.source && !homebrew) {
-    sourceIds = resolveSourceIds(index, params.source);
-    if (!sourceIds.length) return unknownSourceError(index, params.source);
+    book = resolveSource(index, params.source);
+    if (!book) return unknownSourceError(index, params.source);
   }
+  const sourceIds = book?.ids ?? [];
 
   // Source filters server-side. CR/type/size (and homebrew) filter client-side,
   // so page through results (up to MAX_FILTER_SCAN) rather than judging one page.
@@ -623,12 +625,11 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
   if (homebrew) {
     // Homebrew has no edition, so no sourceNote.
     header = searchHeader({ sourceBook: HOMEBREW_SOURCE_BOOK });
-  } else if (params.source) {
-    // Slugs aren't unique; the lowest ID is the main book, not a premade-character pack.
-    header = searchHeader({ sourceBook: index.sources.get(Math.min(...sourceIds))!.book });
-    const bookRuleset = classifyEdition({ sources: sourceIds.map(sourceId => ({ sourceId })) }, index).ruleset;
-    const note = isEdition(bookRuleset) ? sourceNote(params.source, bookRuleset, requested) : null;
-    if (note) lines.push(note);
+  } else if (book) {
+    // Slugs aren't unique; the header names the lowest-id book, not a premade-character pack.
+    const framing = sourceFraming(book, requested, index);
+    header = framing.header;
+    if (framing.note) lines.push(framing.note);
   } else {
     header = searchHeader({ requested });
   }
