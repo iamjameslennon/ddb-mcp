@@ -279,3 +279,53 @@ describe("selectCatalog, nested mode by owner (features)", () => {
     expect(lines(sel)).toEqual(["Optional Thing L3 [2014]"]);
   });
 });
+
+describe("selectCatalog breaks compare ties with the adapter's tiebreak", () => {
+  const names = (sel: { hits: Array<{ entry: Entry; label: string }> }) => sel.hits.map(h => `${h.entry.id} ${h.label}`);
+
+  it("flat mode: official before homebrew, then lowest id, whatever the payload order", () => {
+    const all = [
+      entry(7, "Tiefling", [], { isHomebrew: true }),
+      entry(2, "Tiefling", [], { isHomebrew: true }),
+      entry(9, "Tiefling", [145]),
+    ];
+    expect(names(selectCatalog(all, "2024", flat(), INDEX))).toEqual(["9 [2024]", "2 [homebrew]", "7 [homebrew]"]);
+    // Across twin groups too: groups come out in payload order, so only the sort can order them.
+    const perEntry = { ...flat(), twinKey: (e: Entry) => String(e.id) };
+    expect(names(selectCatalog(all, "2024", perEntry, INDEX))).toEqual(["9 [2024]", "2 [homebrew]", "7 [homebrew]"]);
+  });
+
+  it("source mode: non-Legacy before Legacy, then lowest id", () => {
+    const all = [entry(3, "Goblin", [85], { isLegacy: true }), entry(9, "Goblin", [85]), entry(5, "Goblin", [85])];
+    const sel = selectCatalog(all, "2024", flat(), INDEX, resolveSource(INDEX, "motm")!);
+    expect(sel.hits.map(h => h.entry.id)).toEqual([5, 9, 3]);
+  });
+
+  it("nested mode by groupKey: an official entry before a same-named homebrew one", () => {
+    const species: CatalogAdapter<Entry> = { ...flat("elf"), groupKey: () => "elf" };
+    const all = [entry(50, "Elf", [], { isHomebrew: true }), entry(1, "Elf", [145])];
+    expect(names(selectCatalog(all, "2024", species, INDEX))).toEqual(["1 [2024]", "50 [homebrew]"]);
+  });
+
+  it("nested mode by owner: the ruleset band, then compare, then the tiebreak", () => {
+    interface Feature { id: number; name: string; level: number; owner: CatalogOwner }
+    const owner = (id: string, tiebreakId: number): CatalogOwner =>
+      ({ id, markers: { isHomebrew: true, sources: [] }, tiebreak: { id: tiebreakId, isHomebrew: true } });
+    const a = owner("hb1", 1);
+    const b = owner("hb2", 2);
+    const all: Feature[] = [
+      { id: 30, name: "Riposte", level: 3, owner: b },
+      { id: 20, name: "Riposte", level: 3, owner: a },
+      { id: 10, name: "Parry", level: 3, owner: b },
+    ];
+    const adapter: CatalogAdapter<Feature> = {
+      markers: f => f.owner.markers,
+      twinKey: f => f.owner.id,
+      groupKey: f => f.owner.id,
+      owner: f => f.owner,
+      tiebreak: (x, y) => x.id - y.id,
+      compare: (x, y) => x.level - y.level || x.name.localeCompare(y.name),
+    };
+    expect(selectCatalog(all, "2024", adapter, INDEX).hits.map(h => h.entry.id)).toEqual([10, 20, 30]);
+  });
+});

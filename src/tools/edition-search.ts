@@ -74,7 +74,7 @@ export interface CatalogAdapter<T> {
   /** Versions of one thing (with `owner`: the owner's twin key). */
   twinKey: (t: T) => string;
   tiebreak: (a: T, b: T) => number;
-  /** Display order of the result. */
+  /** Display order of the result; `tiebreak` orders its ties. */
   compare: (a: T, b: T) => number;
   /** Flat mode: per twin group. Nested mode: per twin group without `owner`, per entry with it. */
   nameMatches?: (t: T) => boolean;
@@ -151,7 +151,8 @@ export function sourceFraming(
  * filters while the other edition's passes; nested mode filters first and
  * then picks per edition group (selectNested). With `source`, every entry in
  * the book that passes the filters is listed with its own tag: no grouping,
- * no hiding. Hits are sorted by `compare`, and with `owner` (and no `source`)
+ * no hiding. Hits are sorted by `compare`, its ties broken by `tiebreak`
+ * (official → non-Legacy → lowest id), and with `owner` (and no `source`)
  * first by the owner's ruleset: the requested edition, the other, then
  * non-edition owners. Paging is the caller's.
  */
@@ -164,12 +165,15 @@ export function selectCatalog<T>(
   options: SelectOptions = {},
 ): CatalogSelection<T> {
   const info = (t: T) => classifyEdition(adapter.markers(t), index);
+  // Equal display names (a 2024 entry and a homebrew one, two homebrew
+  // entries) would otherwise keep payload order.
+  const order = (a: T, b: T) => adapter.compare(a, b) || adapter.tiebreak(a, b);
 
   if (source) {
     const hits = all
       .filter(t => inSources(adapter.markers(t), source.ids)
         && (adapter.nameMatches?.(t) ?? true) && (adapter.passes?.(t) ?? true))
-      .sort(adapter.compare)
+      .sort(order)
       .map(entry => { const i = info(entry); return { entry, info: i, label: editionTag(i) }; });
     return { hits, hidden: 0, ...sourceFraming(source, requested, index) };
   }
@@ -185,9 +189,9 @@ export function selectCatalog<T>(
       const ruleset = classifyEdition(owner(h.entry).markers, index).ruleset;
       return [h, ruleset === requested ? 0 : isEdition(ruleset) ? 1 : 2];
     }));
-    hits.sort((a, b) => band.get(a)! - band.get(b)! || adapter.compare(a.entry, b.entry));
+    hits.sort((a, b) => band.get(a)! - band.get(b)! || order(a.entry, b.entry));
   } else {
-    hits.sort((a, b) => adapter.compare(a.entry, b.entry));
+    hits.sort((a, b) => order(a.entry, b.entry));
   }
   return { hits, hidden, header: searchHeader({ requested }), note: null };
 }
