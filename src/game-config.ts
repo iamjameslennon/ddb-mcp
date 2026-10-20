@@ -4,7 +4,8 @@
  *
  * getGameConfig() fetches https://www.dndbeyond.com/api/config/json with
  * session cookies and caches it until the next session transition (cleared
- * conservatively until its account independence is established).
+ * conservatively until its account independence is established). Concurrent
+ * cold callers of one session generation share a single in-flight fetch.
  *
  * getSourceIndex() merges the live source list over the generated snapshot in
  * source-snapshot.ts, so edition labels and book names survive a D&D Beyond
@@ -12,7 +13,9 @@
  * snapshot classify as "edition not stated". It never rejects.
  */
 
-import { sessionFetch, captureSession, assertSessionCurrent, onSessionInvalidated } from "./session-fetch.js";
+import {
+  sessionFetch, captureSession, assertSessionCurrent, onSessionInvalidated, type SessionSnapshot,
+} from "./session-fetch.js";
 import { buildSourceIndex, type CategoryRecord, type SourceIndex, type SourceRecord } from "./edition.js";
 import { SNAPSHOT_CATEGORIES, SNAPSHOT_SOURCES } from "./source-snapshot.js";
 
@@ -49,12 +52,25 @@ let snapshotIndex: SourceIndex | null = null;
 const CONFIG_FAILURE_TTL_MS = 60_000;
 let configFailure: { until: number; generation: number } | null = null;
 
+// The one in-flight config fetch, shared by every cold caller of the same
+// generation (a cold ddb_search_site "all" asks for the index from up to six
+// catalog searches at once). Modelled on session-fetch.ts's cobaltTokenPending:
+// published before the fetch starts, cleared by its own settlement only (a
+// newer generation's entry may already hold the slot) and by the invalidation
+// hook below; callers also compare generations before joining.
+interface PendingConfigFetch {
+  generation: number;
+  promise: Promise<GameConfig | null>;
+}
+let configPending: PendingConfigFetch | null = null;
+
 // Registered once per module lifetime.
 onSessionInvalidated(() => {
   configCache = null;
   indexCache = null;
   snapshotIndex = null;
   configFailure = null;
+  configPending = null;
 });
 
 export async function getGameConfig(): Promise<GameConfig | null> {
@@ -65,6 +81,32 @@ export async function getGameConfig(): Promise<GameConfig | null> {
   if (configFailure && configFailure.generation === snapshot.generation && Date.now() < configFailure.until) {
     return null;
   }
+  // Join this generation's fetch, or start one. Every joiner gets the starter's
+  // result: the config, or null (a failure, or a session change mid-fetch).
+  let pending = configPending;
+  if (!pending || pending.generation !== snapshot.generation) pending = startConfigFetch(snapshot);
+  return pending.promise;
+}
+
+/** Start the shared fetch for `snapshot`'s generation and publish it as the pending entry. */
+function startConfigFetch(snapshot: SessionSnapshot): PendingConfigFetch {
+  // Deferred one microtask so the fetch runs only after the entry is stored: if
+  // its first authority check fires the invalidation hook, the hook finds and
+  // clears the entry (as in session-fetch.ts's startCobaltTokenExchange).
+  const entry: PendingConfigFetch = {
+    generation: snapshot.generation,
+    promise: Promise.resolve().then(() => fetchGameConfig(snapshot)),
+  };
+  configPending = entry;
+  // fetchGameConfig never rejects, so one handler covers every settlement.
+  void entry.promise.then(() => {
+    if (configPending === entry) configPending = null;
+  });
+  return entry;
+}
+
+/** One config fetch under `snapshot`. Never rejects: a failure resolves null. */
+async function fetchGameConfig(snapshot: SessionSnapshot): Promise<GameConfig | null> {
   const fail = (): null => {
     try {
       // A late failure from an old session must not suppress the new one's fetch.

@@ -266,3 +266,135 @@ describe("getGameConfig failure cache", () => {
     expect(sessionFetch).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("getGameConfig shares one in-flight fetch per session generation", () => {
+  // A controllable session: captureSession stamps the current generation and
+  // assertSessionCurrent throws once it has moved on, as session-state does.
+  let generation = 1;
+  const deferred = <T>() => {
+    let resolve!: (v: T) => void;
+    let reject!: (e: unknown) => void;
+    const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+    return { promise, resolve, reject };
+  };
+  // Lets the deferred fetch start (the shared fetch begins a microtask later).
+  const flush = () => new Promise<void>(r => setTimeout(r, 0));
+
+  beforeEach(() => {
+    generation = 1;
+    vi.mocked(captureSession).mockImplementation(() => ({ generation }) as never);
+    vi.mocked(assertSessionCurrent).mockImplementation((s: unknown) => {
+      if ((s as { generation: number }).generation !== generation) throw new Error("session changed");
+    });
+  });
+  afterEach(() => {
+    vi.mocked(captureSession).mockImplementation(() => ({}) as never);
+  });
+
+  it("N concurrent cold getGameConfig() / getSourceIndex() calls send one config request", async () => {
+    const fetch = deferred<Response>();
+    vi.mocked(sessionFetch).mockImplementation(() => fetch.promise);
+    const configs = Array.from({ length: 5 }, () => getGameConfig());
+    const indexes = Array.from({ length: 3 }, () => getSourceIndex());
+    await flush();
+    expect(sessionFetch).toHaveBeenCalledTimes(1);
+    fetch.resolve(response({ data: LIVE }));
+    const got = await Promise.all(configs);
+    expect(got.every(c => c !== null && c === got[0])).toBe(true);
+    expect(got[0]?.challengeRatings).toEqual(LIVE.challengeRatings);
+    const built = await Promise.all(indexes);
+    expect(built.every(i => i === built[0] && i.sources.has(300))).toBe(true);
+    expect(await getGameConfig()).toBe(got[0]); // cached
+    expect(sessionFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("a newer generation starts its own fetch, and the old one's result is never cached for it", async () => {
+    const old = deferred<Response>();
+    const fresh = deferred<Response>();
+    vi.mocked(sessionFetch).mockImplementationOnce(() => old.promise).mockImplementationOnce(() => fresh.promise);
+    const a = getGameConfig();
+    await flush();
+    generation = 2;
+    S.hooks.forEach(hook => hook());
+    const b = getGameConfig();
+    await flush();
+    expect(sessionFetch).toHaveBeenCalledTimes(2);
+    old.resolve(response({ data: LIVE }));
+    expect(await a).toBeNull(); // fetched under the old session: neither returned nor cached
+    const FRESH = { ...LIVE, challengeRatings: [{ id: 2, value: 2, xp: 450, proficiencyBonus: 2 }] };
+    fresh.resolve(response({ data: FRESH }));
+    expect((await b)?.challengeRatings).toEqual(FRESH.challengeRatings);
+    expect((await getGameConfig())?.challengeRatings).toEqual(FRESH.challengeRatings);
+    expect(sessionFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("compares generations before joining, and an old fetch settling clears only its own entry", async () => {
+    // No invalidation hook fires here: the generation check alone keeps gen 2 out.
+    const old = deferred<Response>();
+    const fresh = deferred<Response>();
+    vi.mocked(sessionFetch).mockImplementationOnce(() => old.promise).mockImplementationOnce(() => fresh.promise);
+    const a = getGameConfig();
+    await flush();
+    generation = 2;
+    const b = getGameConfig();
+    await flush();
+    expect(sessionFetch).toHaveBeenCalledTimes(2);
+    old.resolve(response({ data: LIVE }));
+    expect(await a).toBeNull();
+    // The old settlement must not have dropped generation 2's pending fetch.
+    const c = getGameConfig();
+    await flush();
+    expect(sessionFetch).toHaveBeenCalledTimes(2);
+    fresh.resolve(response({ data: LIVE }));
+    const [gotB, gotC] = await Promise.all([b, c]);
+    expect(gotB).not.toBeNull();
+    expect(gotC).toBe(gotB);
+  });
+
+  it("the invalidation hook drops the pending fetch", async () => {
+    const first = deferred<Response>();
+    vi.mocked(sessionFetch).mockImplementationOnce(() => first.promise);
+    const a = getGameConfig();
+    await flush();
+    S.hooks.forEach(hook => hook()); // same generation number: only the hook can keep b out
+    const b = getGameConfig();
+    await flush();
+    expect(sessionFetch).toHaveBeenCalledTimes(2);
+    first.resolve(response({ data: LIVE }));
+    await Promise.all([a, b]);
+  });
+
+  it("a failure is shared by every joiner and recorded once in the 60 s failure cache", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetch = deferred<Response>();
+      vi.mocked(sessionFetch).mockImplementationOnce(() => fetch.promise);
+      const calls = Array.from({ length: 4 }, () => getGameConfig());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sessionFetch).toHaveBeenCalledTimes(1);
+      fetch.resolve(response({}, 503));
+      expect(await Promise.all(calls)).toEqual([null, null, null, null]);
+      vi.advanceTimersByTime(59_000);
+      expect(await getGameConfig()).toBeNull();
+      expect(sessionFetch).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(1_000);
+      expect(await getGameConfig()).not.toBeNull();
+      expect(sessionFetch).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a thrown fetch is shared too, and getGameConfig never rejects", async () => {
+    const fetch = deferred<Response>();
+    vi.mocked(sessionFetch).mockImplementationOnce(() => fetch.promise);
+    const calls = [getGameConfig(), getSourceIndex(), getGameConfig()];
+    await flush();
+    fetch.reject(new Error("network down"));
+    const [c1, index, c2] = await Promise.all(calls);
+    expect(c1).toBeNull();
+    expect(c2).toBeNull();
+    expect((index as Awaited<ReturnType<typeof getSourceIndex>>).sources.has(300)).toBe(false);
+    expect(sessionFetch).toHaveBeenCalledTimes(1);
+  });
+});
