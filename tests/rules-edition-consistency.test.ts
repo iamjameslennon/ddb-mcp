@@ -52,6 +52,8 @@ const FIXTURES: Record<string, (ed: "2024" | "2014") => Record<string, unknown>>
   ddb_get_spell: ed => ({ name: "Fireball", rules_edition: ed }),
   ddb_search_monsters: ed => ({ name: "goblin", rules_edition: ed }),
   ddb_get_monster: ed => ({ name: "Goblin", rules_edition: ed }),
+  ddb_search_equipment: ed => ({ name: "longsword", rules_edition: ed }),
+  ddb_get_equipment: ed => ({ name: "Longsword", rules_edition: ed }),
   ddb_rate_encounter: ed => ({ party: [{ count: 4, level: 3 }], monsters: [{ name: "Goblin" }], rules_edition: ed }),
   ddb_encounter_cr: ed => ({ party: [{ count: 4, level: 3 }], difficulty: ed === "2024" ? "moderate" : "medium", rules_edition: ed }),
   ddb_roll_treasure: ed => ({ monsters: [{ name: "Goblin" }], treasure_type: "individual", rules_edition: ed }),
@@ -62,10 +64,12 @@ const PATH_MARKER: Record<"ddb" | "open5e", Record<string, Partial<Record<"2024"
   ddb: {
     ddb_get_spell: { "2024": "FIREBALL 2024", "2014": "FIREBALL 2014" },
     ddb_get_monster: { "2024": "Monster Manual (2024)", "2014": "Basic Rules (2014)" },
+    ddb_get_equipment: { "2024": "LONGSWORD 2024", "2014": "LONGSWORD 2014" },
   },
   open5e: {
     ddb_get_spell: { "2024": "A bright streak.", "2014": "A bright streak." },
     ddb_get_monster: { "2024": "Slash.", "2014": "Slash." },
+    ddb_get_equipment: { "2024": "A fine blade.", "2014": "A fine blade." },
   },
 };
 
@@ -81,6 +85,7 @@ const TREASURE_NO_2014 = "(no 2014 version exists — 2024 tables used)";
 const EDITION_CHECK: Record<string, (ed: "2024" | "2014") => EditionCheck> = {
   ddb_search_spells: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
   ddb_search_monsters: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
+  ddb_search_equipment: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
   ddb_rate_encounter: ed => ({ present: [dmgRulesLine(ed)] }),
   ddb_encounter_cr: ed => ({ present: [dmgRulesLine(ed)] }),
   ddb_roll_treasure: ed => (ed === "2014" ? { present: [TREASURE_NO_2014] } : { present: [], absent: [TREASURE_NO_2014] }),
@@ -127,6 +132,15 @@ function goblin(id: number, isLegacy: boolean, sourceId: number): Record<string,
 }
 const GOBLINS = [goblin(1001, true, 1), goblin(2001, false, 147)];
 
+function longsword(id: number, isLegacy: boolean, sourceId: number, description: string): Record<string, unknown> {
+  return {
+    id, name: "Longsword", type: "Weapon", filterType: "Weapon", rarity: "Common", requiresAttunement: false,
+    attunementDescription: "", description, snippet: "", weight: 3, damage: null, properties: null,
+    armorClass: null, magic: false, isLegacy, sources: [{ sourceId }],
+  };
+}
+const LONGSWORDS = [longsword(11, true, 2, "LONGSWORD 2014"), longsword(12, false, 145, "LONGSWORD 2024")];
+
 const SPELLS = [
   spell("Fireball", 3, { id: 301, isLegacy: true, sources: [2], description: "FIREBALL 2014" }),
   spell("Fireball", 3, { id: 401, sources: [145], description: "FIREBALL 2024" }),
@@ -146,6 +160,7 @@ async function route(input: unknown): Promise<Response> {
   }
   const idMatch = url.match(/\/v1\/Monster\/(\d+)/);
   if (idMatch) return mockResponse({ accessType: 1, data: GOBLINS.find(m => m.id === Number(idMatch[1])) });
+  if (url.startsWith(`${GAME_DATA}/items`)) return jsonResponse({ data: LONGSWORDS });
   if (url.startsWith(GAME_DATA)) {
     const endpoint = new URL(url).pathname.split("/").pop();
     const classId = new URL(url).searchParams.get("classId");
@@ -168,9 +183,19 @@ const O5_MONSTER = {
   actions: [{ name: "Scimitar", desc: "Slash." }],
 };
 
+const O5_ITEM = { name: "Longsword", type: "Weapon", rarity: "common", desc: "A fine blade." };
+
+/** Open5e answers each endpoint with its fixtures, filtered by the request's search/name query like the real API. */
 function o5Fetch(input: unknown): Promise<Response> {
   const url = String(input);
-  const results = url.includes("/spells/") ? [O5_SPELL] : url.includes("/monsters/") ? [O5_MONSTER] : [];
+  const fixtures = url.includes("/spells/") ? [O5_SPELL]
+    : url.includes("/monsters/") ? [O5_MONSTER]
+    : /\/(magicitems|weapons|armor)\//.test(url) ? [O5_ITEM]
+    : [];
+  const params = new URL(url).searchParams;
+  const term = (params.get("search") ?? params.get("name"))?.toLowerCase();
+  // A request with neither param (e.g. the cantrip list) gets every fixture.
+  const results = term === undefined ? fixtures : fixtures.filter(f => f.name.toLowerCase().includes(term));
   return Promise.resolve(jsonResponse({ count: results.length, next: null, results }));
 }
 

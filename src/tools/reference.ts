@@ -21,7 +21,7 @@ import { TtlCache } from "../cache.js";
 import { stripHtml } from "../utils.js";
 import {
   twinName, classifyEdition, selectByEdition, definitionTiebreak, isEdition,
-  normalizeName, searchFooter,
+  normalizeName, searchFooter, dedupeById,
   type RulesEdition,
 } from "../edition.js";
 import { peekSourceIndex, getSourceIndex } from "../game-config.js";
@@ -700,6 +700,10 @@ interface DdbItem {
   strengthRequirement?: number | null;
   stealthCheck?: number | null;           // 2 = stealth disadvantage, null = no penalty
   magic: boolean;
+  // Edition markers
+  isLegacy?: boolean | null;
+  isHomebrew?: boolean | null;
+  sources?: Array<{ sourceId: number }> | null;
 }
 
 let itemCompendium: DdbItem[] | null = null;
@@ -712,7 +716,7 @@ async function loadItemCompendium(): Promise<DdbItem[]> {
 
   const cached = referenceCache.get("item-compendium");
   if (cached) {
-    itemCompendium = JSON.parse(cached) as DdbItem[];
+    itemCompendium = dedupeById(JSON.parse(cached) as DdbItem[]);
     return itemCompendium;
   }
 
@@ -721,7 +725,7 @@ async function loadItemCompendium(): Promise<DdbItem[]> {
   if (!resp.ok) throw new Error(`Item compendium fetch failed: ${resp.status} ${resp.statusText}`);
 
   const json = await resp.json() as { data?: DdbItem[] } | DdbItem[];
-  const items = (Array.isArray(json) ? json : json.data) ?? [];
+  const items = dedupeById((Array.isArray(json) ? json : json.data) ?? []);
 
   // Don't cache one account's item list into another account's generation.
   assertSessionCurrent(snapshot);
@@ -730,10 +734,11 @@ async function loadItemCompendium(): Promise<DdbItem[]> {
   return items;
 }
 
-function formatItem(item: DdbItem): string {
+/** `rulesLines` (from lookupCatalog) go directly under the title. */
+function formatItem(item: DdbItem, rulesLines: string[]): string {
   const type = item.filterType || item.type || "Item";
   const rarity = item.rarity || "Common";
-  const lines = [`**${item.name}** — ${type}, ${rarity}`];
+  const lines = [`**${item.name}** — ${type}, ${rarity}`, ...rulesLines];
 
   if (item.requiresAttunement) {
     lines.push(`Requires Attunement${item.attunementDescription ? ": " + item.attunementDescription : ""}`);
@@ -768,60 +773,91 @@ function formatItem(item: DdbItem): string {
   return lines.join("\n");
 }
 
-export async function searchItems(params: {
+/** The item catalog: classified by the item, twinned by name, listed by name. */
+const ITEM_ADAPTER: CatalogAdapter<DdbItem> & { name: (i: DdbItem) => string } = {
+  markers: i => i,
+  twinKey: i => twinName(i.name),
+  tiebreak: definitionTiebreak,
+  compare: (a, b) => a.name.localeCompare(b.name),
+  name: i => i.name,
+};
+
+export interface ItemSearchParams {
   name?: string;
   rarity?: string;
   type?: string;
-}): Promise<string> {
-  const items = await loadItemCompendium();
-  let matched = items;
+  rulesEdition?: RulesEdition;
+  /** A book: slug, short name or title. Lists that book's items of either edition. */
+  source?: string;
+}
 
-  if (params.name) {
-    const q = params.name.toLowerCase();
-    matched = matched.filter(i => i.name.toLowerCase().includes(q));
+export async function searchItems(params: ItemSearchParams): Promise<string> {
+  return renderSection(await searchItemsSection(params));
+}
+
+export async function searchItemsSection(params: ItemSearchParams): Promise<SearchSection> {
+  const source = await resolveSourceParam(params.source);
+  if (typeof source === "string") return plainSection(source);
+  const requested = params.rulesEdition ?? "2024";
+  const nameQuery = params.name ? normalizeName(params.name) : "";
+  const rarityQuery = params.rarity?.toLowerCase();
+  const typeQuery = params.type?.toLowerCase();
+
+  let selection;
+  try {
+    const items = await loadItemCompendium();
+    const index = await getSourceIndex();
+    selection = selectCatalog(items, requested, {
+      ...ITEM_ADAPTER,
+      nameMatches: nameQuery ? i => normalizeName(i.name).includes(nameQuery) : undefined,
+      passes: i => (!rarityQuery || !!i.rarity?.toLowerCase().includes(rarityQuery))
+        && (!typeQuery || !!i.type?.toLowerCase().includes(typeQuery) || !!i.filterType?.toLowerCase().includes(typeQuery)),
+    }, index, source);
+  } catch (err) {
+    try {
+      return plainSection(withSourceCaveat(await o5SearchItems(params.name ?? "", "unavailable"), params.source));
+    } catch {
+      throw err;
+    }
   }
-  if (params.rarity) {
-    const q = params.rarity.toLowerCase();
-    matched = matched.filter(i => i.rarity?.toLowerCase().includes(q));
-  }
-  if (params.type) {
-    const q = params.type.toLowerCase();
-    matched = matched.filter(i =>
-      i.type?.toLowerCase().includes(q) || i.filterType?.toLowerCase().includes(q)
-    );
-  }
 
-  matched.sort((a, b) => a.name.localeCompare(b.name));
-
-  const total = matched.length;
-  const shown = matched.slice(0, 30);
-
-  if (shown.length === 0) {
-    return await o5SearchItems(params.name ?? "", "not-found").catch(
+  const { hits, hidden, header, note } = selection;
+  if (hits.length === 0) {
+    if (source) return plainSection(`No items found matching the criteria in ${source.book}.`);
+    return plainSection(await o5SearchItems(params.name ?? "", "not-found").catch(
       () => "No items found matching the criteria."
-    );
+    ));
   }
 
+  const total = hits.length;
   const lines = [`**Item Search** (${total > 30 ? `showing 30 of ${total}` : `${total} found`})\n`];
-  for (const item of shown) {
+  for (const { entry: item, label } of hits.slice(0, 30)) {
     const rarity = item.rarity || "Common";
     const type = item.filterType || item.type || "Item";
     const attune = item.requiresAttunement ? " (attunement)" : "";
-    lines.push(`- **${item.name}** — ${rarity} ${type}${attune}`);
+    lines.push(`- **${item.name}** ${label} — ${rarity} ${type}${attune}`);
   }
   if (total > 30) lines.push(`\n*Refine your search to see more results.*`);
-  return lines.join("\n");
+  const results = lines.join("\n");
+  return {
+    header,
+    body: note ? `${note}\n${results}` : results,
+    footer: searchFooter(requested, hidden),
+    hidden,
+  };
 }
 
-export async function getItem(itemName: string): Promise<string> {
+export async function getItem(itemName: string, rulesEdition: RulesEdition = "2024", source?: string): Promise<string> {
+  const resolved = await resolveSourceParam(source);
+  if (typeof resolved === "string") return resolved;
   try {
     const items = await loadItemCompendium();
-    const q = itemName.toLowerCase();
+    const index = await getSourceIndex();
+    const found = lookupCatalog(items, itemName, rulesEdition, ITEM_ADAPTER, index, resolved);
 
-    const item = items.find(i => i.name.toLowerCase() === q)
-      ?? items.find(i => i.name.toLowerCase().includes(q));
-
-    if (!item) {
+    if (!found) {
+      // A book the caller asked for is never swapped for SRD content.
+      if (resolved) return `Item "${itemName}" not found in ${resolved.book}.`;
       // Try magic items, then weapons, then armour via Open5e
       for (const fallback of [o5GetItem, o5GetWeapon, o5GetArmor]) {
         const result = await fallback(itemName, "not-found").catch(() => null);
@@ -830,12 +866,12 @@ export async function getItem(itemName: string): Promise<string> {
       return `Item "${itemName}" not found. Try ddb_search_equipment with a partial name.`;
     }
 
-    return formatItem(item);
+    return formatItem(found.entry, found.rulesLines);
   } catch (err) {
     for (const fallback of [o5GetItem, o5GetWeapon, o5GetArmor]) {
       try {
         const result = await fallback(itemName, "unavailable");
-        if (result) return result;
+        if (result) return withSourceCaveat(result, source);
       } catch { /* continue */ }
     }
     throw err;

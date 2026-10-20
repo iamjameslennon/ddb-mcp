@@ -672,16 +672,18 @@ server.tool(
 // ─── ddb_search_equipment ────────────────────────────────────────────────────
 server.tool(
   "ddb_search_equipment",
-  "Search the D&D Beyond item/equipment compendium by name, rarity, or type. Covers mundane weapons (Longsword, Shortbow), armour (Plate, Chain Mail), adventuring gear, and magic items. Filter by rarity='common' to see only mundane equipment. Requires login.",
+  "Search the D&D Beyond item/equipment compendium by name, rarity, or type. Covers mundane weapons (Longsword, Shortbow), armour (Plate, Chain Mail), adventuring gear, and magic items. Filter by rarity='common' to see only mundane equipment. Requires login. A source picks one book's version and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().optional().describe("Partial item name (e.g. 'sword', 'cloak')"),
     rarity: z.string().optional().describe("Rarity filter (e.g. 'rare', 'legendary', 'uncommon')"),
     type: z.string().optional().describe("Item type filter (e.g. 'weapon', 'armor', 'wondrous')"),
+    rules_edition: RULES_EDITION_PARAM,
+    source: SOURCE_PARAM,
   },
   READ_ONLY_NET,
-  async ({ name, rarity, type }) => {
+  async ({ name, rarity, type, rules_edition, source }) => {
     try {
-      const result = await searchItems({ name, rarity, type });
+      const result = await searchItems({ name, rarity, type, rulesEdition: rules_edition, source });
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -694,14 +696,16 @@ server.tool(
 // ─── ddb_get_equipment ───────────────────────────────────────────────────────
 server.tool(
   "ddb_get_equipment",
-  "Get the full stats and description of any item or equipment in the D&D Beyond compendium by name. Works for mundane weapons (e.g. 'Longbow'), armour (e.g. 'Plate'), adventuring gear, and magic items. Requires login.",
+  "Get the full stats and description of any item or equipment in the D&D Beyond compendium by name. Works for mundane weapons (e.g. 'Longbow'), armour (e.g. 'Plate'), adventuring gear, and magic items. Requires login. A source picks one book's version and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().min(1).describe("Item name (e.g. 'Bag of Holding', 'Flame Tongue')"),
+    rules_edition: RULES_EDITION_PARAM,
+    source: SOURCE_PARAM,
   },
   READ_ONLY_NET,
-  async ({ name }) => {
+  async ({ name, rules_edition, source }) => {
     try {
-      const result = await getItem(name);
+      const result = await getItem(name, rules_edition, source);
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
