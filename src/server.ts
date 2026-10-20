@@ -531,7 +531,7 @@ server.tool(
 // ─── ddb_search_site ──────────────────────────────────────────────────────────
 server.tool(
   "ddb_search_site",
-  "Search D&D Beyond for spells, monsters, magic items, races, classes, or feats. Each category lists the rules_edition version of an entry and counts the other edition's twins in one combined footer. " + RULES_EDITION_TOOL_NOTE,
+  "Search D&D Beyond for spells, monsters, magic items, races, classes, or feats. Each category lists the rules_edition version of an entry and counts the other edition's hidden twins. With category \"all\", the sections share one search header and one combined footer (a reply where every section came from the Open5e fallback has no combined header); a single category keeps its own header and footer. " + RULES_EDITION_TOOL_NOTE,
   {
     query: z.string().min(1).describe("The search query (e.g. 'Fireball', 'Beholder', 'Vorpal Sword')"),
     category: z
