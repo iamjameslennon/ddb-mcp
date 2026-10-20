@@ -586,9 +586,13 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
   } else if (params.source) {
     monsters = fetched.filter(passes).map(m => ({ m, info: info(m) }));
   } else {
+    // countFilteredPicks: a group whose requested pick fails the CR/type/size
+    // filters while the other edition's pick passes is counted as hidden, as in
+    // the catalog searches. A locked group's swapped pick is never counted.
     const picked = groupAndSelect(fetched, requested, {
       info, twinKey: m => twinName(m.name), tiebreak: monsterTiebreak(index), passes,
       available: m => !isLockedIn(access, m.id),
+      countFilteredPicks: true,
     });
     monsters = picked.selected.map(s => ({ m: s.entry, info: s.info, reason: s.reason }));
     hidden = picked.hidden;
@@ -610,6 +614,15 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
         if (available.length) msg += ` "${searchTerm}" appears in: ${available.join(", ")}.`;
       }
       return msg;
+    }
+    // Only the other edition has a match: say so, rather than substitute the SRD.
+    if (hidden > 0) {
+      return {
+        header: searchHeader({ requested }),
+        body: "No monsters found matching the search criteria.",
+        footer: searchFooter(requested, hidden),
+        hidden,
+      };
     }
     return await o5SearchMonsters(params, "not-found").catch(() => "No monsters found matching the search criteria.");
   }

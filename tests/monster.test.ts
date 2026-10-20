@@ -1415,3 +1415,58 @@ describe("the locked-entry note and the swap summary count every selected entry"
     expect(lines.at(-1)).toBe('2 2014 versions hidden — rules_edition: "2014" shows them.');
   });
 });
+
+describe("searchMonsters counts a twin whose requested pick fails the filters", () => {
+  // The 2024 Ghast Hound is CR 1, its 2014 twin CR 1/2; the Ghast Pup is 2024-only, CR 1/2.
+  const HOUND_2024 = monster({ id: 8_000_700, name: "Ghast Hound", sourceId: 147, sources: sources(147), challengeRatingId: 5 });
+  const HOUND_2014 = monster({ id: 8_000_701, name: "Ghast Hound", isLegacy: true, sourceId: 1, sources: sources(1), challengeRatingId: 4 });
+  const PUP_2024 = monster({ id: 8_000_702, name: "Ghast Pup", sourceId: 147, sources: sources(147), challengeRatingId: 4 });
+  const HEADER = 'Rules: 2024 by default — 2014 entries appear only where no 2024 version was found. Use rules_edition: "2014" for 2014 versions.';
+  const FOOTER = '1 2014 version hidden — rules_edition: "2014" shows it.';
+
+  it("a CR filter only the 2014 twin passes: the footer counts it, the entry is not listed", async () => {
+    extraMonsters = [HOUND_2024, HOUND_2014, PUP_2024];
+    const out = await searchMonsters({ name: "Ghast", cr: 0.5 });
+    expect(out).toContain("- **Ghast Pup** [2024]");
+    expect(out).not.toContain("Ghast Hound");
+    expect(out.split("\n").at(-1)).toBe(FOOTER);
+  });
+
+  it("with rules_edition 2014 the 2014 entry is listed", async () => {
+    extraMonsters = [HOUND_2024, HOUND_2014, PUP_2024];
+    const out = await searchMonsters({ name: "Ghast", cr: 0.5, rulesEdition: "2014" });
+    expect(out).toContain("- **Ghast Hound** [2014] — Basic Rules (2014) [basic-rules-2014] — CR 1/2");
+    expect(out).toContain("- **Ghast Pup** [2024]");
+    expect(out).not.toContain("hidden");
+  });
+
+  it("alone: the search header, the no-match line and the footer, no Open5e", async () => {
+    extraMonsters = [HOUND_2024, HOUND_2014];
+    expect(await searchMonsters({ name: "Ghast Hound", cr: 0.5 }))
+      .toBe([HEADER, "No monsters found matching the search criteria.", FOOTER].join("\n"));
+    expect(o5SearchMonsters).not.toHaveBeenCalled();
+  });
+
+  it("a locked 2024 pick swapped to its 2014 twin that passes is listed with the swap, not counted", async () => {
+    extraMonsters = [HOUND_2024, HOUND_2014];
+    unownedIds.add(HOUND_2024.id as number);
+    const lines = (await searchMonsters({ name: "Ghast Hound", cr: 0.5 })).split("\n");
+    expect(lines).toContain("- **Ghast Hound** [2014] — Basic Rules (2014) [basic-rules-2014] — CR 1/2, Medium Undead, AC 8, 22 HP (2024 version isn't available to this account)");
+    expect(lines.at(-1)).toBe("1 entry shows its 2014 version because the 2024 version isn't available to this account.");
+    expect(lines.join("\n")).not.toContain("hidden");
+  });
+
+  it("a swapped pick that fails the filter is neither listed nor counted: switching would show nothing", async () => {
+    extraMonsters = [HOUND_2024, HOUND_2014];
+    unownedIds.add(HOUND_2024.id as number);
+    // CR 1: only the locked 2024 entry passes, and the 2014 swap does not.
+    expect(await searchMonsters({ name: "Ghast Hound", cr: 1 })).toBe("O5 SEARCH RESULT");
+  });
+
+  it("a passing 2014 twin that is locked is not counted: the 2014 request would swap to the 2024 entry", async () => {
+    extraMonsters = [HOUND_2024, HOUND_2014];
+    unownedIds.add(HOUND_2014.id as number);
+    expect(await searchMonsters({ name: "Ghast Hound", cr: 0.5 })).toBe("O5 SEARCH RESULT");
+    expect(await searchMonsters({ name: "Ghast Hound", cr: 0.5, rulesEdition: "2014" })).toBe("O5 SEARCH RESULT");
+  });
+});

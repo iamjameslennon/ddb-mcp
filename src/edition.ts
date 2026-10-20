@@ -442,7 +442,7 @@ export interface SearchOptions<T> {
   /**
    * Also count a group as hidden when its requested-edition pick fails
    * `passes` but the other edition's pick passes: the other request lists it.
-   * The catalog searches set this; monster searches do not.
+   * Both callers, the catalog searches and monster search, set this.
    */
   countFilteredPicks?: boolean;
 }
