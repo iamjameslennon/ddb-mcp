@@ -3,43 +3,23 @@ import { open5eSearchHeader } from "../src/edition.js";
 import { o5Fixture, o5FixtureFetch, o5Record } from "./fixtures/open5e-v2.js";
 import {
   clearOpen5eCache,
-  o5GetSpell, o5GetMonster, o5GetItem, o5GetWeapon, o5GetArmor, o5GetRace,
-  o5SearchSpells, o5SearchMonsters, o5SearchItems, o5SearchWeapons, o5SearchArmor,
+  o5GetSpell, o5GetMonster, o5GetEquipment,
+  o5SearchSpells, o5SearchMonsters, o5SearchItems,
   o5SearchRaces, o5SearchClasses, o5SearchBackgrounds, o5SearchFeats,
   o5SearchSections, o5GetSection, o5GetMonsterStats, crText, castingTime,
 } from "../src/open5e.js";
 
-const UNAVAILABLE = "Rules: 2014 · SRD 5.1 (Open5e fallback — D&D Beyond unavailable)";
-const NOT_FOUND = "Rules: 2014 · SRD 5.1 (Open5e fallback — not found on D&D Beyond)";
-const TAGGED = /^• [^[\n]+? \[2014\]/;
-
-const item = { name: "Bag of Holding", type: "Wondrous item", rarity: "uncommon", desc: "It holds more." };
-const weapon = { name: "Longsword", category: "Martial Melee Weapons", cost: "15 gp", damage_dice: "1d8", damage_type: "slashing", weight: "3 lb.", properties: ["versatile (1d10)"] };
-const armor = { name: "Chain Mail", category: "Heavy Armor", base_ac: 16, ac_string: "16", strength_requirement: 13, stealth_disadvantage: true, cost: "75 gp", weight: "55 lb." };
-const race = (name: string) => ({ name, desc: "", asi_desc: "", asi: [{ attributes: ["Con"], value: 2 }], size: "Medium", speed: { walk: 25 }, languages: "Common", vision: "", traits: "Tough." });
-const klass = (name: string) => ({ name, hit_dice: "1d8", hp_at_1st_level: "8", hp_at_higher_levels: "", prof_armor: "", prof_weapons: "", prof_saving_throws: "", prof_skills: "", desc: "" });
-const background = (name: string) => ({ name, skill_proficiencies: "Insight", equipment: "Pack", feature: "Shelter", feature_desc: "Help." });
-const feat = (name: string) => ({ name, desc: "Grapple well." });
 const section = { slug: "combat", name: "Combat", desc: "Roll initiative.", parent: "", document__slug: "wotc-srd" };
-
-let raceResults: unknown[] = [race("Dwarf"), race("Elf")];
 
 function route(url: string): unknown {
   const path = new URL(url).pathname.replace("/v1", "");
   const wrap = (results: unknown[]) => ({ count: results.length, next: null, results });
-  if (path.startsWith("/magicitems/")) return wrap([item]);
-  if (path.startsWith("/weapons/")) return wrap([weapon]);
-  if (path.startsWith("/armor/")) return wrap([armor]);
-  if (path.startsWith("/races/")) return wrap(raceResults);
-  if (path.startsWith("/classes/")) return wrap([klass("Fighter"), klass("Rogue")]);
-  if (path.startsWith("/backgrounds/")) return wrap([background("Acolyte"), background("Sage")]);
-  if (path.startsWith("/feats/")) return wrap([feat("Grappler"), feat("Alert")]);
   if (path === "/sections/combat/") return section;
   if (path.startsWith("/sections/")) return wrap([section]);
   throw new Error(`unrouted ${path}`);
 }
 
-/** v2 document URLs are served from the recorded fixtures; the not-yet-migrated v1 kinds keep `route`. */
+/** v2 document URLs are served from the recorded fixtures; the not-yet-migrated v1 rules keep `route`. */
 function stubFetch(v2 = o5FixtureFetch()): void {
   vi.stubGlobal("fetch", vi.fn(async (url: string) =>
     url.includes("/v2/") ? v2(url) : { ok: true, status: 200, json: async () => route(url) }));
@@ -47,46 +27,31 @@ function stubFetch(v2 = o5FixtureFetch()): void {
 
 beforeEach(() => {
   clearOpen5eCache();
-  raceResults = [race("Dwarf"), race("Elf")];
   stubFetch();
 });
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Open5e labels", () => {
   it.each([
-    ["o5GetItem", () => o5GetItem("Bag of Holding", "unavailable"), UNAVAILABLE],
-    ["o5GetWeapon", () => o5GetWeapon("Longsword", "unavailable"), UNAVAILABLE],
-    ["o5GetArmor", () => o5GetArmor("Chain Mail", "unavailable"), UNAVAILABLE],
-    ["o5GetRace", () => o5GetRace("Dwarf", "unavailable"), UNAVAILABLE],
-  ])("%s puts the rules line under the title", async (_n, call, expected) => {
-    const out = (await call())!;
-    expect(out.split("\n")[1]).toBe(expected);
-    expect(out).not.toContain("Source: SRD 5.1 via Open5e");
-  });
-
-  it.each([
-    ["o5SearchItems", () => o5SearchItems("bag", "unavailable")],
-    ["o5SearchWeapons", () => o5SearchWeapons({ name: "sword" }, "unavailable")],
-    ["o5SearchArmor", () => o5SearchArmor({ name: "mail" }, "unavailable")],
-    ["o5SearchRaces", () => o5SearchRaces(undefined, "unavailable")],
-    ["o5SearchClasses", () => o5SearchClasses(undefined, "unavailable")],
-    ["o5SearchBackgrounds", () => o5SearchBackgrounds(undefined, "unavailable")],
-    ["o5SearchFeats", () => o5SearchFeats(undefined, "unavailable")],
-  ])("%s opens with the rules line and tags every result line", async (_n, call) => {
+    ["o5SearchItems", () => o5SearchItems({ name: "bag" }, "unavailable")],
+    ["o5SearchRaces", () => o5SearchRaces({}, "unavailable")],
+    ["o5SearchClasses", () => o5SearchClasses({}, "unavailable")],
+    ["o5SearchBackgrounds", () => o5SearchBackgrounds({}, "unavailable")],
+    ["o5SearchFeats", () => o5SearchFeats({}, "unavailable")],
+  ])("%s opens with the Open5e search header and tags every result line", async (_n, call) => {
     const out = await call();
     const lines = out.split("\n");
-    expect(lines[0]).toBe(UNAVAILABLE);
+    expect(lines[0]).toBe(open5eSearchHeader("2024", "unavailable"));
     const results = lines.filter(l => l.startsWith("• "));
     expect(results.length).toBeGreaterThan(0);
-    for (const l of results) expect(l).toMatch(TAGGED);
+    for (const l of results) expect(l).toMatch(/^• [^[\n]+? \[(?:2024|2014)\]/);
     expect(out).not.toContain("Source: SRD 5.1 via Open5e");
   });
 
   it("a single-result search uses the single-lookup label", async () => {
-    raceResults = [race("Dwarf")];
-    const one = await o5SearchRaces("dwarf", "not-found");
+    const one = await o5SearchRaces({ name: "dwarf" }, "not-found");
     expect(one.split("\n")[0]).toBe("Dwarf");
-    expect(one.split("\n")[1]).toBe(NOT_FOUND);
+    expect(one.split("\n")[1]).toBe("Rules: 2024 · SRD 5.2 (Open5e fallback — not found on D&D Beyond)");
   });
 
   it("rules sections are labelled as the primary source", async () => {
@@ -282,6 +247,53 @@ describe("Open5e v2 spells and monsters", () => {
   it("a not-found search keeps its plain message", async () => {
     stubFetch(o5FixtureFetch({ "srd-2024/spells": [], "srd-2014/spells": [] }));
     expect(await o5SearchSpells({ name: "zzz" }, "not-found")).toBe("No spells found matching the criteria (SRD only).");
+  });
+});
+
+describe("Open5e v2 equipment and character options", () => {
+  it("o5GetEquipment prefers an exact name in any endpoint over a partial one", async () => {
+    expect((await o5GetEquipment("Longsword", "2024", "unavailable"))!.split("\n")[0]).toBe("Longsword (Martial Weapon)");
+  });
+  it("o5GetEquipment matches case-insensitively and picks the requested document", async () => {
+    expect((await o5GetEquipment("chain mail", "2014", "unavailable"))!.split("\n").slice(0, 2)).toEqual(["Chain mail (Heavy Armor)", U14]);
+  });
+  it("o5GetEquipment folds curly apostrophes", async () => {
+    expect((await o5GetEquipment("Alchemist’s Fire", "2024", "unavailable"))!.split("\n")[0]).toMatch(/^Alchemist's Fire \(/);
+  });
+  it("o5GetEquipment reason lines in both directions", async () => {
+    expect((await o5GetEquipment("Abacus", "2024", "not-found"))!.split("\n")[2]).toBe("(no 2024 version found — 2014 text shown)");
+    expect((await o5GetEquipment("Musket", "2014", "unavailable"))!.split("\n")[2]).toBe("(no 2014 version found — 2024 text shown)");
+  });
+  it("the shield is a shield", async () => {
+    expect((await o5GetEquipment("Shield", "2024", "unavailable"))!).toMatch(/^Shield \(Shield\)\n[^\n]+\nAC: \+2$/m);
+  });
+  it("o5SearchItems covers magic and mundane items and applies rarity", async () => {
+    const all = await o5SearchItems({ name: "longsword", rulesEdition: "2024" }, "unavailable");
+    expect(all).toContain("• Flame Tongue Longsword [2024]");
+    expect(all).toContain("• Longsword [2024]");
+    expect(await o5SearchItems({ name: "longsword", rarity: "rare", rulesEdition: "2024" }, "unavailable")).not.toContain("• Longsword [2024]");
+  });
+  it("a 2014 feat request with no SRD 5.1 match shows SRD 5.2 with the reason", async () => {
+    const out = await o5SearchFeats({ name: "alert", rulesEdition: "2014" }, "unavailable");
+    expect(out.split("\n").slice(0, 3)).toEqual(["Alert", U24, "(no 2014 version found — 2024 text shown)"]);
+  });
+  it("a subrace takes its parent's speed", async () => {
+    expect(await o5SearchRaces({ name: "elf", rulesEdition: "2014" }, "unavailable"))
+      .toContain("• High Elf [2014] (subrace of Elf) | Speed: Your base walking speed is 30 feet.");
+  });
+  it("a no-name class search survives subclasses and missing fields", async () => {
+    const out = await o5SearchClasses({ rulesEdition: "2024" }, "unavailable");
+    expect(out).toContain("• Champion [2024] (d10) | subclass of Fighter");
+    expect(out).not.toMatch(/undefined|null/);
+    expect(await o5SearchClasses({ name: "wizard", rulesEdition: "2014" }, "unavailable")).not.toContain("Spellcasting: null");
+  });
+  it("a class search by a renamed subclass's 2014 name finds the 2024 one", async () => {
+    const out = await o5SearchClasses({ name: "school of evocation", rulesEdition: "2024" }, "unavailable");
+    expect(out.split("\n").slice(0, 2)).toEqual(["Evoker", U24]);   // single hit: detail block
+    expect(out).toContain('1 2014 version hidden — rules_edition: "2014" shows it.');
+  });
+  it("a mundane item prints a dash for a zero cost or weight", async () => {
+    expect(await o5GetEquipment("Antitoxin", "2024", "unavailable")).toMatch(/^Cost: 50 gp \| Weight: —$/m);
   });
 });
 

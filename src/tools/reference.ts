@@ -38,8 +38,7 @@ import {
 } from "./features-traits.js";
 import {
   o5SearchSpells, o5GetSpell,
-  o5SearchItems, o5GetItem,
-  o5GetWeapon, o5GetArmor,
+  o5SearchItems, o5GetEquipment,
   o5SearchRaces, o5SearchClasses, o5SearchBackgrounds, o5SearchFeats,
   o5SearchSections, o5GetSection,
 } from "../open5e.js";
@@ -839,7 +838,7 @@ export async function searchItemsSection(params: ItemSearchParams): Promise<Sear
       return lines.join("\n");
     },
     notFound: "No items found matching the criteria.",
-    fallback: kind => o5SearchItems(params.name ?? "", kind),
+    fallback: kind => o5SearchItems(params, kind),
     // No `unavailable`: when Open5e fails too, the compendium's own error is thrown.
   });
 }
@@ -855,22 +854,17 @@ export async function getItem(itemName: string, rulesEdition: RulesEdition = "20
     if (!found) {
       // A book the caller asked for is never swapped for SRD content.
       if (resolved) return `Item "${itemName}" not found in ${resolved.book}.`;
-      // Try magic items, then weapons, then armour via Open5e
-      for (const fallback of [o5GetItem, o5GetWeapon, o5GetArmor]) {
-        const result = await fallback(itemName, "not-found").catch(() => null);
-        if (result) return result;
-      }
+      const result = await o5GetEquipment(itemName, rulesEdition, "not-found").catch(() => null);
+      if (result) return result;
       return `Item "${itemName}" not found. Try ddb_search_equipment with a partial name.`;
     }
 
     return formatItem(found.entry, found.rulesLines);
   } catch (err) {
-    for (const fallback of [o5GetItem, o5GetWeapon, o5GetArmor]) {
-      try {
-        const result = await fallback(itemName, "unavailable");
-        if (result) return withSourceCaveat(result, source);
-      } catch { /* continue */ }
-    }
+    try {
+      const result = await o5GetEquipment(itemName, rulesEdition, "unavailable");
+      if (result) return withSourceCaveat(result, source);
+    } catch { /* fall through to the compendium's error */ }
     throw err;
   }
 }
@@ -1050,7 +1044,7 @@ export async function searchRacesSection(params: RaceSearchParams = {}): Promise
       return `- **${raceName(race)}** ${label}${race.isSubRace ? " *(Subrace)*" : ""}${desc ? ` — ${desc}` : ""}`;
     },
     notFound: `No races found matching "${params.name}".`,
-    fallback: kind => o5SearchRaces(params.name, kind),
+    fallback: kind => o5SearchRaces({ name: params.name, rulesEdition: params.rulesEdition }, kind),
   });
 }
 
@@ -1101,7 +1095,7 @@ export async function searchClassesSection(params: ClassSearchParams = {}): Prom
       return `- **${cls.name}** ${label} — Hit Die: ${hitDie}${spellcasting}${desc ? `\n  ${desc}` : ""}`;
     },
     notFound: `No classes found matching "${params.name}".`,
-    fallback: kind => o5SearchClasses(params.name, kind),
+    fallback: kind => o5SearchClasses({ name: params.name, rulesEdition: params.rulesEdition }, kind),
   });
 }
 
@@ -1142,7 +1136,7 @@ export async function searchBackgroundsSection(params: BackgroundSearchParams = 
       return `- **${bg.name}** ${label}${desc ? ` — ${desc}` : ""}`;
     },
     notFound: `No backgrounds found matching "${params.name}".`,
-    fallback: kind => o5SearchBackgrounds(params.name, kind),
+    fallback: kind => o5SearchBackgrounds({ name: params.name, rulesEdition: params.rulesEdition }, kind),
   });
 }
 
@@ -1188,7 +1182,7 @@ export async function searchFeatsSection(params: FeatSearchParams = {}): Promise
       return `- **${feat.name}** ${label}${prereq}${desc ? ` — ${desc}` : ""}`;
     },
     notFound: "No feats found matching the search criteria.",
-    fallback: kind => o5SearchFeats(params.name, kind),
+    fallback: kind => o5SearchFeats({ name: params.name, rulesEdition: params.rulesEdition }, kind),
   });
 }
 

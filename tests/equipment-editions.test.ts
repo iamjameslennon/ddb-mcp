@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import { searchHeader, sourceNote } from "../src/edition.js";
+import { open5eSearchHeader, searchHeader, sourceNote } from "../src/edition.js";
+import { o5FixtureFetch } from "./fixtures/open5e-v2.js";
 
 /**
  * equipment-editions.test.ts — rules_edition and source on ddb_get_equipment /
@@ -24,6 +25,8 @@ vi.mock("fs", () => fsMock);
 
 import { COBALT_URL, GAME_DATA, jsonResponse, makeJwt } from "./fixtures/spell-service.js";
 
+const realFs = await vi.importActual<typeof import("fs")>("fs");
+
 type ReferenceModule = typeof import("../src/tools/reference.js");
 let reference: ReferenceModule;
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -31,12 +34,15 @@ let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(async () => {
   vi.clearAllMocks();
   fsMock.existsSync.mockReset().mockReturnValue(true);
-  fsMock.readFileSync.mockReset().mockReturnValue(JSON.stringify({
+  const session = JSON.stringify({
     cookies: [{
       name: "CobaltSession", value: "SECRET_A", domain: ".dndbeyond.com", path: "/",
       expires: Date.now() / 1000 + 3600, httpOnly: true, secure: true,
     }],
-  }));
+  });
+  // The recorded Open5e documents are read from disk through the real fs.
+  fsMock.readFileSync.mockReset().mockImplementation((path: unknown, ...rest: unknown[]) =>
+    String(path).includes("/fixtures/open5e-v2/") ? realFs.readFileSync(path as URL, ...(rest as [BufferEncoding])) : session);
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
   vi.resetModules();
@@ -155,18 +161,18 @@ describe("ddb_search_equipment rules_edition and source", () => {
 
   it("a load failure falls back to labelled Open5e, with the source caveat when a source was given", async () => {
     // 403, not 500: a 5xx is retried with backoff, which only slows the test down.
+    const o5 = o5FixtureFetch();
     fetchMock.mockImplementation(async (url: string) => {
       if (url === COBALT_URL) return jsonResponse({ token: makeJwt("99") });
       if (url.startsWith(GAME_DATA)) return jsonResponse({}, 403);
-      if (url.includes("open5e")) {
-        return jsonResponse({ count: 1, results: [{ name: "Longsword", type: "Weapon", rarity: "common", desc: "Sharp." }] });
-      }
+      if (url.includes("open5e")) return o5(url);
       return jsonResponse({});
     });
     const plain = await reference.searchItems({ name: "longsword" });
-    expect(plain.split("\n")[0]).toBe("Rules: 2014 · SRD 5.1 (Open5e fallback — D&D Beyond unavailable)");
+    expect(plain.split("\n")[0]).toBe(open5eSearchHeader("2024", "unavailable"));
+    expect(plain).toContain("• Longsword [2024] (Weapon)");
     const withSource = await reference.searchItems({ name: "longsword", source: "phb-2024" });
-    expect(withSource).toContain("Longsword");
+    expect(withSource).toContain("• Longsword [2024]");
     expect(withSource.endsWith('*Note: source filtering is not available via the Open5e SRD fallback — "phb-2024" was requested but could not be honoured.*')).toBe(true);
   });
 

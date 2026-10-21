@@ -104,13 +104,11 @@ export async function loadO5Document<T extends O5Record>(endpoint: O5Endpoint, e
 
 // ── Edition labels ────────────────────────────────────────────────────────────
 
-// Interim: the v1 kinds below serve SRD 5.1 only, until they move to v2.
+// Interim: the v1 rules sections below serve SRD 5.1 only, until they move to v2.
 const O5_INFO: EditionInfo = { ruleset: "2014", book: null };
 
 /** Line 2 of a single lookup. */
 const label = (origin: Open5eOrigin): string => rulesLine(O5_INFO, { open5e: origin });
-/** Inline tag after a search result's name. */
-const TAG = editionTag(O5_INFO);
 
 // ── Selection over both SRD documents ─────────────────────────────────────────
 // Both documents of an endpoint are selected together, each record's ruleset
@@ -510,343 +508,331 @@ export async function o5GetMonster(name: string, rulesEdition: RulesEdition, ori
   return hit ? formatO5Monster(hit, origin) : null;
 }
 
-// ── ITEMS ─────────────────────────────────────────────────────────────────────
+// ── EQUIPMENT ─────────────────────────────────────────────────────────────────
 
-interface O5Item {
-  name: string;
-  type: string;
-  rarity: string;
-  requires_attunement?: string;
+interface O5MagicItem extends O5Record {
   desc: string;
+  category: { name: string };
+  rarity: { name: string };
+  requires_attunement?: boolean;
+  attunement_detail?: string | null;
 }
 
-function formatO5Item(item: O5Item, origin: Open5eOrigin): string {
-  const attune = item.requires_attunement
-    ? ` | Requires attunement${item.requires_attunement !== "true" ? ` (${item.requires_attunement})` : ""}`
-    : "";
-  return [
-    `${item.name} (${item.type}, ${item.rarity}${attune})`,
-    label(origin),
-    ``,
-    item.desc.replace(/<[^>]+>/g, "").trim(),
-  ].join("\n");
+/** A mundane item (v2 `items`): adventuring gear, and the cost and weight of weapons and armour. */
+interface O5Item extends O5Record {
+  desc: string;
+  category: { name: string };
+  cost?: string | null;
+  weight?: string | null;
+  weight_unit?: string | null;
 }
 
-export async function o5SearchItems(name: string, origin: Open5eOrigin): Promise<string> {
-  const data = await o5fetch(
-    `/magicitems/?search=${encodeURIComponent(name)}&limit=20`
-  ) as { count: number; results: O5Item[] };
-
-  if (!data.results.length) return `No magic items found matching "${name}" (SRD only).`;
-
-  const lines = data.results.map(
-    i => `• ${i.name} ${TAG} (${i.type}, ${i.rarity})`
-  );
-  return [
-    label(origin),
-    `Found ${data.count} item(s) (showing ${data.results.length}, SRD only):`,
-    ...lines,
-  ].join("\n");
-}
-
-export async function o5GetItem(name: string, origin: Open5eOrigin): Promise<string | null> {
-  const data = await o5fetch(
-    `/magicitems/?name=${encodeURIComponent(name)}&limit=5`
-  ) as { results: O5Item[] };
-
-  const exact = data.results.find(
-    i => i.name.toLowerCase() === name.toLowerCase()
-  );
-  const match = exact ?? data.results[0];
-  if (!match) return null;
-  return formatO5Item(match, origin);
-}
-
-// ── WEAPONS ───────────────────────────────────────────────────────────────────
-
-interface O5Weapon {
-  name: string;
-  category: string;       // e.g. "Simple Melee Weapons", "Martial Ranged Weapons"
-  cost: string;
+interface O5Weapon extends O5Record {
   damage_dice: string;
-  damage_type: string;
-  weight: string;
-  properties: string[];   // e.g. ["versatile (1d10)", "thrown (20/60)"]
+  damage_type?: { name: string } | null;
+  range?: number | null;
+  long_range?: number | null;
+  distance_unit?: string | null;
+  is_simple: boolean;
+  properties?: Array<{ property: { name: string; type?: string | null }; detail?: string | null }>;
 }
 
-function formatO5Weapon(w: O5Weapon, origin: Open5eOrigin): string {
+interface O5Armor extends O5Record {
+  category?: string | null;   // "light", "medium", "heavy"
+  ac_display: string;
+  strength_score_required?: number | null;
+  grants_stealth_disadvantage?: boolean;
+}
+
+/** Search hits: magic items and mundane items, told apart by endpoint. */
+type O5Gear = O5MagicItem | O5Item;
+
+const stripTags = (text: string | null | undefined): string => (text ?? "").replace(/<[^>]+>/g, "").trim();
+
+function formatO5MagicItem(hit: O5Hit<O5MagicItem>, origin: Open5eOrigin): string {
+  const i = hit.entry.record;
+  const attune = i.requires_attunement ? ` | Requires attunement${i.attunement_detail ? ` (${i.attunement_detail})` : ""}` : "";
+  return [`${i.name} (${i.category.name}, ${i.rarity.name}${attune})`, o5Label(hit.entry.edition, origin, hit), ``, stripTags(i.desc)].join("\n");
+}
+
+function formatO5Item(hit: O5Hit<O5Item>, origin: Open5eOrigin): string {
+  const i = hit.entry.record;
+  // A zero or missing cost or weight prints a dash.
+  const cost = Number(i.cost);
+  const weight = Number(i.weight);
+  const lines = [
+    `${i.name} (${i.category.name})`,
+    o5Label(hit.entry.edition, origin, hit),
+    `Cost: ${cost > 0 ? `${cost} gp` : "—"} | Weight: ${weight > 0 ? `${weight}${i.weight_unit ? ` ${i.weight_unit}` : ""}` : "—"}`,
+  ];
+  const desc = stripTags(i.desc);
+  if (desc) lines.push(``, desc);
+  return lines.join("\n");
+}
+
+/** No cost or weight: those live on the weapon's `items` record. */
+function formatO5Weapon(hit: O5Hit<O5Weapon>, origin: Open5eOrigin): string {
+  const w = hit.entry.record;
+  const lines = [`${w.name} (${w.is_simple ? "Simple" : "Martial"} Weapon)`, o5Label(hit.entry.edition, origin, hit)];
+  const damage = [w.damage_dice, w.damage_type?.name].filter(Boolean).join(" ");
+  if (damage) lines.push(`Damage: ${damage}`);
+  if ((w.range ?? 0) > 0) {
+    lines.push(`Range: ${w.range}${(w.long_range ?? 0) > 0 ? `/${w.long_range}` : ""}${w.distance_unit ? ` ${w.distance_unit}` : ""}`);
+  }
+  const props = w.properties ?? [];
+  const plain = props.filter(p => p.property.type !== "Mastery").map(p => `${p.property.name}${p.detail ? ` (${p.detail})` : ""}`);
+  if (plain.length) lines.push(`Properties: ${plain.join(", ")}`);
+  for (const p of props.filter(p => p.property.type === "Mastery")) lines.push(`Mastery: ${p.property.name}`);
+  return lines.join("\n");
+}
+
+function formatO5Armor(hit: O5Hit<O5Armor>, origin: Open5eOrigin): string {
+  const a = hit.entry.record;
+  // The 2024 Shield's record says "heavy" and an AC of "2": it is a +2 shield.
+  const shield = normalizeName(a.name) === "shield";
+  const category = a.category ? `${a.category.charAt(0).toUpperCase()}${a.category.slice(1)} ` : "";
+  const strReq = a.strength_score_required ? ` | Requires STR ${a.strength_score_required}` : "";
+  const stealth = a.grants_stealth_disadvantage ? ` | Stealth disadvantage` : "";
   return [
-    `${w.name} (${w.category})`,
-    label(origin),
-    `Damage: ${w.damage_dice} ${w.damage_type}`,
-    `Cost: ${w.cost} | Weight: ${w.weight || "—"}`,
-    w.properties.length ? `Properties: ${w.properties.join(", ")}` : "",
-  ].filter(Boolean).join("\n");
-}
-
-export async function o5SearchWeapons(params: {
-  name?: string;
-  category?: string;
-  limit?: number;
-  offset?: number;
-}, origin: Open5eOrigin): Promise<string> {
-  const limit = params.limit ?? 20;
-  const offset = params.offset ?? 0;
-  const qs = new URLSearchParams({ document__slug: SRD, limit: String(Math.min(offset + limit, 100)) });
-  if (params.name) qs.set("search", params.name);
-  if (params.category) qs.set("category", params.category);
-
-  const data = await o5fetch(`/weapons/?${qs}`) as { count: number; results: O5Weapon[] };
-  const page = data.results.slice(offset, offset + limit);
-  if (!page.length) return `No weapons found matching the criteria (SRD only).`;
-
-  const lines = page.map(w => `• ${w.name} ${TAG} — ${w.category} | ${w.damage_dice} ${w.damage_type} | ${w.cost}`);
-  return [label(origin), `Found ${data.count} weapon(s) (SRD only):`, ...lines].join("\n");
-}
-
-export async function o5GetWeapon(name: string, origin: Open5eOrigin): Promise<string | null> {
-  const data = await o5fetch(
-    `/weapons/?name=${encodeURIComponent(name)}&limit=5`
-  ) as { results: O5Weapon[] };
-
-  const exact = data.results.find(w => w.name.toLowerCase() === name.toLowerCase());
-  const match = exact ?? data.results[0];
-  if (!match) return null;
-  return formatO5Weapon(match, origin);
-}
-
-// ── ARMOUR ────────────────────────────────────────────────────────────────────
-
-interface O5Armor {
-  name: string;
-  category: string;                  // "Light Armor", "Medium Armor", "Heavy Armor"
-  base_ac: number;
-  ac_string: string;                 // e.g. "14 + Dex modifier (max 2)"
-  strength_requirement: number | null;
-  stealth_disadvantage: boolean;
-  cost: string;
-  weight: string;
-}
-
-function formatO5Armor(a: O5Armor, origin: Open5eOrigin): string {
-  const strReq = a.strength_requirement ? ` | Requires STR ${a.strength_requirement}` : "";
-  const stealth = a.stealth_disadvantage ? ` | Stealth disadvantage` : "";
-  return [
-    `${a.name} (${a.category})`,
-    label(origin),
-    `AC: ${a.ac_string}${strReq}${stealth}`,
-    `Cost: ${a.cost} | Weight: ${a.weight || "—"}`,
+    `${a.name} (${shield ? "Shield" : `${category}Armor`})`,
+    o5Label(hit.entry.edition, origin, hit),
+    `AC: ${shield ? "+" : ""}${a.ac_display}${strReq}${stealth}`,
   ].join("\n");
 }
 
-export async function o5SearchArmor(params: {
+export async function o5SearchItems(params: {
   name?: string;
-  category?: string;
-  limit?: number;
-  offset?: number;
-}, origin: Open5eOrigin): Promise<string> {
-  const limit = params.limit ?? 20;
-  const offset = params.offset ?? 0;
-  const qs = new URLSearchParams({ document__slug: SRD, limit: String(Math.min(offset + limit, 100)) });
-  if (params.name) qs.set("search", params.name);
-  if (params.category) qs.set("category", params.category);
-
-  const data = await o5fetch(`/armor/?${qs}`) as { count: number; results: O5Armor[] };
-  const page = data.results.slice(offset, offset + limit);
-  if (!page.length) return `No armour found matching the criteria (SRD only).`;
-
-  const lines = page.map(a => {
-    const strReq = a.strength_requirement ? ` | STR ${a.strength_requirement}` : "";
-    const stealth = a.stealth_disadvantage ? ` | Stealth disadv.` : "";
-    return `• ${a.name} ${TAG} — ${a.category} | ${a.ac_string}${strReq}${stealth} | ${a.cost}`;
+  rarity?: string;
+  type?: string;
+  rulesEdition?: RulesEdition;
+}, origin: "unavailable" | "not-found"): Promise<string> {
+  const requested = params.rulesEdition ?? "2024";
+  const rarity = params.rarity?.toLowerCase();
+  const type = params.type?.toLowerCase();
+  const { selected, hidden } = await o5Select<O5Gear>(["magicitems", "items"], requested, {
+    name: params.name,
+    // Mundane items have no rarity, so a rarity filter excludes them.
+    passes: ({ record: i, endpoint }) =>
+      (!rarity || (endpoint === "magicitems" && (i as O5MagicItem).rarity.name.toLowerCase().includes(rarity)))
+      && (!type || i.category.name.toLowerCase().includes(type)),
   });
-  return [label(origin), `Found ${data.count} armour piece(s) (SRD only):`, ...lines].join("\n");
-}
 
-export async function o5GetArmor(name: string, origin: Open5eOrigin): Promise<string | null> {
-  const data = await o5fetch(
-    `/armor/?name=${encodeURIComponent(name)}&limit=5`
-  ) as { results: O5Armor[] };
-
-  const exact = data.results.find(a => a.name.toLowerCase() === name.toLowerCase());
-  const match = exact ?? data.results[0];
-  if (!match) return null;
-  return formatO5Armor(match, origin);
-}
-
-// ── RACES ─────────────────────────────────────────────────────────────────────
-
-interface O5Race {
-  name: string;
-  desc: string;
-  asi_desc: string;
-  asi: Array<{ attributes: string[]; value: number }>;
-  size: string;
-  speed: Record<string, number>;
-  languages: string;
-  vision: string;
-  traits: string;
-}
-
-function formatO5Race(r: O5Race, origin: Open5eOrigin): string {
-  const speedStr = Object.entries(r.speed).map(([k, v]) => `${k} ${v} ft.`).join(", ");
-  const asiStr = r.asi.map(a => `+${a.value} ${a.attributes.join(", ")}`).join("; ");
-  return [
-    `${r.name}`,
-    label(origin),
-    `Size: ${r.size} | Speed: ${speedStr} | ASI: ${asiStr}`,
-    `Languages: ${r.languages}`,
-    r.vision ? `Vision: ${r.vision}` : "",
-    ``,
-    r.traits.replace(/<[^>]+>/g, "").trim(),
-  ].filter(Boolean).join("\n");
-}
-
-export async function o5SearchRaces(name: string | undefined, origin: Open5eOrigin): Promise<string> {
-  const qs = new URLSearchParams({ document__slug: SRD, limit: "20" });
-  if (name) qs.set("search", name);
-
-  const data = await o5fetch(`/races/?${qs}`) as { count: number; results: O5Race[] };
-  if (!data.results.length) return `No races found (SRD only).`;
-
-  if (name && data.results.length === 1) return formatO5Race(data.results[0], origin);
-
-  const lines = data.results.map(r => {
-    const speedStr = Object.entries(r.speed).map(([k, v]) => `${k} ${v} ft.`).join(", ");
-    const asiStr = r.asi.map(a => `+${a.value} ${a.attributes.join(", ")}`).join("; ");
-    return `• ${r.name} ${TAG} | ${speedStr} | ASI: ${asiStr}`;
+  const shown = selected.slice(0, 20);
+  const lines = shown.map(({ entry }) => {
+    const i = entry.record;
+    const rarityName = entry.endpoint === "magicitems" ? `, ${(i as O5MagicItem).rarity.name}` : "";
+    return `• ${i.name} ${editionTag(o5Info(entry))} (${i.category.name}${rarityName})`;
   });
-  return [
-    label(origin),
-    `Found ${data.count} race(s) (SRD only):`,
-    ...lines,
-  ].join("\n");
-}
-
-export async function o5GetRace(name: string, origin: Open5eOrigin): Promise<string | null> {
-  const data = await o5fetch(
-    `/races/?name=${encodeURIComponent(name)}&limit=5`
-  ) as { results: O5Race[] };
-
-  const exact = data.results.find(r => r.name.toLowerCase() === name.toLowerCase());
-  const match = exact ?? data.results[0];
-  if (!match) return null;
-  return formatO5Race(match, origin);
-}
-
-// ── CLASSES ───────────────────────────────────────────────────────────────────
-
-interface O5Class {
-  name: string;
-  hit_dice: string;
-  hp_at_1st_level: string;
-  hp_at_higher_levels: string;
-  prof_armor: string;
-  prof_weapons: string;
-  prof_saving_throws: string;
-  prof_skills: string;
-  spellcasting_ability?: string;
-  desc: string;
-}
-
-function formatO5Class(c: O5Class, origin: Open5eOrigin): string {
-  return [
-    `${c.name}`,
-    label(origin),
-    `Hit Die: ${c.hit_dice} | HP at 1st: ${c.hp_at_1st_level}`,
-    `Armor: ${c.prof_armor || "None"} | Weapons: ${c.prof_weapons}`,
-    `Saving Throws: ${c.prof_saving_throws}`,
-    `Skills: ${c.prof_skills}`,
-    c.spellcasting_ability ? `Spellcasting: ${c.spellcasting_ability}` : "",
-  ].filter(Boolean).join("\n");
-}
-
-export async function o5SearchClasses(name: string | undefined, origin: Open5eOrigin): Promise<string> {
-  const qs = new URLSearchParams({ document__slug: SRD, limit: "20" });
-  if (name) qs.set("search", name);
-
-  const data = await o5fetch(`/classes/?${qs}`) as { count: number; results: O5Class[] };
-  if (!data.results.length) return `No classes found (SRD only).`;
-
-  if (name && data.results.length === 1) return formatO5Class(data.results[0], origin);
-
-  const lines = data.results.map(c =>
-    `• ${c.name} ${TAG} (${c.hit_dice})${c.spellcasting_ability ? ` | Spellcasting: ${c.spellcasting_ability}` : ""}`
+  return o5SearchReply(
+    requested, origin,
+    `Found ${selected.length} item(s) (showing ${shown.length}, SRD only):`,
+    lines, hidden, "No items found matching the criteria (SRD only).",
   );
-  return [label(origin), `Found ${data.count} class(es) (SRD only):`, ...lines].join("\n");
 }
 
-// ── BACKGROUNDS ───────────────────────────────────────────────────────────────
-
-interface O5Background {
-  name: string;
-  skill_proficiencies: string;
-  tool_proficiencies?: string;
-  languages?: string;
-  equipment: string;
-  feature: string;
-  feature_desc: string;
+/** One lookup across magic items, weapons, armour and gear, so an exact name in any of them beats a partial one. */
+export async function o5GetEquipment(name: string, rulesEdition: RulesEdition, origin: Open5eOrigin): Promise<string | null> {
+  const hit = await o5Lookup<O5Record>(["magicitems", "weapons", "armor", "items"], name, rulesEdition);
+  if (!hit) return null;
+  switch (hit.entry.endpoint) {
+    case "magicitems": return formatO5MagicItem(hit as O5Hit<O5MagicItem>, origin);
+    case "weapons": return formatO5Weapon(hit as O5Hit<O5Weapon>, origin);
+    case "armor": return formatO5Armor(hit as O5Hit<O5Armor>, origin);
+    default: return formatO5Item(hit as O5Hit<O5Item>, origin);
+  }
 }
 
-function formatO5Background(b: O5Background, origin: Open5eOrigin): string {
-  return [
-    `${b.name}`,
-    label(origin),
-    `Skills: ${b.skill_proficiencies}`,
-    b.tool_proficiencies ? `Tools: ${b.tool_proficiencies}` : "",
-    b.languages ? `Languages: ${b.languages}` : "",
-    `Equipment: ${b.equipment}`,
-    ``,
-    `Feature — ${b.feature}`,
-    b.feature_desc.replace(/<[^>]+>/g, "").trim(),
-  ].filter(Boolean).join("\n");
+// ── CHARACTER OPTIONS ─────────────────────────────────────────────────────────
+
+/** A record of the same document, by key: a subrace's species or a subclass's class. */
+async function o5Parent<T extends O5Record>(endpoint: O5Endpoint, edition: RulesEdition, key: string | null | undefined): Promise<T | undefined> {
+  if (!key) return undefined;
+  return (await loadO5Document<T>(endpoint, edition)).find(r => r.key === key);
 }
 
-export async function o5SearchBackgrounds(name: string | undefined, origin: Open5eOrigin): Promise<string> {
-  const qs = new URLSearchParams({ document__slug: SRD, limit: "20" });
-  if (name) qs.set("search", name);
-
-  const data = await o5fetch(`/backgrounds/?${qs}`) as { count: number; results: O5Background[] };
-  if (!data.results.length) return `No backgrounds found (SRD only — only Acolyte is in the SRD).`;
-
-  if (data.results.length === 1) return formatO5Background(data.results[0], origin);
-
-  const lines = data.results.map(b => `• ${b.name} ${TAG} (Skills: ${b.skill_proficiencies})`);
-  return [label(origin), `Found ${data.count} background(s) (SRD only):`, ...lines].join("\n");
+/** An option search's reply: a single hit is its detail block (and the footer), else the result lines. */
+async function o5OptionReply<T>(
+  requested: RulesEdition,
+  origin: "unavailable" | "not-found",
+  result: { selected: Array<{ entry: O5Entry<T>; reason?: SelectionReason }>; hidden: number },
+  opts: {
+    /** Whether a single hit renders its detail block. */
+    single: boolean;
+    /** Counted in the heading: "race(s)". */
+    counted: string;
+    noMatch: string;
+    detail: (hit: O5Hit<T>) => Promise<string>;
+    line: (entry: O5Entry<T>) => Promise<string>;
+  },
+): Promise<string> {
+  const { selected, hidden } = result;
+  if (opts.single && selected.length === 1) {
+    const footer = searchFooter(requested, hidden);
+    return [await opts.detail(selected[0]), ...(footer ? [footer] : [])].join("\n");
+  }
+  const lines = await Promise.all(selected.map(({ entry }) => opts.line(entry)));
+  return o5SearchReply(requested, origin, `Found ${selected.length} ${opts.counted} (SRD only):`, lines, hidden, opts.noMatch);
 }
 
-// ── FEATS ─────────────────────────────────────────────────────────────────────
+// ── Species
 
-interface O5Feat {
-  name: string;
-  desc: string;
-  prerequisite?: string;
-  effects_desc?: string[];
+interface O5Trait { name: string; desc: string; type?: string | null; order?: number | null }
+
+interface O5Species extends O5Record {
+  subspecies_of?: string | null;
+  traits?: O5Trait[];
 }
 
-function formatO5Feat(f: O5Feat, origin: Open5eOrigin): string {
-  return [
-    `${f.name}`,
-    label(origin),
-    f.prerequisite ? `Prerequisite: ${f.prerequisite.replace(/^Prerequisite:\s*/i, "")}` : "",
-    ``,
-    f.desc.replace(/<[^>]+>/g, "").trim(),
-  ].filter(Boolean).join("\n");
+/** A species' Size or Speed trait: by type (SRD 5.2), else by name (SRD 5.1). */
+function speciesTrait(s: O5Species | undefined, kind: "SIZE" | "SPEED"): O5Trait | undefined {
+  const traits = s?.traits ?? [];
+  return traits.find(t => t.type === kind) ?? traits.find(t => normalizeName(t.name) === kind.toLowerCase());
 }
 
-export async function o5SearchFeats(name: string | undefined, origin: Open5eOrigin): Promise<string> {
-  const qs = new URLSearchParams({ document__slug: SRD, limit: "20" });
-  if (name) qs.set("search", name);
+/** Size, speed and parent of a species; a subrace without its own size or speed takes its parent's. */
+async function speciesFacts(entry: O5Entry<O5Species>): Promise<{ parent?: O5Species; size?: O5Trait; speed?: O5Trait }> {
+  const s = entry.record;
+  const parent = await o5Parent<O5Species>("species", entry.edition, s.subspecies_of);
+  return {
+    parent,
+    size: speciesTrait(s, "SIZE") ?? speciesTrait(parent, "SIZE"),
+    speed: speciesTrait(s, "SPEED") ?? speciesTrait(parent, "SPEED"),
+  };
+}
 
-  const data = await o5fetch(`/feats/?${qs}`) as { count: number; results: O5Feat[] };
-  if (!data.results.length) return `No feats found (SRD only — only Grappler is in the SRD).`;
+async function formatO5Species(hit: O5Hit<O5Species>, origin: Open5eOrigin): Promise<string> {
+  const s = hit.entry.record;
+  const { size, speed } = await speciesFacts(hit.entry);
+  const lines = [s.name, o5Label(hit.entry.edition, origin, hit)];
+  const facts = [size && `Size: ${size.desc.trim()}`, speed && `Speed: ${speed.desc.trim()}`].filter(Boolean);
+  if (facts.length) lines.push(facts.join(" | "));
+  const traits = (s.traits ?? [])
+    .map((t, i) => ({ t, order: t.order ?? i }))
+    .filter(({ t }) => t !== size && t !== speed)
+    .sort((a, b) => a.order - b.order);
+  if (traits.length) lines.push(``, ...traits.map(({ t }) => `**${t.name}.** ${t.desc.trim()}`));
+  return lines.join("\n");
+}
 
-  if (data.results.length === 1) return formatO5Feat(data.results[0], origin);
+export async function o5SearchRaces(params: { name?: string; rulesEdition?: RulesEdition }, origin: "unavailable" | "not-found"): Promise<string> {
+  const requested = params.rulesEdition ?? "2024";
+  return o5OptionReply(requested, origin, await o5Select<O5Species>(["species"], requested, { name: params.name }), {
+    single: !!params.name,
+    counted: "race(s)",
+    noMatch: "No races found (SRD only).",
+    detail: hit => formatO5Species(hit, origin),
+    line: async entry => {
+      const { parent, speed } = await speciesFacts(entry);
+      return `• ${entry.record.name} ${editionTag(o5Info(entry))}${parent ? ` (subrace of ${parent.name})` : ""}${speed ? ` | Speed: ${speed.desc.trim()}` : ""}`;
+    },
+  });
+}
 
-  const lines = data.results.map(f =>
-    `• ${f.name} ${TAG}${f.prerequisite ? ` (${f.prerequisite.replace(/^Prerequisite:\s*/i, "")})` : ""}`
-  );
-  return [label(origin), `Found ${data.count} feat(s) (SRD only):`, ...lines].join("\n");
+// ── Classes
+
+interface O5Class extends O5Record {
+  hit_dice?: string | null;
+  hit_points?: { hit_points_at_1st_level?: string | null } | null;
+  saving_throws?: Array<{ name: string }>;
+  caster_type?: string | null;
+  subclass_of?: { name: string; key: string } | null;
+  features?: Array<{ name: string }>;
+}
+
+/** A class's hit die, lower-cased; a subclass has none of its own and takes its class's. */
+async function hitDie(entry: O5Entry<O5Class>): Promise<string | undefined> {
+  const c = entry.record;
+  const die = c.hit_dice ?? (await o5Parent<O5Class>("classes", entry.edition, c.subclass_of?.key))?.hit_dice;
+  return die ? die.toLowerCase() : undefined;
+}
+
+async function formatO5Class(hit: O5Hit<O5Class>, origin: Open5eOrigin): Promise<string> {
+  const c = hit.entry.record;
+  const die = await hitDie(hit.entry);
+  const lines = [c.name, o5Label(hit.entry.edition, origin, hit)];
+  const hp = c.hit_points?.hit_points_at_1st_level;
+  const dice = [die && `Hit Die: ${die}`, hp && `HP at 1st: ${hp}`].filter(Boolean);
+  if (dice.length) lines.push(dice.join(" | "));
+  if (c.saving_throws?.length) lines.push(`Saving Throws: ${c.saving_throws.map(s => s.name).join(", ")}`);
+  if (c.caster_type && c.caster_type !== "NONE") lines.push(`Spellcasting: ${c.caster_type}`);
+  const features = [...new Set((c.features ?? []).map(f => f.name))];
+  if (features.length) lines.push(`Features: ${features.join(", ")}`);
+  return lines.join("\n");
+}
+
+export async function o5SearchClasses(params: { name?: string; rulesEdition?: RulesEdition }, origin: "unavailable" | "not-found"): Promise<string> {
+  const requested = params.rulesEdition ?? "2024";
+  return o5OptionReply(requested, origin, await o5Select<O5Class>(["classes"], requested, { name: params.name }), {
+    single: !!params.name,
+    counted: "class(es)",
+    noMatch: "No classes found (SRD only).",
+    detail: hit => formatO5Class(hit, origin),
+    line: async entry => {
+      const die = await hitDie(entry);
+      const sub = entry.record.subclass_of;
+      return `• ${entry.record.name} ${editionTag(o5Info(entry))}${die ? ` (${die})` : ""}${sub ? ` | subclass of ${sub.name}` : ""}`;
+    },
+  });
+}
+
+// ── Backgrounds
+
+interface O5Background extends O5Record {
+  benefits?: Array<{ name: string; desc: string; type?: string | null }>;
+}
+
+function formatO5Background(hit: O5Hit<O5Background>, origin: Open5eOrigin): string {
+  const b = hit.entry.record;
+  const benefits = (b.benefits ?? []).map(x => `**${x.name}:** ${stripTags(x.desc)}`);
+  return [b.name, o5Label(hit.entry.edition, origin, hit), ...(benefits.length ? [``, ...benefits] : [])].join("\n");
+}
+
+export async function o5SearchBackgrounds(params: { name?: string; rulesEdition?: RulesEdition }, origin: "unavailable" | "not-found"): Promise<string> {
+  const requested = params.rulesEdition ?? "2024";
+  return o5OptionReply(requested, origin, await o5Select<O5Background>(["backgrounds"], requested, { name: params.name }), {
+    single: true,
+    counted: "background(s)",
+    noMatch: "No backgrounds found (SRD only).",
+    detail: async hit => formatO5Background(hit, origin),
+    line: async entry => {
+      const skills = (entry.record.benefits ?? []).find(x => x.type === "skill_proficiency" || x.name === "Skill Proficiencies");
+      return `• ${entry.record.name} ${editionTag(o5Info(entry))}${skills?.desc ? ` (${skills.desc})` : ""}`;
+    },
+  });
+}
+
+// ── Feats
+
+interface O5Feat extends O5Record {
+  desc?: string | null;
+  type?: string | null;
+  has_prerequisite?: boolean;
+  prerequisite?: string | null;
+  benefits?: Array<{ desc: string }>;
+}
+
+const prerequisite = (f: O5Feat): string =>
+  (f.has_prerequisite && f.prerequisite ? f.prerequisite.replace(/^Prerequisite:\s*/i, "") : "");
+
+function formatO5Feat(hit: O5Hit<O5Feat>, origin: Open5eOrigin): string {
+  const f = hit.entry.record;
+  const lines = [f.name, o5Label(hit.entry.edition, origin, hit)];
+  if (f.type) lines.push(`Type: ${f.type}`);
+  if (prerequisite(f)) lines.push(`Prerequisite: ${prerequisite(f)}`);
+  const body = [stripTags(f.desc), ...(f.benefits ?? []).map(x => `• ${stripTags(x.desc)}`)].filter(Boolean);
+  if (body.length) lines.push(``, ...body);
+  return lines.join("\n");
+}
+
+export async function o5SearchFeats(params: { name?: string; rulesEdition?: RulesEdition }, origin: "unavailable" | "not-found"): Promise<string> {
+  const requested = params.rulesEdition ?? "2024";
+  return o5OptionReply(requested, origin, await o5Select<O5Feat>(["feats"], requested, { name: params.name }), {
+    single: true,
+    counted: "feat(s)",
+    noMatch: "No feats found (SRD only).",
+    detail: async hit => formatO5Feat(hit, origin),
+    line: async entry => `• ${entry.record.name} ${editionTag(o5Info(entry))}${prerequisite(entry.record) ? ` (${prerequisite(entry.record)})` : ""}`,
+  });
 }
 
 // ── RULES SECTIONS ────────────────────────────────────────────────────────────

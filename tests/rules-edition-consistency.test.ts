@@ -38,9 +38,9 @@ import { server } from "../src/server.js";
 import { SERVER_INSTRUCTIONS, open5eSearchHeader } from "../src/edition.js";
 import { clearReferenceCache } from "../src/tools/reference.js";
 import { clearMonsterCache } from "../src/tools/monster.js";
-import { clearOpen5eCache } from "../src/open5e.js";
+import { clearOpen5eCache, type O5Endpoint } from "../src/open5e.js";
 import { COBALT_URL, GAME_DATA, jsonResponse, makeJwt, spell } from "./fixtures/spell-service.js";
-import { o5FixtureFetch } from "./fixtures/open5e-v2.js";
+import { o5Fixture, o5FixtureFetch, o5Record } from "./fixtures/open5e-v2.js";
 
 const TAG = String.raw`\[(?:2024|2014|third-party|homebrew|playtest|edition not stated)\]`;
 const RESULT_LINE = /^(?:- \*\*|• )/;
@@ -82,7 +82,8 @@ const PATH_MARKER: Record<"ddb" | "open5e", Record<string, Partial<Record<"2024"
     // The edition reaches o5GetMonsterStats: "Goblin" is Goblin Warrior under 2024 and Goblin under 2014.
     ddb_rate_encounter: { "2024": "Goblin Warrior [2024]", "2014": "Goblin [2014]" },
     ddb_roll_treasure: { "2024": "Goblin Warrior [2024]", "2014": "Goblin [2014]" },
-    ddb_get_equipment: { "2024": "A fine blade.", "2014": "A fine blade." },
+    // The weapon records have no desc. Only SRD 5.2's Longsword has a Mastery line; the 2014 marker is its weapon block.
+    ddb_get_equipment: { "2024": "Mastery: Sap", "2014": "Properties: Versatile (1d10)" },
   },
 };
 
@@ -97,7 +98,10 @@ const dmgRulesLine = (ed: "2024" | "2014") => `Rules: ${ed} · Dungeon Master's 
 const TREASURE_NO_2014 = "(no 2014 version exists — 2024 tables used)";
 // Open5e path: searches whose first line must be the Open5e header for the requested
 // edition, so a fallback that drops rulesEdition fails under 2014.
-const O5_HEADER_CHECK = new Set(["ddb_search_spells", "ddb_search_monsters"]);
+const O5_HEADER_CHECK = new Set([
+  "ddb_search_spells", "ddb_search_monsters", "ddb_search_equipment",
+  "ddb_search_races", "ddb_search_classes", "ddb_search_backgrounds", "ddb_search_feats",
+]);
 // Built from D&D Beyond only (no Open5e path): logged out, they report an error.
 const NO_OPEN5E = new Set(["ddb_search_class_features", "ddb_search_racial_traits"]);
 const EDITION_CHECK: Record<string, (ed: "2024" | "2014") => EditionCheck> = {
@@ -219,43 +223,24 @@ async function route(input: unknown): Promise<Response> {
 
 // ── Open5e fixtures ───────────────────────────────────────────────────────────
 
-const O5_ITEM = { name: "Longsword", type: "Weapon", rarity: "common", desc: "A fine blade." };
-
-// Two records per endpoint, both matching the query: a single hit would render a detail block with no result line.
-const O5_RACES = ["Human", "Human (Variant)"].map(name => ({
-  name, desc: "", asi_desc: "", asi: [{ attributes: ["Strength"], value: 1 }], size: "Medium",
-  speed: { walk: 30 }, languages: "Common", vision: "", traits: "A trait.",
-}));
-const O5_CLASSES = ["Fighter", "Fighter (Champion)"].map(name => ({
-  name, hit_dice: "1d10", hp_at_1st_level: "10", hp_at_higher_levels: "1d10", prof_armor: "All",
-  prof_weapons: "All", prof_saving_throws: "STR", prof_skills: "Any", desc: "A warrior.",
-}));
-const O5_BACKGROUNDS = ["Acolyte", "Acolyte (Temple)"].map(name => ({
-  name, skill_proficiencies: "Insight", equipment: "A holy symbol", feature: "Shelter", feature_desc: "Help.",
-}));
-const O5_FEATS = ["Alert", "Alert (Variant)"].map(name => ({ name, desc: "Stay sharp." }));
-
-const o5v2 = o5FixtureFetch();
-
-/**
- * Spells and creatures come from the recorded v2 documents. The other kinds
- * (still on v1) get their fixtures, filtered by the request's search/name query like the real API.
- */
-function o5Fetch(input: unknown): Promise<Response> {
-  const url = String(input);
-  if (url.includes("/v2/")) return o5v2(url);
-  const fixtures = /\/(magicitems|weapons|armor)\//.test(url) ? [O5_ITEM]
-    : url.includes("/races/") ? O5_RACES
-    : url.includes("/classes/") ? O5_CLASSES
-    : url.includes("/backgrounds/") ? O5_BACKGROUNDS
-    : url.includes("/feats/") ? O5_FEATS
-    : [];
-  const params = new URL(url).searchParams;
-  const term = (params.get("search") ?? params.get("name"))?.toLowerCase();
-  // A request with neither param (a no-name search) gets every fixture.
-  const results = term === undefined ? fixtures : fixtures.filter(f => f.name.toLowerCase().includes(term));
-  return Promise.resolve(jsonResponse({ count: results.length, next: null, results }));
+/** A recorded record cloned under a new name (and key), in the same document. */
+function o5Clone(doc: "srd-2024" | "srd-2014", endpoint: O5Endpoint, name: string, cloneName: string): Record<string, unknown> {
+  const r = o5Record<Record<string, unknown>>(doc, endpoint, name);
+  return { ...r, key: `${String(r.key)}-variant`, name: cloneName };
 }
+
+// A single hit renders a detail block with no result line, so each option search gets a
+// second record matching its query, in the document that answers it. Alert is in SRD 5.2 only.
+const O5_OVERRIDES: Record<string, unknown[]> = Object.fromEntries(([
+  ["srd-2024", "species", "Human"], ["srd-2014", "species", "Human"],
+  ["srd-2024", "classes", "Fighter"], ["srd-2014", "classes", "Fighter"],
+  ["srd-2024", "backgrounds", "Acolyte"], ["srd-2014", "backgrounds", "Acolyte"],
+  ["srd-2024", "feats", "Alert"],
+] as const).map(([doc, endpoint, name]) =>
+  [`${doc}/${endpoint}`, [...o5Fixture(doc, endpoint), o5Clone(doc, endpoint, name, `${name} (Variant)`)]]));
+
+/** Every Open5e endpoint comes from the recorded v2 documents. */
+const o5Fetch = o5FixtureFetch(O5_OVERRIDES);
 
 // ── Harness ───────────────────────────────────────────────────────────────────
 
