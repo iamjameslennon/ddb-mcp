@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { open5eSearchHeader } from "../src/edition.js";
+import { open5eSearchHeader, twinName } from "../src/edition.js";
 import { o5Fixture, o5FixtureFetch, o5Record } from "./fixtures/open5e-v2.js";
 import {
   clearOpen5eCache,
@@ -317,6 +317,37 @@ describe("Open5e v2 equipment and options, fix round 1", () => {
     expect(out.split("\n").slice(0, 3)).toEqual(["Hide Armor (Medium Armor)", U24, "(2014 name: Hide · 2024 name: Hide Armor)"]);
     expect(out).not.toContain("no 2024 version");
     expect(lines(await o5GetEquipment("Hide", "2014", "unavailable")).slice(0, 2)).toEqual(["Hide (Medium Armor)", U14]);
+  });
+
+  it("the armour pairs are Open5e-only: the shared namer leaves Hide alone", async () => {
+    expect(twinName("Hide")).toBe("hide");
+    expect(twinName("Plate Armor")).toBe("plate armor");
+    expect(lines(await o5GetEquipment("Hide", "2024", "unavailable"))[0]).toBe("Hide Armor (Medium Armor)");
+  });
+
+  it("within the picked edition the exact name beats endpoint order", async () => {
+    // SRD 5.1 files the armour as "Plate" (armor) and its gear entry as "Plate Armor" (items); fields live 2026-10-21.
+    const plateItem = {
+      ...o5Record<Record<string, unknown>>("srd-2014", "items", "Abacus"), key: "srd_plate-armor", name: "Plate Armor",
+      desc: "Plate consists of shaped, interlocking metal plates to cover the entire body.",
+      category: { name: "Armor", key: "armor" }, weight: "65.000", weight_unit: "lb", cost: "1500.00",
+    };
+    const plate = {
+      ...o5Record<Record<string, unknown>>("srd-2014", "armor", "Chain mail"), key: "srd_plate", name: "Plate",
+      ac_display: "18", ac_base: 18, strength_score_required: 15,
+    };
+    stubFetch(o5FixtureFetch({
+      "srd-2014/items": [...o5Fixture("srd-2014", "items"), plateItem],
+      "srd-2014/armor": [...o5Fixture("srd-2014", "armor"), plate],
+    }));
+    const item = (await o5GetEquipment("Plate Armor", "2014", "unavailable"))!;
+    expect(item.split("\n").slice(0, 3)).toEqual(["Plate Armor (Armor)", U14, "Cost: 1500 gp | Weight: 65 lb"]);
+    expect(item).not.toContain("2014 name:");
+    const armour = (await o5GetEquipment("Plate", "2014", "unavailable"))!;
+    expect(armour.split("\n").slice(0, 2)).toEqual(["Plate (Heavy Armor)", U14]);
+    expect(armour).toMatch(/^AC: 18 \| Requires STR 15 \| Stealth disadvantage$/m);
+    // A weapon and a gear entry sharing the exact name: endpoint order decides.
+    expect(lines(await o5GetEquipment("Longsword", "2024", "unavailable"))[0]).toBe("Longsword (Martial Weapon)");
   });
 
   it("the rarity filter keeps the rare magic item and drops the mundane one", async () => {

@@ -13,10 +13,11 @@
 
 import { TtlCache } from "./cache.js";
 import {
-  editionTag, groupAndSelect, lookupByName, normalizeName, open5eSearchHeader, renameLine, rulesLine, searchFooter,
-  searchHeader, selectByEdition, twinName,
+  createTwinNamer, editionTag, groupAndSelect, lookupByName, normalizeName, open5eSearchHeader, renameLine, rulesLine, searchFooter,
+  searchHeader, selectByEdition,
   type EditionInfo, type Open5eOrigin, type RulesEdition, type SelectionReason,
 } from "./edition.js";
+import { EDITION_RENAMES, OPEN5E_ARMOUR_RENAMES } from "./edition-renames.js";
 
 const OPEN5E = "https://api.open5e.com/v1";
 const SRD = "wotc-srd";
@@ -124,6 +125,9 @@ interface O5Hit<T> {
 
 const o5Info = (e: O5Entry<unknown>): EditionInfo => ({ ruleset: e.edition, book: null });
 
+/** The shared rename table plus the Open5e-only armour pairs (see OPEN5E_ARMOUR_RENAMES). */
+const o5TwinName = createTwinNamer([...EDITION_RENAMES, ...OPEN5E_ARMOUR_RENAMES]);
+
 /** Endpoint order (as given), then record key. */
 function o5Tiebreak<T extends O5Record>(endpoints: readonly O5Endpoint[]): (a: O5Entry<T>, b: O5Entry<T>) => number {
   return (a, b) => endpoints.indexOf(a.endpoint) - endpoints.indexOf(b.endpoint) || a.record.key.localeCompare(b.record.key);
@@ -140,10 +144,16 @@ async function o5Entries<T extends O5Record>(endpoints: readonly O5Endpoint[], r
 /** A single lookup: exact twin name across both documents, else a partial match, then the requested edition's entry of that group. */
 async function o5Lookup<T extends O5Record>(endpoints: readonly O5Endpoint[], name: string, requested: RulesEdition): Promise<O5Hit<T> | null> {
   const entries = await o5Entries<T>(endpoints, requested);
+  const query = normalizeName(name);
+  const byEndpoint = o5Tiebreak<T>(endpoints);
   const found = lookupByName(entries, name, requested, {
     name: e => e.record.name,
     info: o5Info,
-    tiebreak: o5Tiebreak<T>(endpoints),
+    twinName: o5TwinName,
+    // Within the picked edition, the exact name beats endpoint order: SRD 5.1's
+    // "Plate Armor" is the items record, not the armour record "Plate".
+    tiebreak: (a, b) => (normalizeName(a.record.name) === query ? 0 : 1) - (normalizeName(b.record.name) === query ? 0 : 1)
+      || byEndpoint(a, b),
     // The requested document first, then names starting with the query, then the shortest, then alphabetical.
     partialMatch: (all, q) => all
       .filter(e => normalizeName(e.record.name).includes(q))
@@ -157,7 +167,7 @@ async function o5Lookup<T extends O5Record>(endpoints: readonly O5Endpoint[], na
   // SRD 5.2 keeps some 2014-era names (Arcane Hand): a rename line is printed
   // only when the shown entry carries its own edition's spelling.
   const shownName = found.entry.record.name;
-  const ownSpelling = normalizeName(shownName) === twinName(shownName);
+  const ownSpelling = normalizeName(shownName) === o5TwinName(shownName);
   const keepRename = found.entry.edition === "2024" ? ownSpelling : !ownSpelling;
   return { entry: found.entry, reason: found.reason, renamed: keepRename ? found.renamed : undefined };
 }
@@ -172,7 +182,7 @@ async function o5Select<T extends O5Record>(
   const query = opts.name ? normalizeName(opts.name) : "";
   const { selected, hidden } = groupAndSelect(entries, requested, {
     info: o5Info,
-    twinKey: e => twinName(e.record.name),
+    twinKey: e => o5TwinName(e.record.name),
     tiebreak: o5Tiebreak<T>(endpoints),
     nameMatches: query ? e => normalizeName(e.record.name).includes(query) : undefined,
     passes: opts.passes,
@@ -729,7 +739,7 @@ async function formatO5Species(hit: O5Hit<O5Species>, origin: Open5eOrigin): Pro
 async function o5SelectSpecies(requested: RulesEdition, name?: string): ReturnType<typeof o5Select<O5Species>> {
   const { selected, hidden } = await o5Select<O5Species>(["species"], requested, { name });
   const bases = await Promise.all(selected.map(async ({ entry }) =>
-    twinName((await o5Parent<O5Species>("species", entry.edition, entry.record.subspecies_of))?.name ?? entry.record.name)));
+    o5TwinName((await o5Parent<O5Species>("species", entry.edition, entry.record.subspecies_of))?.name ?? entry.record.name)));
   const withRequested = new Set(bases.filter((_, i) => selected[i].entry.edition === requested));
   const kept = selected.filter(({ entry }, i) => entry.edition === requested || !withRequested.has(bases[i]));
   return { selected: kept, hidden: hidden + selected.length - kept.length };
@@ -943,8 +953,8 @@ const CR_XP_O5: Record<string, number> = {
  */
 export async function o5GetMonsterStats(name: string, rulesEdition: RulesEdition): Promise<{ name: string; crValue: number; xp: number; info: EditionInfo } | null> {
   try {
-    const key = twinName(name);
-    const group = (await o5Entries<O5Creature>(["creatures"], rulesEdition)).filter(e => twinName(e.record.name) === key);
+    const key = o5TwinName(name);
+    const group = (await o5Entries<O5Creature>(["creatures"], rulesEdition)).filter(e => o5TwinName(e.record.name) === key);
     const picked = selectByEdition(group, rulesEdition, o5Info, o5Tiebreak<O5Creature>(["creatures"]));
     if (!picked) return null;
     const m = picked.entry.record;

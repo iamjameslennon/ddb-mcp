@@ -147,24 +147,6 @@ export const EDITION_RENAMES: ReadonlyArray<readonly [name2014: string, name2024
   ["Spikes, Iron (10)", "Iron Spikes"],
   ["Tent, Two-Person", "Tent"],
 
-  // ── Items: armour ──
-  // Read from Open5e v2 /armor/ (srd-2014 → srd-2024), live 2026-10-21; "Armor" appended to the name, otherwise
-  // identical: same category, ac_display, strength_score_required and grants_stealth_disadvantage on each pair
-  // light, "11 + Dex modifier", no STR, no stealth disadvantage
-  ["Leather", "Leather Armor"],
-  // light, "11 + Dex modifier", no STR, stealth disadvantage
-  ["Padded", "Padded Armor"],
-  // light, "12 + Dex modifier", no STR, no stealth disadvantage
-  ["Studded leather", "Studded Leather Armor"],
-  // medium, "12 + Dex modifier (max 2)", no STR, no stealth disadvantage
-  ["Hide", "Hide Armor"],
-  // medium, "15 + Dex modifier (max 2)", no STR, stealth disadvantage
-  ["Half plate", "Half Plate Armor"],
-  // heavy, "17", STR 15, stealth disadvantage
-  ["Splint", "Splint Armor"],
-  // heavy, "18", STR 15, stealth disadvantage
-  ["Plate", "Plate Armor"],
-
   // ── Backgrounds ──
   // 2014 id 8 (BR14) → 2024 id 406474 (PHB24); orphan lists: the 2014 Criminal (with its Spy variant) revised; Stealth, thieves' tools, crowbar kept
   ["Criminal / Spy", "Criminal"],
@@ -252,4 +234,30 @@ export const EDITION_RENAMES: ReadonlyArray<readonly [name2014: string, name2024
   // 2014 id 16917 (BR14, CR 11 Large) → 2024 id 5195211 (MM24, CR 11 Large); type changed: Monstrosity → Celestial. Identical ability scores,
   // AC 17, truesight 120, Inscrutable, Intelligence spellcasting, claws; HP 136→170. Sphinx of Secrets is CR 8
   ["Gynosphinx", "Sphinx of Lore"],
+];
+
+/**
+ * Open5e-only pairs: SRD 5.2 appends "Armor" to seven armour names SRD 5.1
+ * spells bare. D&D Beyond keeps one definition for both editions of some of
+ * these (Studded Leather), and the rest were never checked against it, so
+ * shared pairs could print false rename lines there. Only src/open5e.ts reads
+ * this list, through its own twin namer.
+ */
+export const OPEN5E_ARMOUR_RENAMES: ReadonlyArray<readonly [name2014: string, name2024: string]> = [
+  // Read from Open5e v2 /armor/ (srd-2014 → srd-2024), live 2026-10-21; "Armor" appended to the name, otherwise
+  // identical: same category, ac_display, strength_score_required and grants_stealth_disadvantage on each pair
+  // light, "11 + Dex modifier", no STR, no stealth disadvantage
+  ["Leather", "Leather Armor"],
+  // light, "11 + Dex modifier", no STR, stealth disadvantage
+  ["Padded", "Padded Armor"],
+  // light, "12 + Dex modifier", no STR, no stealth disadvantage
+  ["Studded leather", "Studded Leather Armor"],
+  // medium, "12 + Dex modifier (max 2)", no STR, no stealth disadvantage
+  ["Hide", "Hide Armor"],
+  // medium, "15 + Dex modifier (max 2)", no STR, stealth disadvantage
+  ["Half plate", "Half Plate Armor"],
+  // heavy, "17", STR 15, stealth disadvantage
+  ["Splint", "Splint Armor"],
+  // heavy, "18", STR 15, stealth disadvantage
+  ["Plate", "Plate Armor"],
 ];
