@@ -36,7 +36,7 @@ const NAMES: Record<Endpoint, Names> = {
   weapons: { both: ["Longsword", "Dagger"], only2024: ["Musket"], only2014: ["Net"] },
   armor: { both: [], only2024: ["Chain Mail", "Hide Armor", "Shield"], only2014: ["Chain mail", "Hide"] },
   species: { both: ["Dwarf", "Elf", "Human"], only2024: ["Goliath"], only2014: ["High Elf"] },
-  classes: { both: ["Fighter", "Champion", "Wizard"], only2024: ["Evoker"], only2014: ["School of Evocation"] },
+  classes: { both: ["Fighter", "Champion", "Wizard", "Warlock", "Druid"], only2024: ["Evoker"], only2014: ["School of Evocation"] },
   backgrounds: { both: ["Acolyte"], only2024: ["Sage"], only2014: [] },
   feats: { both: ["Grappler"], only2024: ["Alert"], only2014: [] },
   rulesets: { both: ["Damage and Healing"], only2024: ["Combat", "D20 Tests", "Social Interaction"], only2014: ["Attacking", "Cover", "Madness"] },

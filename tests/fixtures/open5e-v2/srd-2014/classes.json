@@ -103,6 +103,928 @@
       "primary_abilities": []
     },
     {
+      "key": "srd_druid",
+      "features": [
+        {
+          "key": "srd_druid_ability-score-improvement",
+          "name": "Ability Score Improvement",
+          "desc": "When you reach 4th level, and again at 8th, 12th, 16th, and 19th level, you can increase one ability score of your choice by 2, or you can increase two ability scores of your choice by 1. As normal, you can't increase an ability score above 20 using this feature.",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "CLASS_LEVEL_FEATURE",
+          "gained_at": [
+            {
+              "level": 12,
+              "detail": null
+            },
+            {
+              "level": 16,
+              "detail": null
+            },
+            {
+              "level": 19,
+              "detail": null
+            },
+            {
+              "level": 4,
+              "detail": null
+            },
+            {
+              "level": 8,
+              "detail": null
+            }
+          ],
+          "data_for_class_table": []
+        },
+        {
+          "key": "srd_druid_archdruid",
+          "name": "Archdruid",
+          "desc": "At 20th level, you can use your Wild Shape an unlimited number of times.\r\n\r\nAdditionally, you can ignore the verbal and somatic components of your druid spells, as well as any material components that lack a cost and aren't consumed by a spell. You gain this benefit in both your normal shape and your beast shape from Wild Shape.",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "CLASS_LEVEL_FEATURE",
+          "gained_at": [
+            {
+              "level": 20,
+              "detail": null
+            }
+          ],
+          "data_for_class_table": []
+        },
+        {
+          "key": "srd_druid_beast-spells",
+          "name": "Beast Spells",
+          "desc": "Beginning at 18th level, you can cast many of your druid spells in any shape you assume using Wild Shape. You can perform the somatic and verbal components of a druid spell while in a beast shape, but you aren't able to provide material components.",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "CLASS_LEVEL_FEATURE",
+          "gained_at": [
+            {
+              "level": 18,
+              "detail": null
+            }
+          ],
+          "data_for_class_table": []
+        },
+        {
+          "key": "srd_druid_cantrips-known",
+          "name": "Cantrips Known",
+          "desc": "[Column data]",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "CLASS_TABLE_DATA",
+          "gained_at": [],
+          "data_for_class_table": [
+            {
+              "level": 1,
+              "column_value": "2"
+            },
+            {
+              "level": 10,
+              "column_value": "4"
+            },
+            {
+              "level": 11,
+              "column_value": "4"
+            },
+            {
+              "level": 12,
+              "column_value": "4"
+            },
+            {
+              "level": 13,
+              "column_value": "4"
+            },
+            {
+              "level": 14,
+              "column_value": "4"
+            },
+            {
+              "level": 15,
+              "column_value": "4"
+            },
+            {
+              "level": 16,
+              "column_value": "4"
+            },
+            {
+              "level": 17,
+              "column_value": "4"
+            },
+            {
+              "level": 18,
+              "column_value": "4"
+            },
+            {
+              "level": 19,
+              "column_value": "4"
+            },
+            {
+              "level": 2,
+              "column_value": "2"
+            },
+            {
+              "level": 20,
+              "column_value": "4"
+            },
+            {
+              "level": 3,
+              "column_value": "2"
+            },
+            {
+              "level": 4,
+              "column_value": "3"
+            },
+            {
+              "level": 5,
+              "column_value": "3"
+            },
+            {
+              "level": 6,
+              "column_value": "3"
+            },
+            {
+              "level": 7,
+              "column_value": "3"
+            },
+            {
+              "level": 8,
+              "column_value": "3"
+            },
+            {
+              "level": 9,
+              "column_value": "3"
+            }
+          ]
+        },
+        {
+          "key": "srd_druid_druid-circle",
+          "name": "Druid Circle",
+          "desc": "At 2nd level, you choose to identify with a circle of druids such as the Circle of the Land. Your choice grants you features at 2nd level and again at 6th, 10th, and 14th level.",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "CLASS_LEVEL_FEATURE",
+          "gained_at": [
+            {
+              "level": 2,
+              "detail": null
+            }
+          ],
+          "data_for_class_table": []
+        },
+        {
+          "key": "srd_druid_druidic",
+          "name": "Druidic",
+          "desc": "You know Druidic, the secret language of druids. You can speak the language and use it to leave hidden messages. You and others who know this language automatically spot such a message. Others spot the message's presence with a successful DC 15 Wisdom (Perception) check but can't decipher it without magic.",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "CLASS_LEVEL_FEATURE",
+          "gained_at": [
+            {
+              "level": 1,
+              "detail": null
+            }
+          ],
+          "data_for_class_table": []
+        },
+        {
+          "key": "srd_druid_equipment",
+          "name": "Equipment",
+          "desc": "You start with the following equipment, in addition to the equipment granted by your background:\r\n* (*a*) a wooden shield or (*b*) any simple weapon\r\n* (*a*) a scimitar or (*b*) any simple melee weapon\r\n* Leather armor, an explorer’s pack, and a druidic focus",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "STARTING_EQUIPMENT",
+          "gained_at": [],
+          "data_for_class_table": []
+        },
+        {
+          "key": "srd_druid_proficiencies",
+          "name": "Proficiencies",
+          "desc": "**Armor:** Light armor, medium armor, shields (druids will not wear armor or use shields made of metal)\r\n**Weapons:** Clubs, daggers, darts, javelins, maces, quarterstaffs, scimitars, sickles, slings, spears \r\n**Tools:** Herbalism kit\r\n**Saving Throws:** Intelligence, Wisdom\r\n**Skills:** Choose two from Arcana, Animal Handling, Insight, Medicine, Nature, Perception, Religion, and Survival",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "PROFICIENCIES",
+          "gained_at": [],
+          "data_for_class_table": []
+        },
+        {
+          "key": "srd_druid_proficiency-bonus",
+          "name": "Proficiency Bonus",
+          "desc": "[Column data]",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "PROFICIENCY_BONUS",
+          "gained_at": [],
+          "data_for_class_table": [
+            {
+              "level": 1,
+              "column_value": "+2"
+            },
+            {
+              "level": 10,
+              "column_value": "+4"
+            },
+            {
+              "level": 11,
+              "column_value": "+4"
+            },
+            {
+              "level": 12,
+              "column_value": "+4"
+            },
+            {
+              "level": 13,
+              "column_value": "+5"
+            },
+            {
+              "level": 14,
+              "column_value": "+5"
+            },
+            {
+              "level": 15,
+              "column_value": "+5"
+            },
+            {
+              "level": 16,
+              "column_value": "+5"
+            },
+            {
+              "level": 17,
+              "column_value": "+6"
+            },
+            {
+              "level": 18,
+              "column_value": "+6"
+            },
+            {
+              "level": 19,
+              "column_value": "+6"
+            },
+            {
+              "level": 2,
+              "column_value": "+2"
+            },
+            {
+              "level": 20,
+              "column_value": "+6"
+            },
+            {
+              "level": 3,
+              "column_value": "+2"
+            },
+            {
+              "level": 4,
+              "column_value": "+2"
+            },
+            {
+              "level": 5,
+              "column_value": "+3"
+            },
+            {
+              "level": 6,
+              "column_value": "+3"
+            },
+            {
+              "level": 7,
+              "column_value": "+3"
+            },
+            {
+              "level": 8,
+              "column_value": "+3"
+            },
+            {
+              "level": 9,
+              "column_value": "+4"
+            }
+          ]
+        },
+        {
+          "key": "srd_druid_slots-1st",
+          "name": "1st",
+          "desc": "[Column data]",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "SPELL_SLOTS",
+          "gained_at": [],
+          "data_for_class_table": [
+            {
+              "level": 1,
+              "column_value": "2"
+            },
+            {
+              "level": 10,
+              "column_value": "4"
+            },
+            {
+              "level": 11,
+              "column_value": "4"
+            },
+            {
+              "level": 12,
+              "column_value": "4"
+            },
+            {
+              "level": 13,
+              "column_value": "4"
+            },
+            {
+              "level": 14,
+              "column_value": "4"
+            },
+            {
+              "level": 15,
+              "column_value": "4"
+            },
+            {
+              "level": 16,
+              "column_value": "4"
+            },
+            {
+              "level": 17,
+              "column_value": "4"
+            },
+            {
+              "level": 18,
+              "column_value": "4"
+            },
+            {
+              "level": 19,
+              "column_value": "4"
+            },
+            {
+              "level": 2,
+              "column_value": "3"
+            },
+            {
+              "level": 20,
+              "column_value": "4"
+            },
+            {
+              "level": 3,
+              "column_value": "4"
+            },
+            {
+              "level": 4,
+              "column_value": "4"
+            },
+            {
+              "level": 5,
+              "column_value": "4"
+            },
+            {
+              "level": 6,
+              "column_value": "4"
+            },
+            {
+              "level": 7,
+              "column_value": "4"
+            },
+            {
+              "level": 8,
+              "column_value": "4"
+            },
+            {
+              "level": 9,
+              "column_value": "4"
+            }
+          ]
+        },
+        {
+          "key": "srd_druid_slots-2nd",
+          "name": "2nd",
+          "desc": "[Column data]",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "SPELL_SLOTS",
+          "gained_at": [],
+          "data_for_class_table": [
+            {
+              "level": 10,
+              "column_value": "3"
+            },
+            {
+              "level": 11,
+              "column_value": "3"
+            },
+            {
+              "level": 12,
+              "column_value": "3"
+            },
+            {
+              "level": 13,
+              "column_value": "3"
+            },
+            {
+              "level": 14,
+              "column_value": "3"
+            },
+            {
+              "level": 15,
+              "column_value": "3"
+            },
+            {
+              "level": 16,
+              "column_value": "3"
+            },
+            {
+              "level": 17,
+              "column_value": "3"
+            },
+            {
+              "level": 18,
+              "column_value": "3"
+            },
+            {
+              "level": 19,
+              "column_value": "3"
+            },
+            {
+              "level": 20,
+              "column_value": "3"
+            },
+            {
+              "level": 4,
+              "column_value": "2"
+            },
+            {
+              "level": 4,
+              "column_value": "3"
+            },
+            {
+              "level": 5,
+              "column_value": "3"
+            },
+            {
+              "level": 6,
+              "column_value": "3"
+            },
+            {
+              "level": 7,
+              "column_value": "3"
+            },
+            {
+              "level": 8,
+              "column_value": "3"
+            },
+            {
+              "level": 9,
+              "column_value": "3"
+            }
+          ]
+        },
+        {
+          "key": "srd_druid_slots-3rd",
+          "name": "3rd",
+          "desc": "[Column data]",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "SPELL_SLOTS",
+          "gained_at": [],
+          "data_for_class_table": [
+            {
+              "level": 10,
+              "column_value": "3"
+            },
+            {
+              "level": 11,
+              "column_value": "3"
+            },
+            {
+              "level": 12,
+              "column_value": "3"
+            },
+            {
+              "level": 13,
+              "column_value": "3"
+            },
+            {
+              "level": 14,
+              "column_value": "3"
+            },
+            {
+              "level": 15,
+              "column_value": "3"
+            },
+            {
+              "level": 16,
+              "column_value": "3"
+            },
+            {
+              "level": 17,
+              "column_value": "3"
+            },
+            {
+              "level": 18,
+              "column_value": "3"
+            },
+            {
+              "level": 19,
+              "column_value": "3"
+            },
+            {
+              "level": 20,
+              "column_value": "3"
+            },
+            {
+              "level": 5,
+              "column_value": "2"
+            },
+            {
+              "level": 6,
+              "column_value": "3"
+            },
+            {
+              "level": 7,
+              "column_value": "3"
+            },
+            {
+              "level": 8,
+              "column_value": "3"
+            },
+            {
+              "level": 9,
+              "column_value": "3"
+            }
+          ]
+        },
+        {
+          "key": "srd_druid_slots-4th",
+          "name": "4th",
+          "desc": "[Column data]",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "SPELL_SLOTS",
+          "gained_at": [],
+          "data_for_class_table": [
+            {
+              "level": 10,
+              "column_value": "3"
+            },
+            {
+              "level": 11,
+              "column_value": "3"
+            },
+            {
+              "level": 12,
+              "column_value": "3"
+            },
+            {
+              "level": 13,
+              "column_value": "3"
+            },
+            {
+              "level": 14,
+              "column_value": "3"
+            },
+            {
+              "level": 15,
+              "column_value": "3"
+            },
+            {
+              "level": 16,
+              "column_value": "3"
+            },
+            {
+              "level": 17,
+              "column_value": "3"
+            },
+            {
+              "level": 18,
+              "column_value": "3"
+            },
+            {
+              "level": 19,
+              "column_value": "3"
+            },
+            {
+              "level": 20,
+              "column_value": "3"
+            },
+            {
+              "level": 7,
+              "column_value": "1"
+            },
+            {
+              "level": 8,
+              "column_value": "2"
+            },
+            {
+              "level": 9,
+              "column_value": "3"
+            }
+          ]
+        },
+        {
+          "key": "srd_druid_slots-5th",
+          "name": "5th",
+          "desc": "[Column data]",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "SPELL_SLOTS",
+          "gained_at": [],
+          "data_for_class_table": [
+            {
+              "level": 10,
+              "column_value": "2"
+            },
+            {
+              "level": 11,
+              "column_value": "2"
+            },
+            {
+              "level": 12,
+              "column_value": "2"
+            },
+            {
+              "level": 13,
+              "column_value": "2"
+            },
+            {
+              "level": 14,
+              "column_value": "2"
+            },
+            {
+              "level": 15,
+              "column_value": "2"
+            },
+            {
+              "level": 16,
+              "column_value": "2"
+            },
+            {
+              "level": 17,
+              "column_value": "2"
+            },
+            {
+              "level": 18,
+              "column_value": "3"
+            },
+            {
+              "level": 19,
+              "column_value": "3"
+            },
+            {
+              "level": 20,
+              "column_value": "3"
+            },
+            {
+              "level": 9,
+              "column_value": "1"
+            }
+          ]
+        },
+        {
+          "key": "srd_druid_slots-6th",
+          "name": "6th",
+          "desc": "[Column data]",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "SPELL_SLOTS",
+          "gained_at": [],
+          "data_for_class_table": [
+            {
+              "level": 11,
+              "column_value": "1"
+            },
+            {
+              "level": 12,
+              "column_value": "1"
+            },
+            {
+              "level": 13,
+              "column_value": "1"
+            },
+            {
+              "level": 14,
+              "column_value": "1"
+            },
+            {
+              "level": 15,
+              "column_value": "1"
+            },
+            {
+              "level": 16,
+              "column_value": "1"
+            },
+            {
+              "level": 17,
+              "column_value": "1"
+            },
+            {
+              "level": 18,
+              "column_value": "1"
+            },
+            {
+              "level": 19,
+              "column_value": "2"
+            },
+            {
+              "level": 20,
+              "column_value": "2"
+            }
+          ]
+        },
+        {
+          "key": "srd_druid_slots-7th",
+          "name": "7th",
+          "desc": "[Column data]",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "SPELL_SLOTS",
+          "gained_at": [],
+          "data_for_class_table": [
+            {
+              "level": 13,
+              "column_value": "1"
+            },
+            {
+              "level": 14,
+              "column_value": "1"
+            },
+            {
+              "level": 15,
+              "column_value": "1"
+            },
+            {
+              "level": 16,
+              "column_value": "1"
+            },
+            {
+              "level": 17,
+              "column_value": "1"
+            },
+            {
+              "level": 18,
+              "column_value": "1"
+            },
+            {
+              "level": 19,
+              "column_value": "1"
+            },
+            {
+              "level": 20,
+              "column_value": "2"
+            }
+          ]
+        },
+        {
+          "key": "srd_druid_slots-8th",
+          "name": "8th",
+          "desc": "[Column data]",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "SPELL_SLOTS",
+          "gained_at": [],
+          "data_for_class_table": [
+            {
+              "level": 15,
+              "column_value": "1"
+            },
+            {
+              "level": 16,
+              "column_value": "1"
+            },
+            {
+              "level": 17,
+              "column_value": "1"
+            },
+            {
+              "level": 18,
+              "column_value": "1"
+            },
+            {
+              "level": 19,
+              "column_value": "1"
+            },
+            {
+              "level": 20,
+              "column_value": "1"
+            }
+          ]
+        },
+        {
+          "key": "srd_druid_slots-9th",
+          "name": "9th",
+          "desc": "[Column data]",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "SPELL_SLOTS",
+          "gained_at": [],
+          "data_for_class_table": [
+            {
+              "level": 17,
+              "column_value": "1"
+            },
+            {
+              "level": 18,
+              "column_value": "1"
+            },
+            {
+              "level": 19,
+              "column_value": "1"
+            },
+            {
+              "level": 20,
+              "column_value": "1"
+            }
+          ]
+        },
+        {
+          "key": "srd_druid_spellcasting",
+          "name": "Spellcasting",
+          "desc": "Drawing on the divine essence of nature itself, you can cast spells to shape that essence to your will.\r\n\r\n###Cantrips\r\n\r\nAt 1st level, you know two cantrips of your choice from the druid spell list. You learn additional druid cantrips of your choice at higher levels, as shown in the Cantrips Known column of the Druid table.\r\n\r\n###Preparing and Casting Spells\r\n\r\nThe Druid table shows how many spell slots you have to cast your spells of 1st level and higher. To cast one of these druid spells, you must expend a slot of the spell's level or higher. You regain all expended spell slots when you finish a long rest.\r\n\r\nYou prepare the list of druid spells that are available for you to cast, choosing from the druid spell list. When you do so, choose a number of druid spells equal to your Wisdom modifier + your druid level (minimum of one spell). The spells must be of a level for which you have spell slots.\r\n\r\nFor example, if you are a 3rd-level druid, you have four 1st-level and two 2nd-level spell slots. With a Wisdom of 16, your list of prepared spells can include six spells of 1st or 2nd level, in any combination. If you prepare the 1st-level spell cure wounds, you can cast it using a 1st-level or 2nd-level slot. Casting the spell doesn't remove it from your list of prepared spells.\r\n\r\nYou can also change your list of prepared spells when you finish a long rest. Preparing a new list of druid spells requires time spent in prayer and meditation: at least 1 minute per spell level for each spell on your list.\r\n\r\n###Spellcasting Ability\r\n\r\nWisdom is your spellcasting ability for your druid spells, since your magic draws upon your devotion and attunement to nature. You use your Wisdom whenever a spell refers to your spellcasting ability. In addition, you use your Wisdom modifier when setting the saving throw DC for a druid spell you cast and when making an attack roll with one.\r\n\r\n**Spell save DC** = 8 + your proficiency bonus + your Wisdom modifier\r\n\r\n**Spell attack modifier** = your proficiency bonus + your Wisdom modifier\r\n\r\n###Ritual Casting\r\n\r\nYou can cast a druid spell as a ritual if that spell has the ritual tag and you have the spell prepared.\r\n\r\n###Spellcasting Focus\r\n\r\nYou can use a druidic focus (see chapter 5, “Equipment”) as a spellcasting focus for your druid spells.",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "CLASS_LEVEL_FEATURE",
+          "gained_at": [
+            {
+              "level": 1,
+              "detail": null
+            }
+          ],
+          "data_for_class_table": []
+        },
+        {
+          "key": "srd_druid_timeless-body",
+          "name": "Timeless Body",
+          "desc": "Starting at 18th level, the primal magic that you wield causes you to age more slowly. For every 10 years that pass, your body ages only 1 year.",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "CLASS_LEVEL_FEATURE",
+          "gained_at": [],
+          "data_for_class_table": []
+        },
+        {
+          "key": "srd_druid_wild-shape",
+          "name": "Wild Shape",
+          "desc": "Starting at 2nd level, you can use your action to magically assume the shape of a beast that you have seen before. You can use this feature twice. You regain expended uses when you finish a short or long rest.\r\n\r\nYour druid level determines the beasts you can transform into, as shown in the Beast Shapes table. At 2nd level, for example, you can transform into any beast that has a challenge rating of 1/4 or lower that doesn't have a flying or swimming speed.\r\n\r\n| Level | Max. CR | Limitations | Example |\r\n| --- | --- | --- | --- |\r\n| 2nd | 1/4 | No flying or swimming speed | Wolf |\r\n| 4th | 1/2 | No flying speed | Crocodile |\r\n| 8th | 1 | - | Giant Eagle |\r\n\r\nYou can stay in a beast shape for a number of hours equal to half your druid level (rounded down). You then revert to your normal form unless you expend another use of this feature. You can revert to your normal form earlier by using a bonus action on your turn. You automatically revert if you fall unconscious, drop to 0 hit points, or die.\r\n\r\nWhile you are transformed, the following rules apply:\r\nYour game statistics are replaced by the statistics of the beast, but you retain your alignment, personality, and Intelligence, Wisdom, and Charisma scores. You also retain all of your skill and saving throw proficiencies, in addition to gaining those of the creature. If the creature has the same proficiency as you and the bonus in its stat block is higher than yours, use the creature's bonus instead of yours. If the creature has any legendary or lair actions, you can't use them.\r\n\r\nWhen you transform, you assume the beast's hit points and Hit Dice. When you revert to your normal form, you return to the number of hit points you had before you transformed. However, if you revert as a result of dropping to 0 hit points, any excess damage carries over to your normal form. For example, if you take 10 damage in animal form and have only 1 hit point left, you revert and take 9 damage. As long as the excess damage doesn't reduce your normal form to 0 hit points, you aren't knocked unconscious.\r\n\r\nYou can't cast spells, and your ability to speak or take any action that requires hands is limited to the capabilities of your beast form. Transforming doesn't break your concentration on a spell you've already cast, however, or prevent you from taking actions that are part of a spell, such as call lightning, that you've already cast.\r\n\r\nYou retain the benefit of any features from your class, race, or other source and can use them if the new form is physically capable of doing so. However, you can't use any of your special senses, such as darkvision, unless your new form also has that sense.\r\n\r\nYou choose whether your equipment falls to the ground in your space, merges into your new form, or is worn by it. Worn equipment functions as normal, but the GM decides whether it is practical for the new form to wear a piece of equipment, based on the creature's shape and size. Your equipment doesn't change size or shape to match the new form, and any equipment that the new form can't wear must either fall to the ground or merge with it. Equipment that merges with the form has no effect until you leave the form.",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "CLASS_LEVEL_FEATURE",
+          "gained_at": [
+            {
+              "level": 2,
+              "detail": null
+            },
+            {
+              "level": 4,
+              "detail": null
+            },
+            {
+              "level": 8,
+              "detail": null
+            }
+          ],
+          "data_for_class_table": []
+        }
+      ],
+      "hit_points": {
+        "hit_dice": "D8",
+        "hit_dice_name": "1D8 per Druid level",
+        "hit_points_at_1st_level": "8 + your Constitution modifier",
+        "hit_points_at_higher_levels": "1D8 (or 5) + your Constitution modifier per druid level after 1st"
+      },
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "saving_throws": [
+        {
+          "name": "Intelligence"
+        },
+        {
+          "name": "Wisdom"
+        }
+      ],
+      "subclass_of": null,
+      "name": "Druid",
+      "desc": "",
+      "hit_dice": "D8",
+      "caster_type": null,
+      "primary_abilities": []
+    },
+    {
       "key": "srd_fighter",
       "features": [
         {
@@ -497,6 +1419,752 @@
       "name": "School of Evocation",
       "desc": "",
       "hit_dice": null,
+      "caster_type": null,
+      "primary_abilities": []
+    },
+    {
+      "key": "srd_warlock",
+      "features": [
+        {
+          "key": "srd_warlock_ability-score-improvement",
+          "name": "Ability Score Improvement",
+          "desc": "When you reach 4th level, and again at 8th, 12th, 16th, and 19th level, you can increase one ability score of your choice by 2, or you can increase two ability scores of your choice by 1. As normal, you can't increase an ability score above 20 using this feature.",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "CLASS_LEVEL_FEATURE",
+          "gained_at": [
+            {
+              "level": 12,
+              "detail": null
+            },
+            {
+              "level": 19,
+              "detail": null
+            },
+            {
+              "level": 4,
+              "detail": null
+            },
+            {
+              "level": 8,
+              "detail": null
+            }
+          ],
+          "data_for_class_table": []
+        },
+        {
+          "key": "srd_warlock_cantrips-known",
+          "name": "Cantrips Known",
+          "desc": "[Column data]",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "CLASS_TABLE_DATA",
+          "gained_at": [],
+          "data_for_class_table": [
+            {
+              "level": 1,
+              "column_value": "2"
+            },
+            {
+              "level": 10,
+              "column_value": "4"
+            },
+            {
+              "level": 11,
+              "column_value": "4"
+            },
+            {
+              "level": 12,
+              "column_value": "4"
+            },
+            {
+              "level": 13,
+              "column_value": "4"
+            },
+            {
+              "level": 14,
+              "column_value": "4"
+            },
+            {
+              "level": 15,
+              "column_value": "4"
+            },
+            {
+              "level": 16,
+              "column_value": "4"
+            },
+            {
+              "level": 17,
+              "column_value": "4"
+            },
+            {
+              "level": 18,
+              "column_value": "4"
+            },
+            {
+              "level": 19,
+              "column_value": "4"
+            },
+            {
+              "level": 2,
+              "column_value": "2"
+            },
+            {
+              "level": 20,
+              "column_value": "4"
+            },
+            {
+              "level": 3,
+              "column_value": "2"
+            },
+            {
+              "level": 4,
+              "column_value": "3"
+            },
+            {
+              "level": 5,
+              "column_value": "3"
+            },
+            {
+              "level": 6,
+              "column_value": "3"
+            },
+            {
+              "level": 7,
+              "column_value": "3"
+            },
+            {
+              "level": 8,
+              "column_value": "3"
+            },
+            {
+              "level": 9,
+              "column_value": "3"
+            }
+          ]
+        },
+        {
+          "key": "srd_warlock_eldritch-invocation-list",
+          "name": "Eldritch Invocation List",
+          "desc": "If an eldritch invocation has prerequisites, you must meet them to learn it. You can learn the invocation at the same time that you meet its prerequisites. A level prerequisite refers to your level in this class.\r\n\r\n### Agonizing Blast\r\n\r\nPrerequisite: eldritch blast cantrip\r\n\r\nWhen you cast eldritch blast, add your Charisma modifier to the damage it deals on a hit.\r\nArmor of Shadows\r\n\r\nYou can cast mage armor on yourself at will, without expending a spell slot or material components.\r\n\r\n### Ascendant Step\r\n\r\nPrerequisite: 9th level\r\n\r\nYou can cast levitate on yourself at will, without expending a spell slot or material components.\r\n\r\n### Beast Speech\r\n\r\nYou can cast speak with animals at will, without expending a spell slot.\r\n\r\n### Beguiling Influence\r\n\r\nYou gain proficiency in the Deception and Persuasion skills.\r\n\r\n### Bewitching Whispers\r\n\r\nPrerequisite: 7th level\r\n\r\nYou can cast compulsion once using a warlock spell slot. You can't do so again until you finish a long rest.\r\n\r\n### Book of Ancient Secrets\r\n\r\nPrerequisite: Pact of the Tome feature\r\n\r\nYou can now inscribe magical rituals in your Book of Shadows. Choose two 1st-level spells that have the ritual tag from any class's spell list (the two needn't be from the same list). The spells appear in the book and don't count against the number of spells you know. With your Book of Shadows in hand, you can cast the chosen spells as rituals. You can't cast the spells except as rituals, unless you've learned them by some other means. You can also cast a warlock spell you know as a ritual if it has the ritual tag.\r\n\r\nOn your adventures, you can add other ritual spells to your Book of Shadows. When you find such a spell, you can add it to the book if the spell's level is equal to or less than half your warlock level (rounded up) and if you can spare the time to transcribe the spell. For each level of the spell, the transcription process takes 2 hours and costs 50 gp for the rare inks needed to inscribe it.\r\n\r\n### Chains of Carceri\r\n\r\nPrerequisite: 15th level, Pact of the Chain feature\r\n\r\nYou can cast hold monster at will-targeting a celestial, fiend, or elemental-without expending a spell slot or material components. You must finish a long rest before you can use this invocation on the same creature again.\r\n\r\n### Devil's Sight\r\n\r\nYou can see normally in darkness, both magical and nonmagical, to a distance of 120 feet.\r\n\r\n### Dreadful Word\r\n\r\nPrerequisite: 7th level\r\n\r\nYou can cast confusion once using a warlock spell slot. You can't do so again until you finish a long rest.\r\n\r\n### Eldritch Sight\r\n\r\nYou can cast detect magic at will, without expending a spell slot.\r\n\r\n### Eldritch Spear\r\n\r\nPrerequisite: eldritch blast cantrip\r\n\r\nWhen you cast eldritch blast, its range is 300 feet.\r\n\r\n### Eyes of the Rune Keeper\r\n\r\nYou can read all writing.\r\n\r\n### Fiendish Vigor\r\n\r\nYou can cast false life on yourself at will as a 1st-level spell, without expending a spell slot or material components.\r\n\r\n### Gaze of Two Minds\r\n\r\nYou can use your action to touch a willing humanoid and perceive through its senses until the end of your next turn. As long as the creature is on the same plane of existence as you, you can use your action on subsequent turns to maintain this connection, extending the duration until the end of your next turn. While perceiving through the other creature's senses, you benefit from any special senses possessed by that creature, and you are blinded and deafened to your own surroundings.\r\n\r\n### Lifedrinker\r\n\r\nPrerequisite: 12th level, Pact of the Blade feature\r\n\r\nWhen you hit a creature with your pact weapon, the creature takes extra necrotic damage equal to your Charisma modifier (minimum 1).\r\n\r\n### Mask of Many Faces\r\n\r\nYou can cast disguise self at will, without expending a spell slot.\r\n\r\n### Master of Myriad Forms\r\n\r\nPrerequisite: 15th level\r\n\r\nYou can cast alter self at will, without expending a spell slot.\r\n\r\n### Minions of Chaos\r\n\r\nPrerequisite: 9th level\r\n\r\nYou can cast conjure elemental once using a warlock spell slot. You can't do so again until you finish a long rest.\r\n\r\n### Mire the Mind\r\n\r\nPrerequisite: 5th level\r\n\r\nYou can cast slow once using a warlock spell slot. You can't do so again until you finish a long rest.\r\n\r\n### Misty Visions\r\n\r\nYou can cast silent image at will, without expending a spell slot or material components.\r\n\r\n### One with Shadows\r\n\r\nPrerequisite: 5th level\r\n\r\nWhen you are in an area of dim light or darkness, you can use your action to become invisible until you move or take an action or a reaction.\r\n\r\n### Otherworldly Leap\r\n\r\nPrerequisite: 9th level\r\n\r\nYou can cast jump on yourself at will, without expending a spell slot or material components.\r\n\r\n### Repelling Blast\r\n\r\nPrerequisite: eldritch blast cantrip\r\n\r\nWhen you hit a creature with eldritch blast, you can push the creature up to 10 feet away from you in a straight line.\r\n\r\n### Sculptor of Flesh\r\n\r\nPrerequisite: 7th level\r\n\r\nYou can cast polymorph once using a warlock spell slot. You can't do so again until you finish a long rest.\r\n\r\n### Sign of Ill Omen\r\n\r\nPrerequisite: 5th level\r\n\r\nYou can cast bestow curse once using a warlock spell slot. You can't do so again until you finish a long rest.\r\n\r\n### Thief of Five Fates\r\n\r\nYou can cast bane once using a warlock spell slot. You can't do so again until you finish a long rest.\r\n\r\n### Thirsting Blade\r\n\r\nPrerequisite: 5th level, Pact of the Blade feature\r\n\r\nYou can attack with your pact weapon twice, instead of once, whenever you take the Attack action on your turn.\r\n\r\n### Visions of Distant Realms\r\n\r\nPrerequisite: 15th level\r\n\r\nYou can cast arcane eye at will, without expending a spell slot.\r\n\r\n### Voice of the Chain Master\r\n\r\nPrerequisite: Pact of the Chain feature\r\n\r\nYou can communicate telepathically with your familiar and perceive through your familiar's senses as long as you are on the same plane of existence. Additionally, while perceiving through your familiar's senses, you can also speak through your familiar in your own voice, even if your familiar is normally incapable of speech.\r\n\r\n### Whispers of the Grave\r\n\r\nPrerequisite: 9th level\r\n\r\nYou can cast speak with dead at will, without expending a spell slot.\r\n\r\n### Witch Sight\r\n\r\nPrerequisite: 15th level\r\n\r\nYou can see the true form of any shapechanger or creature concealed by illusion or transmutation magic while the creature is within 30 feet of you and within line of sight.",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "CLASS_FEATURE_OPTION_LIST",
+          "gained_at": [],
+          "data_for_class_table": []
+        },
+        {
+          "key": "srd_warlock_eldritch-invocations",
+          "name": "Eldritch Invocations",
+          "desc": "In your study of occult lore, you have unearthed eldritch invocations, fragments of forbidden knowledge that imbue you with an abiding magical ability.\r\n\r\nAt 2nd level, you gain two eldritch invocations of your choice. Your invocation options are detailed at the end of the class description. When you gain certain warlock levels, you gain additional invocations of your choice, as shown in the Invocations Known column of the Warlock table.\r\n\r\nAdditionally, when you gain a level in this class, you can choose one of the invocations you know and replace it with another invocation that you could learn at that level.",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "CLASS_LEVEL_FEATURE",
+          "gained_at": [
+            {
+              "level": 2,
+              "detail": null
+            }
+          ],
+          "data_for_class_table": []
+        },
+        {
+          "key": "srd_warlock_eldritch-master",
+          "name": "Eldritch Master",
+          "desc": "At 20th level, you can draw on your inner reserve of mystical power while entreating your patron to regain expended spell slots. You can spend 1 minute entreating your patron for aid to regain all your expended spell slots from your Pact Magic feature. Once you regain spell slots with this feature, you must finish a long rest before you can do so again.",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "CLASS_LEVEL_FEATURE",
+          "gained_at": [
+            {
+              "level": 20,
+              "detail": null
+            }
+          ],
+          "data_for_class_table": []
+        },
+        {
+          "key": "srd_warlock_equipment",
+          "name": "Equipment",
+          "desc": "You start with the following equipment, in addition to the equipment granted by your background:\r\n* (*a*) a light crossbow and 20 bolts or (*b*) any simple weapon\r\n* (*a*) a component pouch or (*b*) an arcane focus\r\n* (*a*) a scholar’s pack or (*b*) a dungeoneer’s pack\r\n* Leather armor, any simple weapon, and two daggers",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "STARTING_EQUIPMENT",
+          "gained_at": [],
+          "data_for_class_table": []
+        },
+        {
+          "key": "srd_warlock_invocations-known",
+          "name": "Invocations Known",
+          "desc": "[Column data]",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "CLASS_LEVEL_FEATURE",
+          "gained_at": [],
+          "data_for_class_table": [
+            {
+              "level": 10,
+              "column_value": "5"
+            },
+            {
+              "level": 11,
+              "column_value": "5"
+            },
+            {
+              "level": 12,
+              "column_value": "6"
+            },
+            {
+              "level": 13,
+              "column_value": "6"
+            },
+            {
+              "level": 14,
+              "column_value": "6"
+            },
+            {
+              "level": 15,
+              "column_value": "7"
+            },
+            {
+              "level": 16,
+              "column_value": "7"
+            },
+            {
+              "level": 17,
+              "column_value": "7"
+            },
+            {
+              "level": 18,
+              "column_value": "8"
+            },
+            {
+              "level": 19,
+              "column_value": "8"
+            },
+            {
+              "level": 2,
+              "column_value": "2"
+            },
+            {
+              "level": 20,
+              "column_value": "8"
+            },
+            {
+              "level": 3,
+              "column_value": "2"
+            },
+            {
+              "level": 4,
+              "column_value": "2"
+            },
+            {
+              "level": 5,
+              "column_value": "3"
+            },
+            {
+              "level": 6,
+              "column_value": "3"
+            },
+            {
+              "level": 7,
+              "column_value": "4"
+            },
+            {
+              "level": 8,
+              "column_value": "4"
+            },
+            {
+              "level": 9,
+              "column_value": "5"
+            }
+          ]
+        },
+        {
+          "key": "srd_warlock_mystic-arcanum",
+          "name": "Mystic Arcanum",
+          "desc": "At 11th level, your patron bestows upon you a magical secret called an arcanum. Choose one 6th- level spell from the warlock spell list as this arcanum.\r\n\r\nYou can cast your arcanum spell once without expending a spell slot. You must finish a long rest before you can do so again.\r\n\r\nAt higher levels, you gain more warlock spells of your choice that can be cast in this way: one 7th- level spell at 13th level, one 8th-level spell at 15th level, and one 9th-level spell at 17th level. You regain all uses of your Mystic Arcanum when you finish a long rest.",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "CLASS_LEVEL_FEATURE",
+          "gained_at": [
+            {
+              "level": 11,
+              "detail": "6th level"
+            },
+            {
+              "level": 13,
+              "detail": "7th level"
+            },
+            {
+              "level": 15,
+              "detail": "8th level"
+            },
+            {
+              "level": 17,
+              "detail": "9th level"
+            }
+          ],
+          "data_for_class_table": []
+        },
+        {
+          "key": "srd_warlock_otherworldly-patron",
+          "name": "Otherworldly Patron",
+          "desc": "At 1st level, you have struck a bargain with an otherworldly being of your choice: the Archfey, the Fiend, or the Great Old One, each of which is detailed at the end of the class description. Your choice grants you features at 1st level and again at 6th, 10th, and 14th level.",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "CLASS_LEVEL_FEATURE",
+          "gained_at": [
+            {
+              "level": 1,
+              "detail": null
+            }
+          ],
+          "data_for_class_table": []
+        },
+        {
+          "key": "srd_warlock_pact-boon",
+          "name": "Pact Boon",
+          "desc": "At 3rd level, your otherworldly patron bestows a gift upon you for your loyal service. You gain one of the following features of your choice.\r\n\r\n### Pact of the Chain\r\n\r\nYou learn the find familiar spell and can cast it as a ritual. The spell doesn't count against your number of spells known.\r\n\r\nWhen you cast the spell, you can choose one of the normal forms for your familiar or one of the following special forms: imp, pseudodragon, quasit, or sprite.\r\n\r\nAdditionally, when you take the Attack action, you can forgo one of your own attacks to allow your familiar to make one attack of its own with its reaction.\r\n\r\n### Pact of the Blade\r\n\r\nYou can use your action to create a pact weapon in your empty hand. You can choose the form that this melee weapon takes each time you create it. You are proficient with it while you wield it. This weapon counts as magical for the purpose of overcoming resistance and immunity to nonmagical attacks and damage.\r\n\r\nYour pact weapon disappears if it is more than 5 feet away from you for 1 minute or more. It also disappears if you use this feature again, if you dismiss the weapon (no action required), or if you die.\r\n\r\nYou can transform one magic weapon into your pact weapon by performing a special ritual while you hold the weapon. You perform the ritual over the course of 1 hour, which can be done during a short rest. You can then dismiss the weapon, shunting it into an extradimensional space, and it appears whenever you create your pact weapon thereafter. You can't affect an artifact or a sentient weapon in this way. The weapon ceases being your pact weapon if you die, if you perform the 1-hour ritual on a different weapon, or if you use a 1-hour ritual to break your bond to it. The weapon appears at your feet if it is in the extradimensional space when the bond breaks.\r\n\r\n### Pact of the Tome\r\n\r\nYour patron gives you a grimoire called a Book of Shadows. When you gain this feature, choose three cantrips from any class's spell list (the three needn't be from the same list). While the book is on your person, you can cast those cantrips at will. They don't count against your number of cantrips known. If they don't appear on the warlock spell list, they are nonetheless warlock spells for you.\r\n\r\nIf you lose your Book of Shadows, you can perform a 1-hour ceremony to receive a replacement from your patron. This ceremony can be performed during a short or long rest, and it destroys the previous book. The book turns to ash when you die.",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "CLASS_LEVEL_FEATURE",
+          "gained_at": [
+            {
+              "level": 3,
+              "detail": null
+            }
+          ],
+          "data_for_class_table": []
+        },
+        {
+          "key": "srd_warlock_pact-magic",
+          "name": "Pact Magic",
+          "desc": "Your arcane research and the magic bestowed on you by your patron have given you facility with spells.\r\n\r\n### Cantrips\r\n\r\nYou know two cantrips of your choice from the warlock spell list. You learn additional warlock cantrips of your choice at higher levels, as shown in the Cantrips Known column of the Warlock table.\r\nSpell Slots\r\n\r\nThe Warlock table shows how many spell slots you have. The table also shows what the level of those slots is; all of your spell slots are the same level. To cast one of your warlock spells of 1st level or higher, you must expend a spell slot. You regain all expended spell slots when you finish a short or long rest.\r\n\r\nFor example, when you are 5th level, you have two 3rd-level spell slots. To cast the 1st-level spell thunderwave, you must spend one of those slots, and you cast it as a 3rd-level spell.\r\n\r\n### Spells Known of 1st Level and Higher\r\n\r\nAt 1st level, you know two 1st-level spells of your choice from the warlock spell list.\r\n\r\nThe Spells Known column of the Warlock table shows when you learn more warlock spells of your choice of 1st level and higher. A spell you choose must be of a level no higher than what's shown in the table's Slot Level column for your level. When you reach 6th level, for example, you learn a new warlock spell, which can be 1st, 2nd, or 3rd level.\r\n\r\nAdditionally, when you gain a level in this class, you can choose one of the warlock spells you know and replace it with another spell from the warlock spell list, which also must be of a level for which you have spell slots.\r\n\r\n### Spellcasting Ability\r\n\r\nCharisma is your spellcasting ability for your warlock spells, so you use your Charisma whenever a spell refers to your spellcasting ability. In addition, you use your Charisma modifier when setting the saving throw DC for a warlock spell you cast and when making an attack roll with one.\r\n\r\n**Spell save DC** = 8 + your proficiency bonus + your Charisma modifier\r\n\r\n**Spell attack modifier** = your proficiency bonus + your Charisma modifier\r\n\r\n### Spellcasting Focus\r\n\r\nYou can use an arcane focus as a spellcasting focus for your warlock spells.",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "CLASS_LEVEL_FEATURE",
+          "gained_at": [
+            {
+              "level": 1,
+              "detail": null
+            }
+          ],
+          "data_for_class_table": []
+        },
+        {
+          "key": "srd_warlock_proficiencies",
+          "name": "Proficiencies",
+          "desc": "**Armor:** Light armor\r\n**Weapons:** Simple weapons\r\n**Tools:** None\r\n**Saving Throws:** Wisdom, Charisma\r\n**Skills:** Choose two skills from Arcana, Deception, History, Intimidation, Investigation, Nature, and Religion",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "PROFICIENCIES",
+          "gained_at": [],
+          "data_for_class_table": []
+        },
+        {
+          "key": "srd_warlock_proficiency-bonus",
+          "name": "Proficiency Bonus",
+          "desc": "[Column data]",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "PROFICIENCY_BONUS",
+          "gained_at": [],
+          "data_for_class_table": [
+            {
+              "level": 1,
+              "column_value": "+2"
+            },
+            {
+              "level": 10,
+              "column_value": "+4"
+            },
+            {
+              "level": 11,
+              "column_value": "+4"
+            },
+            {
+              "level": 12,
+              "column_value": "+4"
+            },
+            {
+              "level": 13,
+              "column_value": "+5"
+            },
+            {
+              "level": 14,
+              "column_value": "+5"
+            },
+            {
+              "level": 15,
+              "column_value": "+5"
+            },
+            {
+              "level": 16,
+              "column_value": "+5"
+            },
+            {
+              "level": 17,
+              "column_value": "+6"
+            },
+            {
+              "level": 18,
+              "column_value": "+6"
+            },
+            {
+              "level": 19,
+              "column_value": "+6"
+            },
+            {
+              "level": 2,
+              "column_value": "+2"
+            },
+            {
+              "level": 20,
+              "column_value": "+6"
+            },
+            {
+              "level": 3,
+              "column_value": "+2"
+            },
+            {
+              "level": 4,
+              "column_value": "+2"
+            },
+            {
+              "level": 5,
+              "column_value": "+3"
+            },
+            {
+              "level": 6,
+              "column_value": "+3"
+            },
+            {
+              "level": 7,
+              "column_value": "+3"
+            },
+            {
+              "level": 8,
+              "column_value": "+3"
+            },
+            {
+              "level": 9,
+              "column_value": "+4"
+            }
+          ]
+        },
+        {
+          "key": "srd_warlock_slot-level",
+          "name": "Slot Level",
+          "desc": "[Column data]",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "CLASS_LEVEL_FEATURE",
+          "gained_at": [],
+          "data_for_class_table": [
+            {
+              "level": 1,
+              "column_value": "1st"
+            },
+            {
+              "level": 10,
+              "column_value": "5th"
+            },
+            {
+              "level": 11,
+              "column_value": "5th"
+            },
+            {
+              "level": 12,
+              "column_value": "5th"
+            },
+            {
+              "level": 13,
+              "column_value": "5th"
+            },
+            {
+              "level": 14,
+              "column_value": "5th"
+            },
+            {
+              "level": 15,
+              "column_value": "5th"
+            },
+            {
+              "level": 16,
+              "column_value": "5th"
+            },
+            {
+              "level": 17,
+              "column_value": "5th"
+            },
+            {
+              "level": 18,
+              "column_value": "5th"
+            },
+            {
+              "level": 19,
+              "column_value": "5th"
+            },
+            {
+              "level": 2,
+              "column_value": "1st"
+            },
+            {
+              "level": 20,
+              "column_value": "5th"
+            },
+            {
+              "level": 3,
+              "column_value": "2nd"
+            },
+            {
+              "level": 4,
+              "column_value": "2nd"
+            },
+            {
+              "level": 5,
+              "column_value": "3rd"
+            },
+            {
+              "level": 6,
+              "column_value": "3rd"
+            },
+            {
+              "level": 7,
+              "column_value": "4th"
+            },
+            {
+              "level": 8,
+              "column_value": "4th"
+            },
+            {
+              "level": 9,
+              "column_value": "5th"
+            }
+          ]
+        },
+        {
+          "key": "srd_warlock_spell-slots",
+          "name": "Spell Slots",
+          "desc": "[Column data]",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "CLASS_TABLE_DATA",
+          "gained_at": [],
+          "data_for_class_table": [
+            {
+              "level": 1,
+              "column_value": "1"
+            },
+            {
+              "level": 10,
+              "column_value": "2"
+            },
+            {
+              "level": 11,
+              "column_value": "3"
+            },
+            {
+              "level": 12,
+              "column_value": "3"
+            },
+            {
+              "level": 13,
+              "column_value": "3"
+            },
+            {
+              "level": 14,
+              "column_value": "3"
+            },
+            {
+              "level": 15,
+              "column_value": "3"
+            },
+            {
+              "level": 16,
+              "column_value": "3"
+            },
+            {
+              "level": 17,
+              "column_value": "4"
+            },
+            {
+              "level": 18,
+              "column_value": "4"
+            },
+            {
+              "level": 19,
+              "column_value": "4"
+            },
+            {
+              "level": 2,
+              "column_value": "2"
+            },
+            {
+              "level": 20,
+              "column_value": "4"
+            },
+            {
+              "level": 3,
+              "column_value": "2"
+            },
+            {
+              "level": 4,
+              "column_value": "2"
+            },
+            {
+              "level": 5,
+              "column_value": "2"
+            },
+            {
+              "level": 6,
+              "column_value": "2"
+            },
+            {
+              "level": 7,
+              "column_value": "2"
+            },
+            {
+              "level": 8,
+              "column_value": "2"
+            },
+            {
+              "level": 9,
+              "column_value": "2"
+            }
+          ]
+        },
+        {
+          "key": "srd_warlock_spells-known",
+          "name": "Spells Known",
+          "desc": "[Column data]",
+          "crossreferences": {
+            "to": []
+          },
+          "feature_type": "CLASS_TABLE_DATA",
+          "gained_at": [],
+          "data_for_class_table": [
+            {
+              "level": 1,
+              "column_value": "2"
+            },
+            {
+              "level": 10,
+              "column_value": "10"
+            },
+            {
+              "level": 11,
+              "column_value": "11"
+            },
+            {
+              "level": 12,
+              "column_value": "11"
+            },
+            {
+              "level": 13,
+              "column_value": "12"
+            },
+            {
+              "level": 14,
+              "column_value": "12"
+            },
+            {
+              "level": 15,
+              "column_value": "13"
+            },
+            {
+              "level": 16,
+              "column_value": "13"
+            },
+            {
+              "level": 17,
+              "column_value": "14"
+            },
+            {
+              "level": 18,
+              "column_value": "14"
+            },
+            {
+              "level": 19,
+              "column_value": "15"
+            },
+            {
+              "level": 2,
+              "column_value": "3"
+            },
+            {
+              "level": 20,
+              "column_value": "15"
+            },
+            {
+              "level": 3,
+              "column_value": "4"
+            },
+            {
+              "level": 4,
+              "column_value": "5"
+            },
+            {
+              "level": 5,
+              "column_value": "6"
+            },
+            {
+              "level": 6,
+              "column_value": "7"
+            },
+            {
+              "level": 7,
+              "column_value": "8"
+            },
+            {
+              "level": 8,
+              "column_value": "9"
+            },
+            {
+              "level": 9,
+              "column_value": "10"
+            }
+          ]
+        }
+      ],
+      "hit_points": {
+        "hit_dice": "D8",
+        "hit_dice_name": "1D8 per Warlock level",
+        "hit_points_at_1st_level": "8 + your Constitution modifier",
+        "hit_points_at_higher_levels": "1D8 (or 5) + your Constitution modifier per warlock level after 1st"
+      },
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "saving_throws": [
+        {
+          "name": "Charisma"
+        },
+        {
+          "name": "Wisdom"
+        }
+      ],
+      "subclass_of": null,
+      "name": "Warlock",
+      "desc": "",
+      "hit_dice": "D8",
       "caster_type": null,
       "primary_abilities": []
     },

@@ -435,20 +435,20 @@ describe("Open5e v2 equipment and options, fix round 1", () => {
     expect(await o5GetEquipment("Chain mail", "2014", "unavailable")).toMatch(/^AC: 16 \| Requires STR 13 \| Stealth disadvantage$/m);
   });
 
-  it("table columns typed as class features are not listed (2014 Warlock, 2024 Druid)", async () => {
-    const row = (name: string, desc: string, gained: number) => ({ key: `x_${name}`, name, desc, feature_type: "CLASS_LEVEL_FEATURE", gained_at: gained ? [{ level: 1, detail: null }] : [], data_for_class_table: gained ? [] : [{ level: 1, value: "1" }] });
-    const warlock = { ...o5Record<Record<string, unknown>>("srd-2014", "classes", "Wizard"), key: "srd_warlock", name: "Warlock",
-      features: [row("Pact Magic", "Your arcane research", 1), row("Invocations Known", "[Column data]", 0), row("Slot Level", "[Column data]", 0)] };
-    const druid = { ...o5Record<Record<string, unknown>>("srd-2024", "classes", "Wizard"), key: "srd-2024_druid", name: "Druid",
-      features: [row("Druid Spell List", "You gain a spell list", 0), row("Cantrips Known", "[Column data]", 0), row("Wild Shape", "The magic of nature", 1)] };
-    stubFetch(o5FixtureFetch({
-      "srd-2014/classes": [...o5Fixture("srd-2014", "classes"), warlock],
-      "srd-2024/classes": [...o5Fixture("srd-2024", "classes"), druid],
-    }));
-    const lock = (await o5SearchClasses({ name: "Warlock", rulesEdition: "2014" }, "unavailable")).split("\n");
-    expect(lock).toContain("Features: Pact Magic");
-    const dr = (await o5SearchClasses({ name: "Druid", rulesEdition: "2024" }, "unavailable")).split("\n");
-    expect(dr).toContain("Features: Druid Spell List, Wild Shape");
+  it("table columns typed as class features are not listed (live 2014 Warlock, 2024 Druid)", async () => {
+    // The recorded records still carry the rows, typed CLASS_LEVEL_FEATURE with the "[Column data]" desc.
+    const rows = (doc: "srd-2014" | "srd-2024", name: string) => (o5Record<{ features: Array<{ name: string; desc: string; feature_type: string }> }>(doc, "classes", name)).features;
+    expect(rows("srd-2014", "Warlock").filter(f => f.desc === "[Column data]").map(f => f.name)).toEqual(expect.arrayContaining(["Invocations Known", "Slot Level"]));
+    expect(rows("srd-2024", "Druid").filter(f => f.desc === "[Column data]").map(f => f.name)).toContain("Cantrips Known");
+    const featuresOf = async (name: string, edition: "2014" | "2024") =>
+      (await o5SearchClasses({ name, rulesEdition: edition }, "unavailable")).split("\n").find(l => l.startsWith("Features: "))!;
+    const warlock = await featuresOf("Warlock", "2014");
+    for (const col of ["Invocations Known", "Slot Level", "Spells Known"]) expect(warlock).not.toContain(col);
+    expect(warlock).toContain("Pact Magic");
+    expect(warlock).toContain("Eldritch Invocations");
+    const druid = await featuresOf("Druid", "2024");
+    expect(druid).not.toContain("Cantrips Known");
+    expect(druid).toContain("Wild Shape");
   });
 
   it("species group by base race: under 2024 the 2024 Elf replaces SRD 5.1's Elf and High Elf", async () => {
@@ -542,7 +542,10 @@ describe("o5GetMonsterStats", () => {
   it("a hyphen-less name finds hyphenated creatures, exact (Will-o'-Wisp) and partial (Half-Red Dragon Veteran)", async () => {
     const wisp = { ...o5Record<Record<string, unknown>>("srd-2024", "creatures", "Wolf"), key: "srd-2024_will-o-wisp", name: "Will-o'-Wisp" };
     stubFetch(o5FixtureFetch({ "srd-2024/creatures": [...o5Fixture("srd-2024", "creatures"), wisp] }));
-    expect(await o5GetMonsterStats("will o' wisp", "2024")).toMatchObject({ status: "found", name: "Will-o'-Wisp", info: { ruleset: "2024" } });
+    expect(await o5GetMonsterStats("will o wisp", "2024")).toMatchObject({ status: "found", name: "Will-o'-Wisp", info: { ruleset: "2024" } });
+    expect(await o5GetMonsterStats("will o' wisp", "2024")).toMatchObject({ status: "found", name: "Will-o'-Wisp" });
+    expect(await o5GetMonsterStats("Will-o’-Wisp", "2024")).toMatchObject({ status: "found", name: "Will-o'-Wisp" });
+    expect((await o5GetMonster("will o wisp", "2024", "unavailable"))!.split("\n")[0]).toContain("Will-o'-Wisp");
     expect(await o5GetMonsterStats("half red dragon", "2014")).toMatchObject({ status: "found", name: "Half-Red Dragon Veteran", crValue: 5 });
   });
 

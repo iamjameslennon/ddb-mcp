@@ -111,21 +111,25 @@ interface O5Hit<T> {
 
 const o5Info = (e: O5Entry<unknown>): EditionInfo => ({ ruleset: e.edition, book: null });
 
-/** "-" as a space: SRD 5.1's "Adamantine Armor (Chain-Mail)" is SRD 5.2's "Adamantine Armor (Chain Mail)". */
-const foldHyphens = (name: string): string => name.replace(/-/g, " ");
+/**
+ * "-" as a space and apostrophes dropped: SRD 5.1's "Adamantine Armor (Chain-Mail)" is SRD 5.2's
+ * "Adamantine Armor (Chain Mail)", and "will o wisp" finds Will-o'-Wisp. Open5e only; live, no
+ * two records of one document share a folded name beyond what the hyphen fold already joined.
+ */
+const foldPunctuation = (name: string): string => name.replace(/-/g, " ").replace(/['‘’]/g, "");
 
 const O5_RENAMES = [...EDITION_RENAMES, ...OPEN5E_ARMOUR_RENAMES];
-const o5Renamer = createTwinNamer(O5_RENAMES.map(([name2014, name2024]) => [foldHyphens(name2014), foldHyphens(name2024)] as const));
+const o5Renamer = createTwinNamer(O5_RENAMES.map(([name2014, name2024]) => [foldPunctuation(name2014), foldPunctuation(name2024)] as const));
 
 /**
  * The Open5e twin key: the shared rename table plus the Open5e-only armour
- * pairs (see OPEN5E_ARMOUR_RENAMES), with hyphens folded on both sides. D&D
+ * pairs (see OPEN5E_ARMOUR_RENAMES), with hyphens and apostrophes folded on both sides. D&D
  * Beyond's twinName does not fold them. `spell` keeps the table's own spelling.
  */
-const o5TwinName: TwinNamer = Object.assign((name: string) => o5Renamer(foldHyphens(name)), { spell: (normalized: string) => O5_SPELLINGS.get(o5Folded(normalized)) });
+const o5TwinName: TwinNamer = Object.assign((name: string) => o5Renamer(foldPunctuation(name)), { spell: (normalized: string) => O5_SPELLINGS.get(o5Folded(normalized)) });
 
-/** A name as its own twin key would be without renames: normalized, hyphens folded. */
-const o5Folded = (name: string): string => normalizeName(foldHyphens(name));
+/** A name as its own twin key would be without renames: normalized, hyphens and apostrophes folded. */
+const o5Folded = (name: string): string => normalizeName(foldPunctuation(name));
 
 /** Each table spelling by its folded form, so a hyphen-less query still gets the table's own spelling. */
 const O5_SPELLINGS = new Map(O5_RENAMES.flatMap(pair => pair.map(spelling => [o5Folded(spelling), spelling] as const)));
