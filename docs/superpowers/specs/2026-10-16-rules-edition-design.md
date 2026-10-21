@@ -1,6 +1,6 @@
 # Rules edition across all tools: design
 
-**Status:** approved design. Phase 1 (foundation) implemented 2026-10-17. Its real signatures are in the "Signatures that differ from the spec's sketch" table of [the phase-1 plan](../plans/2026-10-16-rules-edition-phase-1-foundation.md), plus `twinAliases()`, which was added after review. Phase 2 implemented 2026-10-18. Phase 3 implemented 2026-10-20 (commits `6095618..eeba441`, final-review fixes `88fde6d..d4d3af3`, carry-over round `cc92938..9158d0f`; owner decisions on book choice, `source` and per-owner class feature and racial trait selection are recorded in CLAUDE.md, and the rulings made after its plan are under [phase 3's per-source section](#equipment-and-character-options-srctoolsreferencets--phase-3)). Phases 4–5 are not started; phase 4 is next. Revised 2026-10-17 with the owner's phase-2 decisions: reasons say "found", not "exists"; a locked monster pick yields to an owned other-edition twin; a failed game-config fetch is remembered for 60 s; registrations move to `src/server.ts`; the Open5e fallback label stands in for a reason line until phase 4.
+**Status:** approved design. Phase 1 (foundation) implemented 2026-10-17. Its real signatures are in the "Signatures that differ from the spec's sketch" table of [the phase-1 plan](../plans/2026-10-16-rules-edition-phase-1-foundation.md), plus `twinAliases()`, which was added after review. Phase 2 implemented 2026-10-18. Phase 3 implemented 2026-10-20 (commits `6095618..eeba441`, final-review fixes `88fde6d..d4d3af3`, carry-over round `cc92938..9158d0f`; owner decisions on book choice, `source` and per-owner class feature and racial trait selection are recorded in CLAUDE.md, and the rulings made after its plan are under [phase 3's per-source section](#equipment-and-character-options-srctoolsreferencets--phase-3)). Phase 4 implemented 2026-10-21 (commits `8095985..df36c9d`; the plan's decisions 1–10 and the owner rulings made while executing it are under [phase 4's per-source section](#open5e-rules-and-conditions-srcopen5ets-srctoolsreferencets--phase-4)). Phase 5 is not started; it is next. Revised 2026-10-17 with the owner's phase-2 decisions: reasons say "found", not "exists"; a locked monster pick yields to an owned other-edition twin; a failed game-config fetch is remembered for 60 s; registrations move to `src/server.ts`; the Open5e fallback label stands in for a reason line until phase 4.
 **Date:** 2026-10-16 (revised the same day after an adversarial review)
 **Supersedes:** CLAUDE.md "Next steps" work item 1 (`rules_edition` for spells and monsters) and item 3 (ambiguous partial monster names). They are now phase 2 of this spec. Where this spec and CLAUDE.md's "Decisions" differ in wording, **this spec wins**.
 
@@ -37,7 +37,7 @@ This spec is written for agents who arrive cold. Each phase in [Phases](#phases)
 | Character JSON (paths below) | spells/items/race: `isLegacy` + `sources`; class/subclass/background/feat: `sources` only | A 2024 Bard character had a 2014 background (`Criminal / Spy`, `[BR]`) |
 | Conditions (`/character/v5/rule-data` → `data.conditions`) | none | 15 conditions, **2024 text only** (Exhaustion: "You die if your Exhaustion level is 6", D20 Tests reduced) |
 | Game config (`https://www.dndbeyond.com/api/config/json`) | `sources[].sourceCategoryId`, `sources[].sourceURL`, `sourceCategories[]` | 264 sources. The raw endpoint answers without auth; the code fetches it via `sessionFetch` |
-| Open5e v2 | `document__key` = `srd-2024` (SRD 5.2) or `srd-2014` (SRD 5.1) | spells, creatures, weapons, armor, species, classes, backgrounds, feats, rules (56 vs 227 sections) all populated for both. **No conditions in either.** **`items` and `magicitems` returned identical counts for both keys, so the filter is probably ignored there** (see phase 4) |
+| Open5e v2 | `document__key` = `srd-2024` (SRD 5.2) or `srd-2014` (SRD 5.1) | spells, creatures, weapons, armor, species, classes, backgrounds, feats, rules (56 vs 227 sections) all populated for both. **No conditions in either.** **`document__key` is ignored by `items` and `magicitems`** (they return every document, even for a bogus key); **`document__key__in` restricts all 11 endpoints used** (resolved in phase 4, probed 2026-10-20). Other filter params are silently ignored, so everything but the document is matched client-side. SRD 5.2 on Open5e has no Rules Glossary (no condition or "grapple" entries) |
 
 **Verified source IDs** (live): `1` BR "Basic Rules (2014)" cat 26; `2` PHB (2014) cat 26; `3` DMG (2014) cat 26; `5` MM (2014) cat 26; `145` PHB-2024 cat 24; `146` DMG-2024 cat 24; `147` MM-2024 cat 24; `148` br-2024 cat 24; `193` TCMP1 cat 34 (third-party).
 
@@ -100,6 +100,7 @@ All strings come from `src/edition.ts`. **No tool builds its own edition text**,
 - **Open5e-sourced content** (the source-of-truth suffix replaces the book):
   - Fallback because D&D Beyond could not be reached or the user is logged out: `Rules: 2024 · SRD 5.2 (Open5e fallback — D&D Beyond unavailable)`
   - Fallback because D&D Beyond answered but had no match: `Rules: 2024 · SRD 5.2 (Open5e fallback — not found on D&D Beyond)`
+  - Open5e **searches** have their own first line, because their lines mix SRD 5.2 and SRD 5.1 entries (`open5eSearchHeader`): `Rules: 2024 by default — SRD 5.2, with SRD 5.1 entries only where no 2024 version was found (Open5e fallback — D&D Beyond unavailable).` (or `… not found on D&D Beyond).`), and the mirror `Rules: 2014 requested — SRD 5.1, with SRD 5.2 entries only where no 2014 version was found (…).`. Lines carry `[2024]` / `[2014]` after the name, and the usual `searchFooter` closes them. A search that renders one hit as a detail block keeps the single-lookup label with its reason line.
   - Tools whose primary source is Open5e (rules): `Rules: 2024 · SRD 5.2`
   - Conditions (vendored): `Rules: 2024 · SRD 5.2` / `Rules: 2014 · SRD 5.1`
 - **Reason line**, appended on the next line when the edition returned ≠ requested:
@@ -108,6 +109,7 @@ All strings come from `src/edition.ts`. **No tool builds its own edition text**,
   - "Found", not "exists": D&D Beyond leaves content locked to the account out of its lists, so the data can't prove a version doesn't exist (live 2026-10-17: Befuddlement, the 2024 Feeblemind, is missing from the owner's spell lists).
   - Locked monster twin (`ddb_get_monster`, see [Monsters](#monsters-srctoolsmonsterts--phase-2)): `(the 2024 version isn't available to this account — 2014 text shown)` / `(the 2014 version isn't available to this account — 2024 text shown)`
   - Rules sections: `(no matching 2024 rules section — 2014 text shown)` / `(no matching 2014 rules section — 2024 text shown)`
+  - Rules search that falls back to the other SRD (`rules-search-miss-2024` / `-2014`): `(no matching 2024 rules sections — 2014 sections listed)` / `(no matching 2014 rules sections — 2024 sections listed)`, under that SRD's header (`Rules: sections from SRD 5.1 (2014).`). Rules search lines are tagged: `• **Combat** [2024] (slug: …)`.
   - Treasure: `(no 2014 version exists — 2024 tables used)`
 - **Locked monster content** (owner decision 2026-10-18):
   - Swapped search line suffix, after HP: `(2024 version isn't available to this account)` / `(2014 version isn't available to this account)`
@@ -354,9 +356,9 @@ These tools are not affected: `ddb_login`, `ddb_logout`, `ddb_close_browser`, `d
   - **`getMonster`** (no `source`) picks with the list map, so a locked pick's stat block is never fetched; the detail check stays the fallback when the map lacks the id or calls a restricted pick available (one more candidate, at most one extra detail request). With `source`, a restricted pick gets a hint naming the first official, available entry of its twin group outside the book (by short name when the book has no slug); a failed hint lookup gives no hint.
   - **`source: "homebrew"`** (both tools, case-insensitive, checked before book resolution): homebrew entries only (`isHomebrew !== false`), labelled `Rules: homebrew (edition not stated)` / `[homebrew]`, no selection, swap or source note; a search's header uses `homebrew content` as the book. `getMonsterStats` still skips homebrew.
 
-### Interim Open5e labels — phase 2
+### Interim Open5e labels — phase 2 (superseded by phase 4)
 
-`open5e.ts` still calls v1 (SRD 5.1) until phase 4. Phase 2 makes every existing `o5*` output carry `Rules: 2014 · SRD 5.1 (Open5e fallback — …)` (single lookups) or the `[2014]` tag (search lines), for **all** content types, not just spells and monsters. The `…` is `D&D Beyond unavailable` or `not found on D&D Beyond`, chosen by the caller. This keeps the consistency test meaningful from phase 2 on, and no fallback is ever unlabelled. A 2024 request answered this way gets no reason line: the `Rules: 2014 · SRD 5.1 (Open5e fallback — …)` label is the reason until phase 4 queries SRD 5.2 first. A "no 2024 version" reason would be false, because SRD 5.2 has one.
+`open5e.ts` still calls v1 (SRD 5.1) until phase 4. Phase 2 makes every existing `o5*` output carry `Rules: 2014 · SRD 5.1 (Open5e fallback — …)` (single lookups) or the `[2014]` tag (search lines), for **all** content types, not just spells and monsters. The `…` is `D&D Beyond unavailable` or `not found on D&D Beyond`, chosen by the caller. This keeps the consistency test meaningful from phase 2 on, and no fallback is ever unlabelled. A 2024 request answered this way gets no reason line: the `Rules: 2014 · SRD 5.1 (Open5e fallback — …)` label is the reason until phase 4 queries SRD 5.2 first. A "no 2024 version" reason would be false, because SRD 5.2 has one. Phase 4 removed the interim label: Open5e answers now follow the labels under "Label formats".
 
 ### Equipment and character options (`src/tools/reference.ts`) — phase 3
 
@@ -385,7 +387,7 @@ These tools are not affected: `ddb_login`, `ddb_logout`, `ddb_close_browser`, `d
   - Where no server filter works, filter client-side on each result's document key.
   - Commit recorded v2 responses as fixtures, and a test per endpoint that asserts the filter (or client-side filtering) keeps only the requested document.
 - Move every Open5e call, including the relocated monster-stats fetch, from `https://api.open5e.com/v1` to `/v2`.
-  - Query `srd-2024` by default, and `srd-2014` when requested or when the 2024 query finds nothing (with the reason line).
+  - Query `srd-2024` by default, and `srd-2014` when requested or when the 2024 query finds nothing (with the reason line). **Superseded by ruling 2 below: both documents are loaded and selected together.**
   - **Every request is document-scoped**, including by-name lookups. v2 response shapes differ from v1, so rewrite the `o5*` formatters against the fixtures.
   - Delete `fetchO5Cantrips` if it still has no importer.
 - **Rules:**
@@ -398,6 +400,34 @@ These tools are not affected: `ddb_login`, `ddb_logout`, `ddb_close_browser`, `d
   - **Source of the 2024 text:** transcribe the 15 conditions from the SRD 5.2 Rules Glossary (CC-BY-4.0, published by Wizards of the Coast; official PDF linked from D&D Beyond's SRD page — record the exact URL used in a comment).
   - Add attribution ("This work includes material from the System Reference Document 5.2 by Wizards of the Coast LLC, licensed under CC-BY-4.0") in a code comment and the README.
   - Add a check script (or a mode of the rename script) that fetches `/character/v5/rule-data` `data.conditions` and reports any condition whose stripped text materially differs from the vendored 2024 text. This is a sanity check only; runtime never depends on it.
+
+**Rulings in the plan** ([plan](../plans/2026-10-20-rules-edition-phase-4-open5e-v2-rules-conditions.md); where they differ from the bullets above, they win):
+
+1. **Whole documents, client-side matching.** Open5e v2 silently ignores filters it does not know, so every request is `?document__key__in=<doc>&limit=1000` (one whole document per endpoint; `next` is followed defensively) and any record from another document is dropped. Cached 1 h, one in-flight fetch per URL, a 20 s timeout; a failed fetch is never cached.
+2. **Both documents, one selection** (owner decision 2026-10-21). This replaces the bullet "Query `srd-2024` by default, and `srd-2014` when requested or when the 2024 query finds nothing", which, applied literally, gave false reasons. Every Open5e get and search loads both documents and selects with phase 1's code, taking each record's ruleset from its document: gets use `lookupByName` (exact twin name across both documents, then partial, then `selectByEdition`; reasons `no-2024-version` / `no-2014-version`), searches use `groupAndSelect` with `countFilteredPicks` (a 2014-only entry appears under 2024 tagged `[2014]`, other-edition twins are hidden and counted in the footer).
+3. **Accepted edge:** an exact twin in one document beats a partial match in the other, as on the D&D Beyond path. `"Rope"` under 2014 gives SRD 5.2's Rope with `(no 2014 version found — 2024 text shown)`, though SRD 5.1 has "Rope, hempen (50 feet)".
+4. **Open5e rename lines are suppressed when they would be false.** SRD 5.2 keeps 2014-era names for 30 rename-table pairs, so `"Bigby's Hand"` under 2024 shows SRD 5.2's "Arcane Hand" with no rename line. The line is kept only when the shown entry carries its own edition's spelling.
+5. **Open5e searches get their own header** (see "Label formats").
+6. **Rules come from `/v2/rulesets/`, not `/v2/rules/`** (owner decision 2026-10-21): 11 SRD 5.2 / 41 SRD 5.1 chapters, each nesting all its sections in full. A rules get matches the requested SRD first, exact chapter, exact section, partial chapter, partial section; a section name ("Cover") works too, and a chapter name ("Combat") returns the whole chapter. Known gap: SRD 5.2 on Open5e has no spellcasting chapter, so a 2024 `"spellcasting"` returns SRD 5.2's "Spellcasting" section (part of Multiclassing); the 2014 chapter needs `rules_edition: "2014"`. v1's 2014 Adventuring Gear, Conditions, Legal Information and Rest chapters are gone (Rest's text survives inside other chapters). SRD 5.2 has no condition entries and no "grapple" text, so a 2024 `"grapple"` search falls back to 2014. Rules are not twin-grouped: the requested SRD first, then the other.
+7. **Rules search lines carry the edition tag** (the consistency test requires one on every search line), and a search that falls back gets its own reason line (see "Label formats").
+8. **Unused Open5e exports were deleted:** `fetchO5Cantrips`, `o5GetRace`, `o5SearchWeapons`, `o5SearchArmor`. `o5GetItem` / `o5GetWeapon` / `o5GetArmor` became one `o5GetEquipment`, because exact-before-partial must run across all four equipment endpoints (in SRD 5.2 a partial "Longsword" hits the magic item "Flame Tongue Longsword" before the weapon).
+9. **Wider coverage:** the equipment fallback search also covers mundane items and applies `rarity` / `type`; the Open5e monster search applies `size`.
+10. **Conditions moved to `src/tools/conditions.ts`.** The 2024 text is transcribed from SRD 5.2.1; `scripts/check-conditions.mts` compares it with D&D Beyond's rule-data and reports all 15 `ok`.
+
+Later owner rulings (made while executing the plan, 2026-10-21):
+
+- A fixture-recorder cross-endpoint check skips srd-2014's `items` records "Hide Armor" and "Shield", as it skips Net and Musket.
+- Monster actions restore `usage_limits` and `legendary_action_cost` on the name: "(Recharge 5–6)", "(2/Day)", "(Costs 2 Actions)". v2 `subcategory` is not a subtype and is not printed; the type line is "<size> <type>, <alignment>".
+- When one SRD document fails to load, the whole Open5e call fails and the existing fallback messages apply (the owner chose this over degrading to one document). Known edge: a one-document outage can surface as "not found".
+- Reaction spells show `reaction_condition` after "1 reaction" (new output). Skill names read "Sleight of Hand".
+- An Open5e spell search with an offset past the end gives the plain no-match line, as D&D Beyond does.
+- Item search no-match text: "No items found matching the criteria (SRD only)." Mundane item line: `• <name> [tag] (<category>)`. Option searches are uncapped. Cost and weight show "—" when 0 or missing.
+- Open5e species search groups by base race, as D&D Beyond does: the 2024 Elf hides and counts the 2014 High Elf, 2014 lists each subrace, naming a subrace finds it.
+- Seven armour renames (Leather, Padded, Studded leather, Hide, Half plate, Splint, Plate → "… Armor") are Open5e-only (`OPEN5E_ARMOUR_RENAMES` in `src/edition-renames.ts`, used through `o5TwinName`), not in `EDITION_RENAMES`: D&D Beyond keeps one "Studded Leather" definition for both editions, and its spellings of the other six are unverified.
+- Within the edition `selectByEdition` picks, an exact-name entry beats endpoint order ("Plate Armor" under 2014 gives the SRD 5.1 items record).
+- Class `Features:` lists only `feature_type` CLASS_LEVEL_FEATURE; `caster_type` and feat type are humanized (Full, General, Fighting Style).
+- Rules search folds the query and text like `normalizeName`. A blank get name is not found; a blank search query lists every chapter. Not-found text: `Rules chapter or section "<name>" not found. Try ddb_search_rules to browse the chapters.`
+- Plan-mandated test markers were strengthened with owner approval (Open5e `ddb_get_monster` 2014 = "Goblin\nRules: 2014 · SRD 5.1"; `ddb_get_equipment` 2014 = "Longsword (Martial Weapon)\nRules: 2014 · SRD 5.1"; markers added for `ddb_rate_encounter` / `ddb_roll_treasure`).
 
 ### Characters (`src/tools/character/*`) — phase 5
 
@@ -493,7 +523,7 @@ Every phase:
 - Studded Leather (`[br-2024, BR]`, `isLegacy: false`) classifies as 2024.
 - `ddb_search_site` shows one header and one combined footer.
 
-### Phase 4: Open5e v2, rules and conditions
+### Phase 4: Open5e v2, rules and conditions (done 2026-10-21)
 
 **Touches:** `src/open5e.ts`, `src/tools/reference.ts` (conditions, rules, fallback call sites), `src/tools/monster.ts` (fallback call sites), `src/index.ts`, README (attribution), tests and recorded v2 fixtures for both SRDs.
 

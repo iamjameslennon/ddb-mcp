@@ -206,8 +206,8 @@ Can a character use the Help action to assist with a skill check?
 | `ddb_search_equipment` | Search the item/equipment compendium by name, rarity, or type. Covers mundane weapons, armour, and magic items. Defaults to 2024; set `rules_edition: "2014"` for the 2014 versions. Each result is tagged `[2024]` / `[2014]`. Pass `source` (a book's slug, short name or title) to list that book's items of either edition. |
 | `ddb_get_equipment` | Get the full stats and description of any item — weapon damage, properties, range, STR requirement, etc. Defaults to 2024; set `rules_edition: "2014"` for the 2014 version. A `Rules:` line names the ruleset, with a reason when the other edition is shown. Pass `source` to choose a specific book's version. |
 | `ddb_get_condition` | Look up the rules text for a condition (Poisoned, Stunned, Grappled, etc.) in 2024 (default) or 2014 rules via `rules_edition`. No login required. |
-| `ddb_search_rules` | Search all 45 SRD rules sections by keyword. No login required. |
-| `ddb_get_rules` | Read the full text of any SRD rules section (Spellcasting, Attacking, Combat, Multiclassing, Rest, Environment, etc.). Supports `query` to jump to a keyword within long sections. No login required. |
+| `ddb_search_rules` | Search the SRD rules chapters and their sections by keyword: SRD 5.2 (2024, 11 chapters) by default, SRD 5.1 (2014, 41 chapters) with `rules_edition: "2014"` or when 2024 has no match. No login required. |
+| `ddb_get_rules` | Read the full text of an SRD rules chapter or section (Combat, Cover, Grappling, Multiclassing, Environment, etc.), SRD 5.2 by default and SRD 5.1 with `rules_edition: "2014"`; a miss in one SRD falls back to the other with a note. Supports `query` to jump to a keyword within long sections. No login required. |
 | `ddb_search_races` | Search all races and subraces in the D&D Beyond compendium (including homebrew). Defaults to 2024; set `rules_edition: "2014"` for the 2014 versions. Each result is tagged `[2024]` / `[2014]`. Pass `source` (a book's slug, short name or title) to list that book's species of either edition. By default a 2024 species hides the 2014 subraces of the same base race (the 2024 Elf replaces High Elf and Wood Elf); name the subrace or use `rules_edition: "2014"` to see them. |
 | `ddb_search_classes` | Search all classes with hit die and spellcasting info. Defaults to 2024; set `rules_edition: "2014"` for the 2014 versions. Each result is tagged `[2024]` / `[2014]`. Pass `source` (a book's slug, short name or title) to list that book's classes of either edition. |
 | `ddb_search_backgrounds` | Search all backgrounds (including homebrew). Defaults to 2024; set `rules_edition: "2014"` for the 2014 versions. Each result is tagged `[2024]` / `[2014]`. Pass `source` (a book's slug, short name or title) to list that book's backgrounds of either edition. |
@@ -290,7 +290,7 @@ Then use `"command": "ddb-mcp"` (no args) in your client config. The browser is 
 - **Network access** (outbound HTTPS only):
   - `*.dndbeyond.com` — character data, auth, campaigns, books
   - `auth-service.dndbeyond.com` — cobalt token exchange
-  - `api.open5e.com` — SRD fallback (no auth)
+  - `api.open5e.com` — SRD fallback, v2 (SRD 5.2 and 5.1; no auth)
 - **Filesystem writes**:
   - Session: `~/.config/ddb-mcp/session.json` (macOS/Linux) or `%APPDATA%\ddb-mcp\session.json` (Windows)
   - Character downloads (opt-in): `~/Downloads` or `~/Documents` only — paths outside these roots are rejected

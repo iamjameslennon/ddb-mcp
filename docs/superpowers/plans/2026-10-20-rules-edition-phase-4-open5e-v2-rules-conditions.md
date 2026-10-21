@@ -1,5 +1,7 @@
 # Rules Edition Phase 4 (Open5e v2, Rules and Conditions) Implementation Plan
 
+**Outcome (2026-10-21):** done, commits `8095985..df36c9d` plus the docs commit. Tasks 1–6 shipped; the owner rulings made during execution and the new follow-ups are recorded in the spec (phase 4's per-source section) and CLAUDE.md (Next steps, carry-overs (l)–(q)).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Review round (2026-10-20).** Four adversarial reviewers (two Claude, two opencode DeepSeek) checked the first draft against the spec, the code and the live API. Every finding below was re-verified against live data before it was accepted. This revision makes these changes:
