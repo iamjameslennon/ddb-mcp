@@ -7,8 +7,10 @@
  *
  * API: https://api.open5e.com/v2/ — no auth required.
  * Two SRD documents: srd-2024 (SRD 5.2) and srd-2014 (SRD 5.1). Each endpoint
- * is loaded one whole document at a time and matched client-side; the two
- * documents are selected together by edition, like D&D Beyond entries.
+ * is loaded one whole document at a time and matched client-side. Spells,
+ * creatures, items and options select both documents together by edition, like
+ * D&D Beyond entries; rules are not twin-grouped: the requested document is
+ * searched first, then the other one.
  * Coverage is narrower than DDB but includes the core SRD content: spells,
  * creatures, items, species, classes, backgrounds, feats and rules chapters.
  */
@@ -88,8 +90,6 @@ export async function loadO5Document<T extends O5Record>(endpoint: O5Endpoint, e
   }
   return pending as Promise<T[]>;
 }
-
-// ── Edition labels ────────────────────────────────────────────────────────────
 
 // ── Selection over both SRD documents ─────────────────────────────────────────
 // Both documents of an endpoint are selected together, each record's ruleset
@@ -859,8 +859,13 @@ const ruleSlug = (key: string): string => key.slice(key.indexOf("_") + 1);
 
 const otherEdition = (e: RulesEdition): RulesEdition => (e === "2024" ? "2014" : "2024");
 
+/** One document's rulesets, a missing `desc` as "" and sections in index order. */
 const rulesetsOf = async (edition: RulesEdition): Promise<O5Ruleset[]> =>
-  (await loadO5Document<O5Ruleset>("rulesets", edition)).map(r => ({ ...r, rules: [...(r.rules ?? [])].sort((a, b) => a.index - b.index) }));
+  (await loadO5Document<O5Ruleset>("rulesets", edition)).map(r => ({
+    ...r,
+    desc: r.desc ?? "",
+    rules: (r.rules ?? []).map(s => ({ ...s, desc: s.desc ?? "" })).sort((a, b) => a.index - b.index),
+  }));
 
 /** The query as a slug: normalized, spaces → "-". */
 const slugOf = (query: string): string => normalizeName(query).replace(/ /g, "-");
@@ -869,6 +874,7 @@ interface RuleMatch { ruleset: O5Ruleset; section?: O5RuleSection }
 
 function findRule(rulesets: O5Ruleset[], query: string): RuleMatch | null {
   const q = normalizeName(query);
+  if (!q) return null;
   const slug = slugOf(query);
   const same = (r: { key: string; name: string }): boolean =>
     normalizeName(r.name) === q || r.key.toLowerCase() === q || ruleSlug(r.key) === slug;
@@ -890,13 +896,13 @@ function findRule(rulesets: O5Ruleset[], query: string): RuleMatch | null {
 }
 
 export async function o5SearchRules(query: string | undefined, rulesEdition: RulesEdition): Promise<string> {
-  const q = query?.toLowerCase();
-  const has = (text: string): boolean => text.toLowerCase().includes(q!);
+  const q = query ? normalizeName(query) : "";
+  const has = (text: string): boolean => normalizeName(text).includes(q);
   const search = async (edition: RulesEdition): Promise<string[]> => {
     const lines: string[] = [];
     for (const r of await rulesetsOf(edition)) {
       const sections = q ? r.rules.filter(s => has(s.name) || has(s.desc)) : [];
-      if (q && !has(r.name) && !has(r.desc ?? "") && !sections.length) continue;
+      if (q && !has(r.name) && !has(r.desc) && !sections.length) continue;
       const tag = editionTag({ ruleset: edition, book: null });
       lines.push(`• **${r.name}** ${tag} (slug: \`${ruleSlug(r.key)}\`)${sections.length ? ` — ${sections.map(s => s.name).join(", ")}` : ""}`);
     }
@@ -910,11 +916,11 @@ export async function o5SearchRules(query: string | undefined, rulesEdition: Rul
     lines = await search(edition);
     miss = lines.length > 0;
   }
-  if (!lines.length) return `No rules sections found matching "${query ?? ""}" (SRD only).`;
+  if (!lines.length) return `No rules sections found matching "${query?.trim() ?? ""}" (SRD only).`;
   return [
     searchHeader({ rulesDoc: edition }),
     ...(miss ? [reasonLine(rulesEdition === "2024" ? "rules-search-miss-2024" : "rules-search-miss-2014")] : []),
-    `Found ${lines.length} rules chapter(s)${query ? ` matching "${query}"` : ""} (SRD only):`,
+    `Found ${lines.length} rules chapter(s)${q ? ` matching "${query!.trim()}"` : ""} (SRD only):`,
     ...lines,
     `\nUse ddb_get_rules with the section name or slug to read the full text.`,
   ].join("\n");

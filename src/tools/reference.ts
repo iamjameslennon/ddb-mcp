@@ -1487,7 +1487,7 @@ export async function searchRacialTraitsSection(params: RacialTraitSearchParams)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RULES SECTIONS
+// RULES
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function searchRules(query?: string, rulesEdition: RulesEdition = "2024"): Promise<string> {
@@ -1502,7 +1502,7 @@ export async function getRule(
 ): Promise<string> {
   const result = await o5GetRule(nameOrSlug, rulesEdition, maxChars, query);
   if (!result) {
-    return `Rules section "${nameOrSlug}" not found. Try ddb_search_rules to browse available sections.`;
+    return `Rules chapter or section "${nameOrSlug}" not found. Try ddb_search_rules to browse the chapters.`;
   }
   return result;
 }

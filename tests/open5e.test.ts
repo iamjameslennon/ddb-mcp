@@ -53,6 +53,27 @@ describe("Open5e labels", () => {
     expect((await o5GetRule("attacking", "2014"))!.split("\n")[0]).toBe("## Attacking");
     expect((await o5GetRule("srd-2024_combat", "2024"))!.split("\n")[0]).toBe("## Combat");
     expect((await o5GetRule("Grappling", "2014"))!).toContain("*Part of Attacking*");
+    expect((await o5GetRule("srd-2024_combat_cover", "2024"))!.split("\n").slice(0, 3)).toEqual(["## Cover", "Rules: 2024 · SRD 5.2", "*Part of Combat*"]);
+  });
+  it("partial names resolve: a chapter name first, then a section name", async () => {
+    expect((await o5GetRule("damage", "2024"))!.split("\n")[0]).toBe("## Damage and Healing");
+    const u = (await o5GetRule("underwater", "2024"))!.split("\n");
+    expect(u[0]).toBe("## Underwater Combat");
+    expect(u[2]).toBe("*Part of Combat*");
+  });
+  it("a blank name finds nothing; a blank search query lists every chapter", async () => {
+    expect(await o5GetRule("   ", "2024")).toBeNull();
+    const out = await o5SearchRules("  ", "2024");
+    expect(out).toContain("Found 4 rules chapter(s) (SRD only):");
+    expect(out).not.toContain("matching");
+  });
+  it("a section with a null desc does not break search or get", async () => {
+    const rs = o5Fixture<{ rules: Array<{ desc: string | null }> }>("srd-2024", "rulesets" as never);
+    const broken = rs.map((r, i) => i === 0 ? { ...r, rules: r.rules.map((s, j) => j === 0 ? { ...s, desc: null } : s) } : r);
+    stubFetch(o5FixtureFetch({ "srd-2024/rulesets": broken }));
+    expect(await o5SearchRules("initiative", "2024")).toContain("**Combat**");
+    expect(await o5GetRule("Combat", "2024", 30000)).toContain("### The Order of Combat\n\n");
+    expect(await o5GetRule("The Order of Combat", "2024")).toContain("*Part of Combat*");
   });
   it("a repeated 2024 section name resolves to its first chapter", async () => {
     // Live 2026-10-20: "Ability Checks" is a section of both D20 Tests and Social Interaction.
@@ -70,6 +91,7 @@ describe("Open5e labels", () => {
   it("a search lists the requested document's chapters, tagged", async () => {
     const out = await o5SearchRules("cover", "2014");
     expect(out.split("\n")[0]).toBe("Rules: sections from SRD 5.1 (2014).");
+    expect(out.split("\n")[1]).toMatch(/^Found \d+ rules chapter\(s\)/);
     expect(out).toContain("• **Cover** [2014] (slug: `cover`)");
   });
   it("a search that misses lists the other document with the search reason", async () => {
@@ -78,6 +100,11 @@ describe("Open5e labels", () => {
     expect(g).toMatch(/^• \*\*Attacking\*\* \[2014\] \(slug: `attacking`\) — .*\bGrappling\b/m);
     const d = await o5SearchRules("d20 test", "2014");
     expect(d.split("\n").slice(0, 2)).toEqual(["Rules: sections from SRD 5.2 (2024).", "(no matching 2014 rules sections — 2024 sections listed)"]);
+    // Apostrophes and whitespace fold like names: straight "can't" finds SRD 5.2's curly one, no false reason.
+    const c = await o5SearchRules("can't", "2024");
+    expect(c.split("\n")[0]).toBe("Rules: sections from SRD 5.2 (2024).");
+    expect(c).not.toContain("no matching");
+    expect(await o5SearchRules("d20  tests", "2024")).toContain("**D20 Tests**");
     expect(await o5SearchRules("zzzz", "2024")).toBe('No rules sections found matching "zzzz" (SRD only).');
   });
 
