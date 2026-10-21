@@ -19,7 +19,7 @@ import { TtlCache } from "./cache.js";
 import {
   createTwinNamer, editionTag, groupAndSelect, lookupByName, normalizeName, open5eSearchHeader, reasonLine, renameLine, rulesLine, searchFooter,
   searchHeader, selectByEdition,
-  type EditionInfo, type Open5eOrigin, type RulesEdition, type SelectionReason,
+  type EditionInfo, type Open5eOrigin, type RulesEdition, type SelectionReason, type TwinNamer,
 } from "./edition.js";
 import { EDITION_RENAMES, OPEN5E_ARMOUR_RENAMES } from "./edition-renames.js";
 
@@ -105,8 +105,21 @@ interface O5Hit<T> {
 
 const o5Info = (e: O5Entry<unknown>): EditionInfo => ({ ruleset: e.edition, book: null });
 
-/** The shared rename table plus the Open5e-only armour pairs (see OPEN5E_ARMOUR_RENAMES). */
-const o5TwinName = createTwinNamer([...EDITION_RENAMES, ...OPEN5E_ARMOUR_RENAMES]);
+/** "-" as a space: SRD 5.1's "Adamantine Armor (Chain-Mail)" is SRD 5.2's "Adamantine Armor (Chain Mail)". */
+const foldHyphens = (name: string): string => name.replace(/-/g, " ");
+
+const O5_RENAMES = [...EDITION_RENAMES, ...OPEN5E_ARMOUR_RENAMES];
+const o5Renamer = createTwinNamer(O5_RENAMES.map(([name2014, name2024]) => [foldHyphens(name2014), foldHyphens(name2024)] as const));
+
+/**
+ * The Open5e twin key: the shared rename table plus the Open5e-only armour
+ * pairs (see OPEN5E_ARMOUR_RENAMES), with hyphens folded on both sides. D&D
+ * Beyond's twinName does not fold them. `spell` keeps the table's own spelling.
+ */
+const o5TwinName: TwinNamer = Object.assign((name: string) => o5Renamer(foldHyphens(name)), { spell: createTwinNamer(O5_RENAMES).spell });
+
+/** A name as its own twin key would be without renames: normalized, hyphens folded. */
+const o5Folded = (name: string): string => normalizeName(foldHyphens(name));
 
 /** Endpoint order (as given), then record key. */
 function o5Tiebreak<T extends O5Record>(endpoints: readonly O5Endpoint[]): (a: O5Entry<T>, b: O5Entry<T>) => number {
@@ -144,12 +157,23 @@ async function o5Lookup<T extends O5Record>(endpoints: readonly O5Endpoint[], na
         || a.record.name.localeCompare(b.record.name))[0],
   });
   if (!found) return null;
-  // SRD 5.2 keeps some 2014-era names (Arcane Hand): a rename line is printed
-  // only when the shown entry carries its own edition's spelling.
-  const shownName = found.entry.record.name;
-  const ownSpelling = normalizeName(shownName) === o5TwinName(shownName);
-  const keepRename = found.entry.edition === "2024" ? ownSpelling : !ownSpelling;
-  return { entry: found.entry, reason: found.reason, renamed: keepRename ? found.renamed : undefined };
+  return { entry: found.entry, reason: found.reason, renamed: o5Renamed(found.entry, found.renamed) };
+}
+
+/**
+ * The rename line's names, or undefined when it would be false. SRD 5.2 keeps
+ * some 2014-era names (Arcane Hand): a rename line is printed only when the
+ * shown entry carries its own edition's spelling. A punctuation-only difference
+ * (a hyphen) is no rename. The shown entry's edition orients the pair, because
+ * a hyphen-folded key no longer equals a 2024 name's normalized form.
+ */
+function o5Renamed(entry: O5Entry<O5Record>, renamed: O5Hit<unknown>["renamed"]): O5Hit<unknown>["renamed"] {
+  if (!renamed || o5Folded(renamed.name2014) === o5Folded(renamed.name2024)) return undefined;
+  const shownName = entry.record.name;
+  const otherName = normalizeName(renamed.name2024) === normalizeName(shownName) ? renamed.name2014 : renamed.name2024;
+  const ownSpelling = o5Folded(shownName) === o5TwinName(shownName);
+  if (entry.edition === "2024") return ownSpelling ? { name2014: otherName, name2024: shownName } : undefined;
+  return ownSpelling ? undefined : { name2014: shownName, name2024: otherName };
 }
 
 /** A search over both documents: one entry per twin group, the other edition's twins hidden and counted. Sorted by name. */

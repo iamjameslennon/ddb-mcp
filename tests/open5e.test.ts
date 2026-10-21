@@ -506,3 +506,49 @@ describe("o5GetMonsterStats", () => {
     expect(await o5GetMonsterStats("Wolf", "2024")).toBeNull();
   });
 });
+
+// ── Final fix wave (2026-10-21) ──────────────────────────────────────────────
+
+describe("Open5e twin keys fold hyphens", () => {
+  // Live srd-2014 has 19 magic items whose SRD 5.2 twin differs only by a hyphen.
+  const bag14 = o5Record<Record<string, unknown>>("srd-2014", "magicitems", "Bag of Holding");
+  const bag24 = o5Record<Record<string, unknown>>("srd-2024", "magicitems", "Bag of Holding");
+  const chain14 = { ...bag14, key: "srd_adamantine-armor-chain-mail", name: "Adamantine Armor (Chain-Mail)", category: { name: "Armor", key: "armor" } };
+  const chain24 = { ...bag24, key: "srd-2024_adamantine-armor-chain-mail", name: "Adamantine Armor (Chain Mail)", category: { name: "Armor", key: "armor" } };
+  beforeEach(() => stubFetch(o5FixtureFetch({
+    "srd-2014/magicitems": [...o5Fixture("srd-2014", "magicitems"), chain14],
+    "srd-2024/magicitems": [...o5Fixture("srd-2024", "magicitems"), chain24],
+  })));
+
+  it("a hyphen-only difference is one twin group, with no reason or rename line", async () => {
+    const got24 = (await o5GetEquipment("Adamantine Armor (Chain-Mail)", "2024", "unavailable"))!.split("\n");
+    expect(got24.slice(0, 2)).toEqual(["Adamantine Armor (Chain Mail) (Armor, Uncommon)", U24]);
+    expect(got24[2]).toBe("");
+    const got14 = (await o5GetEquipment("Adamantine Armor (Chain Mail)", "2014", "unavailable"))!.split("\n");
+    expect(got14.slice(0, 2)).toEqual(["Adamantine Armor (Chain-Mail) (Armor, Uncommon)", U14]);
+    expect(got14[2]).toBe("");
+  });
+
+  it("a search lists the group once and counts the other edition", async () => {
+    const out = (await o5SearchItems({ name: "adamantine", rulesEdition: "2024" }, "unavailable")).split("\n");
+    expect(out.filter(l => l.startsWith("• "))).toEqual(["• Adamantine Armor (Chain Mail) [2024] (Armor, Uncommon)"]);
+    expect(out.at(-1)).toBe('1 2014 version hidden — rules_edition: "2014" shows it.');
+  });
+
+  it("a real rename whose names carry hyphens keeps its line, the right way round", async () => {
+    const ante14 = { ...o5Record<Record<string, unknown>>("srd-2014", "items", "Abacus"), key: "srd_three-dragon-ante-set", name: "Three-Dragon Ante Set" };
+    const ante24 = { ...o5Record<Record<string, unknown>>("srd-2024", "items", "Rope"), key: "srd-2024_three-dragon-ante", name: "Three-Dragon Ante" };
+    stubFetch(o5FixtureFetch({
+      "srd-2014/items": [...o5Fixture("srd-2014", "items"), ante14],
+      "srd-2024/items": [...o5Fixture("srd-2024", "items"), ante24],
+    }));
+    const out = (await o5GetEquipment("Three-Dragon Ante Set", "2024", "unavailable"))!.split("\n");
+    expect(out.slice(0, 3)).toEqual(["Three-Dragon Ante (Adventuring Gear)", U24, "(2014 name: Three-Dragon Ante Set · 2024 name: Three-Dragon Ante)"]);
+    const back = (await o5GetEquipment("Three-Dragon Ante", "2014", "unavailable"))!.split("\n");
+    expect(back.slice(0, 3)).toEqual(["Three-Dragon Ante Set (Adventuring Gear)", U14, "(2014 name: Three-Dragon Ante Set · 2024 name: Three-Dragon Ante)"]);
+  });
+
+  it("the D&D Beyond twinName does not fold hyphens", () => {
+    expect(twinName("Adamantine Armor (Chain-Mail)")).not.toBe(twinName("Adamantine Armor (Chain Mail)"));
+  });
+});
