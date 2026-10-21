@@ -1,0 +1,660 @@
+{
+  "count": 319,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "key": "srd_acid-arrow",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "casting_options": [
+        {
+          "type": "default",
+          "damage_roll": null,
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        }
+      ],
+      "school": {
+        "name": "Evocation",
+        "key": "evocation"
+      },
+      "classes": [
+        {
+          "name": "Druid",
+          "key": "srd_druid"
+        },
+        {
+          "name": "Wizard",
+          "key": "srd_wizard"
+        }
+      ],
+      "range_unit": "feet",
+      "shape_size_unit": "feet",
+      "name": "Acid Arrow",
+      "desc": "A shimmering green arrow streaks toward a target within range and bursts in a spray of acid. Make a ranged spell attack against the target. On a hit, the target takes 4d4 acid damage immediately and 2d4 acid damage at the end of its next turn. On a miss, the arrow splashes the target with acid for half as much of the initial damage and no damage at the end of its next turn.",
+      "level": 2,
+      "higher_level": "When you cast this spell using a spell slot of 3rd level or higher, the damage (both initial and later) increases by 1d4 for each slot level above 2nd.",
+      "target_type": "creature",
+      "range_text": "90 feet",
+      "range": 90,
+      "ritual": false,
+      "casting_time": "action",
+      "reaction_condition": null,
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "material_specified": "Powdered rhubarb leaf and an adder's stomach.",
+      "material_cost": null,
+      "material_consumed": false,
+      "target_count": 1,
+      "saving_throw_ability": "",
+      "attack_roll": true,
+      "damage_roll": "4d4",
+      "damage_types": [
+        "acid"
+      ],
+      "duration": "instantaneous",
+      "shape_type": null,
+      "shape_size": null,
+      "concentration": false
+    },
+    {
+      "key": "srd_arcane-hand",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "casting_options": [
+        {
+          "type": "default",
+          "damage_roll": null,
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        }
+      ],
+      "school": {
+        "name": "Evocation",
+        "key": "evocation"
+      },
+      "classes": [
+        {
+          "name": "Wizard",
+          "key": "srd_wizard"
+        }
+      ],
+      "range_unit": "feet",
+      "shape_size_unit": "feet",
+      "name": "Arcane Hand",
+      "desc": "You create a Large hand of shimmering, translucent force in an unoccupied space that you can see within range. The hand lasts for the spell's duration, and it moves at your command, mimicking the movements of your own hand. The hand is an object that has AC 20 and hit points equal to your hit point maximum. If it drops to 0 hit points, the spell ends. It has a Strength of 26 (+8) and a Dexterity of 10 (+0). The hand doesn't fill its space. When you cast the spell and as a bonus action on your subsequent turns, you can move the hand up to 60 feet and then cause one of the following effects with it.\n\n**Clenched Fist.** The hand strikes one creature or object within 5 feet of it. Make a melee spell attack for the hand using your game statistics. On a hit, the target takes 4d8 force damage.\n\n**Forceful Hand.** The hand attempts to push a creature within 5 feet of it in a direction you choose. Make a check with the hand's Strength contested by the Strength (Athletics) check of the target. If the target is Medium or smaller, you have advantage on the check. If you succeed, the hand pushes the target up to 5 feet plus a number of feet equal to five times your spellcasting ability modifier. The hand moves with the target to remain within 5 feet of it.\n\n**Grasping Hand.** The hand attempts to grapple a Huge or smaller creature within 5 feet of it. You use the hand's Strength score to resolve the grapple. If the target is Medium or smaller, you have advantage on the check. While the hand is grappling the target, you can use a bonus action to have the hand crush it. When you do so, the target takes bludgeoning damage equal to 2d6 + your spellcasting ability modifier\n\n **Interposing Hand.** The hand interposes itself between you and a creature you choose until you give the hand a different command. The hand moves to stay between you and the target, providing you with half cover against the target. The target can't move through the hand's space if its Strength score is less than or equal to the hand's Strength score. If its Strength score is higher than the hand's Strength score, the target can move toward you through the hand's space, but that space is difficult terrain for the target.",
+      "level": 5,
+      "higher_level": "When you cast this spell using a spell slot of 6th level or higher, the damage from the clenched fist option increases by 2d8 and the damage from the grasping hand increases by 2d6 for each slot level above 5th.",
+      "target_type": "object",
+      "range_text": "120 feet",
+      "range": 120,
+      "ritual": false,
+      "casting_time": "action",
+      "reaction_condition": null,
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "material_specified": "An eggshell and a snakeskin glove.",
+      "material_cost": null,
+      "material_consumed": false,
+      "target_count": 1,
+      "saving_throw_ability": "",
+      "attack_roll": true,
+      "damage_roll": "4d8",
+      "damage_types": [
+        "force"
+      ],
+      "duration": "1 minute",
+      "shape_type": null,
+      "shape_size": null,
+      "concentration": true
+    },
+    {
+      "key": "srd_branding-smite",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "casting_options": [
+        {
+          "type": "default",
+          "damage_roll": null,
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        }
+      ],
+      "school": {
+        "name": "Evocation",
+        "key": "evocation"
+      },
+      "classes": [],
+      "range_unit": "feet",
+      "shape_size_unit": "feet",
+      "name": "Branding Smite",
+      "desc": "The next time you hit a creature with a weapon attack before this spell ends, the weapon gleams with astral radiance as you strike. The attack deals an extra 2d6 radiant damage to the target, which becomes visible if it's invisible, and the target sheds dim light in a 5-­--foot radius and can't become invisible until the spell ends.",
+      "level": 2,
+      "higher_level": "When you cast this spell using a spell slot of 3rd level or higher, the extra damage increases by 1d6 for each slot level above 2nd.",
+      "target_type": "creature",
+      "range_text": "Self",
+      "range": 0,
+      "ritual": false,
+      "casting_time": "bonus-action",
+      "reaction_condition": null,
+      "verbal": true,
+      "somatic": false,
+      "material": false,
+      "material_specified": "",
+      "material_cost": null,
+      "material_consumed": false,
+      "target_count": 1,
+      "saving_throw_ability": "",
+      "attack_roll": false,
+      "damage_roll": "",
+      "damage_types": [],
+      "duration": "1 minute",
+      "shape_type": null,
+      "shape_size": null,
+      "concentration": true
+    },
+    {
+      "key": "srd_feeblemind",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "casting_options": [
+        {
+          "type": "default",
+          "damage_roll": null,
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        }
+      ],
+      "school": {
+        "name": "Enchantment",
+        "key": "enchantment"
+      },
+      "classes": [
+        {
+          "name": "Bard",
+          "key": "srd_bard"
+        },
+        {
+          "name": "Druid",
+          "key": "srd_druid"
+        },
+        {
+          "name": "Warlock",
+          "key": "srd_warlock"
+        },
+        {
+          "name": "Wizard",
+          "key": "srd_wizard"
+        }
+      ],
+      "range_unit": "feet",
+      "shape_size_unit": "feet",
+      "name": "Feeblemind",
+      "desc": "You blast the mind of a creature that you can see within range, attempting to shatter its intellect and personality. The target takes 4d6 psychic damage and must make an intelligence saving throw. On a failed save, the creature's Intelligence and Charisma scores become 1. The creature can't cast spells, activate magic items, understand language, or communicate in any intelligible way. The creature can, however, identify its friends, follow them, and even protect them. At the end of every 30 days, the creature can repeat its saving throw against this spell. If it succeeds on its saving throw, the spell ends. The spell can also be ended by greater restoration, heal, or wish.",
+      "level": 8,
+      "higher_level": "",
+      "target_type": "creature",
+      "range_text": "150 feet",
+      "range": 150,
+      "ritual": false,
+      "casting_time": "action",
+      "reaction_condition": null,
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "material_specified": "A handful of clay, crystal, glass, or mineral spheres.",
+      "material_cost": null,
+      "material_consumed": false,
+      "target_count": 1,
+      "saving_throw_ability": "intelligence",
+      "attack_roll": false,
+      "damage_roll": "4d6",
+      "damage_types": [
+        "psychic"
+      ],
+      "duration": "instantaneous",
+      "shape_type": null,
+      "shape_size": null,
+      "concentration": false
+    },
+    {
+      "key": "srd_fire-bolt",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "casting_options": [
+        {
+          "type": "default",
+          "damage_roll": null,
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        },
+        {
+          "type": "player_level_5",
+          "damage_roll": "2d10",
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        },
+        {
+          "type": "player_level_6",
+          "damage_roll": "2d10",
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        },
+        {
+          "type": "player_level_7",
+          "damage_roll": "2d10",
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        },
+        {
+          "type": "player_level_8",
+          "damage_roll": "2d10",
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        },
+        {
+          "type": "player_level_9",
+          "damage_roll": "2d10",
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        },
+        {
+          "type": "player_level_10",
+          "damage_roll": "2d10",
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        },
+        {
+          "type": "player_level_11",
+          "damage_roll": "3d10",
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        },
+        {
+          "type": "player_level_12",
+          "damage_roll": "3d10",
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        },
+        {
+          "type": "player_level_13",
+          "damage_roll": "3d10",
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        },
+        {
+          "type": "player_level_14",
+          "damage_roll": "3d10",
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        },
+        {
+          "type": "player_level_15",
+          "damage_roll": "3d10",
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        },
+        {
+          "type": "player_level_16",
+          "damage_roll": "3d10",
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        },
+        {
+          "type": "player_level_17",
+          "damage_roll": "4d10",
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        },
+        {
+          "type": "player_level_18",
+          "damage_roll": "4d10",
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        },
+        {
+          "type": "player_level_19",
+          "damage_roll": "4d10",
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        },
+        {
+          "type": "player_level_20",
+          "damage_roll": "4d10",
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        }
+      ],
+      "school": {
+        "name": "Evocation",
+        "key": "evocation"
+      },
+      "classes": [
+        {
+          "name": "Sorcerer",
+          "key": "srd_sorcerer"
+        },
+        {
+          "name": "Wizard",
+          "key": "srd_wizard"
+        }
+      ],
+      "range_unit": "feet",
+      "shape_size_unit": "feet",
+      "name": "Fire Bolt",
+      "desc": "You hurl a mote of fire at a creature or object within range. Make a ranged spell attack against the target. On a hit, the target takes 1d10 fire damage. A flammable object hit by this spell ignites if it isn't being worn or carried.",
+      "level": 0,
+      "higher_level": "This spell's damage increases by 1d10 when you reach 5th level (2d10), 11th level (3d10), and 17th level (4d10).",
+      "target_type": "creature",
+      "range_text": "120 feet",
+      "range": 120,
+      "ritual": false,
+      "casting_time": "action",
+      "reaction_condition": null,
+      "verbal": true,
+      "somatic": true,
+      "material": false,
+      "material_specified": "",
+      "material_cost": null,
+      "material_consumed": false,
+      "target_count": 1,
+      "saving_throw_ability": "",
+      "attack_roll": true,
+      "damage_roll": "1d10",
+      "damage_types": [
+        "fire"
+      ],
+      "duration": "instantaneous",
+      "shape_type": null,
+      "shape_size": null,
+      "concentration": false
+    },
+    {
+      "key": "srd_fireball",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "casting_options": [
+        {
+          "type": "default",
+          "damage_roll": null,
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        },
+        {
+          "type": "slot_level_4",
+          "damage_roll": "9d6",
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        },
+        {
+          "type": "slot_level_5",
+          "damage_roll": "10d6",
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        },
+        {
+          "type": "slot_level_6",
+          "damage_roll": "11d6",
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        },
+        {
+          "type": "slot_level_7",
+          "damage_roll": "12d6",
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        },
+        {
+          "type": "slot_level_8",
+          "damage_roll": "13d6",
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        },
+        {
+          "type": "slot_level_9",
+          "damage_roll": "14d6",
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        }
+      ],
+      "school": {
+        "name": "Evocation",
+        "key": "evocation"
+      },
+      "classes": [
+        {
+          "name": "Sorcerer",
+          "key": "srd_sorcerer"
+        },
+        {
+          "name": "Wizard",
+          "key": "srd_wizard"
+        }
+      ],
+      "range_unit": "feet",
+      "shape_size_unit": "feet",
+      "name": "Fireball",
+      "desc": "A bright streak flashes from your pointing finger to a point you choose within range and then blossoms with a low roar into an explosion of flame. Each creature in a 20-foot-radius sphere centered on that point must make a dexterity saving throw. A target takes 8d6 fire damage on a failed save, or half as much damage on a successful one. The fire spreads around corners. It ignites flammable objects in the area that aren't being worn or carried.",
+      "level": 3,
+      "higher_level": "When you cast this spell using a spell slot of 4th level or higher, the damage increases by 1d6 for each slot level above 3rd.",
+      "target_type": "point",
+      "range_text": "150 feet",
+      "range": 150,
+      "ritual": false,
+      "casting_time": "action",
+      "reaction_condition": null,
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "material_specified": "A tiny ball of bat guano and sulfur.",
+      "material_cost": null,
+      "material_consumed": false,
+      "target_count": 1,
+      "saving_throw_ability": "dexterity",
+      "attack_roll": false,
+      "damage_roll": "8d6",
+      "damage_types": [
+        "fire"
+      ],
+      "duration": "instantaneous",
+      "shape_type": "sphere",
+      "shape_size": 20,
+      "concentration": false
+    },
+    {
+      "key": "srd_sleep",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "casting_options": [
+        {
+          "type": "default",
+          "damage_roll": null,
+          "target_count": null,
+          "duration": null,
+          "range": null,
+          "concentration": null,
+          "shape_size": null,
+          "desc": null
+        }
+      ],
+      "school": {
+        "name": "Enchantment",
+        "key": "enchantment"
+      },
+      "classes": [
+        {
+          "name": "Bard",
+          "key": "srd_bard"
+        },
+        {
+          "name": "Sorcerer",
+          "key": "srd_sorcerer"
+        },
+        {
+          "name": "Warlock",
+          "key": "srd_warlock"
+        },
+        {
+          "name": "Wizard",
+          "key": "srd_wizard"
+        }
+      ],
+      "range_unit": "feet",
+      "shape_size_unit": "feet",
+      "name": "Sleep",
+      "desc": "This spell sends creatures into a magical slumber. Roll 5d8; the total is how many hit points of creatures this spell can affect. Creatures within 20 feet of a point you choose within range are affected in ascending order of their current hit points (ignoring unconscious creatures). Starting with the creature that has the lowest current hit points, each creature affected by this spell falls unconscious until the spell ends, the sleeper takes damage, or someone uses an action to shake or slap the sleeper awake. Subtract each creature's hit points from the total before moving on to the creature with the next lowest hit points. A creature's hit points must be equal to or less than the remaining total for that creature to be affected. Undead and creatures immune to being charmed aren't affected by this spell.",
+      "level": 1,
+      "higher_level": "When you cast this spell using a spell slot of 2nd level or higher, roll an additional 2d8 for each slot level above 1st.",
+      "target_type": "creature",
+      "range_text": "90 feet",
+      "range": 90,
+      "ritual": false,
+      "casting_time": "action",
+      "reaction_condition": null,
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "material_specified": "A pinch of fine sand, rose petals, or a cricket.",
+      "material_cost": null,
+      "material_consumed": false,
+      "target_count": 1,
+      "saving_throw_ability": "",
+      "attack_roll": false,
+      "damage_roll": "",
+      "damage_types": [],
+      "duration": "1 minute",
+      "shape_type": null,
+      "shape_size": null,
+      "concentration": false
+    }
+  ]
+}

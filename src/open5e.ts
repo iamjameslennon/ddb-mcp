@@ -12,7 +12,7 @@
  */
 
 import { TtlCache } from "./cache.js";
-import { editionTag, rulesLine, searchHeader, type EditionInfo, type Open5eOrigin } from "./edition.js";
+import { editionTag, rulesLine, searchHeader, type EditionInfo, type Open5eOrigin, type RulesEdition } from "./edition.js";
 
 const OPEN5E = "https://api.open5e.com/v1";
 const SRD = "wotc-srd";
@@ -23,6 +23,7 @@ const open5eCache = new TtlCache<unknown>(60 * 60_000, 100);
 /** Wipe the in-process Open5e response cache. */
 export function clearOpen5eCache(): void {
   open5eCache.clear();
+  o5Pending.clear();
 }
 
 async function o5fetch(path: string): Promise<unknown> {
@@ -36,6 +37,61 @@ async function o5fetch(path: string): Promise<unknown> {
   const data = await resp.json();
   open5eCache.set(path, data);
   return data;
+}
+
+// ── v2 document loader ────────────────────────────────────────────────────────
+// Open5e v2 silently ignores filters it doesn't know, so the only request shape
+// used is one whole document per endpoint (document__key__in + limit), with
+// every other match done client-side.
+
+const OPEN5E_V2 = "https://api.open5e.com/v2";
+const O5_TIMEOUT_MS = 20_000;
+
+export type O5Endpoint = "spells" | "creatures" | "items" | "magicitems" | "weapons" | "armor" | "species" | "classes" | "backgrounds" | "feats" | "rulesets";
+
+export const O5_DOC: Readonly<Record<RulesEdition, "srd-2024" | "srd-2014">> = { "2024": "srd-2024", "2014": "srd-2014" };
+
+export interface O5Record { key: string; name: string; document: { key: string } | string }
+
+/** A record's document key: an object on most endpoints, a string on rules. */
+export function docKey(r: { document: { key: string } | string }): string {
+  return typeof r.document === "string" ? r.document : r.document.key;
+}
+
+const o5Pending = new Map<string, Promise<unknown[]>>();
+
+async function fetchPages(firstUrl: string): Promise<unknown[]> {
+  const all: unknown[] = [];
+  let url: string | null = firstUrl;
+  while (url) {
+    const resp: Response = await fetch(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(O5_TIMEOUT_MS) });
+    if (!resp.ok) throw new Error(`Open5e ${resp.status}: ${new URL(url).pathname}`);
+    const body = await resp.json() as { next?: string | null; results?: unknown[] };
+    all.push(...(body.results ?? []));
+    url = body.next || null;
+  }
+  return all;
+}
+
+/** One whole SRD document of an endpoint, other documents' records dropped. Cached 1 h; concurrent callers share one fetch; failures are never cached. */
+export async function loadO5Document<T extends O5Record>(endpoint: O5Endpoint, edition: RulesEdition): Promise<T[]> {
+  const doc = O5_DOC[edition];
+  const url = `${OPEN5E_V2}/${endpoint}/?document__key__in=${doc}&limit=1000`;
+  const cached = open5eCache.get(url) as T[] | undefined;
+  if (cached !== undefined) return cached;
+  let pending = o5Pending.get(url);
+  if (!pending) {
+    const p: Promise<unknown[]> = fetchPages(url)
+      .then(records => {
+        const kept = (records as T[]).filter(r => docKey(r) === doc);
+        open5eCache.set(url, kept);
+        return kept;
+      })
+      .finally(() => { if (o5Pending.get(url) === p) o5Pending.delete(url); });
+    o5Pending.set(url, p);
+    pending = p;
+  }
+  return pending as Promise<T[]>;
 }
 
 // ── Edition labels ────────────────────────────────────────────────────────────

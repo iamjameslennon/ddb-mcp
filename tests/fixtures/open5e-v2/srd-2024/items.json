@@ -1,0 +1,125 @@
+{
+  "count": 203,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "key": "srd-2024_alchemists-fire",
+      "name": "Alchemist's Fire",
+      "desc": "When you take the Attack action, you can replace one of your attacks with throwing a flask of Alchemist's Fire. Target one creature or object you can see within 20 feet of yourself. The target must succeed on a Dexterity saving throw (DC 8 plus your Dexterity modifier and Proficiency Bonus) or take 1d4 Fire damage and start burning (see \"Rules Glossary\").",
+      "category": {
+        "name": "Weapon",
+        "key": "weapon"
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "1.000",
+      "weight_unit": "lb",
+      "cost": "50.00",
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      }
+    },
+    {
+      "key": "srd-2024_antitoxin",
+      "name": "Antitoxin",
+      "desc": "As a Bonus Action, you can drink a vial of Antitoxin to gain Advantage on saving throws to avoid or end the Poisoned condition for 1 hour. abo",
+      "category": {
+        "name": "Potion",
+        "key": "potion"
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "0.000",
+      "weight_unit": "lb",
+      "cost": "50.00",
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      }
+    },
+    {
+      "key": "srd-2024_longsword",
+      "name": "Longsword",
+      "desc": "A longsword.",
+      "category": {
+        "name": "Weapon",
+        "key": "weapon"
+      },
+      "weapon": {
+        "name": "Longsword",
+        "key": "srd-2024_longsword",
+        "damage_type": {
+          "name": "Slashing",
+          "key": "slashing"
+        },
+        "damage_dice": "1d8",
+        "properties": [
+          {
+            "property": {
+              "name": "Sap",
+              "type": "Mastery",
+              "desc": "If you hit a creature with this weapon, that creature has Disadvantage on its next attack roll before the start of your next turn."
+            },
+            "detail": null
+          },
+          {
+            "property": {
+              "name": "Versatile",
+              "type": null,
+              "desc": "A Versatile weapon can be used with one or two hands. A damage value in parentheses appears with the property. The weapon deals that damage when used with two hands to make a melee attack."
+            },
+            "detail": "1d10"
+          }
+        ],
+        "is_simple": false,
+        "is_martial": true,
+        "is_improvised": false,
+        "distance_unit": "feet"
+      },
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "3.000",
+      "weight_unit": "lb",
+      "cost": "15.00",
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      }
+    },
+    {
+      "key": "srd-2024_rope",
+      "name": "Rope",
+      "desc": "As a Utilize action, you can tie a knot with Rope if you succeed on a DC 10 Dexterity (Sleight of Hand) check. The Rope can be burst with a successful DC 20 Strength (Athletics) check. You can bind an unwilling creature with the Rope only if the creature has the Grappled, Incapacitated, or Restrained condition. If the creature's legs are bound, the creature has the Restrained condition until it escapes. Escaping the Rope requires the creature to make a successful DC 15 Dexterity (Acrobatics) check as an action.",
+      "category": {
+        "name": "Adventuring Gear",
+        "key": "adventuring-gear"
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "5.000",
+      "weight_unit": "lb",
+      "cost": "1.00",
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      }
+    }
+  ]
+}

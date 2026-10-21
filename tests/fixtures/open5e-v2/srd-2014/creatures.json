@@ -1,0 +1,2500 @@
+{
+  "count": 325,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "key": "srd_aboleth",
+      "name": "Aboleth",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "type": {
+        "name": "Aberration",
+        "key": "aberration"
+      },
+      "size": {
+        "name": "Large",
+        "key": "large"
+      },
+      "challenge_rating": 10,
+      "proficiency_bonus": null,
+      "speed": {
+        "walk": 10,
+        "unit": "feet",
+        "swim": 40
+      },
+      "speed_all": {
+        "unit": "feet",
+        "walk": 10,
+        "crawl": 5,
+        "hover": false,
+        "fly": 0,
+        "burrow": 0,
+        "climb": 5,
+        "swim": 40
+      },
+      "category": "Monsters",
+      "subcategory": null,
+      "alignment": "lawful evil",
+      "languages": {
+        "as_string": "Deep Speech, telepathy 120 ft.",
+        "data": [
+          {
+            "name": "Deep Speech",
+            "key": "deep-speech",
+            "desc": "Typical speakers include aboleths and cloakers. It is only spoken."
+          }
+        ]
+      },
+      "armor_class": 17,
+      "armor_detail": "natural armor",
+      "hit_points": 135,
+      "hit_dice": "18d10+36",
+      "experience_points": 5900,
+      "ability_scores": {
+        "strength": 21,
+        "dexterity": 9,
+        "constitution": 15,
+        "intelligence": 18,
+        "wisdom": 15,
+        "charisma": 18
+      },
+      "modifiers": {
+        "strength": 5,
+        "dexterity": -1,
+        "constitution": 2,
+        "intelligence": 4,
+        "wisdom": 2,
+        "charisma": 4
+      },
+      "initiative_bonus": -1,
+      "saving_throws": {
+        "constitution": 6,
+        "intelligence": 8,
+        "wisdom": 6
+      },
+      "saving_throws_all": {
+        "strength": 5,
+        "dexterity": -1,
+        "constitution": 6,
+        "intelligence": 8,
+        "wisdom": 6,
+        "charisma": 4
+      },
+      "skill_bonuses": {
+        "history": 12,
+        "perception": 10
+      },
+      "skill_bonuses_all": {
+        "acrobatics": -1,
+        "animal_handling": 2,
+        "arcana": 4,
+        "athletics": 5,
+        "deception": 4,
+        "history": 12,
+        "insight": 2,
+        "intimidation": 4,
+        "investigation": 4,
+        "medicine": 2,
+        "nature": 4,
+        "perception": 10,
+        "performance": 4,
+        "persuasion": 4,
+        "religion": 4,
+        "sleight_of_hand": -1,
+        "stealth": -1,
+        "survival": 2
+      },
+      "passive_perception": 20,
+      "resistances_and_immunities": {
+        "damage_immunities_display": "",
+        "damage_immunities": [],
+        "damage_resistances_display": "",
+        "damage_resistances": [],
+        "damage_vulnerabilities_display": "",
+        "damage_vulnerabilities": [],
+        "condition_immunities_display": "",
+        "condition_immunities": []
+      },
+      "normal_sight_range": 10560,
+      "darkvision_range": 120,
+      "blindsight_range": null,
+      "tremorsense_range": null,
+      "truesight_range": null,
+      "actions": [
+        {
+          "name": "Detect",
+          "desc": "The aboleth makes a Wisdom (Perception) check.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [],
+          "action_type": "LEGENDARY_ACTION",
+          "order_in_statblock": 0,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Enslave",
+          "desc": "The aboleth targets one creature it can see within 30 ft. of it. The target must succeed on a DC 14 Wisdom saving throw or be magically charmed by the aboleth until the aboleth dies or until it is on a different plane of existence from the target. The charmed target is under the aboleth's control and can't take reactions, and the aboleth and the target can communicate telepathically with each other over any distance.\nWhenever the charmed target takes damage, the target can repeat the saving throw. On a success, the effect ends. No more than once every 24 hours, the target can also repeat the saving throw when it is at least 1 mile away from the aboleth.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [],
+          "action_type": "ACTION",
+          "order_in_statblock": 3,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": {
+            "type": "PER_DAY",
+            "param": 3
+          }
+        },
+        {
+          "name": "Multiattack",
+          "desc": "The aboleth makes three tentacle attacks.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [],
+          "action_type": "ACTION",
+          "order_in_statblock": 0,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Psychic Drain",
+          "desc": "One creature charmed by the aboleth takes 10 (3d6) psychic damage, and the aboleth regains hit points equal to the damage the creature takes.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [],
+          "action_type": "LEGENDARY_ACTION",
+          "order_in_statblock": 2,
+          "legendary_action_cost": 2,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Tail",
+          "desc": "Melee Weapon Attack: +9 to hit, reach 10 ft., one target. Hit: 15 (3d6 + 5) bludgeoning damage.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [
+            {
+              "name": "Tail attack",
+              "attack_type": "WEAPON",
+              "to_hit_mod": 9,
+              "reach": 10,
+              "range": null,
+              "long_range": null,
+              "target_creature_only": false,
+              "damage_die_count": 3,
+              "damage_die_type": "D6",
+              "damage_bonus": null,
+              "damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "extra_damage_die_count": null,
+              "extra_damage_die_type": null,
+              "extra_damage_bonus": null,
+              "extra_damage_type": null,
+              "distance_unit": "feet"
+            }
+          ],
+          "action_type": "ACTION",
+          "order_in_statblock": 2,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Tail Swipe",
+          "desc": "The aboleth makes one tail attack.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [],
+          "action_type": "LEGENDARY_ACTION",
+          "order_in_statblock": 1,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Tentacle",
+          "desc": "Melee Weapon Attack: +9 to hit, reach 10 ft., one target. Hit: 12 (2d6 + 5) bludgeoning damage. If the target is a creature, it must succeed on a DC 14 Constitution saving throw or become diseased. The disease has no effect for 1 minute and can be removed by any magic that cures disease. After 1 minute, the diseased creature's skin becomes translucent and slimy, the creature can't regain hit points unless it is underwater, and the disease can be removed only by heal or another disease-curing spell of 6th level or higher. When the creature is outside a body of water, it takes 6 (1d12) acid damage every 10 minutes unless moisture is applied to the skin before 10 minutes have passed.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [
+            {
+              "name": "Tentacle attack",
+              "attack_type": "WEAPON",
+              "to_hit_mod": 9,
+              "reach": 10,
+              "range": null,
+              "long_range": null,
+              "target_creature_only": false,
+              "damage_die_count": 2,
+              "damage_die_type": "D6",
+              "damage_bonus": null,
+              "damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "extra_damage_die_count": null,
+              "extra_damage_die_type": null,
+              "extra_damage_bonus": null,
+              "extra_damage_type": null,
+              "distance_unit": "feet"
+            }
+          ],
+          "action_type": "ACTION",
+          "order_in_statblock": 1,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        }
+      ],
+      "traits": [
+        {
+          "name": "Amphibious",
+          "desc": "The aboleth can breathe air and water."
+        },
+        {
+          "name": "Mucous Cloud",
+          "desc": "While underwater, the aboleth is surrounded by transformative mucus. A creature that touches the aboleth or that hits it with a melee attack while within 5 ft. of it must make a DC 14 Constitution saving throw. On a failure, the creature is diseased for 1d4 hours. The diseased creature can breathe only underwater."
+        },
+        {
+          "name": "Probing Telepathy",
+          "desc": "If a creature communicates telepathically with the aboleth, the aboleth learns the creature's greatest desires if the aboleth can see the creature."
+        }
+      ],
+      "creaturesets": [],
+      "environments": [
+        {
+          "name": "Caves",
+          "key": "caves"
+        },
+        {
+          "name": "Ocean",
+          "key": "ocean"
+        },
+        {
+          "name": "Sewer",
+          "key": "sewer"
+        },
+        {
+          "name": "Plane of Water",
+          "key": "srd_plane-of-water"
+        },
+        {
+          "name": "Underworld",
+          "key": "underworld"
+        }
+      ],
+      "illustration": {
+        "name": "Aboleth",
+        "key": "open5e_aboleth",
+        "file_url": "/static/img/object_illustrations/open5e-illustrations/monsters/aboleth.png",
+        "alt_text": "",
+        "attribution": ""
+      }
+    },
+    {
+      "key": "srd_adult-red-dragon",
+      "name": "Adult Red Dragon",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "type": {
+        "name": "Dragon",
+        "key": "dragon"
+      },
+      "size": {
+        "name": "Huge",
+        "key": "huge"
+      },
+      "challenge_rating": 17,
+      "proficiency_bonus": null,
+      "speed": {
+        "walk": 40,
+        "unit": "feet",
+        "fly": 80,
+        "climb": 40
+      },
+      "speed_all": {
+        "unit": "feet",
+        "walk": 40,
+        "crawl": 20,
+        "hover": false,
+        "fly": 80,
+        "burrow": 0,
+        "climb": 40,
+        "swim": 20
+      },
+      "category": "Monsters",
+      "subcategory": "Dragons, Chromatic",
+      "alignment": "chaotic evil",
+      "languages": {
+        "as_string": "Common, Draconic",
+        "data": [
+          {
+            "name": "Common",
+            "key": "common",
+            "desc": "Typical speakers are Humans."
+          },
+          {
+            "name": "Draconic",
+            "key": "draconic",
+            "desc": "Typical speakers include dragons and dragonborn."
+          }
+        ]
+      },
+      "armor_class": 19,
+      "armor_detail": "natural armor",
+      "hit_points": 256,
+      "hit_dice": "19d12+133",
+      "experience_points": 18000,
+      "ability_scores": {
+        "strength": 27,
+        "dexterity": 10,
+        "constitution": 25,
+        "intelligence": 16,
+        "wisdom": 13,
+        "charisma": 21
+      },
+      "modifiers": {
+        "strength": 8,
+        "dexterity": 0,
+        "constitution": 7,
+        "intelligence": 3,
+        "wisdom": 1,
+        "charisma": 5
+      },
+      "initiative_bonus": 0,
+      "saving_throws": {
+        "dexterity": 6,
+        "constitution": 13,
+        "wisdom": 7,
+        "charisma": 11
+      },
+      "saving_throws_all": {
+        "strength": 8,
+        "dexterity": 6,
+        "constitution": 13,
+        "intelligence": 3,
+        "wisdom": 7,
+        "charisma": 11
+      },
+      "skill_bonuses": {
+        "perception": 13,
+        "stealth": 6
+      },
+      "skill_bonuses_all": {
+        "acrobatics": 0,
+        "animal_handling": 1,
+        "arcana": 3,
+        "athletics": 8,
+        "deception": 5,
+        "history": 3,
+        "insight": 1,
+        "intimidation": 5,
+        "investigation": 3,
+        "medicine": 1,
+        "nature": 3,
+        "perception": 13,
+        "performance": 5,
+        "persuasion": 5,
+        "religion": 3,
+        "sleight_of_hand": 0,
+        "stealth": 6,
+        "survival": 1
+      },
+      "passive_perception": 23,
+      "resistances_and_immunities": {
+        "damage_immunities_display": "fire",
+        "damage_immunities": [
+          {
+            "name": "Fire",
+            "key": "fire"
+          }
+        ],
+        "damage_resistances_display": "",
+        "damage_resistances": [],
+        "damage_vulnerabilities_display": "",
+        "damage_vulnerabilities": [],
+        "condition_immunities_display": "",
+        "condition_immunities": []
+      },
+      "normal_sight_range": 10560,
+      "darkvision_range": 120,
+      "blindsight_range": 60,
+      "tremorsense_range": null,
+      "truesight_range": null,
+      "actions": [
+        {
+          "name": "Bite",
+          "desc": "Melee Weapon Attack: +14 to hit, reach 10 ft., one target. Hit: 19 (2d10 + 8) piercing damage plus 7 (2d6) fire damage.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [
+            {
+              "name": "Bite attack",
+              "attack_type": "WEAPON",
+              "to_hit_mod": 14,
+              "reach": 10,
+              "range": null,
+              "long_range": null,
+              "target_creature_only": false,
+              "damage_die_count": 2,
+              "damage_die_type": "D10",
+              "damage_bonus": null,
+              "damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "extra_damage_die_count": null,
+              "extra_damage_die_type": null,
+              "extra_damage_bonus": null,
+              "extra_damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "distance_unit": "feet"
+            }
+          ],
+          "action_type": "ACTION",
+          "order_in_statblock": 1,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Claw",
+          "desc": "Melee Weapon Attack: +14 to hit, reach 5 ft., one target. Hit: 15 (2d6 + 8) slashing damage.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [
+            {
+              "name": "Claw attack",
+              "attack_type": "WEAPON",
+              "to_hit_mod": 14,
+              "reach": 5,
+              "range": null,
+              "long_range": null,
+              "target_creature_only": false,
+              "damage_die_count": 2,
+              "damage_die_type": "D6",
+              "damage_bonus": null,
+              "damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "extra_damage_die_count": null,
+              "extra_damage_die_type": null,
+              "extra_damage_bonus": null,
+              "extra_damage_type": null,
+              "distance_unit": "feet"
+            }
+          ],
+          "action_type": "ACTION",
+          "order_in_statblock": 2,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Detect",
+          "desc": "The dragon makes a Wisdom (Perception) check.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [],
+          "action_type": "LEGENDARY_ACTION",
+          "order_in_statblock": 0,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Fire Breath",
+          "desc": "The dragon exhales fire in a 60-foot cone. Each creature in that area must make a DC 21 Dexterity saving throw, taking 63 (18d6) fire damage on a failed save, or half as much damage on a successful one.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [],
+          "action_type": "ACTION",
+          "order_in_statblock": 5,
+          "legendary_action_cost": null,
+          "limited_to_form": null,
+          "usage_limits": {
+            "type": "RECHARGE_ON_ROLL",
+            "param": 5
+          }
+        },
+        {
+          "name": "Frightful Presence",
+          "desc": "Each creature of the dragon's choice that is within 120 ft. of the dragon and aware of it must succeed on a DC 19 Wisdom saving throw or become frightened for 1 minute. A creature can repeat the saving throw at the end of each of its turns, ending the effect on itself on a success. If a creature's saving throw is successful or the effect ends for it, the creature is immune to the dragon's Frightful Presence for the next 24 hours.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [],
+          "action_type": "ACTION",
+          "order_in_statblock": 4,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Multiattack",
+          "desc": "The dragon can use its Frightful Presence. It then makes three attacks: one with its bite and two with its claws.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [],
+          "action_type": "ACTION",
+          "order_in_statblock": 0,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Tail",
+          "desc": "Melee Weapon Attack: +14 to hit, reach 15 ft., one target. Hit: 17 (2d8 + 8) bludgeoning damage.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [
+            {
+              "name": "Tail attack",
+              "attack_type": "WEAPON",
+              "to_hit_mod": 14,
+              "reach": 15,
+              "range": null,
+              "long_range": null,
+              "target_creature_only": false,
+              "damage_die_count": 2,
+              "damage_die_type": "D8",
+              "damage_bonus": null,
+              "damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "extra_damage_die_count": null,
+              "extra_damage_die_type": null,
+              "extra_damage_bonus": null,
+              "extra_damage_type": null,
+              "distance_unit": "feet"
+            }
+          ],
+          "action_type": "ACTION",
+          "order_in_statblock": 3,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Tail Attack",
+          "desc": "The dragon makes a tail attack.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [],
+          "action_type": "LEGENDARY_ACTION",
+          "order_in_statblock": 1,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Wing Attack",
+          "desc": "The dragon beats its wings. Each creature within 10 ft. of the dragon must succeed on a DC 22 Dexterity saving throw or take 15 (2d6 + 8) bludgeoning damage and be knocked prone. The dragon can then fly up to half its flying speed.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [],
+          "action_type": "LEGENDARY_ACTION",
+          "order_in_statblock": 2,
+          "legendary_action_cost": 2,
+          "limited_to_form": null,
+          "usage_limits": null
+        }
+      ],
+      "traits": [
+        {
+          "name": "Legendary Resistance (3/Day)",
+          "desc": "If the dragon fails a saving throw, it can choose to succeed instead."
+        }
+      ],
+      "creaturesets": [],
+      "environments": [
+        {
+          "name": "Hills",
+          "key": "hills"
+        },
+        {
+          "name": "Mountain",
+          "key": "mountain"
+        }
+      ],
+      "illustration": null
+    },
+    {
+      "key": "srd_ancient-red-dragon",
+      "name": "Ancient Red Dragon",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "type": {
+        "name": "Dragon",
+        "key": "dragon"
+      },
+      "size": {
+        "name": "Gargantuan",
+        "key": "gargantuan"
+      },
+      "challenge_rating": 24,
+      "proficiency_bonus": null,
+      "speed": {
+        "walk": 40,
+        "unit": "feet",
+        "fly": 80,
+        "climb": 40
+      },
+      "speed_all": {
+        "unit": "feet",
+        "walk": 40,
+        "crawl": 20,
+        "hover": false,
+        "fly": 80,
+        "burrow": 0,
+        "climb": 40,
+        "swim": 20
+      },
+      "category": "Monsters",
+      "subcategory": "Dragons, Chromatic",
+      "alignment": "chaotic evil",
+      "languages": {
+        "as_string": "Common, Draconic",
+        "data": [
+          {
+            "name": "Common",
+            "key": "common",
+            "desc": "Typical speakers are Humans."
+          },
+          {
+            "name": "Draconic",
+            "key": "draconic",
+            "desc": "Typical speakers include dragons and dragonborn."
+          }
+        ]
+      },
+      "armor_class": 22,
+      "armor_detail": "natural armor",
+      "hit_points": 546,
+      "hit_dice": "28d20+252",
+      "experience_points": 62000,
+      "ability_scores": {
+        "strength": 30,
+        "dexterity": 10,
+        "constitution": 29,
+        "intelligence": 18,
+        "wisdom": 15,
+        "charisma": 23
+      },
+      "modifiers": {
+        "strength": 10,
+        "dexterity": 0,
+        "constitution": 9,
+        "intelligence": 4,
+        "wisdom": 2,
+        "charisma": 6
+      },
+      "initiative_bonus": 0,
+      "saving_throws": {
+        "dexterity": 7,
+        "constitution": 16,
+        "wisdom": 9,
+        "charisma": 13
+      },
+      "saving_throws_all": {
+        "strength": 10,
+        "dexterity": 7,
+        "constitution": 16,
+        "intelligence": 4,
+        "wisdom": 9,
+        "charisma": 13
+      },
+      "skill_bonuses": {
+        "perception": 16,
+        "stealth": 7
+      },
+      "skill_bonuses_all": {
+        "acrobatics": 0,
+        "animal_handling": 2,
+        "arcana": 4,
+        "athletics": 10,
+        "deception": 6,
+        "history": 4,
+        "insight": 2,
+        "intimidation": 6,
+        "investigation": 4,
+        "medicine": 2,
+        "nature": 4,
+        "perception": 16,
+        "performance": 6,
+        "persuasion": 6,
+        "religion": 4,
+        "sleight_of_hand": 0,
+        "stealth": 7,
+        "survival": 2
+      },
+      "passive_perception": 26,
+      "resistances_and_immunities": {
+        "damage_immunities_display": "fire",
+        "damage_immunities": [
+          {
+            "name": "Fire",
+            "key": "fire"
+          }
+        ],
+        "damage_resistances_display": "",
+        "damage_resistances": [],
+        "damage_vulnerabilities_display": "",
+        "damage_vulnerabilities": [],
+        "condition_immunities_display": "",
+        "condition_immunities": []
+      },
+      "normal_sight_range": 10560,
+      "darkvision_range": 120,
+      "blindsight_range": 60,
+      "tremorsense_range": null,
+      "truesight_range": null,
+      "actions": [
+        {
+          "name": "Bite",
+          "desc": "Melee Weapon Attack: +17 to hit, reach 15 ft., one target. Hit: 21 (2d10 + 10) piercing damage plus 14 (4d6) fire damage.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [
+            {
+              "name": "Bite attack",
+              "attack_type": "WEAPON",
+              "to_hit_mod": 17,
+              "reach": 15,
+              "range": null,
+              "long_range": null,
+              "target_creature_only": false,
+              "damage_die_count": 2,
+              "damage_die_type": "D10",
+              "damage_bonus": null,
+              "damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "extra_damage_die_count": null,
+              "extra_damage_die_type": null,
+              "extra_damage_bonus": null,
+              "extra_damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "distance_unit": "feet"
+            }
+          ],
+          "action_type": "ACTION",
+          "order_in_statblock": 1,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Claw",
+          "desc": "Melee Weapon Attack: +17 to hit, reach 10 ft., one target. Hit: 17 (2d6 + 10) slashing damage.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [
+            {
+              "name": "Claw attack",
+              "attack_type": "WEAPON",
+              "to_hit_mod": 17,
+              "reach": 10,
+              "range": null,
+              "long_range": null,
+              "target_creature_only": false,
+              "damage_die_count": 2,
+              "damage_die_type": "D6",
+              "damage_bonus": null,
+              "damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "extra_damage_die_count": null,
+              "extra_damage_die_type": null,
+              "extra_damage_bonus": null,
+              "extra_damage_type": null,
+              "distance_unit": "feet"
+            }
+          ],
+          "action_type": "ACTION",
+          "order_in_statblock": 2,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Detect",
+          "desc": "The dragon makes a Wisdom (Perception) check.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [],
+          "action_type": "LEGENDARY_ACTION",
+          "order_in_statblock": 0,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Fire Breath",
+          "desc": "The dragon exhales fire in a 90-foot cone. Each creature in that area must make a DC 24 Dexterity saving throw, taking 91 (26d6) fire damage on a failed save, or half as much damage on a successful one.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [],
+          "action_type": "ACTION",
+          "order_in_statblock": 5,
+          "legendary_action_cost": null,
+          "limited_to_form": null,
+          "usage_limits": {
+            "type": "RECHARGE_ON_ROLL",
+            "param": 5
+          }
+        },
+        {
+          "name": "Frightful Presence",
+          "desc": "Each creature of the dragon's choice that is within 120 feet of the dragon and aware of it must succeed on a DC 21 Wisdom saving throw or become frightened for 1 minute. A creature can repeat the saving throw at the end of each of its turns, ending the effect on itself on a success. If a creature's saving throw is successful or the effect ends for it, the creature is immune to the dragon's Frightful Presence for the next 24 hours.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [],
+          "action_type": "ACTION",
+          "order_in_statblock": 4,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Multiattack",
+          "desc": "The dragon can use its Frightful Presence. It then makes three attacks: one with its bite and two with its claws.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [],
+          "action_type": "ACTION",
+          "order_in_statblock": 0,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Tail",
+          "desc": "Melee Weapon Attack: +17 to hit, reach 20 ft., one target. Hit: 19 (2d8 + 10) bludgeoning damage.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [
+            {
+              "name": "Tail attack",
+              "attack_type": "WEAPON",
+              "to_hit_mod": 17,
+              "reach": 20,
+              "range": null,
+              "long_range": null,
+              "target_creature_only": false,
+              "damage_die_count": 2,
+              "damage_die_type": "D8",
+              "damage_bonus": null,
+              "damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "extra_damage_die_count": null,
+              "extra_damage_die_type": null,
+              "extra_damage_bonus": null,
+              "extra_damage_type": null,
+              "distance_unit": "feet"
+            }
+          ],
+          "action_type": "ACTION",
+          "order_in_statblock": 3,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Tail Attack",
+          "desc": "The dragon makes a tail attack.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [],
+          "action_type": "LEGENDARY_ACTION",
+          "order_in_statblock": 1,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Wing Attack",
+          "desc": "The dragon beats its wings. Each creature within 15 ft. of the dragon must succeed on a DC 25 Dexterity saving throw or take 17 (2d6 + 10) bludgeoning damage and be knocked prone. The dragon can then fly up to half its flying speed.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [],
+          "action_type": "LEGENDARY_ACTION",
+          "order_in_statblock": 2,
+          "legendary_action_cost": 2,
+          "limited_to_form": null,
+          "usage_limits": null
+        }
+      ],
+      "traits": [
+        {
+          "name": "Legendary Resistance (3/Day)",
+          "desc": "If the dragon fails a saving throw, it can choose to succeed instead."
+        }
+      ],
+      "creaturesets": [],
+      "environments": [
+        {
+          "name": "Hills",
+          "key": "hills"
+        },
+        {
+          "name": "Mountain",
+          "key": "mountain"
+        }
+      ],
+      "illustration": null
+    },
+    {
+      "key": "srd_goblin",
+      "name": "Goblin",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "type": {
+        "name": "Humanoid",
+        "key": "humanoid"
+      },
+      "size": {
+        "name": "Small",
+        "key": "small"
+      },
+      "challenge_rating": 0.25,
+      "proficiency_bonus": null,
+      "speed": {
+        "walk": 30,
+        "unit": "feet"
+      },
+      "speed_all": {
+        "unit": "feet",
+        "walk": 30,
+        "crawl": 15,
+        "hover": false,
+        "fly": 0,
+        "burrow": 0,
+        "climb": 15,
+        "swim": 15
+      },
+      "category": "Monsters",
+      "subcategory": null,
+      "alignment": "neutral evil",
+      "languages": {
+        "as_string": "Common, Goblin",
+        "data": [
+          {
+            "name": "Common",
+            "key": "common",
+            "desc": "Typical speakers are Humans."
+          },
+          {
+            "name": "Goblin",
+            "key": "goblin",
+            "desc": "Typical speakers are goblinoids."
+          }
+        ]
+      },
+      "armor_class": 15,
+      "armor_detail": "leather armor, shield",
+      "hit_points": 7,
+      "hit_dice": "2d6",
+      "experience_points": 50,
+      "ability_scores": {
+        "strength": 8,
+        "dexterity": 14,
+        "constitution": 10,
+        "intelligence": 10,
+        "wisdom": 8,
+        "charisma": 8
+      },
+      "modifiers": {
+        "strength": -1,
+        "dexterity": 2,
+        "constitution": 0,
+        "intelligence": 0,
+        "wisdom": -1,
+        "charisma": -1
+      },
+      "initiative_bonus": 2,
+      "saving_throws": {},
+      "saving_throws_all": {
+        "strength": -1,
+        "dexterity": 2,
+        "constitution": 0,
+        "intelligence": 0,
+        "wisdom": -1,
+        "charisma": -1
+      },
+      "skill_bonuses": {
+        "stealth": 6
+      },
+      "skill_bonuses_all": {
+        "acrobatics": 2,
+        "animal_handling": -1,
+        "arcana": 0,
+        "athletics": -1,
+        "deception": -1,
+        "history": 0,
+        "insight": -1,
+        "intimidation": -1,
+        "investigation": 0,
+        "medicine": -1,
+        "nature": 0,
+        "perception": -1,
+        "performance": -1,
+        "persuasion": -1,
+        "religion": 0,
+        "sleight_of_hand": 2,
+        "stealth": 6,
+        "survival": -1
+      },
+      "passive_perception": 9,
+      "resistances_and_immunities": {
+        "damage_immunities_display": "",
+        "damage_immunities": [],
+        "damage_resistances_display": "",
+        "damage_resistances": [],
+        "damage_vulnerabilities_display": "",
+        "damage_vulnerabilities": [],
+        "condition_immunities_display": "",
+        "condition_immunities": []
+      },
+      "normal_sight_range": 10560,
+      "darkvision_range": 60,
+      "blindsight_range": null,
+      "tremorsense_range": null,
+      "truesight_range": null,
+      "actions": [
+        {
+          "name": "Scimitar",
+          "desc": "Melee Weapon Attack: +4 to hit, reach 5 ft., one target. Hit: 5 (1d6 + 2) slashing damage.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [
+            {
+              "name": "Scimitar attack",
+              "attack_type": "WEAPON",
+              "to_hit_mod": 4,
+              "reach": 5,
+              "range": null,
+              "long_range": null,
+              "target_creature_only": false,
+              "damage_die_count": 1,
+              "damage_die_type": "D6",
+              "damage_bonus": null,
+              "damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "extra_damage_die_count": null,
+              "extra_damage_die_type": null,
+              "extra_damage_bonus": null,
+              "extra_damage_type": null,
+              "distance_unit": "feet"
+            }
+          ],
+          "action_type": "ACTION",
+          "order_in_statblock": 0,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Shortbow",
+          "desc": "Ranged Weapon Attack: +4 to hit, range 80/320 ft., one target. Hit: 5 (1d6 + 2) piercing damage.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [
+            {
+              "name": "Shortbow attack",
+              "attack_type": "WEAPON",
+              "to_hit_mod": 4,
+              "reach": null,
+              "range": 80,
+              "long_range": 320,
+              "target_creature_only": false,
+              "damage_die_count": 1,
+              "damage_die_type": "D6",
+              "damage_bonus": null,
+              "damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "extra_damage_die_count": null,
+              "extra_damage_die_type": null,
+              "extra_damage_bonus": null,
+              "extra_damage_type": null,
+              "distance_unit": "feet"
+            }
+          ],
+          "action_type": "ACTION",
+          "order_in_statblock": 1,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        }
+      ],
+      "traits": [
+        {
+          "name": "Nimble Escape",
+          "desc": "The goblin can take the Disengage or Hide action as a bonus action on each of its turns."
+        }
+      ],
+      "creaturesets": [],
+      "environments": [
+        {
+          "name": "Arctic or Tundra",
+          "key": "arctic"
+        },
+        {
+          "name": "Caves",
+          "key": "caves"
+        },
+        {
+          "name": "Desert",
+          "key": "desert"
+        },
+        {
+          "name": "Forest or Jungle",
+          "key": "forest"
+        },
+        {
+          "name": "Grassland or Plains",
+          "key": "grassland"
+        },
+        {
+          "name": "Hills",
+          "key": "hills"
+        },
+        {
+          "name": "Mountain",
+          "key": "mountain"
+        },
+        {
+          "name": "Ruins",
+          "key": "ruins"
+        },
+        {
+          "name": "Sewer",
+          "key": "sewer"
+        },
+        {
+          "name": "Feywild",
+          "key": "srd_feywild"
+        },
+        {
+          "name": "Swamp or Marsh",
+          "key": "swamp"
+        },
+        {
+          "name": "Underworld",
+          "key": "underworld"
+        },
+        {
+          "name": "Urban",
+          "key": "urban"
+        }
+      ],
+      "illustration": null
+    },
+    {
+      "key": "srd_orc",
+      "name": "Orc",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "type": {
+        "name": "Humanoid",
+        "key": "humanoid"
+      },
+      "size": {
+        "name": "Medium",
+        "key": "medium"
+      },
+      "challenge_rating": 0.5,
+      "proficiency_bonus": null,
+      "speed": {
+        "walk": 30,
+        "unit": "feet"
+      },
+      "speed_all": {
+        "unit": "feet",
+        "walk": 30,
+        "crawl": 15,
+        "hover": false,
+        "fly": 0,
+        "burrow": 0,
+        "climb": 15,
+        "swim": 15
+      },
+      "category": "Monsters",
+      "subcategory": null,
+      "alignment": "chaotic evil",
+      "languages": {
+        "as_string": "Common, Orc",
+        "data": [
+          {
+            "name": "Common",
+            "key": "common",
+            "desc": "Typical speakers are Humans."
+          },
+          {
+            "name": "Orc",
+            "key": "orc",
+            "desc": "Typical speakers are orcs"
+          }
+        ]
+      },
+      "armor_class": 13,
+      "armor_detail": "hide armor",
+      "hit_points": 15,
+      "hit_dice": "2d8+6",
+      "experience_points": 100,
+      "ability_scores": {
+        "strength": 16,
+        "dexterity": 12,
+        "constitution": 16,
+        "intelligence": 7,
+        "wisdom": 11,
+        "charisma": 10
+      },
+      "modifiers": {
+        "strength": 3,
+        "dexterity": 1,
+        "constitution": 3,
+        "intelligence": -2,
+        "wisdom": 0,
+        "charisma": 0
+      },
+      "initiative_bonus": 1,
+      "saving_throws": {},
+      "saving_throws_all": {
+        "strength": 3,
+        "dexterity": 1,
+        "constitution": 3,
+        "intelligence": -2,
+        "wisdom": 0,
+        "charisma": 0
+      },
+      "skill_bonuses": {
+        "intimidation": 2
+      },
+      "skill_bonuses_all": {
+        "acrobatics": 1,
+        "animal_handling": 0,
+        "arcana": -2,
+        "athletics": 3,
+        "deception": 0,
+        "history": -2,
+        "insight": 0,
+        "intimidation": 2,
+        "investigation": -2,
+        "medicine": 0,
+        "nature": -2,
+        "perception": 0,
+        "performance": 0,
+        "persuasion": 0,
+        "religion": -2,
+        "sleight_of_hand": 1,
+        "stealth": 1,
+        "survival": 0
+      },
+      "passive_perception": 10,
+      "resistances_and_immunities": {
+        "damage_immunities_display": "",
+        "damage_immunities": [],
+        "damage_resistances_display": "",
+        "damage_resistances": [],
+        "damage_vulnerabilities_display": "",
+        "damage_vulnerabilities": [],
+        "condition_immunities_display": "",
+        "condition_immunities": []
+      },
+      "normal_sight_range": 10560,
+      "darkvision_range": 60,
+      "blindsight_range": null,
+      "tremorsense_range": null,
+      "truesight_range": null,
+      "actions": [
+        {
+          "name": "Greataxe",
+          "desc": "Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 9 (1d12 + 3) slashing damage.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [
+            {
+              "name": "Greataxe attack",
+              "attack_type": "WEAPON",
+              "to_hit_mod": 5,
+              "reach": 5,
+              "range": null,
+              "long_range": null,
+              "target_creature_only": false,
+              "damage_die_count": 1,
+              "damage_die_type": "D12",
+              "damage_bonus": null,
+              "damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "extra_damage_die_count": null,
+              "extra_damage_die_type": null,
+              "extra_damage_bonus": null,
+              "extra_damage_type": null,
+              "distance_unit": "feet"
+            }
+          ],
+          "action_type": "ACTION",
+          "order_in_statblock": 0,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Javelin",
+          "desc": "Melee or Ranged Weapon Attack: +5 to hit, reach 5 ft. or range 30/120 ft., one target. Hit: 6 (1d6 + 3) piercing damage.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [
+            {
+              "name": "Javelin Melee attack",
+              "attack_type": "WEAPON",
+              "to_hit_mod": 5,
+              "reach": 5,
+              "range": 30,
+              "long_range": 120,
+              "target_creature_only": false,
+              "damage_die_count": 1,
+              "damage_die_type": "D6",
+              "damage_bonus": null,
+              "damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "extra_damage_die_count": null,
+              "extra_damage_die_type": null,
+              "extra_damage_bonus": null,
+              "extra_damage_type": null,
+              "distance_unit": "feet"
+            },
+            {
+              "name": "Javelin Ranged attack",
+              "attack_type": "WEAPON",
+              "to_hit_mod": 5,
+              "reach": null,
+              "range": 30,
+              "long_range": 120,
+              "target_creature_only": false,
+              "damage_die_count": 1,
+              "damage_die_type": "D6",
+              "damage_bonus": null,
+              "damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "extra_damage_die_count": null,
+              "extra_damage_die_type": null,
+              "extra_damage_bonus": null,
+              "extra_damage_type": null,
+              "distance_unit": "feet"
+            }
+          ],
+          "action_type": "ACTION",
+          "order_in_statblock": 1,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        }
+      ],
+      "traits": [
+        {
+          "name": "Aggressive",
+          "desc": "As a bonus action, the orc can move up to its speed toward a hostile creature that it can see."
+        }
+      ],
+      "creaturesets": [],
+      "environments": [
+        {
+          "name": "Arctic or Tundra",
+          "key": "arctic"
+        },
+        {
+          "name": "Forest or Jungle",
+          "key": "forest"
+        },
+        {
+          "name": "Grassland or Plains",
+          "key": "grassland"
+        },
+        {
+          "name": "Hills",
+          "key": "hills"
+        },
+        {
+          "name": "Mountain",
+          "key": "mountain"
+        },
+        {
+          "name": "Swamp or Marsh",
+          "key": "swamp"
+        },
+        {
+          "name": "Underworld",
+          "key": "underworld"
+        }
+      ],
+      "illustration": null
+    },
+    {
+      "key": "srd_red-dragon-wyrmling",
+      "name": "Red Dragon Wyrmling",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "type": {
+        "name": "Dragon",
+        "key": "dragon"
+      },
+      "size": {
+        "name": "Medium",
+        "key": "medium"
+      },
+      "challenge_rating": 4,
+      "proficiency_bonus": null,
+      "speed": {
+        "walk": 30,
+        "unit": "feet",
+        "fly": 60,
+        "climb": 30
+      },
+      "speed_all": {
+        "unit": "feet",
+        "walk": 30,
+        "crawl": 15,
+        "hover": false,
+        "fly": 60,
+        "burrow": 0,
+        "climb": 30,
+        "swim": 15
+      },
+      "category": "Monsters",
+      "subcategory": "Dragons, Chromatic",
+      "alignment": "chaotic evil",
+      "languages": {
+        "as_string": "Draconic",
+        "data": [
+          {
+            "name": "Draconic",
+            "key": "draconic",
+            "desc": "Typical speakers include dragons and dragonborn."
+          }
+        ]
+      },
+      "armor_class": 17,
+      "armor_detail": "natural armor",
+      "hit_points": 75,
+      "hit_dice": "10d8+30",
+      "experience_points": 1100,
+      "ability_scores": {
+        "strength": 19,
+        "dexterity": 10,
+        "constitution": 17,
+        "intelligence": 12,
+        "wisdom": 11,
+        "charisma": 15
+      },
+      "modifiers": {
+        "strength": 4,
+        "dexterity": 0,
+        "constitution": 3,
+        "intelligence": 1,
+        "wisdom": 0,
+        "charisma": 2
+      },
+      "initiative_bonus": 0,
+      "saving_throws": {
+        "dexterity": 2,
+        "constitution": 5,
+        "wisdom": 2,
+        "charisma": 4
+      },
+      "saving_throws_all": {
+        "strength": 4,
+        "dexterity": 2,
+        "constitution": 5,
+        "intelligence": 1,
+        "wisdom": 2,
+        "charisma": 4
+      },
+      "skill_bonuses": {
+        "perception": 4,
+        "stealth": 2
+      },
+      "skill_bonuses_all": {
+        "acrobatics": 0,
+        "animal_handling": 0,
+        "arcana": 1,
+        "athletics": 4,
+        "deception": 2,
+        "history": 1,
+        "insight": 0,
+        "intimidation": 2,
+        "investigation": 1,
+        "medicine": 0,
+        "nature": 1,
+        "perception": 4,
+        "performance": 2,
+        "persuasion": 2,
+        "religion": 1,
+        "sleight_of_hand": 0,
+        "stealth": 2,
+        "survival": 0
+      },
+      "passive_perception": 14,
+      "resistances_and_immunities": {
+        "damage_immunities_display": "fire",
+        "damage_immunities": [
+          {
+            "name": "Fire",
+            "key": "fire"
+          }
+        ],
+        "damage_resistances_display": "",
+        "damage_resistances": [],
+        "damage_vulnerabilities_display": "",
+        "damage_vulnerabilities": [],
+        "condition_immunities_display": "",
+        "condition_immunities": []
+      },
+      "normal_sight_range": 10560,
+      "darkvision_range": 60,
+      "blindsight_range": 10,
+      "tremorsense_range": null,
+      "truesight_range": null,
+      "actions": [
+        {
+          "name": "Bite",
+          "desc": "Melee Weapon Attack: +6 to hit, reach 5 ft., one target. Hit: 9 (1d10 + 4) piercing damage plus 3 (1d6) fire damage.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [
+            {
+              "name": "Bite attack",
+              "attack_type": "WEAPON",
+              "to_hit_mod": 6,
+              "reach": 5,
+              "range": null,
+              "long_range": null,
+              "target_creature_only": false,
+              "damage_die_count": 1,
+              "damage_die_type": "D10",
+              "damage_bonus": null,
+              "damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "extra_damage_die_count": null,
+              "extra_damage_die_type": null,
+              "extra_damage_bonus": null,
+              "extra_damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "distance_unit": "feet"
+            }
+          ],
+          "action_type": "ACTION",
+          "order_in_statblock": 0,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Fire Breath",
+          "desc": "The dragon exhales fire in a 15-foot cone. Each creature in that area must make a DC 13 Dexterity saving throw, taking 24 (7d6) fire damage on a failed save, or half as much damage on a successful one.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [],
+          "action_type": "ACTION",
+          "order_in_statblock": 1,
+          "legendary_action_cost": null,
+          "limited_to_form": null,
+          "usage_limits": {
+            "type": "RECHARGE_ON_ROLL",
+            "param": 5
+          }
+        }
+      ],
+      "traits": [],
+      "creaturesets": [],
+      "environments": [
+        {
+          "name": "Mountain",
+          "key": "mountain"
+        }
+      ],
+      "illustration": null
+    },
+    {
+      "key": "srd_thug",
+      "name": "Thug",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "type": {
+        "name": "Humanoid",
+        "key": "humanoid"
+      },
+      "size": {
+        "name": "Medium",
+        "key": "medium"
+      },
+      "challenge_rating": 0.5,
+      "proficiency_bonus": null,
+      "speed": {
+        "walk": 30,
+        "unit": "feet"
+      },
+      "speed_all": {
+        "unit": "feet",
+        "walk": 30,
+        "crawl": 15,
+        "hover": false,
+        "fly": 0,
+        "burrow": 0,
+        "climb": 15,
+        "swim": 15
+      },
+      "category": "Monsters",
+      "subcategory": null,
+      "alignment": "any non-good alignment",
+      "languages": {
+        "as_string": "any one language (usually Common)",
+        "data": [
+          {
+            "name": "Common",
+            "key": "common",
+            "desc": "Typical speakers are Humans."
+          }
+        ]
+      },
+      "armor_class": 11,
+      "armor_detail": "leather armor",
+      "hit_points": 32,
+      "hit_dice": "5d8+10",
+      "experience_points": 100,
+      "ability_scores": {
+        "strength": 15,
+        "dexterity": 11,
+        "constitution": 14,
+        "intelligence": 10,
+        "wisdom": 10,
+        "charisma": 11
+      },
+      "modifiers": {
+        "strength": 2,
+        "dexterity": 0,
+        "constitution": 2,
+        "intelligence": 0,
+        "wisdom": 0,
+        "charisma": 0
+      },
+      "initiative_bonus": 0,
+      "saving_throws": {},
+      "saving_throws_all": {
+        "strength": 2,
+        "dexterity": 0,
+        "constitution": 2,
+        "intelligence": 0,
+        "wisdom": 0,
+        "charisma": 0
+      },
+      "skill_bonuses": {
+        "intimidation": 2
+      },
+      "skill_bonuses_all": {
+        "acrobatics": 0,
+        "animal_handling": 0,
+        "arcana": 0,
+        "athletics": 2,
+        "deception": 0,
+        "history": 0,
+        "insight": 0,
+        "intimidation": 2,
+        "investigation": 0,
+        "medicine": 0,
+        "nature": 0,
+        "perception": 0,
+        "performance": 0,
+        "persuasion": 0,
+        "religion": 0,
+        "sleight_of_hand": 0,
+        "stealth": 0,
+        "survival": 0
+      },
+      "passive_perception": 10,
+      "resistances_and_immunities": {
+        "damage_immunities_display": "",
+        "damage_immunities": [],
+        "damage_resistances_display": "",
+        "damage_resistances": [],
+        "damage_vulnerabilities_display": "",
+        "damage_vulnerabilities": [],
+        "condition_immunities_display": "",
+        "condition_immunities": []
+      },
+      "normal_sight_range": 10560,
+      "darkvision_range": null,
+      "blindsight_range": null,
+      "tremorsense_range": null,
+      "truesight_range": null,
+      "actions": [
+        {
+          "name": "Heavy Crossbow",
+          "desc": "Ranged Weapon Attack: +2 to hit, range 100/400 ft., one target. Hit: 5 (1d10) piercing damage.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [
+            {
+              "name": "Heavy Crossbow attack",
+              "attack_type": "WEAPON",
+              "to_hit_mod": 2,
+              "reach": null,
+              "range": 100,
+              "long_range": 400,
+              "target_creature_only": false,
+              "damage_die_count": null,
+              "damage_die_type": null,
+              "damage_bonus": null,
+              "damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "extra_damage_die_count": null,
+              "extra_damage_die_type": null,
+              "extra_damage_bonus": null,
+              "extra_damage_type": null,
+              "distance_unit": "feet"
+            }
+          ],
+          "action_type": "ACTION",
+          "order_in_statblock": 2,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Mace",
+          "desc": "Melee Weapon Attack: +4 to hit, reach 5 ft., one creature. Hit: 5 (1d6 + 2) bludgeoning damage.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [
+            {
+              "name": "Mace attack",
+              "attack_type": "WEAPON",
+              "to_hit_mod": 4,
+              "reach": 5,
+              "range": null,
+              "long_range": null,
+              "target_creature_only": true,
+              "damage_die_count": 1,
+              "damage_die_type": "D6",
+              "damage_bonus": null,
+              "damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "extra_damage_die_count": null,
+              "extra_damage_die_type": null,
+              "extra_damage_bonus": null,
+              "extra_damage_type": null,
+              "distance_unit": "feet"
+            }
+          ],
+          "action_type": "ACTION",
+          "order_in_statblock": 1,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Multiattack",
+          "desc": "The thug makes two melee attacks.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [],
+          "action_type": "ACTION",
+          "order_in_statblock": 0,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        }
+      ],
+      "traits": [
+        {
+          "name": "Pack Tactics",
+          "desc": "The thug has advantage on an attack roll against a creature if at least one of the thug's allies is within 5 ft. of the creature and the ally isn't incapacitated."
+        }
+      ],
+      "creaturesets": [],
+      "environments": [
+        {
+          "name": "Urban",
+          "key": "urban"
+        }
+      ],
+      "illustration": null
+    },
+    {
+      "key": "srd_wolf",
+      "name": "Wolf",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "type": {
+        "name": "Beast",
+        "key": "beast"
+      },
+      "size": {
+        "name": "Medium",
+        "key": "medium"
+      },
+      "challenge_rating": 0.25,
+      "proficiency_bonus": null,
+      "speed": {
+        "walk": 40,
+        "unit": "feet"
+      },
+      "speed_all": {
+        "unit": "feet",
+        "walk": 40,
+        "crawl": 20,
+        "hover": false,
+        "fly": 0,
+        "burrow": 0,
+        "climb": 20,
+        "swim": 20
+      },
+      "category": "Monsters",
+      "subcategory": null,
+      "alignment": "unaligned",
+      "languages": {
+        "as_string": "",
+        "data": []
+      },
+      "armor_class": 13,
+      "armor_detail": "natural armor",
+      "hit_points": 11,
+      "hit_dice": "2d8+2",
+      "experience_points": 50,
+      "ability_scores": {
+        "strength": 12,
+        "dexterity": 15,
+        "constitution": 12,
+        "intelligence": 3,
+        "wisdom": 12,
+        "charisma": 6
+      },
+      "modifiers": {
+        "strength": 1,
+        "dexterity": 2,
+        "constitution": 1,
+        "intelligence": -4,
+        "wisdom": 1,
+        "charisma": -2
+      },
+      "initiative_bonus": 2,
+      "saving_throws": {},
+      "saving_throws_all": {
+        "strength": 1,
+        "dexterity": 2,
+        "constitution": 1,
+        "intelligence": -4,
+        "wisdom": 1,
+        "charisma": -2
+      },
+      "skill_bonuses": {
+        "perception": 3,
+        "stealth": 4
+      },
+      "skill_bonuses_all": {
+        "acrobatics": 2,
+        "animal_handling": 1,
+        "arcana": -4,
+        "athletics": 1,
+        "deception": -2,
+        "history": -4,
+        "insight": 1,
+        "intimidation": -2,
+        "investigation": -4,
+        "medicine": 1,
+        "nature": -4,
+        "perception": 3,
+        "performance": -2,
+        "persuasion": -2,
+        "religion": -4,
+        "sleight_of_hand": 2,
+        "stealth": 4,
+        "survival": 1
+      },
+      "passive_perception": 13,
+      "resistances_and_immunities": {
+        "damage_immunities_display": "",
+        "damage_immunities": [],
+        "damage_resistances_display": "",
+        "damage_resistances": [],
+        "damage_vulnerabilities_display": "",
+        "damage_vulnerabilities": [],
+        "condition_immunities_display": "",
+        "condition_immunities": []
+      },
+      "normal_sight_range": 10560,
+      "darkvision_range": null,
+      "blindsight_range": null,
+      "tremorsense_range": null,
+      "truesight_range": null,
+      "actions": [
+        {
+          "name": "Bite",
+          "desc": "Melee Weapon Attack: +4 to hit, reach 5 ft., one target. Hit: 7 (2d4 + 2) piercing damage. If the target is a creature, it must succeed on a DC 11 Strength saving throw or be knocked prone.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [
+            {
+              "name": "Bite attack",
+              "attack_type": "WEAPON",
+              "to_hit_mod": 4,
+              "reach": 5,
+              "range": null,
+              "long_range": null,
+              "target_creature_only": false,
+              "damage_die_count": 2,
+              "damage_die_type": "D4",
+              "damage_bonus": null,
+              "damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "extra_damage_die_count": null,
+              "extra_damage_die_type": null,
+              "extra_damage_bonus": null,
+              "extra_damage_type": null,
+              "distance_unit": "feet"
+            }
+          ],
+          "action_type": "ACTION",
+          "order_in_statblock": 0,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        }
+      ],
+      "traits": [
+        {
+          "name": "Keen Hearing and Smell",
+          "desc": "The wolf has advantage on Wisdom (Perception) checks that rely on hearing or smell."
+        },
+        {
+          "name": "Pack Tactics",
+          "desc": "The wolf has advantage on an attack roll against a creature if at least one of the wolf's allies is within 5 ft. of the creature and the ally isn't incapacitated."
+        }
+      ],
+      "creaturesets": [],
+      "environments": [
+        {
+          "name": "Forest or Jungle",
+          "key": "forest"
+        },
+        {
+          "name": "Grassland or Plains",
+          "key": "grassland"
+        },
+        {
+          "name": "Hills",
+          "key": "hills"
+        }
+      ],
+      "illustration": null
+    },
+    {
+      "key": "srd_young-red-dragon",
+      "name": "Young Red Dragon",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "type": {
+        "name": "Dragon",
+        "key": "dragon"
+      },
+      "size": {
+        "name": "Large",
+        "key": "large"
+      },
+      "challenge_rating": 10,
+      "proficiency_bonus": null,
+      "speed": {
+        "walk": 40,
+        "unit": "feet",
+        "fly": 80,
+        "climb": 40
+      },
+      "speed_all": {
+        "unit": "feet",
+        "walk": 40,
+        "crawl": 20,
+        "hover": false,
+        "fly": 80,
+        "burrow": 0,
+        "climb": 40,
+        "swim": 20
+      },
+      "category": "Monsters",
+      "subcategory": "Dragons, Chromatic",
+      "alignment": "chaotic evil",
+      "languages": {
+        "as_string": "Common, Draconic",
+        "data": [
+          {
+            "name": "Common",
+            "key": "common",
+            "desc": "Typical speakers are Humans."
+          },
+          {
+            "name": "Draconic",
+            "key": "draconic",
+            "desc": "Typical speakers include dragons and dragonborn."
+          }
+        ]
+      },
+      "armor_class": 18,
+      "armor_detail": "natural armor",
+      "hit_points": 178,
+      "hit_dice": "17d10+85",
+      "experience_points": 5900,
+      "ability_scores": {
+        "strength": 23,
+        "dexterity": 10,
+        "constitution": 21,
+        "intelligence": 14,
+        "wisdom": 11,
+        "charisma": 19
+      },
+      "modifiers": {
+        "strength": 6,
+        "dexterity": 0,
+        "constitution": 5,
+        "intelligence": 2,
+        "wisdom": 0,
+        "charisma": 4
+      },
+      "initiative_bonus": 0,
+      "saving_throws": {
+        "dexterity": 4,
+        "constitution": 9,
+        "wisdom": 4,
+        "charisma": 8
+      },
+      "saving_throws_all": {
+        "strength": 6,
+        "dexterity": 4,
+        "constitution": 9,
+        "intelligence": 2,
+        "wisdom": 4,
+        "charisma": 8
+      },
+      "skill_bonuses": {
+        "perception": 8,
+        "stealth": 4
+      },
+      "skill_bonuses_all": {
+        "acrobatics": 0,
+        "animal_handling": 0,
+        "arcana": 2,
+        "athletics": 6,
+        "deception": 4,
+        "history": 2,
+        "insight": 0,
+        "intimidation": 4,
+        "investigation": 2,
+        "medicine": 0,
+        "nature": 2,
+        "perception": 8,
+        "performance": 4,
+        "persuasion": 4,
+        "religion": 2,
+        "sleight_of_hand": 0,
+        "stealth": 4,
+        "survival": 0
+      },
+      "passive_perception": 18,
+      "resistances_and_immunities": {
+        "damage_immunities_display": "fire",
+        "damage_immunities": [
+          {
+            "name": "Fire",
+            "key": "fire"
+          }
+        ],
+        "damage_resistances_display": "",
+        "damage_resistances": [],
+        "damage_vulnerabilities_display": "",
+        "damage_vulnerabilities": [],
+        "condition_immunities_display": "",
+        "condition_immunities": []
+      },
+      "normal_sight_range": 10560,
+      "darkvision_range": 120,
+      "blindsight_range": 30,
+      "tremorsense_range": null,
+      "truesight_range": null,
+      "actions": [
+        {
+          "name": "Bite",
+          "desc": "Melee Weapon Attack: +10 to hit, reach 10 ft., one target. Hit: 17 (2d10 + 6) piercing damage plus 3 (1d6) fire damage.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [
+            {
+              "name": "Bite attack",
+              "attack_type": "WEAPON",
+              "to_hit_mod": 10,
+              "reach": 10,
+              "range": null,
+              "long_range": null,
+              "target_creature_only": false,
+              "damage_die_count": 2,
+              "damage_die_type": "D10",
+              "damage_bonus": null,
+              "damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "extra_damage_die_count": null,
+              "extra_damage_die_type": null,
+              "extra_damage_bonus": null,
+              "extra_damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "distance_unit": "feet"
+            }
+          ],
+          "action_type": "ACTION",
+          "order_in_statblock": 1,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Claw",
+          "desc": "Melee Weapon Attack: +10 to hit, reach 5 ft., one target. Hit: 13 (2d6 + 6) slashing damage.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [
+            {
+              "name": "Claw attack",
+              "attack_type": "WEAPON",
+              "to_hit_mod": 10,
+              "reach": 5,
+              "range": null,
+              "long_range": null,
+              "target_creature_only": false,
+              "damage_die_count": 2,
+              "damage_die_type": "D6",
+              "damage_bonus": null,
+              "damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "extra_damage_die_count": null,
+              "extra_damage_die_type": null,
+              "extra_damage_bonus": null,
+              "extra_damage_type": null,
+              "distance_unit": "feet"
+            }
+          ],
+          "action_type": "ACTION",
+          "order_in_statblock": 2,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Fire Breath",
+          "desc": "The dragon exhales fire in a 30-foot cone. Each creature in that area must make a DC 17 Dexterity saving throw, taking 56 (16d6) fire damage on a failed save, or half as much damage on a successful one.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [],
+          "action_type": "ACTION",
+          "order_in_statblock": 3,
+          "legendary_action_cost": null,
+          "limited_to_form": null,
+          "usage_limits": {
+            "type": "RECHARGE_ON_ROLL",
+            "param": 5
+          }
+        },
+        {
+          "name": "Multiattack",
+          "desc": "The dragon makes three attacks: one with its bite and two with its claws.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [],
+          "action_type": "ACTION",
+          "order_in_statblock": 0,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        }
+      ],
+      "traits": [],
+      "creaturesets": [],
+      "environments": [
+        {
+          "name": "Hills",
+          "key": "hills"
+        },
+        {
+          "name": "Mountain",
+          "key": "mountain"
+        }
+      ],
+      "illustration": null
+    },
+    {
+      "key": "srd_zombie",
+      "name": "Zombie",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "type": {
+        "name": "Undead",
+        "key": "undead"
+      },
+      "size": {
+        "name": "Medium",
+        "key": "medium"
+      },
+      "challenge_rating": 0.25,
+      "proficiency_bonus": null,
+      "speed": {
+        "walk": 20,
+        "unit": "feet"
+      },
+      "speed_all": {
+        "unit": "feet",
+        "walk": 20,
+        "crawl": 10,
+        "hover": false,
+        "fly": 0,
+        "burrow": 0,
+        "climb": 10,
+        "swim": 10
+      },
+      "category": "Monsters",
+      "subcategory": "Zombies",
+      "alignment": "neutral evil",
+      "languages": {
+        "as_string": "understands the languages it knew in life but can't speak",
+        "data": []
+      },
+      "armor_class": 8,
+      "armor_detail": "",
+      "hit_points": 22,
+      "hit_dice": "3d8+9",
+      "experience_points": 50,
+      "ability_scores": {
+        "strength": 13,
+        "dexterity": 6,
+        "constitution": 16,
+        "intelligence": 3,
+        "wisdom": 6,
+        "charisma": 5
+      },
+      "modifiers": {
+        "strength": 1,
+        "dexterity": -2,
+        "constitution": 3,
+        "intelligence": -4,
+        "wisdom": -2,
+        "charisma": -3
+      },
+      "initiative_bonus": -2,
+      "saving_throws": {
+        "wisdom": 0
+      },
+      "saving_throws_all": {
+        "strength": 1,
+        "dexterity": -2,
+        "constitution": 3,
+        "intelligence": -4,
+        "wisdom": 0,
+        "charisma": -3
+      },
+      "skill_bonuses": {},
+      "skill_bonuses_all": {
+        "acrobatics": -2,
+        "animal_handling": -2,
+        "arcana": -4,
+        "athletics": 1,
+        "deception": -3,
+        "history": -4,
+        "insight": -2,
+        "intimidation": -3,
+        "investigation": -4,
+        "medicine": -2,
+        "nature": -4,
+        "perception": -2,
+        "performance": -3,
+        "persuasion": -3,
+        "religion": -4,
+        "sleight_of_hand": -2,
+        "stealth": -2,
+        "survival": -2
+      },
+      "passive_perception": 8,
+      "resistances_and_immunities": {
+        "damage_immunities_display": "",
+        "damage_immunities": [],
+        "damage_resistances_display": "",
+        "damage_resistances": [],
+        "damage_vulnerabilities_display": "",
+        "damage_vulnerabilities": [],
+        "condition_immunities_display": "poisoned",
+        "condition_immunities": [
+          {
+            "name": "Poisoned",
+            "key": "poisoned"
+          }
+        ]
+      },
+      "normal_sight_range": 10560,
+      "darkvision_range": 60,
+      "blindsight_range": null,
+      "tremorsense_range": null,
+      "truesight_range": null,
+      "actions": [
+        {
+          "name": "Slam",
+          "desc": "Melee Weapon Attack: +3 to hit, reach 5 ft., one target. Hit: 4 (1d6 + 1) bludgeoning damage.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [
+            {
+              "name": "Slam attack",
+              "attack_type": "WEAPON",
+              "to_hit_mod": 3,
+              "reach": 5,
+              "range": null,
+              "long_range": null,
+              "target_creature_only": false,
+              "damage_die_count": 1,
+              "damage_die_type": "D6",
+              "damage_bonus": null,
+              "damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "extra_damage_die_count": null,
+              "extra_damage_die_type": null,
+              "extra_damage_bonus": null,
+              "extra_damage_type": null,
+              "distance_unit": "feet"
+            }
+          ],
+          "action_type": "ACTION",
+          "order_in_statblock": 0,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        }
+      ],
+      "traits": [
+        {
+          "name": "Undead Fortitude",
+          "desc": "If damage reduces the zombie to 0 hit points, it must make a Constitution saving throw with a DC of 5+the damage taken, unless the damage is radiant or from a critical hit. On a success, the zombie drops to 1 hit point instead."
+        }
+      ],
+      "creaturesets": [],
+      "environments": [
+        {
+          "name": "Forest or Jungle",
+          "key": "forest"
+        },
+        {
+          "name": "Urban",
+          "key": "urban"
+        }
+      ],
+      "illustration": null
+    }
+  ]
+}

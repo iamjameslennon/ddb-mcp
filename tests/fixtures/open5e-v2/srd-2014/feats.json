@@ -1,0 +1,27 @@
+{
+  "count": 1,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "key": "srd_grappler",
+      "has_prerequisite": true,
+      "benefits": [
+        {
+          "desc": "You have advantage on attack rolls against a creature you are grappling."
+        },
+        {
+          "desc": "You can use your action to try to pin a creature grappled by you. The creature makes a Strength or Dexterity saving throw against your maneuver DC. On a failure, you and the creature are both restrained until the grapple ends."
+        }
+      ],
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "name": "Grappler",
+      "desc": "You've developed the skills necessary to hold your own in close-quarters grappling. You gain the following benefits:",
+      "prerequisite": "Strength 13 or higher",
+      "type": "GENERAL"
+    }
+  ]
+}

@@ -1,0 +1,115 @@
+{
+  "count": 37,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "key": "srd_dagger",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "properties": [
+        {
+          "property": {
+            "name": "Finesse",
+            "type": null,
+            "desc": "When making an attack with a finesse weapon, you use your choice of your Strength or Dexterity modifier for the attack and damage rolls. You must use the same modifier for both rolls."
+          },
+          "detail": null
+        },
+        {
+          "property": {
+            "name": "Light",
+            "type": null,
+            "desc": "A light weapon is small and easy to handle, making it ideal for use when fighting with two weapons."
+          },
+          "detail": null
+        },
+        {
+          "property": {
+            "name": "Thrown",
+            "type": null,
+            "desc": "If a weapon has the thrown property, you can throw the weapon to make a ranged attack. If the weapon is a melee weapon, you use the same ability modifier for that attack roll and damage roll that you would use for a melee attack with the weapon. For example, if you throw a handaxe, you use your Strength, but if you throw a dagger, you can use either your Strength or your Dexterity, since the dagger has the finesse property."
+          },
+          "detail": "range 20/60"
+        }
+      ],
+      "damage_type": {
+        "name": "Piercing",
+        "key": "piercing"
+      },
+      "distance_unit": "feet",
+      "name": "Dagger",
+      "damage_dice": "1d4",
+      "range": 20,
+      "long_range": 60,
+      "is_simple": true,
+      "is_improvised": false
+    },
+    {
+      "key": "srd_longsword",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "properties": [
+        {
+          "property": {
+            "name": "Versatile",
+            "type": null,
+            "desc": "This weapon can be used with one or two hands. A damage value in parentheses appears with the property—the damage when the weapon is used with two hands to make a melee attack."
+          },
+          "detail": "1d10"
+        }
+      ],
+      "damage_type": {
+        "name": "Slashing",
+        "key": "slashing"
+      },
+      "distance_unit": "feet",
+      "name": "Longsword",
+      "damage_dice": "1d8",
+      "range": 0,
+      "long_range": 0,
+      "is_simple": false,
+      "is_improvised": false
+    },
+    {
+      "key": "srd_net",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "properties": [
+        {
+          "property": {
+            "name": "Special (Net)",
+            "type": null,
+            "desc": "A Large or smaller creature hit by a net is restrained until it is freed. A net has no effect on creatures that are formless, or creatures that are Huge or larger. A creature can use its action to make a DC 10 Strength check, freeing itself or another creature within its reach on a success. Dealing 5 slashing damage to the net (AC 10) also frees the creature without harming it, ending the effect and destroying the net.\n\nWhen you use an action, bonus action, or reaction to attack with a net, you can make only one attack regardless of the number of attacks you can normally make."
+          },
+          "detail": null
+        },
+        {
+          "property": {
+            "name": "Thrown",
+            "type": null,
+            "desc": "If a weapon has the thrown property, you can throw the weapon to make a ranged attack. If the weapon is a melee weapon, you use the same ability modifier for that attack roll and damage roll that you would use for a melee attack with the weapon. For example, if you throw a handaxe, you use your Strength, but if you throw a dagger, you can use either your Strength or your Dexterity, since the dagger has the finesse property."
+          },
+          "detail": "range 5/15"
+        }
+      ],
+      "damage_type": {
+        "name": "Bludgeoning",
+        "key": "bludgeoning"
+      },
+      "distance_unit": "feet",
+      "name": "Net",
+      "damage_dice": "0",
+      "range": 5,
+      "long_range": 15,
+      "is_simple": false,
+      "is_improvised": false
+    }
+  ]
+}

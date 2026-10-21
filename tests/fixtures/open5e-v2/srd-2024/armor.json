@@ -1,0 +1,52 @@
+{
+  "count": 13,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "key": "srd-2024_chain-mail",
+      "ac_display": "16",
+      "category": "heavy",
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      },
+      "name": "Chain Mail",
+      "grants_stealth_disadvantage": true,
+      "strength_score_required": 13,
+      "ac_base": 16,
+      "ac_add_dexmod": false,
+      "ac_cap_dexmod": null
+    },
+    {
+      "key": "srd-2024_hide-armor",
+      "ac_display": "12 + Dex modifier (max 2)",
+      "category": "medium",
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      },
+      "name": "Hide Armor",
+      "grants_stealth_disadvantage": false,
+      "strength_score_required": null,
+      "ac_base": 12,
+      "ac_add_dexmod": true,
+      "ac_cap_dexmod": 2
+    },
+    {
+      "key": "srd-2024_shield",
+      "ac_display": "2",
+      "category": "heavy",
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      },
+      "name": "Shield",
+      "grants_stealth_disadvantage": false,
+      "strength_score_required": null,
+      "ac_base": 2,
+      "ac_add_dexmod": false,
+      "ac_cap_dexmod": null
+    }
+  ]
+}

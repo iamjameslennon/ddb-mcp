@@ -1,0 +1,266 @@
+{
+  "count": 9,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "key": "srd-2024_dwarf",
+      "is_subspecies": false,
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      },
+      "traits": [
+        {
+          "name": "Size",
+          "desc": "Medium (about 4–5 feet tall) ",
+          "type": "SIZE",
+          "order": 1,
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Speed",
+          "desc": "30 feet",
+          "type": "SPEED",
+          "order": 2,
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Darkvision",
+          "desc": "You have Darkvision with a range of 120 feet.",
+          "type": null,
+          "order": 3,
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Dwarven Resilience",
+          "desc": "You have Resistance to Poison damage. You also have Advantage on saving throws you make to avoid or end the Poisoned condition.",
+          "type": null,
+          "order": 4,
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Dwarven Toughness",
+          "desc": "Your Hit Point maximum increases by 1, and it increases by 1 again whenever you gain a level.",
+          "type": null,
+          "order": 5,
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Stonecunning",
+          "desc": "As a Bonus Action, you gain Tremorsense with a range of 60 feet for 10 minutes. You must be on a stone surface or touching a stone surface to use this Tremorsense. The stone can be natural or worked.\n\nYou can use this Bonus Action a number of times equal to your Proficiency Bonus, and you regain all expended uses when you finish a Long Rest.",
+          "type": null,
+          "order": 6,
+          "crossreferences": {
+            "to": []
+          }
+        }
+      ],
+      "name": "Dwarf",
+      "desc": "",
+      "subspecies_of": null
+    },
+    {
+      "key": "srd-2024_elf",
+      "is_subspecies": false,
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      },
+      "traits": [
+        {
+          "name": "Size",
+          "desc": "Medium (about 5–6 feet tall)",
+          "type": "SIZE",
+          "order": 1,
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Speed",
+          "desc": "30 feet",
+          "type": "SPEED",
+          "order": 2,
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Darkvision",
+          "desc": "You have Darkvision with a range of 60 feet.",
+          "type": null,
+          "order": 3,
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Elven Lineage",
+          "desc": "You are part of a lineage that grants you supernatural abilities. Choose a lineage from the Elven Lineages table. You gain the level 1 benefit of that lineage.\n\nWhen you reach character levels 3 and 5, you learn a higher-level spell, as shown on the table. You always have that spell prepared. You can cast it once without a spell slot, and you regain the ability to cast it in that way when you finish a Long Rest. You can also cast the spell using any spell slots you have of the appropriate level.\n\nTable: Elven Lineages\n\n|Lineage|Level 1|Level 3|Level 5|\n|---|---|---|---|\n|Drow|The range of your Darkvision increases to 120 feet. You also know the Dancing Lights cantrip.|Faerie Fire|Darkness|\n|High Elf|You know the Prestidigitation cantrip. Whenever you finish a Long Rest, you can replace that cantrip with a different cantrip from the Wizard spell list.|Detect Magic|Misty Step|\n|Wood Elf|Your Speed increases to 35 feet. You also know the Druidcraft cantrip.|Longstrider|Pass without Trace|\n\nIntelligence, Wisdom, or Charisma is your spellcasting ability for the spells you cast with this trait (choose the ability when you select the lineage).",
+          "type": null,
+          "order": 4,
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Fey Ancestry",
+          "desc": "You have Advantage on saving throws you make to avoid or end the Charmed condition.",
+          "type": null,
+          "order": 5,
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Keen Senses",
+          "desc": "You have proficiency in the Insight, Perception, or Survival skill.",
+          "type": null,
+          "order": 6,
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Trance",
+          "desc": "You don't need to sleep, and magic can't put you to sleep. You can finish a Long Rest in 4 hours if you spend those hours in a trancelike meditation, during which you retain consciousness.",
+          "type": null,
+          "order": 7,
+          "crossreferences": {
+            "to": []
+          }
+        }
+      ],
+      "name": "Elf",
+      "desc": "",
+      "subspecies_of": null
+    },
+    {
+      "key": "srd-2024_goliath",
+      "is_subspecies": false,
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      },
+      "traits": [
+        {
+          "name": "Size",
+          "desc": "Medium (about 7–8 feet tall)",
+          "type": "SIZE",
+          "order": 1,
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Speed",
+          "desc": "35 feet",
+          "type": "SPEED",
+          "order": 2,
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Giant Ancestry",
+          "desc": "You are descended from Giants. Choose one of the following benefits—a supernatural boon from your ancestry; you can use the chosen benefit a number of times equal to your Proficiency Bonus, and you regain all expended uses when you finish a Long Rest:\n\n- **Cloud's Jaunt (Cloud Giant)**. As a Bonus Action, you magically teleport up to 30 feet to an unoccupied space you can see.\n- **Fire's Burn (Fire Giant)**. When you hit a target with an attack roll and deal damage to it, you can also deal 1d10 Fire damage to that target.\n- **Frost's Chill (Frost Giant)**. When you hit a target with an attack roll and deal damage to it, you can also deal 1d6 Cold damage to that target and reduce its Speed by 10 feet until the start of your next turn.\n- **Hill's Tumble (Hill Giant)**. When you hit a Large or smaller creature with an attack roll and deal damage to it, you can give that target the Prone condition.\n- **Stone's Endurance (Stone Giant)**. When you take damage, you can take a Reaction to roll 1d12. Add your Constitution modifier to the number rolled and reduce the damage by that total.\n- **Storm's Thunder (Storm Giant)**. When you take damage from a creature within 60 feet of you, you can take a Reaction to deal 1d8 Thunder damage to that creature.",
+          "type": null,
+          "order": 3,
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Large Form",
+          "desc": "Starting at character level 5, you can change your size to Large as a Bonus Action if you're in a big enough space. This transformation lasts for 10 minutes or until you end it (no action required). For that duration, you have Advantage on Strength checks, and your Speed increases by 10 feet. Once you use this trait, you can't use it again until you finish a Long Rest.",
+          "type": null,
+          "order": 4,
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Powerful Build",
+          "desc": "You have Advantage on any ability check you make to end the Grappled condition. You also count as one size larger when determining your carrying capacity.",
+          "type": null,
+          "order": 5,
+          "crossreferences": {
+            "to": []
+          }
+        }
+      ],
+      "name": "Goliath",
+      "desc": "",
+      "subspecies_of": null
+    },
+    {
+      "key": "srd-2024_human",
+      "is_subspecies": false,
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      },
+      "traits": [
+        {
+          "name": "Size",
+          "desc": "Medium (about 4–7 feet tall) or Small (about 2–4 feet tall), chosen when you select this species",
+          "type": "SIZE",
+          "order": 1,
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Speed",
+          "desc": "30 feet",
+          "type": "SPEED",
+          "order": 2,
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Resourceful",
+          "desc": "You gain Heroic Inspiration whenever you finish a Long Rest.",
+          "type": null,
+          "order": 3,
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Skillful",
+          "desc": "You gain proficiency in one skill of your choice.",
+          "type": null,
+          "order": 4,
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Versatile",
+          "desc": "You gain an Origin feat of your choice (see \"Feats\"). Skilled is recommended.",
+          "type": null,
+          "order": 5,
+          "crossreferences": {
+            "to": []
+          }
+        }
+      ],
+      "name": "Human",
+      "desc": "",
+      "subspecies_of": null
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "count": 12,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "key": "srd_chain-mail",
+      "ac_display": "16",
+      "category": "heavy",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "name": "Chain mail",
+      "grants_stealth_disadvantage": true,
+      "strength_score_required": 13,
+      "ac_base": 16,
+      "ac_add_dexmod": false,
+      "ac_cap_dexmod": null
+    },
+    {
+      "key": "srd_hide",
+      "ac_display": "12 + Dex modifier (max 2)",
+      "category": "medium",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "name": "Hide",
+      "grants_stealth_disadvantage": false,
+      "strength_score_required": null,
+      "ac_base": 12,
+      "ac_add_dexmod": true,
+      "ac_cap_dexmod": 2
+    }
+  ]
+}

@@ -1,0 +1,124 @@
+{
+  "count": 760,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "key": "srd-2024_ammunition-plus-one",
+      "name": "Ammunition (+1)",
+      "desc": "You have a bonus to attack rolls and damage rolls made with this piece of magic ammunition. The bonus is determined by the rarity of the ammunition. Once it hits a target, the ammunition is no longer magical. This ammunition is typically found or sold in quantities of ten or twenty pieces. Ten pieces of this ammunition are equivalent in value to a potion of the same rarity.",
+      "category": {
+        "name": "Weapon",
+        "key": "weapon"
+      },
+      "rarity": {
+        "name": "Uncommon",
+        "key": "uncommon",
+        "rank": 2
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "0.000",
+      "weight_unit": "lb",
+      "cost": "0.00",
+      "requires_attunement": false,
+      "attunement_detail": null,
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      }
+    },
+    {
+      "key": "srd-2024_bag-of-holding",
+      "name": "Bag of Holding",
+      "desc": "This bag has an interior space considerably larger than its outside dimensions—roughly 2 feet square and 4 feet deep on the inside. The bag can hold up to 500 pounds, not exceeding a volume of 64 cubic feet. The bag weighs 5 pounds, regardless of its contents. Retrieving an item from the bag requires a Utilize action. If the bag is overloaded, pierced, or torn, it is destroyed, and its contents are scattered in the Astral Plane. If the bag is turned inside out, its contents spill forth unharmed, but the bag must be put right before it can be used again. The bag holds enough air for 10 minutes of breathing, divided by the number of breathing creatures inside. Placing a Bag of Holding inside an extradimensional space created by a Handy Haversack, Portable Hole, or similar item instantly destroys both items and opens a gate to the Astral Plane. The gate originates where the one item was placed inside the other. Any creature within a 10-foot-radius Sphere centered on the gate is sucked through it to a random location on the Astral Plane. The gate then closes. The gate is one-way and can't be reopened.",
+      "category": {
+        "name": "Wondrous Item",
+        "key": "wondrous-item"
+      },
+      "rarity": {
+        "name": "Uncommon",
+        "key": "uncommon",
+        "rank": 2
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "0.000",
+      "weight_unit": "lb",
+      "cost": "0.00",
+      "requires_attunement": false,
+      "attunement_detail": null,
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      }
+    },
+    {
+      "key": "srd-2024_flame-tongue-longsword",
+      "name": "Flame Tongue Longsword",
+      "desc": "While holding this magic weapon, you can take a Bonus Action and use a command word to cause flames to engulf the damage-dealing part of the weapon. These flames shed Bright Light in a 40 foot radius and Dim Light for an additional 40 feet. While the weapon is ablaze, it deals an extra 2d6 Fire damage on a hit. The flames last until you take a Bonus Action to issue the command again or until you drop, stow, or sheathe the weapon.",
+      "category": {
+        "name": "Weapon",
+        "key": "weapon"
+      },
+      "rarity": {
+        "name": "Rare",
+        "key": "rare",
+        "rank": 3
+      },
+      "weapon": {
+        "name": "Longsword",
+        "key": "srd-2024_longsword",
+        "damage_type": {
+          "name": "Slashing",
+          "key": "slashing"
+        },
+        "damage_dice": "1d8",
+        "properties": [
+          {
+            "property": {
+              "name": "Sap",
+              "type": "Mastery",
+              "desc": "If you hit a creature with this weapon, that creature has Disadvantage on its next attack roll before the start of your next turn."
+            },
+            "detail": null
+          },
+          {
+            "property": {
+              "name": "Versatile",
+              "type": null,
+              "desc": "A Versatile weapon can be used with one or two hands. A damage value in parentheses appears with the property. The weapon deals that damage when used with two hands to make a melee attack."
+            },
+            "detail": "1d10"
+          }
+        ],
+        "is_simple": false,
+        "is_martial": true,
+        "is_improvised": false,
+        "distance_unit": "feet"
+      },
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "3.000",
+      "weight_unit": "lb",
+      "cost": "0.00",
+      "requires_attunement": true,
+      "attunement_detail": null,
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      }
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "count": 17,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "key": "srd-2024_alert",
+      "has_prerequisite": false,
+      "benefits": [
+        {
+          "desc": "When you roll Initiative, you can add your Proficiency Bonus to the roll."
+        },
+        {
+          "desc": "Immediately after you roll Initiative, you can swap your Initiative with the Initiative of one willing ally in the same combat. You can't make this swap if you or the ally has the Incapacitated condition."
+        }
+      ],
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      },
+      "name": "Alert",
+      "desc": "You gain the following benefits.",
+      "prerequisite": "",
+      "type": "Origin"
+    },
+    {
+      "key": "srd-2024_grappler",
+      "has_prerequisite": true,
+      "benefits": [
+        {
+          "desc": "Increase your Strength or Dexterity score by 1, to a maximum of 20."
+        },
+        {
+          "desc": "When you hit a creature with an Unarmed Strike as part of the Attack action on your turn, you can use both the Damage and the Grapple option. You can use this benefit only once per turn."
+        },
+        {
+          "desc": "You have Advantage on attack rolls against a creature Grappled by you."
+        },
+        {
+          "desc": "You don't have to spend extra movement to move a creature Grappled by you if the creature is your size or smaller."
+        }
+      ],
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      },
+      "name": "Grappler",
+      "desc": "You gain the following benefits.",
+      "prerequisite": "Level 4+, Strength or Dexterity 13+",
+      "type": "General"
+    }
+  ]
+}

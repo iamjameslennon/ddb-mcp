@@ -1,0 +1,303 @@
+{
+  "count": 11,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "name": "Combat",
+      "key": "srd-2024_combat",
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      },
+      "desc": "Adventurers encounter many dangerous monsters and nefarious villains. In those moments, combat often breaks out.",
+      "rules": [
+        {
+          "key": "srd-2024_combat_the-order-of-combat",
+          "name": "The Order of Combat",
+          "desc": "A typical combat encounter is a clash between two sides: a flurry of weapon swings, feints, parries, footwork, and spellcasting. The game organizes combat into a cycle of rounds and turns. A round represents about 6 seconds in the game world. During a round, each participant in a battle takes a turn. The order of turns is determined at the beginning of combat when everyone rolls Initiative. Once everyone has taken a turn, the fight continues to the next round if neither side is defeated.\n\n## Combat Step by Step\n\nCombat unfolds in these steps:\n\n1. **Establish Positions.** The Game Master determines where all the characters and monsters are located. Given the adventurers’ marching order or their stated positions in the room or other location, the GM figures out where the adversaries are—how far away and in what direction.\n2. **Roll Initiative.** Everyone involved in the combat encounter rolls Initiative, determining the order of combatants’ turns.\n3. **Take Turns.** Each participant in the battle takes a turn in Initiative order. When everyone involved in the combat has had a turn, the round ends. Repeat this step until the fighting stops.\n\n## Initiative\n\nInitiative determines the order of turns during combat. When combat starts, every participant rolls Initiative; they make a Dexterity check that determines their place in the Initiative order. The GM rolls for monsters. For a group of identical creatures, the GM makes a single roll, so each member of the group has the same Initiative.\n\n**Surprise.** If a combatant is surprised by combat starting, that combatant has Disadvantage on their Initiative roll. For example, if an ambusher starts combat while hidden from a foe who is unaware that combat is starting, that foe is surprised.\n\n**Initiative Order.** A combatant’s check total is called their Initiative count, or Initiative for short. The GM ranks the combatants, from highest to lowest Initiative. This is the order in which they act during each round. The Initiative order remains the same from round to round.\n\n**Ties.** If a tie occurs, the GM decides the order among tied monsters, and the players decide the order among tied characters. The GM decides the order if the tie is between a monster and a player character.\n\n## Your Turn\n\nOn your turn, you can move a distance up to your Speed and take one action. You decide whether to move first or take your action first.\n\nThe main actions you can take are listed in “Actions” earlier in “Playing the Game.” A character’s features and a monster’s stat block also provide action options. “Movement and Position” later in “Playing the Game” gives the rules for movement.\n\n**Communicating.** You can communicate however you are able—through brief utterances and gestures—as you take your turn. Doing so uses neither your action nor your move.\n\nExtended communication, such as a detailed explanation of something or an attempt to persuade a foe, requires an action. The Influence action is the main way you try to influence a monster.\n\n**Interacting with Things.** You can interact with one object or feature of the environment for free, during either your move or action. For example, you could open a door during your move as you stride toward a foe.\n\nIf you want to interact with a second object, you need to take the Utilize action. Some magic items and other special objects always require an action to use, as stated in their descriptions.\n\nThe GM might require you to use an action for any of these activities when it needs special care or when it presents an unusual obstacle. For instance, the GM might require you to take the Utilize action to open a stuck door or turn a crank to lower a drawbridge.\n\n**Doing Nothing on Your Turn.** You can forgo moving, taking an action, or doing anything at all on your turn. If you can’t decide what to do, consider taking the defensive Dodge action or the Ready action to delay acting.\n\n## Ending Combat\n\nCombat ends when one side or the other is defeated, which can mean the creatures are killed or knocked out or have surrendered or fled. Combat can also end when both sides agree to end it.",
+          "index": 1,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_combat"
+        },
+        {
+          "key": "srd-2024_combat_playing-on-a-grid",
+          "name": "Playing on a Grid",
+          "desc": "If you play using a square grid and miniatures or other tokens, follow these rules.\n\n**Squares.** Each square represents 5 feet.\n\n**Speed.** Rather than moving foot by foot, move square by square on the grid, using your Speed in 5-foot segments. You can translate your Speed into squares by dividing it by 5. For example, a Speed of 30 feet translates into 6 squares. If you use a grid often, consider writing your Speed in squares on your character sheet.\n\n**Entering a Square.** To enter a square, you must have enough movement left to pay for entering. It costs 1 square of movement to enter an unoccupied square that’s adjacent to your space (orthogonally or diagonally adjacent). A square of Difficult Terrain costs 2 squares to enter. Other effects might make a square cost even more.\n\n**Corners.** Diagonal movement can’t cross the corner of a wall, a large tree, or another terrain feature that fills its space.\n\n**Ranges.** To determine the range on a grid between two things—whether creatures or objects—count squares from a square adjacent to one of them and stop counting in the space of the other one. Count by the shortest route.",
+          "index": 2,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_combat"
+        },
+        {
+          "key": "srd-2024_combat_movement-and-position",
+          "name": "Movement and Position",
+          "desc": "On your turn, you can move a distance equal to your Speed or less. Or you can decide not to move.\n\nYour movement can include climbing, crawling, jumping, and swimming (each explained in “Rules Glossary”). These different modes of movement can be combined with your regular movement, or they can constitute your entire move.\n\nHowever you’re moving with your Speed, you deduct the distance of each part of your move from it until it is used up or until you are done moving, whichever comes first.\n\nA character’s Speed is determined during character creation. A monster’s Speed is noted in the monster’s stat block. See “Rules Glossary” for more about Speed as well as about special speeds, such as a Climb Speed, Fly Speed, or Swim Speed.\n\n## Difficult Terrain\n\nCombatants are often slowed down by Difficult Terrain. Low furniture, rubble, undergrowth, steep stairs, snow, and shallow bogs are examples of Difficult Terrain.\n\nEvery foot of movement in Difficult Terrain costs 1 extra foot, even if multiple things in a space count as Difficult Terrain.\n\n## Breaking Up Your Move\n\nYou can break up your move, using some of its movement before and after any action, Bonus Action, or Reaction you take on the same turn. For example, if you have a Speed of 30 feet, you could go 10 feet, take an action, and then go 20 feet.\n\n## Dropping Prone\n\nOn your turn, you can give yourself the Prone condition (see “Rules Glossary”) without using an action or any of your Speed, but you can’t do so if your Speed is 0.\n\n## Creature Size\n\nA creature belongs to a size category, which determines the width of the square space the creature occupies on a map, as shown on the Creature Size and Space table. That table lists the sizes from smallest (Tiny) to largest (Gargantuan). A creature’s space is the area that it effectively controls in combat and the area it needs to fight effectively.\n\nA character’s size is determined by species, and a monster’s size is specified in the monster’s stat block.\n\nTable: Creature Size and Space\n\n|Size|Space (Feet)|Space (Squares)|\n|---|---|---|\n|Tiny|2½ by 2½ feet|4 per square|\n|Small|5 by 5 feet|1 square|\n|Medium|5 by 5 feet|1 square|\n|Large|10 by 10 feet|4 squares (2 by 2)|\n|Huge|15 by 15 feet|9 squares (3 by 3)|\n|Gargantuan|20 by 20 feet|16 squares (4 by 4)|\n\n## Moving around Other Creatures\n\nDuring your move, you can pass through the space of an ally, a creature that has the Incapacitated condition (see “Rules Glossary”), a Tiny creature, or a creature that is two sizes larger or smaller than you.\n\nAnother creature’s space is Difficult Terrain for you unless that creature is Tiny or your ally.\n\nYou can’t willingly end a move in a space occupied by another creature. If you somehow end a turn in a space with another creature, you have the Prone condition (see “Rules Glossary”) unless you are Tiny or are of a larger size than the other creature.",
+          "index": 3,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_combat"
+        },
+        {
+          "key": "srd-2024_combat_making-an-attack",
+          "name": "Making an Attack",
+          "desc": "When you take the Attack action, you make an attack. Some other actions, Bonus Actions, and Reactions also let you make an attack. Whether you strike with a Melee weapon, fire a Ranged weapon, or make an attack roll as part of a spell, an attack has the following structure:\n\n1. **Choose a Target.** Pick a target within your attack’s range: a creature, an object, or a location.\n2. **Determine Modifiers.** The GM determines whether the target has Cover (see the next section) and whether you have Advantage or Disadvantage against the target. In addition, spells, special abilities, and other effects can apply penalties or bonuses to your attack roll.\n3. **Resolve the Attack.** Make the attack roll, as detailed earlier in “Playing the Game.” On a hit, you roll damage unless the particular attack has rules that specify otherwise. Some attacks cause special effects in addition to or instead of damage.",
+          "index": 4,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_combat"
+        },
+        {
+          "key": "srd-2024_combat_unseen-attackers-and-target",
+          "name": "Unseen Attackers and Targets",
+          "desc": "When you make an attack roll against a target you can’t see, you have Disadvantage on the roll. This is true whether you’re guessing the target’s location or targeting a creature you can hear but not see. If the target isn’t in the location you targeted, you miss.\n\nWhen a creature can’t see you, you have Advantage on attack rolls against it.\n\nIf you are hidden when you make an attack roll, you give away your location when the attack hits or misses.",
+          "index": 5,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_combat"
+        },
+        {
+          "key": "srd-2024_combat_cover",
+          "name": "Cover",
+          "desc": "Walls, trees, creatures, and other obstacles can provide cover, making a target more difficult to harm. As detailed in the Cover table, there are three degrees of cover, each of which gives a different benefit to a target.\n\nA target can benefit from cover only when an attack or other effect originates on the opposite side of the cover. If a target is behind multiple sources of cover, only the most protective degree of cover applies; the degrees aren’t added together. For example, if a target is behind a creature that gives HalfCover and a tree trunk that gives Three-Quarters Cover, the target has Three-Quarters Cover.\n\n|Degree|Benefit to Target|Offered By …|\n|---|---|---|\n|Half|+2 bonus to AC and Dexterity saving throws|Another creature or an object that covers at least half of the target|\n|Three Quarters|+5 bonus to AC and Dexterity saving throws|An object that covers at least three-quarters of the target|\n|Total|Can’t be targeted directly|An object that covers the whole target|",
+          "index": 6,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_combat"
+        },
+        {
+          "key": "srd-2024_combat_ranged-attacks",
+          "name": "Ranged Attacks",
+          "desc": "When you make a ranged attack, you fire a bow, hurl an axe, or otherwise send projectiles to strike a foe at a distance. Many spells also involve making a ranged attack.\n\n## Range\n\nYou can make ranged attacks only against targets within a specified range. If a ranged attack, such as one made with a spell, has a single range, you can’t attack a target beyond this range.\n\nSome ranged attacks, such as those made with a Longbow, have two ranges. The smaller number is the normal range, and the larger number is the long range. Your attack roll has Disadvantage when your target is beyond normal range, and you can’t attack a target beyond long range.\n\n## Ranged Attacks in Close Combat\n\nAiming a ranged attack is more difficult when a foe is next to you. When you make a ranged attack roll with a weapon, a spell, or some other means, you have Disadvantage on the roll if you are within 5 feet of an enemy who can see you and doesn’t have the Incapacitated condition (see “Rules Glossary”).",
+          "index": 7,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_combat"
+        },
+        {
+          "key": "srd-2024_combat_melee-attacks",
+          "name": "Melee Attacks",
+          "desc": "A melee attack allows you to attack a target within your reach. A melee attack typically uses a hand-held weapon or an Unarmed Strike. Many monsters make melee attacks with claws, teeth, or other body parts. A few spells also involve melee attacks.\n\n## Reach\n\nA creature has a 5-foot reach and can thus attack targets within 5 feet when making a melee attack. Certain creatures have melee attacks with a reach greater than 5 feet, as noted in their descriptions.\n\n## Opportunity Attacks\n\nCombatants watch for enemies to drop their guard. If you move heedlessly past your foes, you put yourself in danger by provoking an Opportunity Attack.\n\n**Avoiding Opportunity Attacks.** You can avoid provoking an Opportunity Attack by taking the Disengage action. You also don’t provoke an Opportunity Attack when you Teleport or when you are moved without using your movement, action, Bonus Action, or Reaction. For example, you don’t provoke an Opportunity Attack if an explosion hurls you out of a foe’s reach or if you fall past an enemy.\n\n**Making an Opportunity Attack.** You can make an Opportunity Attack when a creature that you can see leaves your reach. To make the attack, take a Reaction to make one melee attack with a weapon or an Unarmed Strike against that creature. The attack occurs right before it leaves your reach.",
+          "index": 8,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_combat"
+        },
+        {
+          "key": "srd-2024_combat_mounted-combat",
+          "name": "Mounted Combat",
+          "desc": "A willing creature that is at least one size larger than a rider and that has an appropriate anatomy can serve as a mount, using the following rules.\n\n## Mounting and Dismounting\n\nDuring your move, you can mount a creature that is within 5 feet of you or dismount. Doing so costs an amount of movement equal to half your Speed (round down). For example, if your Speed is 30 feet, you spend 15 feet of movement to mount a horse.\n\n## Controlling a Mount\n\nYou can control a mount only if it has been trained to accept a rider. Domesticated horses, mules, and similar creatures have such training.\n\nThe Initiative of a controlled mount changes to match yours when you mount it. It moves on your turn as you direct it, and it has only three action options during that turn: Dash, Disengage, and Dodge. A controlled mount can move and act even on the turn that you mount it.\n\nIn contrast, an independent mount—one that lets you ride but ignores your control—retains its place in the Initiative order and moves and acts as it likes.\n\n## Falling Off\n\nIf an effect is about to move your mount against its will while you’re on it, you must succeed on a DC 10 Dexterity saving throw or fall off, landing with the Prone condition (see “Rules Glossary”) in an unoccupied space within 5 feet of the mount.\n\nWhile mounted, you must make the same save if you’re knocked Prone or the mount is.",
+          "index": 9,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_combat"
+        },
+        {
+          "key": "srd-2024_combat_underwater-combat",
+          "name": "Underwater Combat",
+          "desc": "A fight underwater follows these rules.\n\n## Impeded Weapons\n\nWhen making a melee attack roll with a weapon underwater, a creature that lacks a Swim Speed has Disadvantage on the attack roll unless the weapon deals Piercing damage. A ranged attack roll with a weapon underwater automatically misses a target beyond the weapon’s normal range, and the attack roll has Disadvantage against a target within normal range.\n\n## Fire Resistance\n\nAnything underwater has Resistance to Fire damage (explained in “Damage and Healing”).",
+          "index": 10,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_combat"
+        }
+      ]
+    },
+    {
+      "name": "D20 Tests",
+      "key": "srd-2024_d20-tests",
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      },
+      "desc": "When the outcome of an action is uncertain, the game uses a d20 roll to determine success or failure. These rolls are called D20 Tests, and they come in three kinds: ability checks, saving throws, and attack rolls. They follow these steps:\n\n1. **Roll 1d20.** You always want to roll high. If the roll has Advantage or Disadvantage (described later in “Playing the Game”), you roll two d20s, but you use the number from only one of them—the higher one if you have Advantage or the lower one if you have Disadvantage.\n2. **Add Modifiers.** Add these modifiers to the number rolled on the d20:\n* **The Relevant Ability Modifier.** “Playing the Game” and “Rules Glossary” explain which ability modifiers to use for various D20 Tests.\n* **Your Proficiency Bonus If Relevant.** Each creature has a Proficiency Bonus, a number added when making a D20 Test that uses something, such as a skill, in which the creature has proficiency. See “Proficiency” later in “Playing the Game.”\n* **Circumstantial Bonuses and Penalties.** A class feature, a spell, or another rule might give a bonus or penalty to the die roll.",
+      "rules": [
+        {
+          "key": "srd-2024_d20-tests_ability-checks",
+          "name": "Ability Checks",
+          "desc": "An ability check represents a creature using talent and training to try to overcome a challenge, such as forcing open a stuck door, picking a lock, entertaining a crowd, or deciphering a cipher. The GM and the rules often call for an ability check when a creature attempts something other than an attack that has a chance of meaningful failure. When the outcome is uncertain and narratively interesting, the dice determine the result.\n\n## Ability Modifier\n\nAn ability check is named for the ability modifier it uses: a Strength check, an Intelligence check, and so on. Different ability checks are called for in different situations, depending on which ability is most relevant. See the Ability Check Examples table for examples of each check’s use.\n\n|Ability|Make a Check To …|\n|---|---|\n|Strength|Lift, push, pull, or break something|\n|Dexterity|Move nimbly, quickly, or quietly|\n|Constitution|Push your body beyond normal limits|\n|Intelligence|Reason or remember|\n|Wisdom|Notice things in the environment or in creatures’ behavior|\n|Charisma|Influence, entertain, or deceive|\n\n## Proficiency Bonus\n\nAdd your Proficiency Bonus to an ability check when the GM determines that a skill or tool proficiency is relevant to the check and you have that proficiency. For example, if a rule refers to a Strength (Acrobatics or Athletics) check, you can add your Proficiency Bonus to the check if you have proficiency in the Acrobatics or Athletics skill. See “Proficiency” later in “Playing the Game” for more information about skill and tool proficiencies.\n\n## Difficulty Class\n\nThe Difficulty Class of an ability check represents the task’s difficulty. The more difficult the task, the higher its DC. The rules provide DCs for certain checks, but the GM ultimately sets them. The Typical Difficulty Classes table presents a range of possible DCs for ability checks.\n\nTable: Typical Difficulty Classes\n\n|Task Difficulty|DC|\n|---|---|\n|Very easy|5|\n|Easy|10|\n|Medium|15|\n|Hard|20|\n|Very hard|25|\n|Nearly impossible|30|",
+          "index": 1,
+          "initialHeaderLevel": 3,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_d20-tests"
+        },
+        {
+          "key": "srd-2024_d20-tests_saving-throw",
+          "name": "Saving Throws",
+          "desc": "A saving throw—also called a save—represents an attempt to evade or resist a threat, such as a fiery explosion, a blast of poisonous gas, or a spell trying to invade your mind. You don’t normally choose to make a save; you must make one because your character or a monster (if you’re the GM) is at risk. A save’s result is detailed in the effect that caused it.\n\nIf you don’t want to resist the effect, you can choose to fail the save without rolling.\n\n## Ability Modifier\n\nSaving throws are named for the ability modifiers they use: a Constitution saving throw, a Wisdom saving throw, and so on. Different saving throws are used to resist different kinds of effects, as shown on the Saving Throw Examples table.\n\nTable: Saving Throw Examples\n\n|Ability|Make a Save To …|\n|---|---|\n|Strength|Physically resist direct force|\n|Dexterity|Dodge out of harm’s way|\n|Constitution|Endure a toxic hazard|\n|Intelligence|Recognize an illusion as fake|\n|Wisdom|Resist a mental assault|\n|Charisma|Assert your identity|\n\n## Proficiency Bonus\n\nYou add your Proficiency Bonus to your saving throw if you have proficiency in that kind of save. See “Proficiency” later in “Playing the Game.”\n\n## Difficulty Class\n\nThe Difficulty Class for a saving throw is determined by the effect that causes it or by the GM. For example, if a spell forces you to make a save, the DC is determined by the caster’s spellcasting ability and Proficiency Bonus. Monster abilities that call for saves specify the DC.",
+          "index": 2,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_d20-tests"
+        },
+        {
+          "key": "srd-2024_d20-tests_attack-rolls",
+          "name": "Attack Rolls",
+          "desc": "An attack roll determines whether an attack hits a target. An attack roll hits if the roll equals or exceeds the target’s Armor Class. Attack rolls usually occur in battle, described in “Combat” later in “Playing the Game,” but the GM might also ask for an attack roll in other situations, such as an archery competition.\n\n## Ability Modifier\n\nThe Attack Roll Abilities table shows which ability modifier to use for different types of attack rolls.\n\nTable: Attack Roll Abilities\n\n|Ability|Attack Type|\n|---|---|\n|Strength|Melee attack with a weapon or an Unarmed Strike (see “Rules Glossary”)|\n|Dexterity|Ranged attack with a weapon|\n|Varies|Spell attack (the ability used is determined by the spellcaster’s spellcasting feature, as explained in “Spells”)|\n\nSome features let you use different ability modifiers from those listed. For example, the Finesse property (see “Equipment”) lets you use Strength or Dexterity with a weapon that has that property.\n\n## Proficiency Bonus\n\nYou add your Proficiency Bonus to your attack roll when you attack using a weapon you have proficiency with, as well as when you attack with a spell. See “Proficiency” later in “Playing the Game” for more information about weapon proficiencies.\n\n## Armor Class\n\nA creature’s Armor Class represents how well the creature avoids being wounded in combat. The AC of a character is determined at character creation (see “Character Creation”), whereas the AC of a monster appears in its stat block.\n\n**Calculating AC.** All creatures start with the same base AC calculation:\n\nA creature’s AC can then be modified by armor, magic items, spells, and more.\n\n**Only One Base AC.** Some spells and class features give characters a different way to calculate their AC. A character with multiple features that give different ways to calculate AC must choose which one to use; only one base calculation can be in effect for a creature.\n\nRolling 20 or 1\n\nIf you roll a 20 on the d20 (called a “natural 20”) for an attack roll, the attack hits regardless of any modifiers or the target’s AC. This is called a Critical Hit (see “Combat” later in “Playing the Game”).\n\nIf you roll a 1 on the d20 (a “natural 1”) for an attack roll, the attack misses regardless of any modifiers or the target’s AC.",
+          "index": 3,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_d20-tests"
+        },
+        {
+          "key": "srd-2024_d20-tests_advantage-disadvantage",
+          "name": "Advantage/Disadvantage",
+          "desc": "Sometimes a D20 Test is modified by Advantage or Disadvantage. Advantage reflects the positive circumstances surrounding a d20 roll, while Disadvantage reflects negative circumstances.\n\nYou usually acquire Advantage or Disadvantage through the use of special abilities and actions. The GM can also decide that circumstances grant Advantage or impose Disadvantage.\n\n## Roll Two D20s\n\nWhen a roll has either Advantage or Disadvantage, roll a second d20 when you make the roll. Use the higher of the two rolls if you have Advantage, and use the lower roll if you have Disadvantage. For example, if you have Disadvantage and roll an 18 and a 3, use the 3. If you instead have Advantage and roll those numbers, use the 18.\n\n## They Don't Stack\n\nIf multiple situations affect a roll and they all grant Advantage on it, you still roll only two d20s. Similarly, if multiple situations impose Disadvantage on a roll, you roll only two d20s.\n\nIf circumstances cause a roll to have both Advantage and Disadvantage, the roll has neither of them, and you roll one d20. This is true even if multiple circumstances impose Disadvantage and only one grants Advantage or vice versa. In such a situation, you have neither Advantage nor Disadvantage.\n\n## Interactions with Rerolls\n\nWhen you have Advantage or Disadvantage and something in the game lets you reroll or replace the d20, you can reroll or replace only one die, not both. You choose which one.\n\nFor example, if you have Heroic Inspiration (see the sidebar below) and roll a 3 and an 18 on an ability check that has Advantage or Disadvantage, you could expend your Heroic Inspiration to reroll one of those dice, not both of them.",
+          "index": 4,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_d20-tests"
+        }
+      ]
+    },
+    {
+      "name": "Damage and Healing",
+      "key": "srd-2024_damage-and-healing",
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      },
+      "desc": "Injury and death are frequent threats, as detailed in the following rules.",
+      "rules": [
+        {
+          "key": "srd-2024_damage-and-healing_hit-points",
+          "name": "Hit Points",
+          "desc": "Hit Points represent durability and the will to live. Creatures with more Hit Points are more difficult to kill. Your Hit Point maximum is the number of Hit Points you have when uninjured. Your current Hit Points can be any number from that maximum down to 0, which is the lowest Hit Points can go.\n\nWhenever you take damage, subtract it from your Hit Points. Hit Point loss has no effect on your capabilities until you reach 0 Hit Points.\n\nIf you have half your Hit Points or fewer, you’re Bloodied, which has no game effect on its own but which might trigger other game effects.",
+          "index": 1,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_damage-and-healing"
+        },
+        {
+          "key": "srd-2024_damage-and-healing_resting",
+          "name": "Resting",
+          "desc": "Adventurers can’t spend every hour adventuring. They need rest. Any creature can take hour-long Short Rests in the midst of a day and an 8-hour Long Rest to end it. Regaining Hit Points is one of the main benefits of a rest. “Rules Glossary” provides the rules for Short and Long Rests.",
+          "index": 2,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_damage-and-healing"
+        },
+        {
+          "key": "srd-2024_damage-and-healing_damage-rolls",
+          "name": "Damage Rolls",
+          "desc": "Each weapon, spell, and damaging monster ability specifies the damage it deals. You roll the damage dice, add any modifiers, and deal the damage to your target. If there’s a penalty to the damage, it’s possible to deal 0 damage but not negative damage.\n\nWhen attacking with a weapon, you add your ability modifier—the same modifier used for the attack roll—to the damage roll. A spell tells you which dice to roll for damage and whether to add any modifiers. Unless a rule says otherwise, you don’t add your ability modifier to a fixed damage amount that doesn’t use a roll, such as the damage of a Blowgun. See “Equipment” for weapons’ damage dice and “Spells” for spells’ damage dice.",
+          "index": 3,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_damage-and-healing"
+        },
+        {
+          "key": "srd-2024_damage-and-healing_critical-hits",
+          "name": "Critical Hits",
+          "desc": "When you score a Critical Hit, you deal extra damage. Roll the attack’s damage dice twice, add them together, and add any relevant modifiers as normal. For example, if you score a Critical Hit with a Dagger, roll 2d4 for the damage rather than 1d4, and add your relevant ability modifier. If the attack involves other damage dice, such as from the Rogue’s Sneak Attack feature, you also roll those dice twice.",
+          "index": 4,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_damage-and-healing"
+        },
+        {
+          "key": "srd-2024_damage-and-healing_saving-throws-and-damage",
+          "name": "Saving Throws and Damage",
+          "desc": "Damage dealt via saving throws uses these rules.\n\n## Damage against Multiple Targets\n\nWhen you create a damaging effect that forces two or more targets to make saving throws against it at the same time, roll the damage once for all the targets. For example, when a wizard casts Fireball, the spell’s damage is rolled once for all creatures caught in the blast.\n\n## Half Damage\n\nMany saving throw effects deal half damage (round down) to a target when the target succeeds on the saving throw. The halved damage is equal to half the damage that would be dealt on a failed save.",
+          "index": 5,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_damage-and-healing"
+        },
+        {
+          "key": "srd-2024_damage-and-healing_damage-types",
+          "name": "Damage Types",
+          "desc": "Each instance of damage has a type, like Fire or Slashing. Damage types are listed in “Rules Glossary” and have no rules of their own, but other rules, such as Resistance, rely on damage types.",
+          "index": 6,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_damage-and-healing"
+        },
+        {
+          "key": "srd-2024_damage-and-healing_resistance-and-vulnerability",
+          "name": "Resistance and Vulnerability",
+          "desc": "Some creatures and objects have Resistance or Vulnerability to certain damage types. If you have Resistance to a damage type, damage of that type is halved against you (round down). If you have Vulnerability to a damage type, damage of that type is doubled against you. For example, if you have Resistance to Cold damage, such damage is halved against you, and if you have Vulnerability to Fire damage, such damage is doubled against you.\n\n## No Stacking\n\nMultiple instances of Resistance or Vulnerability that affect the same damage type count as only one instance. For example, if you have Resistance to Necrotic damage as well as Resistance to all damage, Necrotic damage is reduced by half against you.\n\n## Order of Application\n\nModifiers to damage are applied in the following order: adjustments such as bonuses, penalties, or multipliers are applied first; Resistance is applied second; and Vulnerability is applied third.\n\nFor example, a creature has Resistance to all damage and Vulnerability to Fire damage, and it’s within a magical aura that reduces all damage by 5. If it takes 28 Fire damage, the damage is first reduced by 5 (to 23), then halved for the creature’s Resistance (and rounded down to 11), then doubled for its Vulnerability (to 22).",
+          "index": 7,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_damage-and-healing"
+        },
+        {
+          "key": "srd-2024_damage-and-healing_immunity",
+          "name": "Immunity",
+          "desc": "Some creatures and objects have Immunity to certain damage types and conditions. Immunity to a damage type means you don’t take damage of that type, and Immunity to a condition means you aren’t affected by it.",
+          "index": 8,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_damage-and-healing"
+        },
+        {
+          "key": "srd-2024_damage-and-healing_healing",
+          "name": "Healing",
+          "desc": "Hit Points can be restored by magic, such as the *Cure Wounds* or by a *Potion of Healing*,  spell or a Short or Long Rest (see “Rules Glossary”).\n\nWhen you receive healing, add the restored Hit Points to your current Hit Points. Your Hit Points can’t exceed your Hit Point maximum, so any Hit Points regained in excess of the maximum are lost. For example, if you receive 8 Hit Points of healing and have 14 Hit Points and a Hit Point maximum of 20, you regain 6 Hit Points, not 8.",
+          "index": 9,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_damage-and-healing"
+        },
+        {
+          "key": "srd-2024_damage-and-healing_knocking-out-a-creature",
+          "name": "Knocking out a Creature",
+          "desc": "When you would reduce a creature to 0 Hit Points with a melee attack, you can instead reduce the creature to 1 Hit Point and give it the Unconscious condition. It then starts a Short Rest, at the end of which that condition ends on it. The condition ends early if the creature regains any Hit Points or if someone takes an action to administer first aid to it, making a successful DC 10 Wisdom (Medicine) check.",
+          "index": 10,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_damage-and-healing"
+        },
+        {
+          "key": "srd-2024_damage-and-healing_dropping-to-zero-hit-points",
+          "name": "Dropping to 0 Hit Points",
+          "desc": "When a creature drops to 0 Hit Points, it either dies outright or falls unconscious, as explained below.\n\n## Instant Death\n\nHere are the main ways a creature can die instantly.\n\n**Monster Death.** A monster dies the instant it drops to 0 Hit Points, although a Game Master can ignore this rule for an individual monster and treat it like a character.\n\n**Hit Point Maximum of 0.** A creature dies if its Hit Point maximum reaches 0. Certain effects drain life energy, reducing a creature’s Hit Point maximum.\n\n**Massive Damage.** When damage reduces a character to 0 Hit Points and damage remains, the character dies if the remainder equals or exceeds their Hit Point maximum. For example, if your character has a Hit Point maximum of 12, currently has 6 Hit Points, and takes 18 damage, the character drops to 0 Hit Points, but 12 damage remains. The character then dies, since 12 equals their Hit Point maximum.\n\n## Character Demise\n\nIf your character dies, others might find a magical way to revive your character, such as with the *Raise Dead* spell. Or talk with the GM about making a new character to join the group. “Rules Glossary” has more information on being dead.\n\n## Falling Unconscious\n\nIf you reach 0 Hit Points and don’t die instantly, you have the Unconscious condition (see “Rules Glos- sary”) until you regain any Hit Points, and you now face making Death Saving Throws (see below).\n\n## Death Saving Throws\n\nWhenever you start your turn with 0 Hit Points, you must make a Death Saving Throw to determine whether you creep closer to death or hang on to life. Unlike other saving throws, this one isn’t tied to an ability score. You’re in the hands of fate now.\n\n**Three Successes/Failures.** Roll 1d20. If the roll is 10 or higher, you succeed. Otherwise, you fail. A success or failure has no effect by itself. On your third success, you become Stable (see “Stabilizing a Character” below). On your third failure, you die.\n\nThe successes and failures don’t need to be consecutive; keep track of both until you collect three of a kind. The number of both is reset to zero when you regain any Hit Points or become Stable.\n\n**Rolling a 1 or 20.** When you roll a 1 on the d20 for a Death Saving Throw, you suffer two failures. If you roll a 20 on the d20, you regain 1 Hit Point.\n\n**Damage at 0 Hit Points.** If you take any damage while you have 0 Hit Points, you suffer a Death Saving Throw failure. If the damage is from a Critical Hit, you suffer two failures instead. If the damage equals or exceeds your Hit Point maximum, you die.\n\n## Stabilizing a Character\n\nYou can take the Help action to try to stabilize a creature with 0 Hit Points, which requires a successful DC 10 Wisdom (Medicine) check.\n\nA Stable creature doesn’t make Death Saving Throws even though it has 0 Hit Points, but it still has the Unconscious condition. If the creature takes damage, it stops being Stable and starts making Death Saving Throws again. A Stable creature that isn’t healed regains 1 Hit Point after 1d4 hours.",
+          "index": 11,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_damage-and-healing"
+        },
+        {
+          "key": "srd-2024_damage-and-healing_temporary-hit-points",
+          "name": "Temporary Hit Points",
+          "desc": "Some spells and other effects confer Temporary Hit Points, which are a buffer against losing actual Hit Points, as explained below.\n\n## Lose Temporary Hit Points First\n\nIf you have Temporary Hit Points and take damage, those points are lost first, and any leftover damage carries over to your Hit Points. For example, if you have 5 Temporary Hit Points and take 7 damage, you lose those points and then lose 2 Hit Points.\n\n## Duration\n\nTemporary Hit Points last until they’re depleted or you finish a Long Rest (see “Rules Glossary”).\n\n## They Don’t Stack\n\nTemporary Hit Points can’t be added together. If you have Temporary Hit Points and receive more of them, you decide whether to keep the ones you have or to gain the new ones. For example, if a spell grants you 12 Temporary Hit Points when you already have 10, you can have 12 or 10, not 22.\n\n## They’re Not Hit Points or Healing\n\nTemporary Hit Points can’t be added to your Hit Points, healing can’t restore them, and receiving Temporary Hit Points doesn’t count as healing. Because Temporary Hit Points aren’t Hit Points, a creature can be at full Hit Points and receive Temporary Hit Points.\n\nIf you have 0 Hit Points, receiving Temporary Hit Points doesn’t restore you to consciousness. Only true healing can save you.",
+          "index": 12,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_damage-and-healing"
+        }
+      ]
+    },
+    {
+      "name": "Social Interaction",
+      "key": "srd-2024_social-interaction",
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      },
+      "desc": "During their adventures, player characters meet many different people and face some monsters that would rather talk than fight. In those situations, it’s time for social interaction, which takes many forms. For example, you might try to convince a burglar to confess to wrongdoing or try to flatter a guard. The Game Master assumes the roles of any nonplayer characters who are participating.\n\nAn NPC’s attitude toward your character is Friendly, Indifferent, or Hostile, as defined in “Rules Glossary.” Friendly NPCs are predisposed to help, and Hostile ones are inclined to hinder.\n\nSocial interactions progress in two ways: through **roleplaying** and **ability checks**.",
+      "rules": [
+        {
+          "key": "srd-2024_social-interaction_roleplaying",
+          "name": "Roleplaying",
+          "desc": "Roleplaying is, literally, the act of playing out a role. In this case, it’s you as a player determining how your character thinks, acts, and talks. Roleplaying is part of every aspect of the game, and it comes to the fore during social interactions.\n\nAs you roleplay, consider whether you prefer an active approach or a descriptive approach.\n\nThe GM uses an NPC’s personality and your character’s actions and attitudes to determine how an NPC reacts. A cowardly bandit might buckle under threats of imprisonment. A stubborn merchant refuses to help if the characters badger her. A vain dragon laps up flattery.\n\nWhen interacting with an NPC, pay attention to the GM’s portrayal of the NPC’s personality. You might be able to learn an NPC’s goals and then use that information to influence the NPC.\n\nIf you offer NPCs something they want or play on their sympathies, fears, or goals, you can form friendships, ward off violence, or learn a key piece of information. On the other hand, if you insult a proud warrior or speak ill of a noble’s allies, your efforts to convince or deceive will likely fail.",
+          "index": 1,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_social-interaction"
+        },
+        {
+          "key": "srd-2024_social-interaction_ability-checks",
+          "name": "Ability Checks",
+          "desc": "Ability checks can be key in determining the outcome of a social interaction. Your roleplaying efforts can alter an NPC’s attitude, but there might still be an element of chance if the GM wants dice to play a role in determining an NPC’s response to you. In such situations, the GM will typically ask you to take the Influence action.\n\nPay attention to your skill proficiencies when thinking of how you will interact with an NPC; use an approach that relies on your group’s skill proficiencies. For example, if the group needs to trick a guard into letting them into a castle, the Rogue who is proficient in Deception should lead the discussion.",
+          "index": 2,
+          "initialHeaderLevel": 2,
+          "document": "srd-2024",
+          "ruleset": "srd-2024_social-interaction"
+        }
+      ]
+    }
+  ]
+}

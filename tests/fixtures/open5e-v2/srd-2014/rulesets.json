@@ -1,0 +1,221 @@
+{
+  "count": 41,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "name": "Attacking",
+      "key": "srd_attacking",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "desc": "Whether you're striking with a melee weapon, firing a weapon at range, or making an attack roll as part of a spell, an attack has a simple structure.\n\n1. **Choose a target.** Pick a target within your attack's range: a creature, an object, or a location.\n2. **Determine modifiers.** The GM determines whether the target has cover and whether you have advantage or disadvantage against the target. In addition, spells, special abilities, and other effects can apply penalties or bonuses to your attack roll.\n3. **Resolve the attack.** You make the attack roll. On a hit, you roll damage, unless the particular attack has rules that specify otherwise. Some attacks cause special effects in addition to or instead of damage.\n\n\nIf there's ever any question whether something you're doing counts as an attack, the rule is simple: if you're making an attack roll, you're making an attack.",
+      "rules": [
+        {
+          "key": "srd_attacking_attack-rolls",
+          "name": "Attack Rolls",
+          "desc": "When you make an attack, your attack roll determines whether the attack hits or misses. To make an attack roll, roll a d20 and add the appropriate modifiers. If the total of the roll plus modifiers equals or exceeds the target's Armor Class (AC), the attack hits. The AC of a character is determined at character creation, whereas the AC of a monster is in its stat block.",
+          "index": 1,
+          "initialHeaderLevel": 2,
+          "document": "srd-2014",
+          "ruleset": "srd_attacking"
+        },
+        {
+          "key": "srd_attacking_attack-modifiers",
+          "name": "Modifiers to the Roll",
+          "desc": "When a character makes an attack roll, the two most common modifiers to the roll are an ability modifier and the character's proficiency bonus. When a monster makes an attack roll, it uses whatever modifier is provided in its stat block.\n\n**Ability Modifier.** The ability modifier used for a melee weapon attack is Strength, and the ability modifier used for a ranged weapon attack is Dexterity. Weapons that have the finesse or thrown property break this rule.\n\nSome spells also require an attack roll. The ability modifier used for a spell attack depends on the spellcasting ability of the spellcaster.\n\n**Proficiency Bonus.** You add your proficiency bonus to your attack roll when you attack using a weapon with which you have proficiency, as well as when you attack with a spell.",
+          "index": 2,
+          "initialHeaderLevel": 3,
+          "document": "srd-2014",
+          "ruleset": "srd_attacking"
+        },
+        {
+          "key": "srd_attacking_rolling-1-or-20",
+          "name": "Rolling 1 or 20",
+          "desc": "Sometimes fate blesses or curses a combatant, causing the novice to hit and the veteran to miss.\n\n> **Sage Advice**\n\n> Spell attacks can score critical hits, just like any other attack.\n\n> \n\n> Source: [Sage Advice > Compendium](http://media.wizards.com/2015/downloads/dnd/SA_Compendium_1.01.pdf)\n\nIf the d20 roll for an attack is a 20, the attack hits regardless of any modifiers or the target's AC. This is called a critical hit.\n\nIf the d20 roll for an attack is a 1, the attack misses regardless of any modifiers or the target's AC.",
+          "index": 3,
+          "initialHeaderLevel": 3,
+          "document": "srd-2014",
+          "ruleset": "srd_attacking"
+        },
+        {
+          "key": "srd_attacking_unseen-attackers-and-targets",
+          "name": "Unseen Attackers and Targets",
+          "desc": "Combatants often try to escape their foes' notice by hiding, casting the invisibility spell, or lurking in darkness.\n\nWhen you attack a target that you can't see, you have disadvantage on the attack roll. This is true whether you're guessing the target's location or you're targeting a creature you can hear but not see. If the target isn't in the location you targeted, you automatically miss, but the GM typically just says that the attack missed, not whether you guessed the target's location correctly.\n\nWhen a creature can't see you, you have advantage on attack rolls against it. If you are hidden---both unseen and unheard---when you make an attack, you give away your location when the attack hits or misses.",
+          "index": 4,
+          "initialHeaderLevel": 2,
+          "document": "srd-2014",
+          "ruleset": "srd_attacking"
+        },
+        {
+          "key": "srd_attacking_ranged-attacks",
+          "name": "Rnged Attacks",
+          "desc": "When you make a ranged attack, you fire a bow or a crossbow, hurl a handaxe, or otherwise send projectiles to strike a foe at a distance. A monster might shoot spines from its tail. Many spells also involve making a ranged attack.",
+          "index": 5,
+          "initialHeaderLevel": 2,
+          "document": "srd-2014",
+          "ruleset": "srd_attacking"
+        },
+        {
+          "key": "srd_attacking_range",
+          "name": "Range",
+          "desc": "You can make ranged attacks only against targets within a specified range. If a ranged attack, such as one made with a spell, has a single range, you can't attack a target beyond this range.\n\nSome ranged attacks, such as those made with a longbow or a shortbow, have two ranges. The smaller number is the normal range, and the larger number is the long range. Your attack roll has disadvantage when your target is beyond normal range, and you can't attack a target beyond the long range.",
+          "index": 6,
+          "initialHeaderLevel": 3,
+          "document": "srd-2014",
+          "ruleset": "srd_attacking"
+        },
+        {
+          "key": "srd_attacking_ranged-attacks-in-close-combat",
+          "name": "Ranged Attacks in Close Combat",
+          "desc": "Aiming a ranged attack is more difficult when a foe is next to you. When you make a ranged attack with a weapon, a spell, or some other means, you have disadvantage on the attack roll if you are within 5 feet of a hostile creature who can see you and who isn't incapacitated.",
+          "index": 7,
+          "initialHeaderLevel": 3,
+          "document": "srd-2014",
+          "ruleset": "srd_attacking"
+        },
+        {
+          "key": "srd_attacking_melee-attacks",
+          "name": "Melee Attacks",
+          "desc": "Used in hand-to-hand combat, a melee attack allows you to attack a foe within your reach. A melee attack typically uses a handheld weapon such as a sword, a warhammer, or an axe. A typical monster makes a melee attack when it strikes with its claws, horns, teeth, tentacles, or other body part. A few spells also involve making a melee attack.\n\nMost creatures have a 5-foot **reach** and can thus attack targets within 5 feet of them when making a melee attack. Certain creatures (typically those larger than Medium) have melee attacks with a greater reach than 5 feet, as noted in their descriptions.\n\nInstead of using a weapon to make a melee weapon attack, you can use an **unarmed strike**: a punch, kick, head-butt, or similar forceful blow (none of which count as weapons). On a hit, an unarmed strike deals bludgeoning damage equal to 1 + your Strength modifier. You are proficient with your unarmed strikes.",
+          "index": 8,
+          "initialHeaderLevel": 2,
+          "document": "srd-2014",
+          "ruleset": "srd_attacking"
+        },
+        {
+          "key": "srd_attacking_opportunity-attacks",
+          "name": "Opportunity Attacks",
+          "desc": "In a fight, everyone is constantly watching for a chance to strike an enemy who is fleeing or passing by. Such a strike is called an opportunity attack.\n\nYou can make an opportunity attack when a hostile creature that you can see moves out of your reach. To make the opportunity attack, you use your reaction to make one melee attack against the provoking creature. The attack occurs right before the creature leaves your reach.\n\nYou can avoid provoking an opportunity attack by taking the Disengage action. You also don't provoke an opportunity attack when you teleport or when someone or something moves you without using your movement, action, or reaction. For example, you don't provoke an opportunity attack if an explosion hurls you out of a foe's reach or if gravity causes you to fall past an enemy.",
+          "index": 9,
+          "initialHeaderLevel": 3,
+          "document": "srd-2014",
+          "ruleset": "srd_attacking"
+        },
+        {
+          "key": "srd_attacking_two-weapon-fighting",
+          "name": "Two-Weapon Fighting",
+          "desc": "When you take the Attack action and attack with a light melee weapon that you're holding in one hand, you can use a bonus action to attack with a different light melee weapon that you're holding in the other hand. You don't add your ability modifier to the damage of the bonus attack, unless that modifier is negative.\n\nIf either weapon has the thrown property, you can throw the weapon, instead of making a melee attack with it.",
+          "index": 10,
+          "initialHeaderLevel": 3,
+          "document": "srd-2014",
+          "ruleset": "srd_attacking"
+        },
+        {
+          "key": "srd_attacking_grappling",
+          "name": "Grappling",
+          "desc": "When you want to grab a creature or wrestle with it, you can use the Attack action to make a special melee attack, a grapple. If you're able to make multiple attacks with the Attack action, this attack replaces one of them.\n\nThe target of your grapple must be no more than one size larger than you and must be within your reach. Using at least one free hand, you try to seize the target by making a grapple check instead of an attack roll: a Strength (Athletics) check contested by the target's Strength (Athletics) or Dexterity (Acrobatics) check (the target chooses the ability to use). If you succeed, you subject the target to the srd:grappled condition. The condition specifies the things that end it, and you can release the target whenever you like (no action required).\n\n**Escaping a Grapple.** A grappled creature can use its action to escape. To do so, it must succeed on a Strength (Athletics) or Dexterity (Acrobatics) check contested by your Strength (Athletics) check.\n\n **Moving a Grappled Creature.** When you move, you can drag or carry the grappled creature with you, but your speed is halved, unless the creature is two or more sizes smaller than you.\n\n > **Contests in Combat**\n\n > Battle often involves pitting your prowess against that of your foe. Such a challenge is represented by a contest. This section includes the most common contests that require an action in combat: grappling and shoving a creature. The GM can use these contests as models for improvising others.",
+          "index": 11,
+          "initialHeaderLevel": 3,
+          "document": "srd-2014",
+          "ruleset": "srd_attacking"
+        },
+        {
+          "key": "srd_attacking_shoving",
+          "name": "Shoving a Creature",
+          "desc": "Using the Attack action, you can make a special melee attack to shove a creature, either to knock it srd:prone or push it away from you. If you're able to make multiple attacks with the Attack action, this attack replaces one of them.\n\nThe target must be no more than one size larger than you and must be within your reach. Instead of making an attack roll, you make a Strength (Athletics) check contested by the target's Strength (Athletics) or Dexterity (Acrobatics) check (the target chooses the ability to use). If you win the contest, you either knock the target srd:prone or push it 5 feet away from you.",
+          "index": 12,
+          "initialHeaderLevel": 3,
+          "document": "srd-2014",
+          "ruleset": "srd_attacking"
+        }
+      ]
+    },
+    {
+      "name": "Cover",
+      "key": "srd_cover",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "desc": "Walls, trees, creatures, and other obstacles can provide cover during combat, making a target more difficult to harm. A target can benefit from cover only when an attack or other effect originates on the opposite side of the cover.\n\n There are three degrees of cover. If a target is behind multiple sources of cover, only the most protective degree of cover applies; the degrees aren't added together. For example, if a target is behind a creature that gives half cover and a tree trunk that gives three-quarters cover, the target has three-quarters cover.\n\nA target with **half cover** has a +2 bonus to AC and Dexterity saving throws. A target has half cover if an obstacle blocks at least half of its body. The obstacle might be a low wall, a large piece of furniture, a narrow tree trunk, or a creature, whether that creature is an enemy or a friend.\n\nA target with **three-quarters cover** has a +5 bonus to AC and Dexterity saving throws. A target has three-quarters cover if about three-quarters of it is covered by an obstacle. The obstacle might be a portcullis, an arrow slit, or a thick tree trunk.\n\n A target with **total cover** can't be targeted directly by an attack or a spell, although some spells can reach such a target by including it in an area of effect. A target has total cover if it is completely concealed by an obstacle.",
+      "rules": []
+    },
+    {
+      "name": "Damage and Healing",
+      "key": "srd_damage-and-healing",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "desc": "Injury and the risk of death are constant companions of those who explore fantasy gaming worlds. The thrust of a sword, a well-placed arrow, or a blast of flame from a srd:fireball spell all have the potential to damage, or even kill, the hardiest of creatures.",
+      "rules": [
+        {
+          "key": "srd_damage-and-healing_hit-points",
+          "name": "Hit Points",
+          "desc": "Hit points represent a combination of physical and mental durability, the will to live, and luck. Creatures with more hit points are more difficult to kill. Those with fewer hit points are more fragile.\n\nA creature's current hit points (usually just called hit points) can be any number from the creature's hit point maximum down to 0. This number changes frequently as a creature takes damage or receives healing.\n\nWhenever a creature takes damage, that damage is subtracted from its hit points. The loss of hit points has no effect on a creature's capabilities until the creature drops to 0 hit points.\n\n## Damage Rolls\n\nEach weapon, spell, and harmful monster ability specifies the damage it deals. You roll the damage die or dice, add any modifiers, and apply the damage to your target. Magic weapons, special abilities, and other factors can grant a bonus to damage. With a penalty, it is possible to deal 0 damage, but never negative damage. When attacking with a **weapon**, you add your ability modifier---the same modifier used for the attack roll---to the damage. A **spell** tells you which dice to roll for damage and whether to add any modifiers.\n\nIf a spell or other effect deals damage to **more** **than one target** at the same time, roll the damage once for all of them. For example, when a wizard casts srd:fireball or a cleric casts srd:flame-strike, the spell's damage is rolled once for all creatures caught in the blast.",
+          "index": 1,
+          "initialHeaderLevel": 2,
+          "document": "srd-2014",
+          "ruleset": "srd_damage-and-healing"
+        },
+        {
+          "key": "srd_damage-and-healing_damage-rolls",
+          "name": "Damage Rolls",
+          "desc": "Each weapon, spell, and harmful monster ability specifies the damage it deals. You roll the damage die or dice, add any modifiers, and apply the damage to your target. Magic weapons, special abilities, and other factors can grant a bonus to damage. With a penalty, it is possible to deal 0 damage, but never negative damage. When attacking with a **weapon**, you add your ability modifier---the same modifier used for the attack roll---to the damage. A **spell** tells you which dice to roll for damage and whether to add any modifiers.\n\nIf a spell or other effect deals damage to **more** **than one target** at the same time, roll the damage once for all of them. For example, when a wizard casts srd:fireball or a cleric casts srd:flame-strike, the spell's damage is rolled once for all creatures caught in the blast.",
+          "index": 2,
+          "initialHeaderLevel": 2,
+          "document": "srd-2014",
+          "ruleset": "srd_damage-and-healing"
+        },
+        {
+          "key": "srd_damage-and-healing_critical-hits",
+          "name": "Critical Hits",
+          "desc": "Each weapon, spell, and harmful monster ability specifies the damage it deals. You roll the damage die or dice, add any modifiers, and apply the damage to your target. Magic weapons, special abilities, and other factors can grant a bonus to damage. With a penalty, it is possible to deal 0 damage, but never negative damage. When attacking with a **weapon**, you add your ability modifier---the same modifier used for the attack roll---to the damage. A **spell** tells you which dice to roll for damage and whether to add any modifiers.\n\nIf a spell or other effect deals damage to **more** **than one target** at the same time, roll the damage once for all of them. For example, when a wizard casts srd:fireball or a cleric casts srd:flame-strike, the spell's damage is rolled once for all creatures caught in the blast.",
+          "index": 3,
+          "initialHeaderLevel": 3,
+          "document": "srd-2014",
+          "ruleset": "srd_damage-and-healing"
+        },
+        {
+          "key": "srd_damage-and-healing_damage-types",
+          "name": "Damage Types",
+          "desc": "Different attacks, damaging spells, and other harmful effects deal different types of damage. Damage types have no rules of their own, but other rules, such as damage resistance, rely on the types.\n\nThe damage types follow, with examples to help a GM assign a damage type to a new effect.\n\n**Acid.** The corrosive spray of a black dragon's breath and the dissolving enzymes secreted by a black pudding deal acid damage.\n\n**Bludgeoning.** Blunt force attacks---hammers, falling, constriction, and the like---deal bludgeoning damage.\n\n**Cold.** The infernal chill radiating from an ice devil's spear and the frigid blast of a white dragon's breath deal cold damage.\n\n**Fire.** Red dragons breathe fire, and many spells conjure flames to deal fire damage.\n\n**Force.** Force is pure magical energy focused into a damaging form. Most effects that deal force damage are spells, including _magic missile_ and _spiritual weapon_.\n\n**Lightning.** A _lightning bolt_ spell and a blue dragon's breath deal lightning damage.\n\n**Necrotic.** Necrotic damage, dealt by certain undead and a spell such as _chill touch_, withers matter and even the soul.\n\n**Piercing.** Puncturing and impaling attacks, including spears and monsters' bites, deal piercing damage.\n\n**Poison.** Venomous stings and the toxic gas of a green dragon's breath deal poison damage.\n\n**Psychic.** Mental abilities such as a mind flayer's psionic blast deal psychic damage.\n\n**Radiant.** Radiant damage, dealt by a cleric's _flame strike_ spell or an angel's smiting weapon, sears the flesh like fire and overloads the spirit with power.\n\n**Slashing.** Swords, axes, and monsters' claws deal slashing damage.\n\n**Thunder.** A concussive burst of sound, such as the effect of the srd:thunderwave spell, deals thunder damage.",
+          "index": 5,
+          "initialHeaderLevel": 3,
+          "document": "srd-2014",
+          "ruleset": "srd_damage-and-healing"
+        },
+        {
+          "key": "srd_damage-and-healing_resistance-and-vulnerability",
+          "name": "Damage Resistance and Vulnerability",
+          "desc": "Some creatures and objects are exceedingly difficult or unusually easy to hurt with certain types of damage.\n\nIf a creature or an object has **resistance** to a damage type, damage of that type is halved against it. If a creature or an object has **vulnerability** to a damage type, damage of that type is doubled against it.\n\nResistance and then vulnerability are applied after all other modifiers to damage. For example, a creature has resistance to bludgeoning damage and is hit by an attack that deals 25 bludgeoning damage. The creature is also within a magical aura that reduces all damage by 5. The 25 damage is first reduced by 5 and then halved, so the creature takes 10 damage.\n\nMultiple instances of resistance or vulnerability that affect the same damage type count as only one instance. For example, if a creature has resistance to fire damage as well as resistance to all nonmagical damage, the damage of a nonmagical fire is reduced by half against the creature, not reduced by three--- quarters.",
+          "index": 6,
+          "initialHeaderLevel": 2,
+          "document": "srd-2014",
+          "ruleset": "srd_damage-and-healing"
+        }
+      ]
+    },
+    {
+      "name": "Madness",
+      "key": "srd_madness",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "desc": "In a typical campaign, characters aren't driven mad by the horrors they face and the carnage they inflict day after day, but sometimes the stress of being an adventurer can be too much to bear. If your campaign has a strong horror theme, you might want to use madness as a way to reinforce that theme, emphasizing the extraordinarily horrific nature of the threats the adventurers face.",
+      "rules": [
+        {
+          "key": "srd_madness_going-mad",
+          "name": "Going Mad",
+          "desc": "Various magical effects can inflict madness on an otherwise stable mind. Certain spells, such as _contact other plane_ and _symbol_, can cause insanity, and you can use the madness rules here instead of the spell effects of those spells*.* Diseases, poisons, and planar effects such as psychic wind or the howling winds of Pandemonium can all inflict madness. Some artifacts can also break the psyche of a character who uses or becomes attuned to them.\n\nResisting a madness-inducing effect usually requires a Wisdom or Charisma saving throw.",
+          "index": 1,
+          "initialHeaderLevel": 2,
+          "document": "srd-2014",
+          "ruleset": "srd_madness"
+        },
+        {
+          "key": "srd_madness_madness-effects",
+          "name": "Madness Effects",
+          "desc": "Madness can be short-term, long-term, or indefinite. Most relatively mundane effects impose short-term madness, which lasts for just a few minutes. More horrific effects or cumulative effects can result in long-term or indefinite madness.\n\nA character afflicted with **short-term madness** is subjected to an effect from the Short-Term Madness table for 1d10 minutes.\n\nA character afflicted with **long-term madness** is subjected to an effect from the Long-Term Madness table for 1d10 × 10 hours.\n\nA character afflicted with **indefinite madness** gains a new character flaw from the Indefinite Madness table that lasts until cured.\n\n**Short-Term Madness (table)**\n| d100   | Effect (lasts 1d10 minutes)                                                                                                  |\n|--------|------------------------------------------------------------------------------------------------------------------------------|\n| 01-20  | The character retreats into his or her mind and becomes paralyzed. The effect ends if the character takes any damage.        |\n| 21-30  | The character becomes incapacitated and spends the duration screaming, laughing, or weeping.                                 |\n| 31-40  | The character becomes frightened and must use his or her action and movement each round to flee from the source of the fear. |\n| 41-50  | The character begins babbling and is incapable of normal speech or spellcasting.                                             |\n| 51-60  | The character must use his or her action each round to attack the nearest creature.                                          |\n| 61-70  | The character experiences vivid hallucinations and has disadvantage on ability checks.                                       |\n| 71-75  | The character does whatever anyone tells him or her to do that isn't obviously self- destructive.                            |\n| 76-80  | The character experiences an overpowering urge to eat something strange such as dirt, slime, or offal.                       |\n| 81-90  | The character is stunned.                                                                                                    |\n| 91-100 | The character falls unconscious.                                                                                             |\n\n**Long-Term Madness (table)**\n| d100   | Effect (lasts 1d10 × 10 hours)                                                                                                                                                                                                       |\n|--------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|\n| 01-10  | The character feels compelled to repeat a specific activity over and over, such as washing hands, touching things, praying, or counting coins.                                                                                       |\n| 11-20  | The character experiences vivid hallucinations and has disadvantage on ability checks.                                                                                                                                               |\n| 21-30  | The character suffers extreme paranoia. The character has disadvantage on Wisdom and Charisma checks.                                                                                                                                |\n| 31-40  | The character regards something (usually the source of madness) with intense revulsion, as if affected by the antipathy effect of the antipathy/sympathy spell.                                                                      |\n| 41-45  | The character experiences a powerful delusion. Choose a potion. The character imagines that he or she is under its effects.                                                                                                          |\n| 46-55  | The character becomes attached to a “lucky charm,” such as a person or an object, and has disadvantage on attack rolls, ability checks, and saving throws while more than 30 feet from it.                                           |\n| 56-65  | The character is blinded (25%) or deafened (75%).                                                                                                                                                                                    |\n| 66-75  | The character experiences uncontrollable tremors or tics, which impose disadvantage on attack rolls, ability checks, and saving throws that involve Strength or Dexterity.                                                           |\n| 76-85  | The character suffers from partial amnesia. The character knows who he or she is and retains racial traits and class features, but doesn't recognize other people or remember anything that happened before the madness took effect. |\n| 86-90  | Whenever the character takes damage, he or she must succeed on a DC 15 Wisdom saving throw or be affected as though he or she failed a saving throw against the confusion spell. The confusion effect lasts for 1 minute.            |\n| 91-95  | The character loses the ability to speak.                                                                                                                                                                                            |\n| 96-100 | The character falls unconscious. No amount of jostling or damage can wake the character.                                                                                                                                             |\n\n**Indefinite Madness (table)**\n| d100   | Flaw (lasts until cured)                                                                                                                 |\n|--------|------------------------------------------------------------------------------------------------------------------------------------------|\n| 01-15  | “Being drunk keeps me sane.”                                                                                                             |\n| 16-25  | “I keep whatever I find.”                                                                                                                |\n| 26-30  | “I try to become more like someone else I know-adopting his or her style of dress, mannerisms, and name.”                                |\n| 31-35  | “I must bend the truth, exaggerate, or outright lie to be interesting to other people.”                                                  |\n| 36-45  | “Achieving my goal is the only thing of interest to me, and I'll ignore everything else to pursue it.”                                   |\n| 46-50  | “I find it hard to care about anything that goes on around me.”                                                                          |\n| 51-55  | “I don't like the way people judge me all the time.”                                                                                     |\n| 56-70  | “I am the smartest, wisest, strongest, fastest, and most beautiful person I know.”                                                       |\n| 71-80  | “I am convinced that powerful enemies are hunting me, and their agents are everywhere I go. I am sure they're watching me all the time.” |\n| 81-85  | “There's only one person I can trust. And only I can see this special friend.”                                                           |\n| 86-95  | “I can't take anything seriously. The more serious the situation, the funnier I find it.”                                                |\n| 96-100 | “I've discovered that I really like killing people.”                                                                                     |\n## Curing Madness\n\nA _calm emotions_ spell can suppress the effects of madness, while a _lesser restoration_ spell can rid a character of a short-term or long-term madness. Depending on the source of the madness, _remove curse_ or _dispel evil_ might also prove effective. A _greater restoration_ spell or more powerful magic is required to rid a character of indefinite madness.",
+          "index": 2,
+          "initialHeaderLevel": 2,
+          "document": "srd-2014",
+          "ruleset": "srd_madness"
+        }
+      ]
+    }
+  ]
+}

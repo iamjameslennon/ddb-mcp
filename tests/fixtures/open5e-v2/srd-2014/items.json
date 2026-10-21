@@ -1,0 +1,95 @@
+{
+  "count": 237,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "key": "srd_abacus",
+      "name": "Abacus",
+      "desc": "An abacus.",
+      "category": {
+        "name": "Adventuring Gear",
+        "key": "adventuring-gear"
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "2.000",
+      "weight_unit": "lb",
+      "cost": "2.00",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      }
+    },
+    {
+      "key": "srd_longsword",
+      "name": "Longsword",
+      "desc": "A longsword",
+      "category": {
+        "name": "Weapon",
+        "key": "weapon"
+      },
+      "weapon": {
+        "name": "Longsword",
+        "key": "srd_longsword",
+        "damage_type": {
+          "name": "Slashing",
+          "key": "slashing"
+        },
+        "damage_dice": "1d8",
+        "properties": [
+          {
+            "property": {
+              "name": "Versatile",
+              "type": null,
+              "desc": "This weapon can be used with one or two hands. A damage value in parentheses appears with the property—the damage when the weapon is used with two hands to make a melee attack."
+            },
+            "detail": "1d10"
+          }
+        ],
+        "is_simple": false,
+        "is_martial": true,
+        "is_improvised": false,
+        "distance_unit": "feet"
+      },
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "3.000",
+      "weight_unit": "lb",
+      "cost": "15.00",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      }
+    },
+    {
+      "key": "srd_rope-hempen-50-feet",
+      "name": "Rope, hempen (50 feet)",
+      "desc": "Rope, whether made of hemp or silk, has 2 hit points and can be burst with a DC 17 Strength check.",
+      "category": {
+        "name": "Adventuring Gear",
+        "key": "adventuring-gear"
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "10.000",
+      "weight_unit": "lb",
+      "cost": "1.00",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      }
+    }
+  ]
+}

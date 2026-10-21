@@ -1,0 +1,114 @@
+{
+  "count": 4,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "key": "srd-2024_acolyte",
+      "benefits": [
+        {
+          "name": "Ability Scores",
+          "desc": "Intelligence, Wisdom, Charisma",
+          "type": "ability_score",
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Equipment",
+          "desc": "*Choose A or B:* (A) Calligrapher's Supplies, Book (prayers), Holy Symbol, Parchment (10 sheets), Robe, 8 GP; or (B) 50 GP",
+          "type": "equipment",
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Feat",
+          "desc": "Magic Initiate (Cleric)",
+          "type": "feat",
+          "crossreferences": {
+            "to": [
+              {
+                "anchor": "Magic Initiate",
+                "url": "https://api.open5e.com/v2/feats/srd-2024_magic-initiate/"
+              }
+            ]
+          }
+        },
+        {
+          "name": "Skill Proficiencies",
+          "desc": "Insight and Religion",
+          "type": "skill_proficiency",
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Tool Proficiency",
+          "desc": "Calligrapher's Supplies",
+          "type": "tool_proficiency",
+          "crossreferences": {
+            "to": []
+          }
+        }
+      ],
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      },
+      "name": "Acolyte",
+      "desc": ""
+    },
+    {
+      "key": "srd-2024_sage",
+      "benefits": [
+        {
+          "name": "Ability Scores",
+          "desc": "Constitution, Intelligence, Wisdom",
+          "type": "ability_score",
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Equipment",
+          "desc": "*Choose A or B:* (A) Quarterstaff, Calligrapher's Supplies, Book (history), Parchment (8 sheets), Robe, 8 GP; or (B) 50 GP",
+          "type": "equipment",
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Feat",
+          "desc": "Magic Initiate (Wizard)",
+          "type": "feat",
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Skill Proficiencies",
+          "desc": "Arcana and History",
+          "type": "skill_proficiency",
+          "crossreferences": {
+            "to": []
+          }
+        },
+        {
+          "name": "Tool Proficiency",
+          "desc": "Calligrapher's Supplies",
+          "type": "tool_proficiency",
+          "crossreferences": {
+            "to": []
+          }
+        }
+      ],
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      },
+      "name": "Sage",
+      "desc": ""
+    }
+  ]
+}

@@ -1,0 +1,75 @@
+{
+  "count": 499,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "key": "srd_armor-of-resistance-hide",
+      "name": "Armor of Resistance (Hide)",
+      "desc": "You have resistance to one type of damage while you wear this armor. The GM chooses the type or determines it randomly from the options below.\n\n| d10 | Damage Type |\n|-----|-------------|\n| 1   | Acid        |\n| 2   | Cold        |\n| 3   | Fire        |\n| 4   | Force       |\n| 5   | Lightning   |\n| 6   | Necrotic    |\n| 7   | Poison      |\n| 8   | Psychic     |\n| 9   | Radiant     |\n| 10  | Thunder     |",
+      "category": {
+        "name": "Armor",
+        "key": "armor"
+      },
+      "rarity": {
+        "name": "Rare",
+        "key": "rare",
+        "rank": 3
+      },
+      "weapon": null,
+      "armor": {
+        "name": "Hide",
+        "key": "srd_hide",
+        "category": "medium",
+        "ac_base": 12,
+        "ac_display": "12 + Dex modifier (max 2)",
+        "ac_add_dexmod": true,
+        "ac_cap_dexmod": 2,
+        "grants_stealth_disadvantage": false,
+        "strength_score_required": null
+      },
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "12.000",
+      "weight_unit": "lb",
+      "cost": null,
+      "requires_attunement": true,
+      "attunement_detail": null,
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      }
+    },
+    {
+      "key": "srd_bag-of-holding",
+      "name": "Bag of Holding",
+      "desc": "This bag has an interior space considerably larger than its outside dimensions, roughly 2 feet in diameter at the mouth and 4 feet deep. The bag can hold up to 500 pounds, not exceeding a volume of 64 cubic feet. The bag weighs 15 pounds, regardless of its contents. Retrieving an item from the bag requires an action.\r\n\r\nIf the bag is overloaded, pierced, or torn, it ruptures and is destroyed, and its contents are scattered in the Astral Plane. If the bag is turned inside out, its contents spill forth, unharmed, but the bag must be put right before it can be used again. Breathing creatures inside the bag can survive up to a number of minutes equal to 10 divided by the number of creatures (minimum 1 minute), after which time they begin to suffocate.\r\n\r\nPlacing a _bag of holding_ inside an extradimensional space created by a _handy haversack_, _portable hole_, or similar item instantly destroys both items and opens a gate to the Astral Plane. The gate originates where the one item was placed inside the other. Any creature within 10 feet of the gate is sucked through it to a random location on the Astral Plane. The gate then closes. The gate is one-way only and can't be reopened.",
+      "category": {
+        "name": "Wondrous Item",
+        "key": "wondrous-item"
+      },
+      "rarity": {
+        "name": "Uncommon",
+        "key": "uncommon",
+        "rank": 2
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "0.000",
+      "weight_unit": "lb",
+      "cost": "0.00",
+      "requires_attunement": false,
+      "attunement_detail": null,
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      }
+    }
+  ]
+}

@@ -1,0 +1,147 @@
+{
+  "count": 38,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "key": "srd-2024_dagger",
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      },
+      "properties": [
+        {
+          "property": {
+            "name": "Finesse",
+            "type": null,
+            "desc": "When making an attack with a Finesse weapon, use your choice of your Strength or Dexterity modifier for the attack and damage rolls. You must use the same modifier for both rolls."
+          },
+          "detail": null
+        },
+        {
+          "property": {
+            "name": "Light",
+            "type": null,
+            "desc": "When you take the Attack action on your turn and attack with a Light weapon, you can make one extra attack as a Bonus Action later on the same turn. That extra attack must be made with a different Light weapon, and you don't add your ability modifier to the extra attack's damage unless that modifier is negative."
+          },
+          "detail": null
+        },
+        {
+          "property": {
+            "name": "Nick",
+            "type": "Mastery",
+            "desc": "When you make the extra attack of the Light property, you can make it as part of the Attack action instead of as a Bonus Action. You can make this extra attack only once per turn."
+          },
+          "detail": null
+        },
+        {
+          "property": {
+            "name": "Thrown",
+            "type": null,
+            "desc": "If a weapon has the Thrown property, you can throw the weapon to make a ranged attack, and you can draw that weapon as part of the attack. If the weapon is a Melee weapon, use the same ability modifier for the attack and damage rolls that you use for a melee attack with that weapon."
+          },
+          "detail": "Range 20/60"
+        }
+      ],
+      "damage_type": {
+        "name": "Piercing",
+        "key": "piercing"
+      },
+      "distance_unit": "feet",
+      "name": "Dagger",
+      "damage_dice": "1d4",
+      "range": 20,
+      "long_range": 60,
+      "is_simple": true,
+      "is_improvised": false
+    },
+    {
+      "key": "srd-2024_longsword",
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      },
+      "properties": [
+        {
+          "property": {
+            "name": "Sap",
+            "type": "Mastery",
+            "desc": "If you hit a creature with this weapon, that creature has Disadvantage on its next attack roll before the start of your next turn."
+          },
+          "detail": null
+        },
+        {
+          "property": {
+            "name": "Versatile",
+            "type": null,
+            "desc": "A Versatile weapon can be used with one or two hands. A damage value in parentheses appears with the property. The weapon deals that damage when used with two hands to make a melee attack."
+          },
+          "detail": "1d10"
+        }
+      ],
+      "damage_type": {
+        "name": "Slashing",
+        "key": "slashing"
+      },
+      "distance_unit": "feet",
+      "name": "Longsword",
+      "damage_dice": "1d8",
+      "range": 0,
+      "long_range": 0,
+      "is_simple": false,
+      "is_improvised": false
+    },
+    {
+      "key": "srd-2024_musket",
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      },
+      "properties": [
+        {
+          "property": {
+            "name": "Ammunition",
+            "type": null,
+            "desc": "You can use a weapon that has the Ammunition property to make a ranged attack only if you have ammunition to fire from it. The type of ammunition required is specified with the weapon's range. Each attack expends one piece of ammunition. Drawing the ammunition is part of the attack (you need a free hand to load a one-handed weapon). After a fight, you can spend 1 minute to recover half the ammunition (round down) you used in the fight; the rest is lost."
+          },
+          "detail": "Range 40/120; Bullet"
+        },
+        {
+          "property": {
+            "name": "Loading",
+            "type": null,
+            "desc": "You can fire only one piece of ammunition from a Loading weapon when you use an action, a Bonus Action, or a Reaction to fire it, regardless of the number of attacks you can normally make."
+          },
+          "detail": null
+        },
+        {
+          "property": {
+            "name": "Slow",
+            "type": "Mastery",
+            "desc": "If you hit a creature with this weapon and deal damage to it, you can reduce its Speed by 10 feet until the start of your next turn. If the creature is hit more than once by weapons that have this property, the Speed reduction doesn't exceed 10 feet."
+          },
+          "detail": null
+        },
+        {
+          "property": {
+            "name": "Two-Handed",
+            "type": null,
+            "desc": "A Two-Handed weapon requires two hands when you attack with it."
+          },
+          "detail": null
+        }
+      ],
+      "damage_type": {
+        "name": "Piercing",
+        "key": "piercing"
+      },
+      "distance_unit": "feet",
+      "name": "Musket",
+      "damage_dice": "1d12",
+      "range": 40,
+      "long_range": 120,
+      "is_simple": false,
+      "is_improvised": false
+    }
+  ]
+}
