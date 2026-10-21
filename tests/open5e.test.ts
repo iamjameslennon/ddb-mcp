@@ -652,3 +652,34 @@ describe("o5GetRule query jump folds like the search", () => {
     expect(out.split("\n").slice(4).join("\n").startsWith("…")).toBe(false);
   });
 });
+
+describe("Open5e weapon and armour gets carry the items record's cost and weight", () => {
+  // Live srd-2024 items, 2026-10-21: Chain Mail 75 gp / 55 lb, Shield 10 gp / 6 lb.
+  const gear = (name: string, cost: string, weight: string) => ({
+    ...o5Record<Record<string, unknown>>("srd-2024", "items", "Rope"), key: `srd-2024_${name.toLowerCase().replace(/ /g, "-")}`, name,
+    category: { name: "Armor", key: "armor" }, cost, weight, weight_unit: "lb",
+  });
+  const lines = async (name: string, ed: "2024" | "2014") => (await o5GetEquipment(name, ed, "unavailable"))!.split("\n");
+
+  it("Longsword in both editions", async () => {
+    for (const ed of ["2024", "2014"] as const) {
+      const out = await lines("Longsword", ed);
+      expect(out[0]).toBe("Longsword (Martial Weapon)");
+      expect(out.at(-1)).toBe("Cost: 15 gp | Weight: 3 lb");
+    }
+  });
+
+  it("2024 Chain Mail and the 2024 Shield, from their items twins", async () => {
+    stubFetch(o5FixtureFetch({ "srd-2024/items": [...o5Fixture("srd-2024", "items"), gear("Chain Mail", "75.00", "55.000"), gear("Shield", "10.00", "6.000")] }));
+    const chain = await lines("Chain Mail", "2024");
+    expect(chain.slice(2)).toEqual(["AC: 16 | Requires STR 13 | Stealth disadvantage", "Cost: 75 gp | Weight: 55 lb"]);
+    const shield = await lines("Shield", "2024");
+    expect(shield.slice(2)).toEqual(["AC: +2", "Cost: 10 gp | Weight: 6 lb"]);
+  });
+
+  it("no items twin in the document: no cost line", async () => {
+    // The recorded srd-2024 items have no Chain Mail.
+    expect((await lines("Chain Mail", "2024")).some(l => l.startsWith("Cost:"))).toBe(false);
+    expect((await lines("Dagger", "2014")).some(l => l.startsWith("Cost:"))).toBe(false);
+  });
+});

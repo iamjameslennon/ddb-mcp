@@ -581,23 +581,32 @@ function formatO5MagicItem(hit: O5Hit<O5MagicItem>, origin: Open5eOrigin): strin
   return [`${i.name} (${i.category.name}, ${i.rarity.name}${attune})`, o5Label(hit.entry.edition, origin, hit), ``, stripTags(i.desc)].join("\n");
 }
 
-function formatO5Item(hit: O5Hit<O5Item>, origin: Open5eOrigin): string {
-  const i = hit.entry.record;
-  // A zero or missing cost or weight prints a dash.
+/** An items record's cost and weight; a zero or missing part prints a dash. */
+function costWeightLine(i: O5Item): string {
   const cost = Number(i.cost);
   const weight = Number(i.weight);
-  const lines = [
-    `${i.name} (${i.category.name})`,
-    o5Label(hit.entry.edition, origin, hit),
-    `Cost: ${cost > 0 ? `${cost} gp` : "—"} | Weight: ${weight > 0 ? `${weight}${i.weight_unit ? ` ${i.weight_unit}` : ""}` : "—"}`,
-  ];
+  return `Cost: ${cost > 0 ? `${cost} gp` : "—"} | Weight: ${weight > 0 ? `${weight}${i.weight_unit ? ` ${i.weight_unit}` : ""}` : "—"}`;
+}
+
+function formatO5Item(hit: O5Hit<O5Item>, origin: Open5eOrigin): string {
+  const i = hit.entry.record;
+  const lines = [`${i.name} (${i.category.name})`, o5Label(hit.entry.edition, origin, hit), costWeightLine(i)];
   const desc = stripTags(i.desc);
   if (desc) lines.push(``, desc);
   return lines.join("\n");
 }
 
-/** No cost or weight: those live on the weapon's `items` record. */
-function formatO5Weapon(hit: O5Hit<O5Weapon>, origin: Open5eOrigin): string {
+/**
+ * A weapon's or armour's `items` record in the same document, by Open5e twin
+ * key: it holds the cost and weight. The lookup has already loaded it.
+ */
+async function itemsTwin(entry: O5Entry<O5Record>): Promise<O5Item | undefined> {
+  const key = o5TwinName(entry.record.name);
+  return (await loadO5Document<O5Item>("items", entry.edition)).find(i => o5TwinName(i.name) === key);
+}
+
+/** Cost and weight come from the weapon's `items` record, when it has one. */
+function formatO5Weapon(hit: O5Hit<O5Weapon>, origin: Open5eOrigin, gear?: O5Item): string {
   const w = hit.entry.record;
   const lines = [`${w.name} (${w.is_simple ? "Simple" : "Martial"} Weapon)`, o5Label(hit.entry.edition, origin, hit)];
   const damage = [w.damage_dice, w.damage_type?.name].filter(Boolean).join(" ");
@@ -609,10 +618,12 @@ function formatO5Weapon(hit: O5Hit<O5Weapon>, origin: Open5eOrigin): string {
   const plain = props.filter(p => p.property.type !== "Mastery").map(p => `${p.property.name}${p.detail ? ` (${p.detail})` : ""}`);
   if (plain.length) lines.push(`Properties: ${plain.join(", ")}`);
   for (const p of props.filter(p => p.property.type === "Mastery")) lines.push(`Mastery: ${p.property.name}`);
+  if (gear) lines.push(costWeightLine(gear));
   return lines.join("\n");
 }
 
-function formatO5Armor(hit: O5Hit<O5Armor>, origin: Open5eOrigin): string {
+/** Cost and weight come from the armour's `items` record, when it has one. */
+function formatO5Armor(hit: O5Hit<O5Armor>, origin: Open5eOrigin, gear?: O5Item): string {
   const a = hit.entry.record;
   // The 2024 Shield's record says "heavy" and an AC of "2": it is a +2 shield.
   const shield = normalizeName(a.name) === "shield";
@@ -623,6 +634,7 @@ function formatO5Armor(hit: O5Hit<O5Armor>, origin: Open5eOrigin): string {
     `${a.name} (${shield ? "Shield" : `${category}Armor`})`,
     o5Label(hit.entry.edition, origin, hit),
     `AC: ${shield ? "+" : ""}${a.ac_display}${strReq}${stealth}`,
+    ...(gear ? [costWeightLine(gear)] : []),
   ].join("\n");
 }
 
@@ -662,8 +674,8 @@ export async function o5GetEquipment(name: string, rulesEdition: RulesEdition, o
   if (!hit) return null;
   switch (hit.entry.endpoint) {
     case "magicitems": return formatO5MagicItem(hit as O5Hit<O5MagicItem>, origin);
-    case "weapons": return formatO5Weapon(hit as O5Hit<O5Weapon>, origin);
-    case "armor": return formatO5Armor(hit as O5Hit<O5Armor>, origin);
+    case "weapons": return formatO5Weapon(hit as O5Hit<O5Weapon>, origin, await itemsTwin(hit.entry));
+    case "armor": return formatO5Armor(hit as O5Hit<O5Armor>, origin, await itemsTwin(hit.entry));
     default: return formatO5Item(hit as O5Hit<O5Item>, origin);
   }
 }
