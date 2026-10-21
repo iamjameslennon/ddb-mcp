@@ -350,7 +350,8 @@ describe("Open5e v2 equipment and character options", () => {
   });
   it("a class search by a renamed subclass's 2014 name finds the 2024 one", async () => {
     const out = await o5SearchClasses({ name: "school of evocation", rulesEdition: "2024" }, "unavailable");
-    expect(out.split("\n").slice(0, 2)).toEqual(["Evoker", U24]);   // single hit: detail block
+    // Single hit: the detail block, with the rename line a get would print.
+    expect(out.split("\n").slice(0, 3)).toEqual(["Evoker", U24, "(2014 name: School of Evocation · 2024 name: Evoker)"]);
     expect(out).toContain('1 2014 version hidden — rules_edition: "2014" shows it.');
   });
   it("a mundane item prints a dash for a zero cost or weight", async () => {
@@ -716,5 +717,33 @@ describe("Open5e species and background desc", () => {
     const elf = await detail(o5SearchRaces({ name: "elf", rulesEdition: "2024" }, "unavailable"));
     expect(elf[3]).toBe("");
     expect(elf[4]).toMatch(/^\*\*[^*]+\.\*\* /);
+  });
+});
+
+describe("Open5e single-hit option detail carries the get's rename line", () => {
+  it("no rename line when the query is the shown name, or when several lines are listed", async () => {
+    const evoker = (await o5SearchClasses({ name: "evoker", rulesEdition: "2024" }, "unavailable")).split("\n");
+    expect(evoker.slice(0, 2)).toEqual(["Evoker", U24]);
+    expect(evoker.some(l => l.includes("2014 name:"))).toBe(false);
+    expect(await o5SearchClasses({ rulesEdition: "2024" }, "unavailable")).not.toContain("2014 name:");
+  });
+
+  it("under 2014 the 2024 name reaches SRD 5.1's entry, with the rename line", async () => {
+    const school = (await o5SearchClasses({ name: "evoker", rulesEdition: "2014" }, "unavailable")).split("\n");
+    expect(school.slice(0, 3)).toEqual(["School of Evocation", U14, "(2014 name: School of Evocation · 2024 name: Evoker)"]);
+  });
+
+  it("decision 4 suppresses a false rename line: an SRD 5.2 entry under its 2014-era name", async () => {
+    // Contrived, so that a search reaches the case: each document files the subclass under the other edition's
+    // name, as SRD 5.2 keeps "Arcane Hand" for spells. The query matches SRD 5.1's "Evoker" exactly.
+    const swap = (doc: "srd-2024" | "srd-2014", from: string, to: string) =>
+      o5Fixture<Record<string, unknown>>(doc, "classes").map(c => (c.name === from ? { ...c, name: to } : c));
+    stubFetch(o5FixtureFetch({
+      "srd-2024/classes": swap("srd-2024", "Evoker", "School of Evocation"),
+      "srd-2014/classes": swap("srd-2014", "School of Evocation", "Evoker"),
+    }));
+    const out = (await o5SearchClasses({ name: "evoker", rulesEdition: "2024" }, "unavailable")).split("\n");
+    expect(out.slice(0, 2)).toEqual(["School of Evocation", U24]);
+    expect(out.some(l => l.includes("2014 name:"))).toBe(false);
   });
 });

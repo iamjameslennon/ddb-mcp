@@ -689,13 +689,16 @@ async function o5Parent<T extends O5Record>(endpoint: O5Endpoint, edition: Rules
 }
 
 /** An option search's reply: a single hit is its detail block (and the footer), else the result lines. */
-async function o5OptionReply<T>(
+async function o5OptionReply<T extends O5Record>(
   requested: RulesEdition,
   origin: "unavailable" | "not-found",
   result: { selected: Array<{ entry: O5Entry<T>; reason?: SelectionReason }>; hidden: number },
   opts: {
     /** Whether a single hit renders its detail block. */
     single: boolean;
+    /** The query and its endpoint: a single hit gets the rename line a get would print. */
+    name?: string;
+    endpoint: O5Endpoint;
     /** Counted in the heading: "race(s)". */
     counted: string;
     noMatch: string;
@@ -706,7 +709,11 @@ async function o5OptionReply<T>(
   const { selected, hidden } = result;
   if (opts.single && selected.length === 1) {
     const footer = searchFooter(requested, hidden);
-    return [await opts.detail(selected[0]), ...(footer ? [footer] : [])].join("\n");
+    // The rename line comes from the get's own lookup, kept only when that lookup shows the same entry.
+    const got = opts.name ? await o5Lookup<O5Record>([opts.endpoint], opts.name, requested) : null;
+    const hit = selected[0];
+    const same = got?.entry.edition === hit.entry.edition && got.entry.record.key === hit.entry.record.key;
+    return [await opts.detail({ ...hit, renamed: same ? got.renamed : undefined }), ...(footer ? [footer] : [])].join("\n");
   }
   const lines = await Promise.all(selected.map(({ entry }) => opts.line(entry)));
   return o5SearchReply(requested, origin, `Found ${selected.length} ${opts.counted} (SRD only):`, lines, hidden, opts.noMatch);
@@ -776,6 +783,8 @@ export async function o5SearchRaces(params: { name?: string; rulesEdition?: Rule
   const requested = params.rulesEdition ?? "2024";
   return o5OptionReply(requested, origin, await o5SelectSpecies(requested, params.name), {
     single: !!params.name,
+    name: params.name,
+    endpoint: "species",
     counted: "race(s)",
     noMatch: "No races found (SRD only).",
     detail: hit => formatO5Species(hit, origin),
@@ -823,6 +832,8 @@ export async function o5SearchClasses(params: { name?: string; rulesEdition?: Ru
   const requested = params.rulesEdition ?? "2024";
   return o5OptionReply(requested, origin, await o5Select<O5Class>(["classes"], requested, { name: params.name }), {
     single: !!params.name,
+    name: params.name,
+    endpoint: "classes",
     counted: "class(es)",
     noMatch: "No classes found (SRD only).",
     detail: hit => formatO5Class(hit, origin),
@@ -857,6 +868,8 @@ export async function o5SearchBackgrounds(params: { name?: string; rulesEdition?
   const requested = params.rulesEdition ?? "2024";
   return o5OptionReply(requested, origin, await o5Select<O5Background>(["backgrounds"], requested, { name: params.name }), {
     single: true,
+    name: params.name,
+    endpoint: "backgrounds",
     counted: "background(s)",
     noMatch: "No backgrounds found (SRD only).",
     detail: async hit => formatO5Background(hit, origin),
@@ -894,6 +907,8 @@ export async function o5SearchFeats(params: { name?: string; rulesEdition?: Rule
   const requested = params.rulesEdition ?? "2024";
   return o5OptionReply(requested, origin, await o5Select<O5Feat>(["feats"], requested, { name: params.name }), {
     single: true,
+    name: params.name,
+    endpoint: "feats",
     counted: "feat(s)",
     noMatch: "No feats found (SRD only).",
     detail: async hit => formatO5Feat(hit, origin),
