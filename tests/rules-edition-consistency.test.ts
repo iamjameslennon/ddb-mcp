@@ -77,8 +77,11 @@ const PATH_MARKER: Record<"ddb" | "open5e", Record<string, Partial<Record<"2024"
   open5e: {
     // The two documents' Fireball texts, live 2026-10-20.
     ddb_get_spell: { "2024": "fiery explosion", "2014": "pointing finger" },
-    // Under 2024, "Goblin" reaches Goblin Warrior through the rename table; under 2014 the title line is the bare name.
-    ddb_get_monster: { "2024": "Goblin Warrior", "2014": "Goblin\n" },
+    // Under 2024, "Goblin" reaches Goblin Warrior through the rename table; under 2014 the title line is the bare name, then the 2014 rules line.
+    ddb_get_monster: { "2024": "Goblin Warrior", "2014": "Goblin\nRules: 2014 · SRD 5.1" },
+    // The edition reaches o5GetMonsterStats: "Goblin" is Goblin Warrior under 2024 and Goblin under 2014.
+    ddb_rate_encounter: { "2024": "Goblin Warrior [2024]", "2014": "Goblin [2014]" },
+    ddb_roll_treasure: { "2024": "Goblin Warrior [2024]", "2014": "Goblin [2014]" },
     ddb_get_equipment: { "2024": "A fine blade.", "2014": "A fine blade." },
   },
 };
@@ -249,7 +252,7 @@ function o5Fetch(input: unknown): Promise<Response> {
     : [];
   const params = new URL(url).searchParams;
   const term = (params.get("search") ?? params.get("name"))?.toLowerCase();
-  // A request with neither param (e.g. the cantrip list) gets every fixture.
+  // A request with neither param (a no-name search) gets every fixture.
   const results = term === undefined ? fixtures : fixtures.filter(f => f.name.toLowerCase().includes(term));
   return Promise.resolve(jsonResponse({ count: results.length, next: null, results }));
 }

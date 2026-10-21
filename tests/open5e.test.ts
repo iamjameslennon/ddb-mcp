@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { open5eSearchHeader } from "../src/edition.js";
-import { o5FixtureFetch } from "./fixtures/open5e-v2.js";
+import { o5Fixture, o5FixtureFetch, o5Record } from "./fixtures/open5e-v2.js";
 import {
   clearOpen5eCache,
   o5GetSpell, o5GetMonster, o5GetItem, o5GetWeapon, o5GetArmor, o5GetRace,
   o5SearchSpells, o5SearchMonsters, o5SearchItems, o5SearchWeapons, o5SearchArmor,
   o5SearchRaces, o5SearchClasses, o5SearchBackgrounds, o5SearchFeats,
-  o5SearchSections, o5GetSection, o5GetMonsterStats,
+  o5SearchSections, o5GetSection, o5GetMonsterStats, crText, castingTime,
 } from "../src/open5e.js";
 
 const UNAVAILABLE = "Rules: 2014 · SRD 5.1 (Open5e fallback — D&D Beyond unavailable)";
@@ -22,12 +22,11 @@ const background = (name: string) => ({ name, skill_proficiencies: "Insight", eq
 const feat = (name: string) => ({ name, desc: "Grapple well." });
 const section = { slug: "combat", name: "Combat", desc: "Roll initiative.", parent: "", document__slug: "wotc-srd" };
 
-let empty = false;
 let raceResults: unknown[] = [race("Dwarf"), race("Elf")];
 
 function route(url: string): unknown {
   const path = new URL(url).pathname.replace("/v1", "");
-  const wrap = (results: unknown[]) => ({ count: results.length, next: null, results: empty ? [] : results });
+  const wrap = (results: unknown[]) => ({ count: results.length, next: null, results });
   if (path.startsWith("/magicitems/")) return wrap([item]);
   if (path.startsWith("/weapons/")) return wrap([weapon]);
   if (path.startsWith("/armor/")) return wrap([armor]);
@@ -48,7 +47,6 @@ function stubFetch(v2 = o5FixtureFetch()): void {
 
 beforeEach(() => {
   clearOpen5eCache();
-  empty = false;
   raceResults = [race("Dwarf"), race("Elf")];
   stubFetch();
 });
@@ -174,6 +172,111 @@ describe("Open5e v2 spells and monsters", () => {
     const out = await o5SearchMonsters({ cr: 0.25, type: "beast", size: "medium", rulesEdition: "2014" }, "unavailable");
     expect(out).toContain("• Wolf [2014] (CR 1/4, Medium Beast)");
     expect(out).not.toContain("Zombie");
+  });
+
+  it("an offset past the end gives the plain message, with no header or footer", async () => {
+    // 8 spells selected and 6 twins hidden: the page past them is still a plain no-match.
+    expect(await o5SearchSpells({ offset: 50, rulesEdition: "2024" }, "unavailable")).toBe("No spells found matching the criteria (SRD only).");
+  });
+
+  it("the school filter alone excludes a spell", async () => {
+    const out = await o5SearchSpells({ school: "Enchantment", rulesEdition: "2024" }, "unavailable");
+    expect(out).toContain("• Befuddlement [2024]");
+    expect(out).toContain("• Sleep [2024]");
+    expect(out).not.toContain("Fireball");
+    expect(await o5SearchSpells({ school: "evocation", rulesEdition: "2024" }, "unavailable")).not.toContain("Sleep");
+  });
+
+  it("the concentration filter alone excludes a spell", async () => {
+    const yes = await o5SearchSpells({ concentration: true, rulesEdition: "2024" }, "unavailable");
+    expect(yes).toContain("• Arcane Hand [2024] (Level 5 Evocation [C])");
+    expect(yes).not.toContain("Fireball");
+    const no = await o5SearchSpells({ concentration: false, rulesEdition: "2024" }, "unavailable");
+    expect(no).toContain("• Fireball [2024]");
+    expect(no).not.toContain("Arcane Hand");
+  });
+
+  it("the ritual filter alone excludes a spell", async () => {
+    const alarm = { ...o5Record<Record<string, unknown>>("srd-2024", "spells", "Sleep"), key: "srd-2024_alarm", name: "Alarm", ritual: true, concentration: false };
+    stubFetch(o5FixtureFetch({ "srd-2024/spells": [...o5Fixture("srd-2024", "spells"), alarm] }));
+    const yes = await o5SearchSpells({ ritual: true, rulesEdition: "2024" }, "unavailable");
+    expect(yes).toContain("• Alarm [2024] (Level 1 Enchantment [R])");
+    expect(yes).not.toContain("Sleep");
+    const no = await o5SearchSpells({ ritual: false, rulesEdition: "2024" }, "unavailable");
+    expect(no).toContain("• Sleep [2024]");
+    expect(no).not.toContain("Alarm");
+  });
+
+  it("every casting-time key is humanized; an unknown one is shown as-is", () => {
+    expect(Object.fromEntries(["action", "bonus-action", "reaction", "1minute", "10minutes", "1hour", "8hours", "12hours", "24hours", "special"]
+      .map(k => [k, castingTime(k)]))).toEqual({
+      action: "1 action", "bonus-action": "1 bonus action", reaction: "1 reaction", "1minute": "1 minute", "10minutes": "10 minutes",
+      "1hour": "1 hour", "8hours": "8 hours", "12hours": "12 hours", "24hours": "24 hours", special: "special",
+    });
+  });
+
+  it("a reaction spell shows its trigger after the casting time", async () => {
+    // Shield's reaction_condition, live 2026-10-21.
+    const shield = {
+      ...o5Record<Record<string, unknown>>("srd-2024", "spells", "Sleep"), key: "srd-2024_shield", name: "Shield", casting_time: "reaction",
+      reaction_condition: "which you take when you are hit by an attack roll or targeted by the Magic Missile spell",
+    };
+    stubFetch(o5FixtureFetch({ "srd-2024/spells": [shield] }));
+    expect(await o5GetSpell("Shield", "2024", "unavailable"))
+      .toContain("Casting Time: 1 reaction, which you take when you are hit by an attack roll or targeted by the Magic Missile spell\n");
+    expect(await o5GetSpell("Fireball", "2024", "unavailable")).toContain("Casting Time: 1 action\n");
+  });
+
+  it("decision 4, the 2014 side: an SRD 5.1 entry under its 2014 name keeps the rename line", async () => {
+    expect((await o5GetSpell("Bigby's Hand", "2014", "unavailable"))!.split("\n").slice(0, 3))
+      .toEqual([expect.stringMatching(/^Arcane Hand \(/), U14, "(2014 name: Arcane Hand · 2024 name: Bigby's Hand)"]);
+    expect((await o5GetMonster("Goblin Warrior", "2014", "unavailable"))!.split("\n").slice(0, 3))
+      .toEqual(["Goblin", U14, "(2014 name: Goblin · 2024 name: Goblin Warrior)"]);
+  });
+
+  it("actions carry their usage limits and legendary costs", async () => {
+    const dragon = (await o5GetMonster("Adult Red Dragon", "2014", "unavailable"))!;
+    expect(dragon).toMatch(/^ {2}Fire Breath \(Recharge 5–6\)\. /m);
+    expect(dragon).toMatch(/^ {2}Wing Attack \(Costs 2 Actions\)\. /m);
+    expect(dragon).toMatch(/^ {2}Tail Attack\. /m); // a cost of 1 adds nothing
+    expect(await o5GetMonster("Aboleth", "2024", "unavailable")).toMatch(/^ {2}Dominate Mind \(2\/Day\)\. /m);
+  });
+
+  it("Recharge 6, the RECHARGE type, a name already carrying its limit, and skill casing", async () => {
+    const base = o5Record<Record<string, unknown>>("srd-2024", "creatures", "Wolf");
+    const act = (name: string, usage_limits: unknown, order: number) => ({ name, desc: "Boo.", action_type: "ACTION", order_in_statblock: order, usage_limits });
+    const odd = {
+      ...base, key: "srd-2024_odd", name: "Oddity",
+      skill_bonuses: { sleight_of_hand: 5, animal_handling: 3, stealth: 4 },
+      actions: [
+        act("Gaze", { type: "RECHARGE_ON_ROLL", param: 6 }, 0),
+        act("Charge", { type: "RECHARGE", param: 5 }, 1),
+        act("Petrifying Gaze (Recharge 4-6)", { type: "RECHARGE", param: 4 }, 2),
+      ],
+    };
+    stubFetch(o5FixtureFetch({ "srd-2024/creatures": [odd] }));
+    const out = (await o5GetMonster("Oddity", "2024", "unavailable"))!;
+    expect(out).toMatch(/^ {2}Gaze \(Recharge 6\)\. /m);
+    expect(out).toMatch(/^ {2}Charge \(Recharge 5–6\)\. /m);
+    expect(out).toMatch(/^ {2}Petrifying Gaze \(Recharge 4-6\)\. /m);
+    expect(out).toMatch(/^Skills: Sleight of Hand \+5, Animal Handling \+3, Stealth \+4$/m);
+  });
+
+  it("the type line has no subtype parenthetical", async () => {
+    expect((await o5GetMonster("Adult Red Dragon", "2014", "unavailable"))!.split("\n")[2]).toBe("Huge Dragon, chaotic evil");
+  });
+
+  it("the size filter alone excludes a creature", async () => {
+    expect(await o5SearchMonsters({ cr: 0.25, type: "beast", size: "large", rulesEdition: "2014" }, "unavailable")).toBe("No monsters found (SRD only).");
+    const large = await o5SearchMonsters({ size: "Large", rulesEdition: "2024" }, "unavailable");
+    expect(large).toContain("• Aboleth [2024] (CR 10, Large Aberration)");
+    expect(large).toContain("• Allosaurus [2024] (CR 2, Large Beast)");
+    expect(large).not.toContain("Wolf");
+    expect(large).not.toContain("Zombie");
+  });
+
+  it("crText prints fractions exactly", () => {
+    expect([0, 0.125, 0.25, 0.5, 1, 10].map(crText)).toEqual(["0", "1/8", "1/4", "1/2", "1", "10"]);
   });
 
   it("a not-found search keeps its plain message", async () => {

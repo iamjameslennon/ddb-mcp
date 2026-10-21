@@ -227,6 +227,8 @@ interface O5Spell extends O5Record {
   level: number;
   school: { name: string; key: string };
   casting_time: string;
+  /** Reaction spells: "which you take when …". */
+  reaction_condition?: string | null;
   range_text: string;
   verbal: boolean;
   somatic: boolean;
@@ -252,6 +254,9 @@ const CASTING_TIME: Record<string, string> = {
   "24hours": "24 hours",
 };
 
+/** A v2 casting-time key as printed: "bonus-action" → "1 bonus action"; an unknown key as-is. */
+export const castingTime = (key: string): string => CASTING_TIME[key] ?? key;
+
 const spellLevel = (s: O5Spell): string => (s.level === 0 ? "Cantrip" : `Level ${s.level}`);
 
 function formatO5Spell(hit: O5Hit<O5Spell>, origin: Open5eOrigin): string {
@@ -263,7 +268,7 @@ function formatO5Spell(hit: O5Hit<O5Spell>, origin: Open5eOrigin): string {
   const lines = [
     `${s.name} (${spellLevel(s)} ${s.school.name}${conc}${ritual})`,
     o5Label(hit.entry.edition, origin, hit),
-    `Casting Time: ${CASTING_TIME[s.casting_time] ?? s.casting_time}`,
+    `Casting Time: ${castingTime(s.casting_time)}${s.reaction_condition ? `, ${s.reaction_condition}` : ""}`,
     `Range: ${s.range_text}`,
     `Components: ${components}`,
     `Duration: ${s.duration}`,
@@ -297,6 +302,9 @@ export async function o5SearchSpells(params: {
       && (params.ritual === undefined || s.ritual === params.ritual),
   });
 
+  const noMatch = "No spells found matching the criteria (SRD only).";
+  // An offset past the end lists nothing: the plain reply, as on the D&D Beyond path.
+  if (selected.length && offset >= selected.length) return noMatch;
   const page = selected.slice(offset, offset + limit);
   const lines = page.map(({ entry }) => {
     const s = entry.record;
@@ -309,7 +317,7 @@ export async function o5SearchSpells(params: {
   const heading = selected.length > offset + limit
     ? `Found ${selected.length} spell(s) (showing ${showing}, SRD only — use offset: ${offset + limit} for more):`
     : `Found ${selected.length} spell(s) (showing ${showing}, SRD only):`;
-  return o5SearchReply(requested, origin, heading, lines, hidden, "No spells found matching the criteria (SRD only).");
+  return o5SearchReply(requested, origin, heading, lines, hidden, noMatch);
 }
 
 export async function o5GetSpell(name: string, rulesEdition: RulesEdition, origin: Open5eOrigin): Promise<string | null> {
@@ -325,12 +333,44 @@ const ABILITIES: ReadonlyArray<readonly [Ability, string]> = [
   ["intelligence", "INT"], ["wisdom", "WIS"], ["charisma", "CHA"],
 ];
 
-interface O5Action { name: string; desc: string; action_type?: string | null; order_in_statblock?: number | null }
+interface O5Action {
+  name: string;
+  desc: string;
+  action_type?: string | null;
+  order_in_statblock?: number | null;
+  legendary_action_cost?: number | null;
+  usage_limits?: { type: string; param: number } | null;
+}
+
+/**
+ * An action's name with its usage limit and legendary cost, as v1 printed them:
+ * "Fire Breath (Recharge 5–6)", "Dominate Mind (2/Day)", "Wing Attack (Costs 2
+ * Actions)". RECHARGE (SRD 5.2 only) reads like RECHARGE_ON_ROLL. A few names
+ * already carry the text (Basilisk's "Petrifying Gaze (Recharge 4-6)"); it is not repeated.
+ */
+function actionName(a: O5Action): string {
+  let name = a.name;
+  const limit = a.usage_limits;
+  if (limit && (limit.type === "RECHARGE_ON_ROLL" || limit.type === "RECHARGE") && !/\(Recharge/i.test(name)) {
+    name += limit.param === 6 ? " (Recharge 6)" : ` (Recharge ${limit.param}–6)`;
+  } else if (limit?.type === "PER_DAY" && !/\/Day\b/i.test(name)) {
+    name += ` (${limit.param}/Day)`;
+  }
+  if (a.action_type === "LEGENDARY_ACTION" && (a.legendary_action_cost ?? 1) > 1 && !/\(Costs/i.test(name)) {
+    name += ` (Costs ${a.legendary_action_cost} Actions)`;
+  }
+  return name;
+}
+
+const MINOR_WORDS = new Set(["of", "and", "the"]);
+/** A v2 skill key as printed: "sleight_of_hand" → "Sleight of Hand". */
+const skillName = (key: string): string => key.split("_")
+  .map((w, i) => (i > 0 && MINOR_WORDS.has(w) ? w : w.charAt(0).toUpperCase() + w.slice(1)))
+  .join(" ");
 
 interface O5Creature extends O5Record {
   size?: { name: string; key: string } | null;
   type?: { name: string; key: string } | null;
-  subcategory?: string | null;
   alignment?: string | null;
   armor_class?: number | null;
   armor_detail?: string | null;
@@ -376,7 +416,7 @@ function formatO5Monster(hit: O5Hit<O5Creature>, origin: Open5eOrigin): string {
     .filter(([k]) => typeof m.saving_throws?.[k] === "number" && m.saving_throws[k] !== (mods[k] ?? 0))
     .map(([k, abbr]) => `${abbr} ${signed(m.saving_throws![k]!)}`);
   const skills = Object.entries(m.skill_bonuses ?? {})
-    .map(([k, v]) => `${k.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")} ${signed(v)}`)
+    .map(([k, v]) => `${skillName(k)} ${signed(v)}`)
     .join(", ");
   const abilityLine = (pairs: typeof ABILITIES) => pairs
     .map(([k, abbr]) => {
@@ -387,7 +427,7 @@ function formatO5Monster(hit: O5Hit<O5Creature>, origin: Open5eOrigin): string {
     })
     .filter(Boolean).join("  ");
 
-  const kind = [m.size?.name, m.type?.name].filter(Boolean).join(" ") + (m.subcategory ? ` (${m.subcategory})` : "");
+  const kind = [m.size?.name, m.type?.name].filter(Boolean).join(" ");
   const stats = [
     `CR ${crText(m.challenge_rating)}`,
     m.armor_class != null ? `AC ${m.armor_class}${m.armor_detail ? ` (${m.armor_detail})` : ""}` : null,
@@ -430,7 +470,7 @@ function formatO5Monster(hit: O5Hit<O5Creature>, origin: Open5eOrigin): string {
       .sort((a, b) => (a.order_in_statblock ?? 0) - (b.order_in_statblock ?? 0));
     if (!actions.length) continue;
     lines.push(``, heading);
-    for (const a of actions) lines.push(`  ${a.name}. ${a.desc}`);
+    for (const a of actions) lines.push(`  ${actionName(a)}. ${a.desc}`);
   }
 
   return lines.join("\n");
