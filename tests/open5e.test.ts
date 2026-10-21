@@ -1,4 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+// Logged out, so getMonsterStats goes straight to Open5e and no real session file is read.
+const sessionMocks = vi.hoisted(() => ({ hasValidSession: vi.fn(() => false) }));
+vi.mock("../src/session-fetch.js", async (orig) => ({
+  ...(await orig<typeof import("../src/session-fetch.js")>()),
+  hasValidSession: sessionMocks.hasValidSession,
+}));
 import { open5eSearchHeader, twinName } from "../src/edition.js";
 import { o5Fixture, o5FixtureFetch, o5Record } from "./fixtures/open5e-v2.js";
 import {
@@ -8,6 +15,8 @@ import {
   o5SearchRaces, o5SearchClasses, o5SearchBackgrounds, o5SearchFeats,
   o5SearchRules, o5GetRule, o5GetMonsterStats, crText, castingTime, humanize,
 } from "../src/open5e.js";
+import { getMonsterStats } from "../src/tools/monster.js";
+import { rateEncounter } from "../src/tools/encounter.js";
 
 function stubFetch(v2 = o5FixtureFetch()): void {
   vi.stubGlobal("fetch", vi.fn(async (url: string) => v2(url)));
@@ -494,16 +503,42 @@ describe("Open5e v2 equipment and options, fix round 1", () => {
 });
 
 describe("o5GetMonsterStats", () => {
-  it("o5GetMonsterStats: exact twin name only, edition from the document", async () => {
-    expect(await o5GetMonsterStats("Goblin", "2024")).toEqual({ name: "Goblin Warrior", crValue: 0.25, xp: 50, info: { ruleset: "2024", book: null } });
-    expect(await o5GetMonsterStats("goblin", "2014")).toMatchObject({ name: "Goblin", info: { ruleset: "2014", book: null } });
-    expect(await o5GetMonsterStats("Red Dragon", "2024")).toBeNull();   // partial: never a guess
-    expect(await o5GetMonsterStats("Allosaurus", "2014")).toMatchObject({ info: { ruleset: "2024", book: null } });
+  const RED_DRAGONS = [
+    { name: "Red Dragon Wyrmling", crValue: 4, xp: 1100 }, { name: "Young Red Dragon", crValue: 10, xp: 5900 },
+    { name: "Adult Red Dragon", crValue: 17, xp: 18000 }, { name: "Ancient Red Dragon", crValue: 24, xp: 62000 },
+  ];
+
+  it("an exact twin name first, the edition from the document", async () => {
+    expect(await o5GetMonsterStats("Goblin", "2024")).toEqual({ status: "found", name: "Goblin Warrior", crValue: 0.25, xp: 50, info: { ruleset: "2024", book: null } });
+    expect(await o5GetMonsterStats("goblin", "2014")).toMatchObject({ status: "found", name: "Goblin", info: { ruleset: "2014", book: null } });
+    expect(await o5GetMonsterStats("Allosaurus", "2014")).toMatchObject({ status: "found", info: { ruleset: "2024", book: null } });
+    // 2014-only, asked for under 2024.
+    expect(await o5GetMonsterStats("Orc", "2024")).toEqual({ status: "found", name: "Orc", crValue: 0.5, xp: 100, info: { ruleset: "2014", book: null } });
   });
 
-  it("returns null when Open5e fails", async () => {
+  it("a partial name spanning several creatures is ambiguous, one candidate per twin group, by CR then name", async () => {
+    expect(await o5GetMonsterStats("Red Dragon", "2024")).toEqual({ status: "ambiguous", candidates: RED_DRAGONS });
+    expect(await o5GetMonsterStats("red dragon", "2014")).toEqual({ status: "ambiguous", candidates: RED_DRAGONS });
+  });
+
+  it("a partial name within one twin group is found, picked by edition", async () => {
+    expect(await o5GetMonsterStats("Ancient Red", "2024")).toEqual({ status: "found", name: "Ancient Red Dragon", crValue: 24, xp: 62000, info: { ruleset: "2024", book: null } });
+    expect(await o5GetMonsterStats("Ancient Red", "2014")).toMatchObject({ status: "found", info: { ruleset: "2014", book: null } });
+    expect(await o5GetMonsterStats("Zzyzx", "2024")).toEqual({ status: "not-found" });
+  });
+
+  it("is not-found when Open5e fails", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("down"); }));
-    expect(await o5GetMonsterStats("Wolf", "2024")).toBeNull();
+    expect(await o5GetMonsterStats("Wolf", "2024")).toEqual({ status: "not-found" });
+  });
+
+  it("logged out, the encounter rater lists the Open5e candidates of an ambiguous name and rates the rest", async () => {
+    sessionMocks.hasValidSession.mockReturnValue(false);
+    expect(await getMonsterStats("Red Dragon")).toEqual({ status: "ambiguous", candidates: RED_DRAGONS });
+    const out = await rateEncounter([{ count: 4, level: 5 }], [{ name: "Red Dragon" }, { name: "Wolf" }], "2024");
+    expect(out).toContain('⚠ Ambiguous: "Red Dragon" could be Red Dragon Wyrmling (CR 4), Young Red Dragon (CR 10), Adult Red Dragon (CR 17), Ancient Red Dragon (CR 24) — use the full name.');
+    expect(out).toContain("1 × Wolf [2024] (CR 1/4");
+    expect(sessionMocks.hasValidSession).toHaveBeenCalled();
   });
 });
 

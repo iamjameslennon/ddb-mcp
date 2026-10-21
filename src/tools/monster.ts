@@ -27,7 +27,7 @@ import {
 } from "../source-filter.js";
 import { TtlCache } from "../cache.js";
 import { wrapUntrusted, stripHtmlRich } from "../utils.js";
-import { o5SearchMonsters, o5GetMonster, o5GetMonsterStats } from "../open5e.js";
+import { o5SearchMonsters, o5GetMonster, o5GetMonsterStats, type MonsterStatsResult } from "../open5e.js";
 import { renderSection, plainSection, sourceFraming, type SearchSection } from "./edition-search.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -878,10 +878,8 @@ function renamedFromQuery(query: string, shownName: string): { name2014: string;
     : { name2014: shownName, name2024: typed };
 }
 
-export type MonsterStatsResult =
-  | { status: "found"; name: string; crValue: number; xp: number; info: EditionInfo }
-  | { status: "not-found" }
-  | { status: "ambiguous"; candidates: Array<{ name: string; crValue: number; xp: number }> };
+/** Defined beside o5GetMonsterStats, which returns it too. */
+export type { MonsterStatsResult };
 
 /**
  * CR and XP for a named monster, for the encounter rater and the treasure
@@ -949,6 +947,5 @@ export async function getMonsterStats(name: string, opts: { rulesEdition?: Rules
     }
   }
 
-  const o5 = await o5GetMonsterStats(name, requested);
-  return o5 ? { status: "found", ...o5 } : { status: "not-found" };
+  return o5GetMonsterStats(name, requested);
 }

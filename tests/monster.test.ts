@@ -18,7 +18,7 @@ vi.mock("../src/session-fetch.js", () => {
 vi.mock("../src/open5e.js", () => ({
   o5SearchMonsters: vi.fn(async () => "O5 SEARCH RESULT"),
   o5GetMonster: vi.fn(async () => "O5 MONSTER RESULT"),
-  o5GetMonsterStats: vi.fn(async () => null),
+  o5GetMonsterStats: vi.fn(async () => ({ status: "not-found" })),
 }));
 
 import { getMonster, searchMonsters, getMonsterStats, clearMonsterCache } from "../src/tools/monster.js";
@@ -801,7 +801,7 @@ describe("monsterTiebreak final tie-break", () => {
 describe("second-round review follow-ups", () => {
   it("getMonsterStats takes the Open5e stats when logged out", async () => {
     vi.mocked(hasValidSession).mockReturnValue(false);
-    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce({ name: "wolf", crValue: 0.25, xp: 50, info: { ruleset: "2024", book: null } });
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce({ status: "found", name: "wolf", crValue: 0.25, xp: 50, info: { ruleset: "2024", book: null } });
     expect(await getMonsterStats("Wolf")).toMatchObject({ status: "found", name: "wolf", crValue: 0.25, xp: 50 });
     expect(o5GetMonsterStats).toHaveBeenCalledWith("Wolf", "2024");
   });
@@ -948,7 +948,7 @@ describe("getMonsterStats result union", () => {
   });
 
   it("an Open5e result keeps its document's ruleset", async () => {
-    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce({ name: "Wolf Lord", crValue: 2, xp: 450, info: { ruleset: "2024", book: null } });
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce({ status: "found", name: "Wolf Lord", crValue: 2, xp: 450, info: { ruleset: "2024", book: null } });
     expect(await getMonsterStats("Wolf Lord")).toEqual({ status: "found", name: "Wolf Lord", crValue: 2, xp: 450, info: { ruleset: "2024", book: null } });
   });
 

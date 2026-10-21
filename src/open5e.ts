@@ -1040,22 +1040,56 @@ const CR_XP_O5: Record<string, number> = {
   "26": 90000, "27": 105000, "28": 120000, "29": 135000, "30": 155000,
 };
 
+/** A monster's CR and XP for the encounter rater and treasure generator; getMonsterStats returns the same shape. */
+export type MonsterStatsResult =
+  | { status: "found"; name: string; crValue: number; xp: number; info: EditionInfo }
+  | { status: "not-found" }
+  | { status: "ambiguous"; candidates: Array<{ name: string; crValue: number; xp: number }> };
+
 /**
- * CR and XP for an exact-twin-name SRD monster, or null (no match, unknown CR,
- * or any Open5e failure). Never guesses: only an exact twin name counts, and
- * the edition comes from the document the pick is in.
+ * CR and XP for an SRD monster, as the D&D Beyond branch of getMonsterStats
+ * finds them: the exact twin name first, else the partial matches grouped by
+ * twin name. One group is found, picked by edition; several are ambiguous, one
+ * candidate per group, by CR then name. Never a guess. The edition comes from
+ * the document the pick is in. A record with an unknown CR is skipped; any
+ * Open5e failure is not-found.
  */
-export async function o5GetMonsterStats(name: string, rulesEdition: RulesEdition): Promise<{ name: string; crValue: number; xp: number; info: EditionInfo } | null> {
+export async function o5GetMonsterStats(name: string, rulesEdition: RulesEdition): Promise<MonsterStatsResult> {
   try {
+    const known = (await o5Entries<O5Creature>(["creatures"], rulesEdition))
+      .filter(e => CR_XP_O5[crText(e.record.challenge_rating)] !== undefined);
+    const tiebreak = o5Tiebreak<O5Creature>(["creatures"]);
+    const stats = (e: O5Entry<O5Creature>) => ({
+      name: e.record.name, crValue: e.record.challenge_rating, xp: CR_XP_O5[crText(e.record.challenge_rating)],
+    });
+    const found = (group: Array<O5Entry<O5Creature>>): MonsterStatsResult | null => {
+      const picked = selectByEdition(group, rulesEdition, o5Info, tiebreak);
+      return picked ? { status: "found", ...stats(picked.entry), info: o5Info(picked.entry) } : null;
+    };
+
     const key = o5TwinName(name);
-    const group = (await o5Entries<O5Creature>(["creatures"], rulesEdition)).filter(e => o5TwinName(e.record.name) === key);
-    const picked = selectByEdition(group, rulesEdition, o5Info, o5Tiebreak<O5Creature>(["creatures"]));
-    if (!picked) return null;
-    const m = picked.entry.record;
-    const xp = CR_XP_O5[crText(m.challenge_rating)];
-    if (xp === undefined) return null;
-    return { name: m.name, crValue: m.challenge_rating, xp, info: o5Info(picked.entry) };
+    const exact = known.filter(e => o5TwinName(e.record.name) === key);
+    if (exact.length) return found(exact) ?? { status: "not-found" };
+
+    const query = normalizeName(name);
+    if (!query) return { status: "not-found" };
+    const groups = new Map<string, Array<O5Entry<O5Creature>>>();
+    for (const e of known) {
+      if (!normalizeName(e.record.name).includes(query)) continue;
+      const k = o5TwinName(e.record.name);
+      groups.set(k, [...(groups.get(k) ?? []), e]);
+    }
+    if (groups.size === 1) return found([...groups.values()][0]) ?? { status: "not-found" };
+    if (groups.size > 1) {
+      const candidates = [...groups.values()]
+        .map(group => selectByEdition(group, rulesEdition, o5Info, tiebreak))
+        .filter(picked => picked !== null)
+        .map(picked => stats(picked.entry))
+        .sort((a, b) => a.crValue - b.crValue || a.name.localeCompare(b.name));
+      return { status: "ambiguous", candidates };
+    }
+    return { status: "not-found" };
   } catch {
-    return null;
+    return { status: "not-found" };
   }
 }
