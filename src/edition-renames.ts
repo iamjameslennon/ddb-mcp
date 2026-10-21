@@ -147,6 +147,24 @@ export const EDITION_RENAMES: ReadonlyArray<readonly [name2014: string, name2024
   ["Spikes, Iron (10)", "Iron Spikes"],
   ["Tent, Two-Person", "Tent"],
 
+  // ── Items: armour ──
+  // Read from Open5e v2 /armor/ (srd-2014 → srd-2024), live 2026-10-21; "Armor" appended to the name, otherwise
+  // identical: same category, ac_display, strength_score_required and grants_stealth_disadvantage on each pair
+  // light, "11 + Dex modifier", no STR, no stealth disadvantage
+  ["Leather", "Leather Armor"],
+  // light, "11 + Dex modifier", no STR, stealth disadvantage
+  ["Padded", "Padded Armor"],
+  // light, "12 + Dex modifier", no STR, no stealth disadvantage
+  ["Studded leather", "Studded Leather Armor"],
+  // medium, "12 + Dex modifier (max 2)", no STR, no stealth disadvantage
+  ["Hide", "Hide Armor"],
+  // medium, "15 + Dex modifier (max 2)", no STR, stealth disadvantage
+  ["Half plate", "Half Plate Armor"],
+  // heavy, "17", STR 15, stealth disadvantage
+  ["Splint", "Splint Armor"],
+  // heavy, "18", STR 15, stealth disadvantage
+  ["Plate", "Plate Armor"],
+
   // ── Backgrounds ──
   // 2014 id 8 (BR14) → 2024 id 406474 (PHB24); orphan lists: the 2014 Criminal (with its Spy variant) revised; Stealth, thieves' tools, crowbar kept
   ["Criminal / Spy", "Criminal"],
