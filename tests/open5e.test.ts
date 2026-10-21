@@ -87,6 +87,9 @@ describe("Open5e labels", () => {
   it("a get keeps the query jump and the max_chars note", async () => {
     const out = (await o5GetRule("Damage and Healing", "2024", 500, "resting"))!;
     expect(out).toContain("*(Showing first 500 of ");
+    const body = out.split("\n").slice(3).join("\n");
+    expect(body.startsWith("…")).toBe(true);
+    expect(body.slice(0, 300).toLowerCase()).toContain("resting");
   });
   it("a search lists the requested document's chapters, tagged", async () => {
     const out = await o5SearchRules("cover", "2014");
