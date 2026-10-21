@@ -523,6 +523,13 @@ describe("o5GetMonsterStats", () => {
     expect(await o5GetMonsterStats("red dragon", "2014")).toEqual({ status: "ambiguous", candidates: RED_DRAGONS });
   });
 
+  it("a hyphen-less name finds hyphenated creatures, exact (Will-o'-Wisp) and partial (Half-Red Dragon Veteran)", async () => {
+    const wisp = { ...o5Record<Record<string, unknown>>("srd-2024", "creatures", "Wolf"), key: "srd-2024_will-o-wisp", name: "Will-o'-Wisp" };
+    stubFetch(o5FixtureFetch({ "srd-2024/creatures": [...o5Fixture("srd-2024", "creatures"), wisp] }));
+    expect(await o5GetMonsterStats("will o' wisp", "2024")).toMatchObject({ status: "found", name: "Will-o'-Wisp", info: { ruleset: "2024" } });
+    expect(await o5GetMonsterStats("half red dragon", "2014")).toMatchObject({ status: "found", name: "Half-Red Dragon Veteran", crValue: 5 });
+  });
+
   it("a partial name within one twin group is found, picked by edition", async () => {
     expect(await o5GetMonsterStats("Ancient Red", "2024")).toEqual({ status: "found", name: "Ancient Red Dragon", crValue: 24, xp: 62000, info: { ruleset: "2024", book: null } });
     expect(await o5GetMonsterStats("Ancient Red", "2014")).toMatchObject({ status: "found", info: { ruleset: "2014", book: null } });
@@ -583,6 +590,53 @@ describe("Open5e twin keys fold hyphens", () => {
     expect(out.slice(0, 3)).toEqual(["Three-Dragon Ante (Adventuring Gear)", U24, "(2014 name: Three-Dragon Ante Set · 2024 name: Three-Dragon Ante)"]);
     const back = (await o5GetEquipment("Three-Dragon Ante", "2014", "unavailable"))!.split("\n");
     expect(back.slice(0, 3)).toEqual(["Three-Dragon Ante Set (Adventuring Gear)", U14, "(2014 name: Three-Dragon Ante Set · 2024 name: Three-Dragon Ante)"]);
+  });
+
+  describe("hyphen-less queries", () => {
+    const ante14 = { ...o5Record<Record<string, unknown>>("srd-2014", "items", "Abacus"), key: "srd_three-dragon-ante-set", name: "Three-Dragon Ante Set" };
+    const ante24 = { ...o5Record<Record<string, unknown>>("srd-2024", "items", "Rope"), key: "srd-2024_three-dragon-ante", name: "Three-Dragon Ante" };
+    const LINE = "(2014 name: Three-Dragon Ante Set · 2024 name: Three-Dragon Ante)";
+    const withAnte = (only?: "srd-2014" | "srd-2024") => stubFetch(o5FixtureFetch({
+      "srd-2014/items": [...o5Fixture("srd-2014", "items"), ...(only === "srd-2024" ? [] : [ante14])],
+      "srd-2024/items": [...o5Fixture("srd-2024", "items"), ...(only === "srd-2014" ? [] : [ante24])],
+    }));
+
+    it.each([
+      ["Three-Dragon Ante Set", "2024", "Three-Dragon Ante"],
+      ["Three-Dragon Ante", "2014", "Three-Dragon Ante Set"],
+      ["three dragon ante set", "2024", "Three-Dragon Ante"],
+      ["three dragon ante", "2014", "Three-Dragon Ante Set"],
+    ] as const)("%s under %s shows the SRD's own spellings on both sides of the rename line", async (query, edition, shown) => {
+      withAnte();
+      const out = (await o5GetEquipment(query, edition, "unavailable"))!.split("\n");
+      expect(out[0]).toBe(`${shown} (Adventuring Gear)`);
+      expect(out[2]).toBe(LINE);
+    });
+
+    it("with only the shown edition loaded, the other side is the table's spelling, not the typed text", async () => {
+      withAnte("srd-2024");
+      const out = (await o5GetEquipment("three dragon ante set", "2024", "unavailable"))!.split("\n");
+      expect(out[0]).toBe("Three-Dragon Ante (Adventuring Gear)");
+      expect(out).toContain(LINE);
+    });
+
+    it("a hyphen-less search finds a hyphenated name", async () => {
+      withAnte();
+      const out = await o5SearchItems({ name: "three dragon ante", rulesEdition: "2024" }, "unavailable");
+      expect(out.split("\n").filter(l => l.startsWith("• "))).toEqual(["• Three-Dragon Ante [2024] (Adventuring Gear)"]);
+      expect(await o5SearchItems({ name: "dragon ante set", rulesEdition: "2014" }, "unavailable")).toContain("• Three-Dragon Ante Set [2014]");
+    });
+
+    it("a hyphen-less partial lookup finds a hyphenated name", async () => {
+      withAnte();
+      expect((await o5GetEquipment("dragon ante", "2024", "unavailable"))!.split("\n")[0]).toBe("Three-Dragon Ante (Adventuring Gear)");
+    });
+
+    it("a hyphen-less species search finds a hyphenated name", async () => {
+      const half = { ...o5Record<Record<string, unknown>>("srd-2024", "species", "Goliath"), key: "srd-2024_half-elf-x", name: "Half-Elf Test" };
+      stubFetch(o5FixtureFetch({ "srd-2024/species": [...o5Fixture("srd-2024", "species"), half] }));
+      expect(await o5SearchRaces({ name: "half elf test", rulesEdition: "2024" }, "unavailable")).toContain("Half-Elf Test");
+    });
   });
 
   it("the D&D Beyond twinName does not fold hyphens", () => {

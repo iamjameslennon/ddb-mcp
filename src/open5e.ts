@@ -116,10 +116,13 @@ const o5Renamer = createTwinNamer(O5_RENAMES.map(([name2014, name2024]) => [fold
  * pairs (see OPEN5E_ARMOUR_RENAMES), with hyphens folded on both sides. D&D
  * Beyond's twinName does not fold them. `spell` keeps the table's own spelling.
  */
-const o5TwinName: TwinNamer = Object.assign((name: string) => o5Renamer(foldHyphens(name)), { spell: createTwinNamer(O5_RENAMES).spell });
+const o5TwinName: TwinNamer = Object.assign((name: string) => o5Renamer(foldHyphens(name)), { spell: (normalized: string) => O5_SPELLINGS.get(o5Folded(normalized)) });
 
 /** A name as its own twin key would be without renames: normalized, hyphens folded. */
 const o5Folded = (name: string): string => normalizeName(foldHyphens(name));
+
+/** Each table spelling by its folded form, so a hyphen-less query still gets the table's own spelling. */
+const O5_SPELLINGS = new Map(O5_RENAMES.flatMap(pair => pair.map(spelling => [o5Folded(spelling), spelling] as const)));
 
 /** Endpoint order (as given), then record key. */
 function o5Tiebreak<T extends O5Record>(endpoints: readonly O5Endpoint[]): (a: O5Entry<T>, b: O5Entry<T>) => number {
@@ -137,7 +140,7 @@ async function o5Entries<T extends O5Record>(endpoints: readonly O5Endpoint[], r
 /** A single lookup: exact twin name across both documents, else a partial match, then the requested edition's entry of that group. */
 async function o5Lookup<T extends O5Record>(endpoints: readonly O5Endpoint[], name: string, requested: RulesEdition): Promise<O5Hit<T> | null> {
   const entries = await o5Entries<T>(endpoints, requested);
-  const query = normalizeName(name);
+  const query = o5Folded(name);
   const byEndpoint = o5Tiebreak<T>(endpoints);
   const found = lookupByName(entries, name, requested, {
     name: e => e.record.name,
@@ -145,19 +148,22 @@ async function o5Lookup<T extends O5Record>(endpoints: readonly O5Endpoint[], na
     twinName: o5TwinName,
     // Within the picked edition, the exact name beats endpoint order: SRD 5.1's
     // "Plate Armor" is the items record, not the armour record "Plate".
-    tiebreak: (a, b) => (normalizeName(a.record.name) === query ? 0 : 1) - (normalizeName(b.record.name) === query ? 0 : 1)
+    tiebreak: (a, b) => (o5Folded(a.record.name) === query ? 0 : 1) - (o5Folded(b.record.name) === query ? 0 : 1)
       || byEndpoint(a, b),
     // The requested document first, then names starting with the query, then the shortest, then alphabetical.
-    partialMatch: (all, q) => all
-      .filter(e => normalizeName(e.record.name).includes(q))
-      .sort((a, b) =>
-        (a.edition === requested ? 0 : 1) - (b.edition === requested ? 0 : 1)
-        || (normalizeName(a.record.name).startsWith(q) ? 0 : 1) - (normalizeName(b.record.name).startsWith(q) ? 0 : 1)
-        || a.record.name.length - b.record.name.length
-        || a.record.name.localeCompare(b.record.name))[0],
+    partialMatch: (all, normalized) => {
+      const q = o5Folded(normalized);
+      return all
+        .filter(e => o5Folded(e.record.name).includes(q))
+        .sort((a, b) =>
+          (a.edition === requested ? 0 : 1) - (b.edition === requested ? 0 : 1)
+          || (o5Folded(a.record.name).startsWith(q) ? 0 : 1) - (o5Folded(b.record.name).startsWith(q) ? 0 : 1)
+          || a.record.name.length - b.record.name.length
+          || a.record.name.localeCompare(b.record.name))[0];
+    },
   });
   if (!found) return null;
-  return { entry: found.entry, reason: found.reason, renamed: o5Renamed(found.entry, found.renamed) };
+  return { entry: found.entry, reason: found.reason, renamed: o5Renamed(found.entry, found.renamed, entries) };
 }
 
 /**
@@ -165,15 +171,23 @@ async function o5Lookup<T extends O5Record>(endpoints: readonly O5Endpoint[], na
  * some 2014-era names (Arcane Hand): a rename line is printed only when the
  * shown entry carries its own edition's spelling. A punctuation-only difference
  * (a hyphen) is no rename. The shown entry's edition orients the pair, because
- * a hyphen-folded key no longer equals a 2024 name's normalized form.
+ * a hyphen-folded key no longer equals a 2024 name's normalized form. The other
+ * side is the SRD record's own name when the other document has one, else the
+ * rename table's spelling, never the typed query (which may have lost its hyphens).
  */
-function o5Renamed(entry: O5Entry<O5Record>, renamed: O5Hit<unknown>["renamed"]): O5Hit<unknown>["renamed"] {
+function o5Renamed(entry: O5Entry<O5Record>, renamed: O5Hit<unknown>["renamed"], entries: ReadonlyArray<O5Entry<O5Record>>): O5Hit<unknown>["renamed"] {
   if (!renamed || o5Folded(renamed.name2014) === o5Folded(renamed.name2024)) return undefined;
   const shownName = entry.record.name;
-  const otherName = normalizeName(renamed.name2024) === normalizeName(shownName) ? renamed.name2014 : renamed.name2024;
-  const ownSpelling = o5Folded(shownName) === o5TwinName(shownName);
-  if (entry.edition === "2024") return ownSpelling ? { name2014: otherName, name2024: shownName } : undefined;
-  return ownSpelling ? undefined : { name2014: shownName, name2024: otherName };
+  const shown = o5Folded(shownName);
+  const ownSpelling = shown === o5TwinName(shownName);
+  if (ownSpelling !== (entry.edition === "2024")) return undefined;
+  const pair = O5_RENAMES.find(([name2014, name2024]) => o5Folded(entry.edition === "2024" ? name2024 : name2014) === shown);
+  // SRD 5.2 keeps some 2014-era names, so an other-side record counts only when it carries its own edition's spelling.
+  const other = entries.find(e => e.edition !== entry.edition && o5TwinName(e.record.name) === o5TwinName(shownName)
+    && (o5Folded(e.record.name) === o5TwinName(e.record.name)) === (e.edition === "2024"));
+  const otherName = other?.record.name ?? (pair && (entry.edition === "2024" ? pair[0] : pair[1]));
+  if (!otherName) return undefined;
+  return entry.edition === "2024" ? { name2014: otherName, name2024: shownName } : { name2014: shownName, name2024: otherName };
 }
 
 /** A search over both documents: one entry per twin group, the other edition's twins hidden and counted. Sorted by name. */
@@ -183,12 +197,12 @@ async function o5Select<T extends O5Record>(
   opts: { name?: string; passes?: (e: O5Entry<T>) => boolean },
 ): Promise<{ selected: Array<{ entry: O5Entry<T>; reason?: SelectionReason }>; hidden: number }> {
   const entries = await o5Entries<T>(endpoints, requested);
-  const query = opts.name ? normalizeName(opts.name) : "";
+  const query = opts.name ? o5Folded(opts.name) : "";
   const { selected, hidden } = groupAndSelect(entries, requested, {
     info: o5Info,
     twinKey: e => o5TwinName(e.record.name),
     tiebreak: o5Tiebreak<T>(endpoints),
-    nameMatches: query ? e => normalizeName(e.record.name).includes(query) : undefined,
+    nameMatches: query ? e => o5Folded(e.record.name).includes(query) : undefined,
     passes: opts.passes,
     countFilteredPicks: true,
   });
@@ -1110,11 +1124,11 @@ export async function o5GetMonsterStats(name: string, rulesEdition: RulesEdition
     const exact = known.filter(e => o5TwinName(e.record.name) === key);
     if (exact.length) return found(exact) ?? { status: "not-found" };
 
-    const query = normalizeName(name);
+    const query = o5Folded(name);
     if (!query) return { status: "not-found" };
     const groups = new Map<string, Array<O5Entry<O5Creature>>>();
     for (const e of known) {
-      if (!normalizeName(e.record.name).includes(query)) continue;
+      if (!o5Folded(e.record.name).includes(query)) continue;
       const k = o5TwinName(e.record.name);
       groups.set(k, [...(groups.get(k) ?? []), e]);
     }
