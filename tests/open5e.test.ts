@@ -578,3 +578,25 @@ describe("Open5e rarity filter", () => {
     expect(uncommon.every(l => l.endsWith(", Uncommon)"))).toBe(true);
   });
 });
+
+describe("Open5e searches capped at 20 lines", () => {
+  const many = (doc: "srd-2024" | "srd-2014", endpoint: "creatures" | "items", base: string, n: number) =>
+    Array.from({ length: n }, (_, i) => ({ ...o5Record<Record<string, unknown>>(doc, endpoint, base), key: `${doc}_x${i}`, name: `${base} ${String(i).padStart(2, "0")}` }));
+  const REFINE = "*Refine your search to see more results.*";
+
+  it("a capped monster search adds the refine hint before the footer", async () => {
+    stubFetch(o5FixtureFetch({ "srd-2024/creatures": [...o5Fixture("srd-2024", "creatures"), ...many("srd-2024", "creatures", "Wolf", 25)] }));
+    const out = (await o5SearchMonsters({ name: "wolf", rulesEdition: "2024" }, "unavailable")).split("\n");
+    expect(out.filter(l => l.startsWith("• "))).toHaveLength(20);
+    expect(out.slice(-3)).toEqual(["", REFINE, '1 2014 version hidden — rules_edition: "2014" shows it.']);
+  });
+
+  it("a capped item search adds the refine hint; an uncapped one does not", async () => {
+    stubFetch(o5FixtureFetch({ "srd-2024/items": many("srd-2024", "items", "Rope", 21), "srd-2014/items": [] }));
+    const out = (await o5SearchItems({ name: "rope", rulesEdition: "2024" }, "unavailable")).split("\n");
+    expect(out.filter(l => l.startsWith("• "))).toHaveLength(20);
+    expect(out.slice(-2)).toEqual(["", REFINE]);
+    expect(await o5SearchItems({ name: "rope 0", rulesEdition: "2024" }, "unavailable")).not.toContain(REFINE);
+    expect(await o5SearchMonsters({ name: "wolf", rulesEdition: "2024" }, "unavailable")).not.toContain(REFINE);
+  });
+});

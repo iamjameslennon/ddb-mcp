@@ -222,6 +222,14 @@ function o5SearchReply(
   return noMatch;
 }
 
+/** Monster and item searches list at most this many lines, then D&D Beyond's refine hint. */
+const SEARCH_CAP = 20;
+
+/** The first SEARCH_CAP lines, plus D&D Beyond's refine hint when more were found. */
+function capped(lines: string[]): string[] {
+  return lines.length > SEARCH_CAP ? [...lines.slice(0, SEARCH_CAP), `\n*Refine your search to see more results.*`] : lines;
+}
+
 /** A float challenge rating as printed: 0.25 → "1/4". */
 export function crText(cr: number): string {
   if (cr === 0.125) return "1/8";
@@ -504,16 +512,15 @@ export async function o5SearchMonsters(params: {
       && (!params.size || lowerEq(params.size, m.size?.key, m.size?.name)),
   });
 
-  const shown = selected.slice(0, 20);
-  const lines = shown.map(({ entry }) => {
+  const lines = selected.slice(0, SEARCH_CAP + 1).map(({ entry }) => {
     const m = entry.record;
     const kind = [m.size?.name, m.type?.name].filter(Boolean).join(" ");
     return `• ${m.name} ${editionTag(o5Info(entry))} (CR ${crText(m.challenge_rating)}${kind ? `, ${kind}` : ""})`;
   });
   return o5SearchReply(
     requested, origin,
-    `Found ${selected.length} monster(s) (showing ${shown.length}, SRD only):`,
-    lines, hidden, "No monsters found (SRD only).",
+    `Found ${selected.length} monster(s) (showing ${Math.min(selected.length, SEARCH_CAP)}, SRD only):`,
+    capped(lines), hidden, "No monsters found (SRD only).",
   );
 }
 
@@ -637,16 +644,15 @@ export async function o5SearchItems(params: {
       && (!type || i.category.name.toLowerCase().includes(type)),
   });
 
-  const shown = selected.slice(0, 20);
-  const lines = shown.map(({ entry }) => {
+  const lines = selected.slice(0, SEARCH_CAP + 1).map(({ entry }) => {
     const i = entry.record;
     const rarityName = entry.endpoint === "magicitems" ? `, ${(i as O5MagicItem).rarity.name}` : "";
     return `• ${i.name} ${editionTag(o5Info(entry))} (${i.category.name}${rarityName})`;
   });
   return o5SearchReply(
     requested, origin,
-    `Found ${selected.length} item(s) (showing ${shown.length}, SRD only):`,
-    lines, hidden, "No items found matching the criteria (SRD only).",
+    `Found ${selected.length} item(s) (showing ${Math.min(selected.length, SEARCH_CAP)}, SRD only):`,
+    capped(lines), hidden, "No items found matching the criteria (SRD only).",
   );
 }
 
