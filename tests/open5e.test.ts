@@ -600,3 +600,20 @@ describe("Open5e searches capped at 20 lines", () => {
     expect(await o5SearchMonsters({ name: "wolf", rulesEdition: "2024" }, "unavailable")).not.toContain(REFINE);
   });
 });
+
+describe("o5GetRule query jump folds like the search", () => {
+  it("a straight apostrophe, odd case and doubled spaces jump to SRD 5.2's curly \"can’t\"; the output keeps the original text", async () => {
+    const out = (await o5GetRule("The Order of Combat", "2024", 4000, "If you CAN'T  decide"))!;
+    const body = out.split("\n").slice(4).join("\n");
+    expect(body.startsWith("…\n\n")).toBe(true);
+    const at = body.indexOf("If you can’t decide what to do");
+    expect(at).toBeGreaterThan(0);
+    expect(at).toBeLessThan(220);
+    expect(body).not.toContain("can't decide");
+  });
+
+  it("a query that is not in the text leaves the start alone", async () => {
+    const out = (await o5GetRule("The Order of Combat", "2024", 4000, "zzzz"))!;
+    expect(out.split("\n").slice(4).join("\n").startsWith("…")).toBe(false);
+  });
+});

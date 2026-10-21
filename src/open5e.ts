@@ -957,6 +957,32 @@ export async function o5SearchRules(query: string | undefined, rulesEdition: Rul
   ].join("\n");
 }
 
+/**
+ * Where a normalized query first occurs in `text` folded like normalizeName
+ * (case, curly apostrophes, whitespace runs), as an index into the original
+ * text, so the jump keeps its characters. -1 when it does not occur.
+ */
+function foldedIndexOf(text: string, normalizedQuery: string): number {
+  let folded = "";
+  const origin: number[] = [];   // folded index → text index
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (/\s/.test(ch)) {
+      if (folded.endsWith(" ")) continue;
+      folded += " ";
+      origin.push(i);
+      continue;
+    }
+    // toLowerCase can lengthen a character ("İ"): each output unit maps back to it.
+    for (const unit of ch.replace(/[‘’]/g, "'").toLowerCase()) {
+      folded += unit;
+      origin.push(i);
+    }
+  }
+  const at = folded.indexOf(normalizedQuery);
+  return at === -1 ? -1 : origin[at];
+}
+
 export async function o5GetRule(
   nameOrSlug: string,
   rulesEdition: RulesEdition,
@@ -976,9 +1002,10 @@ export async function o5GetRule(
     ? section.desc
     : [ruleset.desc, ...ruleset.rules.map(s => `### ${s.name}\n${s.desc}`)].filter(Boolean).join("\n\n");
 
-  // If query provided, start near the first occurrence
-  if (query) {
-    const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  // If query provided, start near the first occurrence, matched as the search matches
+  const q = query ? normalizeName(query) : "";
+  if (q) {
+    const idx = foldedIndexOf(text, q);
     if (idx !== -1) {
       const start = Math.max(0, idx - 200);
       text = (start > 0 ? "…\n\n" : "") + text.slice(start);
