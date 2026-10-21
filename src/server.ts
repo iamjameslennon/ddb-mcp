@@ -16,8 +16,9 @@ import { rateEncounter, targetEncounterCr } from "./tools/encounter.js";
 import type { Difficulty } from "./tools/encounter.js";
 import { generateTreasure } from "./tools/treasure.js";
 import { MAX_TREASURE_ENTRIES, MAX_MONSTER_COUNT, MAX_INDIVIDUAL_ROLLS, MAX_MONSTER_NAME_CHARS } from "./treasure-limits.js";
-import { getCondition, searchSpells, getSpell, searchItems, getItem, searchRaces, searchClasses, searchBackgrounds, searchFeats, searchClassFeatures, searchRacialTraits, searchRules, getRule, clearReferenceCache } from "./tools/reference.js";
+import { searchSpells, getSpell, searchItems, getItem, searchRaces, searchClasses, searchBackgrounds, searchFeats, searchClassFeatures, searchRacialTraits, searchRules, getRule, clearReferenceCache } from "./tools/reference.js";
 import { clearOpen5eCache } from "./open5e.js";
+import { getCondition } from "./tools/conditions.js";
 import { RULES_EDITION_TOOL_NOTE, TREASURE_RULES_EDITION_NOTE, SERVER_INSTRUCTIONS } from "./edition.js";
 
 export const server = new McpServer(
@@ -611,13 +612,14 @@ server.tool(
 
 server.tool(
   "ddb_get_condition",
-  "Look up the rules text for a D&D condition (Blinded, Charmed, Frightened, Grappled, etc.). No login required.",
+  "Look up the rules text for a D&D condition (Blinded, Charmed, Exhaustion, Grappled, etc.): SRD 5.2 (2024) by default, SRD 5.1 (2014) on request. No login required. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().min(1).describe("Condition name (e.g. 'frightened', 'grappled')"),
+    rules_edition: RULES_EDITION_PARAM,
   },
   READ_ONLY_LOCAL,
-  async ({ name }) => {
-    const result = getCondition(name);
+  async ({ name, rules_edition }) => {
+    const result = getCondition(name, rules_edition);
     return { content: [{ type: "text", text: result }] };
   }
 );

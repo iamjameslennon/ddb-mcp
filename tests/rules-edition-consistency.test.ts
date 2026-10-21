@@ -50,6 +50,7 @@ const EXEMPT = /^(?:Error:|No \w[^\n]* (?:found|matching)|[^\n]*\bnot found\b|[^
 // Every tool whose input schema has rules_edition must appear here; Task-3+ phases extend the fixtures.
 const FIXTURES: Record<string, (ed: "2024" | "2014") => Record<string, unknown>> = {
   ddb_search_spells: ed => ({ name: "fire", rules_edition: ed }),
+  ddb_get_condition: ed => ({ name: "Exhaustion", rules_edition: ed }),
   ddb_get_spell: ed => ({ name: "Fireball", rules_edition: ed }),
   ddb_search_monsters: ed => ({ name: "goblin", rules_edition: ed }),
   ddb_get_monster: ed => ({ name: "Goblin", rules_edition: ed }),
@@ -118,6 +119,7 @@ const EDITION_CHECK: Record<string, (ed: "2024" | "2014") => EditionCheck> = {
   ddb_search_racial_traits: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
   ddb_search_site: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
   ddb_search_rules: ed => ({ present: [searchHeader({ rulesDoc: ed })], resultTag: true }),
+  ddb_get_condition: ed => ({ present: [`Rules: ${ed} · SRD 5.${ed === "2024" ? 2 : 1}`, ed === "2024" ? "You die if your Exhaustion level is 6." : "Level 6: Death"] }),
   ddb_get_rules: ed => ({ present: [`Rules: ${ed} · SRD 5.${ed === "2024" ? 2 : 1}`] }),
   ddb_rate_encounter: ed => ({ present: [dmgRulesLine(ed)] }),
   ddb_encounter_cr: ed => ({ present: [dmgRulesLine(ed)] }),

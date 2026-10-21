@@ -205,7 +205,7 @@ Can a character use the Help action to assist with a skill check?
 | `ddb_get_spell` | Get the full description of any spell by name. Defaults to 2024; set `rules_edition: "2014"` for the 2014 text. A `Rules:` line names the ruleset, with a reason when the other edition is shown. Pass `source` to choose a specific book's version. |
 | `ddb_search_equipment` | Search the item/equipment compendium by name, rarity, or type. Covers mundane weapons, armour, and magic items. Defaults to 2024; set `rules_edition: "2014"` for the 2014 versions. Each result is tagged `[2024]` / `[2014]`. Pass `source` (a book's slug, short name or title) to list that book's items of either edition. |
 | `ddb_get_equipment` | Get the full stats and description of any item — weapon damage, properties, range, STR requirement, etc. Defaults to 2024; set `rules_edition: "2014"` for the 2014 version. A `Rules:` line names the ruleset, with a reason when the other edition is shown. Pass `source` to choose a specific book's version. |
-| `ddb_get_condition` | Look up the rules text for a condition (Poisoned, Stunned, Grappled, etc.). No login required. |
+| `ddb_get_condition` | Look up the rules text for a condition (Poisoned, Stunned, Grappled, etc.) in 2024 (default) or 2014 rules via `rules_edition`. No login required. |
 | `ddb_search_rules` | Search all 45 SRD rules sections by keyword. No login required. |
 | `ddb_get_rules` | Read the full text of any SRD rules section (Spellcasting, Attacking, Combat, Multiclassing, Rest, Environment, etc.). Supports `query` to jump to a keyword within long sections. No login required. |
 | `ddb_search_races` | Search all races and subraces in the D&D Beyond compendium (including homebrew). Defaults to 2024; set `rules_edition: "2014"` for the 2014 versions. Each result is tagged `[2024]` / `[2014]`. Pass `source` (a book's slug, short name or title) to list that book's species of either edition. By default a 2024 species hides the 2014 subraces of the same base race (the 2024 Elf replaces High Elf and Wood Elf); name the subrace or use `rules_edition: "2014"` to see them. |
@@ -656,3 +656,5 @@ Forked from [ddb-mcp/ddb-mcp](https://github.com/ddb-mcp/ddb-mcp). The monster, 
 ## License
 
 MIT
+
+This work includes material from the System Reference Document 5.2 by Wizards of the Coast LLC, licensed under CC-BY-4.0. The 2024 text served by `ddb_get_condition`, and the Open5e SRD 5.2 content used as a fallback, come from SRD 5.2.1 under CC-BY-4.0.
