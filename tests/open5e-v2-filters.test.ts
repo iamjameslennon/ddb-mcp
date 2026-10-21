@@ -44,6 +44,9 @@ describe.each(ENDPOINTS)("%s", endpoint => {
     vi.stubGlobal("fetch", vi.fn(o5FixtureFetch({ [`${O5_DOC[ed]}/${endpoint}`]: mixed })));
     const got = await loadO5Document(endpoint, ed);
     expect(got.every(r => docKey(r) === O5_DOC[ed])).toBe(true);
+    const own = o5Fixture(O5_DOC[ed], endpoint).map(r => r.name);
+    expect(got.length).toBeGreaterThan(0);
+    expect(got.map(r => r.name)).toEqual(expect.arrayContaining(own));
     for (const n of ONLY[endpoint][ed]) expect(got.map(r => r.name)).toContain(n);
     for (const n of ONLY[endpoint][ed === "2024" ? "2014" : "2024"]) expect(got.map(r => r.name)).not.toContain(n);
   });
@@ -58,6 +61,12 @@ describe("spells loader", () => {
     const got = await loadO5Document("spells", "2024");
     expect(got.map(r => r.name)).toEqual(["A", "B", "C"]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][0]).toBe(`${spellsUrl}&page=2`);
+  });
+
+  it("throws when next repeats a URL already fetched", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => json({ count: 1, next: spellsUrl, results: [rec("A")] })));
+    await expect(loadO5Document("spells", "2024")).rejects.toThrow("paging loop");
   });
 
   it("treats a missing next as the last page", async () => {
@@ -71,8 +80,35 @@ describe("spells loader", () => {
     const fetchMock = vi.fn(o5FixtureFetch());
     vi.stubGlobal("fetch", fetchMock);
     await Promise.all([loadO5Document("spells", "2024"), loadO5Document("spells", "2024")]);
-    await loadO5Document("spells", "2024");
+    const again = await loadO5Document("spells", "2024");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(again).toEqual(o5Fixture("srd-2024", "spells"));
+  });
+
+  it("keys the cache by full URL, so the editions stay separate", async () => {
+    const fetchMock = vi.fn(o5FixtureFetch());
+    vi.stubGlobal("fetch", fetchMock);
+    const a = await loadO5Document("spells", "2024");
+    const b = await loadO5Document("spells", "2014");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(a.every(r => docKey(r) === "srd-2024")).toBe(true);
+    expect(b.every(r => docKey(r) === "srd-2014")).toBe(true);
+    expect(await loadO5Document("spells", "2024")).toEqual(a);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("a clear during an in-flight fetch is not undone when it resolves", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(r => { release = r; });
+    const stub = o5FixtureFetch();
+    const fetchMock = vi.fn(async (input: unknown) => { await gate; return stub(input); });
+    vi.stubGlobal("fetch", fetchMock);
+    const first = loadO5Document("spells", "2024");
+    clearOpen5eCache();
+    release();
+    await first;
+    await loadO5Document("spells", "2024");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("never caches a failure", async () => {
@@ -81,7 +117,7 @@ describe("spells loader", () => {
       .mockImplementationOnce(o5FixtureFetch());
     vi.stubGlobal("fetch", fetchMock);
     await expect(loadO5Document("spells", "2024")).rejects.toThrow("Open5e 503");
-    await expect(loadO5Document("spells", "2024")).resolves.toBeInstanceOf(Array);
+    await expect(loadO5Document("spells", "2024")).resolves.toEqual(o5Fixture("srd-2024", "spells"));
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 

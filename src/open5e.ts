@@ -44,7 +44,7 @@ async function o5fetch(path: string): Promise<unknown> {
 // used is one whole document per endpoint (document__key__in + limit), with
 // every other match done client-side.
 
-const OPEN5E_V2 = "https://api.open5e.com/v2";
+const O5_V2 = "https://api.open5e.com/v2";
 const O5_TIMEOUT_MS = 20_000;
 
 export type O5Endpoint = "spells" | "creatures" | "items" | "magicitems" | "weapons" | "armor" | "species" | "classes" | "backgrounds" | "feats" | "rulesets";
@@ -62,8 +62,11 @@ const o5Pending = new Map<string, Promise<unknown[]>>();
 
 async function fetchPages(firstUrl: string): Promise<unknown[]> {
   const all: unknown[] = [];
+  const seen = new Set<string>();
   let url: string | null = firstUrl;
   while (url) {
+    if (seen.has(url)) throw new Error(`Open5e paging loop: ${new URL(url).pathname}`);
+    seen.add(url);
     const resp: Response = await fetch(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(O5_TIMEOUT_MS) });
     if (!resp.ok) throw new Error(`Open5e ${resp.status}: ${new URL(url).pathname}`);
     const body = await resp.json() as { next?: string | null; results?: unknown[] };
@@ -76,7 +79,7 @@ async function fetchPages(firstUrl: string): Promise<unknown[]> {
 /** One whole SRD document of an endpoint, other documents' records dropped. Cached 1 h; concurrent callers share one fetch; failures are never cached. */
 export async function loadO5Document<T extends O5Record>(endpoint: O5Endpoint, edition: RulesEdition): Promise<T[]> {
   const doc = O5_DOC[edition];
-  const url = `${OPEN5E_V2}/${endpoint}/?document__key__in=${doc}&limit=1000`;
+  const url = `${O5_V2}/${endpoint}/?document__key__in=${doc}&limit=1000`;
   const cached = open5eCache.get(url) as T[] | undefined;
   if (cached !== undefined) return cached;
   let pending = o5Pending.get(url);
@@ -84,7 +87,8 @@ export async function loadO5Document<T extends O5Record>(endpoint: O5Endpoint, e
     const p: Promise<unknown[]> = fetchPages(url)
       .then(records => {
         const kept = (records as T[]).filter(r => docKey(r) === doc);
-        open5eCache.set(url, kept);
+        // A clear while this fetch was in flight dropped its entry: don't repopulate.
+        if (o5Pending.get(url) === p) open5eCache.set(url, kept);
         return kept;
       })
       .finally(() => { if (o5Pending.get(url) === p) o5Pending.delete(url); });
