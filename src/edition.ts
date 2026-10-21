@@ -512,6 +512,8 @@ const REASON_TEXT = {
   "no-2014-version": "(no 2014 version found — 2024 text shown)",
   "rules-miss-2024": "(no matching 2024 rules section — 2014 text shown)",
   "rules-miss-2014": "(no matching 2014 rules section — 2024 text shown)",
+  "rules-search-miss-2024": "(no matching 2024 rules sections — 2014 sections listed)",
+  "rules-search-miss-2014": "(no matching 2014 rules sections — 2024 sections listed)",
   "treasure-no-2014": "(no 2014 version exists — 2024 tables used)",
   // ddb_get_monster: the requested edition's stat block is locked to the account, the other edition's isn't.
   "locked-2024": "(the 2024 version isn't available to this account — 2014 text shown)",
@@ -532,6 +534,11 @@ export const TREASURE_RULES_EDITION_NOTE =
 export const DMG_SOURCE_ID: Readonly<Record<RulesEdition, number>> = { "2024": 146, "2014": 3 };
 
 export type RulesLineReason = keyof typeof REASON_TEXT;
+
+/** A reason as its own line, for replies whose Rules line is a search header. */
+export function reasonLine(reason: RulesLineReason): string {
+  return REASON_TEXT[reason];
+}
 
 const SRD_NAME: Record<RulesEdition, string> = { "2024": "SRD 5.2", "2014": "SRD 5.1" };
 

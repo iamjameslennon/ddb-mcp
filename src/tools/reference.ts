@@ -40,7 +40,7 @@ import {
   o5SearchSpells, o5GetSpell,
   o5SearchItems, o5GetEquipment,
   o5SearchRaces, o5SearchClasses, o5SearchBackgrounds, o5SearchFeats,
-  o5SearchSections, o5GetSection,
+  o5SearchRules, o5GetRule,
 } from "../open5e.js";
 
 const CHARACTER_SERVICE = "https://character-service.dndbeyond.com";
@@ -1490,16 +1490,17 @@ export async function searchRacialTraitsSection(params: RacialTraitSearchParams)
 // RULES SECTIONS
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function searchRules(query?: string): Promise<string> {
-  return o5SearchSections(query);
+export async function searchRules(query?: string, rulesEdition: RulesEdition = "2024"): Promise<string> {
+  return o5SearchRules(query, rulesEdition);
 }
 
 export async function getRule(
   nameOrSlug: string,
   maxChars?: number,
-  query?: string
+  query?: string,
+  rulesEdition: RulesEdition = "2024"
 ): Promise<string> {
-  const result = await o5GetSection(nameOrSlug, maxChars, query);
+  const result = await o5GetRule(nameOrSlug, rulesEdition, maxChars, query);
   if (!result) {
     return `Rules section "${nameOrSlug}" not found. Try ddb_search_rules to browse available sections.`;
   }

@@ -5,22 +5,21 @@
  * results. All functions return the same string format as DDB equivalents so
  * callers can swap them in transparently.
  *
- * API: https://api.open5e.com/v1/ — no auth required.
- * SRD content only (wotc-srd slug). Coverage is narrower than DDB but
- * includes all core 5e content: 24 cantrips, ~320 spells, ~325 monsters,
- * magic items, 12 classes, most races, and key backgrounds.
+ * API: https://api.open5e.com/v2/ — no auth required.
+ * Two SRD documents: srd-2024 (SRD 5.2) and srd-2014 (SRD 5.1). Each endpoint
+ * is loaded one whole document at a time and matched client-side; the two
+ * documents are selected together by edition, like D&D Beyond entries.
+ * Coverage is narrower than DDB but includes the core SRD content: spells,
+ * creatures, items, species, classes, backgrounds, feats and rules chapters.
  */
 
 import { TtlCache } from "./cache.js";
 import {
-  createTwinNamer, editionTag, groupAndSelect, lookupByName, normalizeName, open5eSearchHeader, renameLine, rulesLine, searchFooter,
+  createTwinNamer, editionTag, groupAndSelect, lookupByName, normalizeName, open5eSearchHeader, reasonLine, renameLine, rulesLine, searchFooter,
   searchHeader, selectByEdition,
   type EditionInfo, type Open5eOrigin, type RulesEdition, type SelectionReason,
 } from "./edition.js";
 import { EDITION_RENAMES, OPEN5E_ARMOUR_RENAMES } from "./edition-renames.js";
-
-const OPEN5E = "https://api.open5e.com/v1";
-const SRD = "wotc-srd";
 
 // 1-hour cache — Open5e data doesn't change often
 const open5eCache = new TtlCache<unknown>(60 * 60_000, 100);
@@ -29,19 +28,6 @@ const open5eCache = new TtlCache<unknown>(60 * 60_000, 100);
 export function clearOpen5eCache(): void {
   open5eCache.clear();
   o5Pending.clear();
-}
-
-async function o5fetch(path: string): Promise<unknown> {
-  const cached = open5eCache.get(path);
-  if (cached !== undefined) return cached;
-
-  const resp = await fetch(`${OPEN5E}${path}`, {
-    headers: { Accept: "application/json" },
-  });
-  if (!resp.ok) throw new Error(`Open5e ${resp.status}: ${path}`);
-  const data = await resp.json();
-  open5eCache.set(path, data);
-  return data;
 }
 
 // ── v2 document loader ────────────────────────────────────────────────────────
@@ -104,12 +90,6 @@ export async function loadO5Document<T extends O5Record>(endpoint: O5Endpoint, e
 }
 
 // ── Edition labels ────────────────────────────────────────────────────────────
-
-// Interim: the v1 rules sections below serve SRD 5.1 only, until they move to v2.
-const O5_INFO: EditionInfo = { ruleset: "2014", book: null };
-
-/** Line 2 of a single lookup. */
-const label = (origin: Open5eOrigin): string => rulesLine(O5_INFO, { open5e: origin });
 
 // ── Selection over both SRD documents ─────────────────────────────────────────
 // Both documents of an endpoint are selected together, each record's ruleset
@@ -351,7 +331,7 @@ interface O5Action {
 }
 
 /**
- * An action's name with its usage limit and legendary cost, as v1 printed them:
+ * An action's name with its usage limit and legendary cost, as the old client printed them:
  * "Fire Breath (Recharge 5–6)", "Dominate Mind (2/Day)", "Wing Attack (Costs 2
  * Actions)". RECHARGE (SRD 5.2 only) reads like RECHARGE_ON_ROLL. A few names
  * already carry the text (Basilisk's "Petrifying Gaze (Recharge 4-6)"); it is not repeated.
@@ -867,54 +847,97 @@ export async function o5SearchFeats(params: { name?: string; rulesEdition?: Rule
   });
 }
 
-// ── RULES SECTIONS ────────────────────────────────────────────────────────────
+// ── RULES ─────────────────────────────────────────────────────────────────────
+// Rules come from the rulesets endpoint: a chapter with its sections. They are
+// not twin-grouped: the requested document is searched first, then the other.
 
-interface O5Section {
-  slug: string;
-  name: string;
-  desc: string;         // plain markdown — no HTML stripping needed
-  parent: string;
-  document__slug: string;
+interface O5RuleSection { key: string; name: string; desc: string; index: number }
+interface O5Ruleset extends O5Record { desc: string; rules: O5RuleSection[] }
+
+/** Everything after a key's first "_": `srd-2024_combat_cover` → `combat_cover`. */
+const ruleSlug = (key: string): string => key.slice(key.indexOf("_") + 1);
+
+const otherEdition = (e: RulesEdition): RulesEdition => (e === "2024" ? "2014" : "2024");
+
+const rulesetsOf = async (edition: RulesEdition): Promise<O5Ruleset[]> =>
+  (await loadO5Document<O5Ruleset>("rulesets", edition)).map(r => ({ ...r, rules: [...(r.rules ?? [])].sort((a, b) => a.index - b.index) }));
+
+/** The query as a slug: normalized, spaces → "-". */
+const slugOf = (query: string): string => normalizeName(query).replace(/ /g, "-");
+
+interface RuleMatch { ruleset: O5Ruleset; section?: O5RuleSection }
+
+function findRule(rulesets: O5Ruleset[], query: string): RuleMatch | null {
+  const q = normalizeName(query);
+  const slug = slugOf(query);
+  const same = (r: { key: string; name: string }): boolean =>
+    normalizeName(r.name) === q || r.key.toLowerCase() === q || ruleSlug(r.key) === slug;
+  const sectionSame = (r: O5RuleSection): boolean => same(r) || ruleSlug(r.key).split("_").pop() === slug;
+  const sections = (test: (r: O5RuleSection) => boolean): RuleMatch | null => {
+    for (const ruleset of rulesets) {
+      const section = ruleset.rules.find(test);
+      if (section) return { ruleset, section };
+    }
+    return null;
+  };
+  const exactSet = rulesets.find(same);
+  if (exactSet) return { ruleset: exactSet };
+  const exactSection = sections(sectionSame);
+  if (exactSection) return exactSection;
+  const partSet = rulesets.find(r => normalizeName(r.name).includes(q));
+  if (partSet) return { ruleset: partSet };
+  return sections(r => normalizeName(r.name).includes(q));
 }
 
-export async function o5SearchSections(query?: string): Promise<string> {
-  const qs = new URLSearchParams({ document__slug: SRD, limit: query ? "20" : "50" });
-  if (query) qs.set("search", query);
-
-  const data = await o5fetch(`/sections/?${qs}`) as { count: number; results: O5Section[] };
-  if (!data.results.length) return `No rules sections found matching "${query ?? ""}" (SRD only).`;
-
-  const lines = data.results.map(s => `• **${s.name}** (slug: \`${s.slug}\`)`);
+export async function o5SearchRules(query: string | undefined, rulesEdition: RulesEdition): Promise<string> {
+  const q = query?.toLowerCase();
+  const has = (text: string): boolean => text.toLowerCase().includes(q!);
+  const search = async (edition: RulesEdition): Promise<string[]> => {
+    const lines: string[] = [];
+    for (const r of await rulesetsOf(edition)) {
+      const sections = q ? r.rules.filter(s => has(s.name) || has(s.desc)) : [];
+      if (q && !has(r.name) && !has(r.desc ?? "") && !sections.length) continue;
+      const tag = editionTag({ ruleset: edition, book: null });
+      lines.push(`• **${r.name}** ${tag} (slug: \`${ruleSlug(r.key)}\`)${sections.length ? ` — ${sections.map(s => s.name).join(", ")}` : ""}`);
+    }
+    return lines;
+  };
+  let edition = rulesEdition;
+  let lines = await search(edition);
+  let miss = false;
+  if (!lines.length) {
+    edition = otherEdition(rulesEdition);
+    lines = await search(edition);
+    miss = lines.length > 0;
+  }
+  if (!lines.length) return `No rules sections found matching "${query ?? ""}" (SRD only).`;
   return [
-    searchHeader({ rulesDoc: "2014" }),
-    `Found ${data.count} rules section(s)${query ? ` matching "${query}"` : ""} (SRD only):`,
+    searchHeader({ rulesDoc: edition }),
+    ...(miss ? [reasonLine(rulesEdition === "2024" ? "rules-search-miss-2024" : "rules-search-miss-2014")] : []),
+    `Found ${lines.length} rules chapter(s)${query ? ` matching "${query}"` : ""} (SRD only):`,
     ...lines,
     `\nUse ddb_get_rules with the section name or slug to read the full text.`,
   ].join("\n");
 }
 
-export async function o5GetSection(
+export async function o5GetRule(
   nameOrSlug: string,
+  rulesEdition: RulesEdition,
   maxChars = 4000,
   query?: string
 ): Promise<string | null> {
-  // Try direct slug lookup first
-  const slug = nameOrSlug.toLowerCase().replace(/\s+/g, "-");
-  const bySlug = await o5fetch(`/sections/${encodeURIComponent(slug)}/`).catch(() => null) as O5Section | { name?: string } | null;
-  let section: O5Section | null = (bySlug && (bySlug as O5Section).name) ? bySlug as O5Section : null;
-
-  // Fall back to name search
-  if (!section) {
-    const data = await o5fetch(
-      `/sections/?search=${encodeURIComponent(nameOrSlug)}&document__slug=${SRD}&limit=5`
-    ) as { results: O5Section[] };
-    const exact = data.results.find(s => s.name.toLowerCase() === nameOrSlug.toLowerCase());
-    section = exact ?? data.results[0] ?? null;
+  let edition = rulesEdition;
+  let match = findRule(await rulesetsOf(edition), nameOrSlug);
+  if (!match) {
+    edition = otherEdition(rulesEdition);
+    match = findRule(await rulesetsOf(edition), nameOrSlug);
   }
+  if (!match) return null;
 
-  if (!section) return null;
-
-  let text = section.desc;
+  const { ruleset, section } = match;
+  let text = section
+    ? section.desc
+    : [ruleset.desc, ...ruleset.rules.map(s => `### ${s.name}\n${s.desc}`)].filter(Boolean).join("\n\n");
 
   // If query provided, start near the first occurrence
   if (query) {
@@ -931,7 +954,14 @@ export async function o5GetSection(
     ? `\n\n*(Showing first ${maxChars} of ${text.length} chars — increase max_chars or use query to jump to a topic)*`
     : "";
 
-  return [`## ${section.name}`, label("primary"), ``, output + truncNote].join("\n");
+  const reason = edition === rulesEdition ? undefined : (rulesEdition === "2024" ? "rules-miss-2024" : "rules-miss-2014");
+  return [
+    `## ${(section ?? ruleset).name}`,
+    rulesLine({ ruleset: edition, book: null }, { open5e: "primary", reason }),
+    ...(section ? [`*Part of ${ruleset.name}*`] : []),
+    ``,
+    output + truncNote,
+  ].join("\n");
 }
 
 // ── MONSTER STATS (encounter / treasure) ─────────────────────────────────────

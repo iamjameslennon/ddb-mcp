@@ -6,23 +6,11 @@ import {
   o5GetSpell, o5GetMonster, o5GetEquipment,
   o5SearchSpells, o5SearchMonsters, o5SearchItems,
   o5SearchRaces, o5SearchClasses, o5SearchBackgrounds, o5SearchFeats,
-  o5SearchSections, o5GetSection, o5GetMonsterStats, crText, castingTime, humanize,
+  o5SearchRules, o5GetRule, o5GetMonsterStats, crText, castingTime, humanize,
 } from "../src/open5e.js";
 
-const section = { slug: "combat", name: "Combat", desc: "Roll initiative.", parent: "", document__slug: "wotc-srd" };
-
-function route(url: string): unknown {
-  const path = new URL(url).pathname.replace("/v1", "");
-  const wrap = (results: unknown[]) => ({ count: results.length, next: null, results });
-  if (path === "/sections/combat/") return section;
-  if (path.startsWith("/sections/")) return wrap([section]);
-  throw new Error(`unrouted ${path}`);
-}
-
-/** v2 document URLs are served from the recorded fixtures; the not-yet-migrated v1 rules keep `route`. */
 function stubFetch(v2 = o5FixtureFetch()): void {
-  vi.stubGlobal("fetch", vi.fn(async (url: string) =>
-    url.includes("/v2/") ? v2(url) : { ok: true, status: 200, json: async () => route(url) }));
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => v2(url)));
 }
 
 beforeEach(() => {
@@ -54,9 +42,43 @@ describe("Open5e labels", () => {
     expect(one.split("\n")[1]).toBe("Rules: 2024 · SRD 5.2 (Open5e fallback — not found on D&D Beyond)");
   });
 
-  it("rules sections are labelled as the primary source", async () => {
-    expect((await o5GetSection("Combat"))!.split("\n")[1]).toBe("Rules: 2014 · SRD 5.1");
-    expect((await o5SearchSections("combat")).split("\n")[0]).toBe("Rules: sections from SRD 5.1 (2014).");
+  it("a chapter get gives the whole chapter under the SRD's rules line", async () => {
+    const out = (await o5GetRule("Damage and Healing", "2024", 30000))!;
+    expect(out.split("\n").slice(0, 2)).toEqual(["## Damage and Healing", "Rules: 2024 · SRD 5.2"]);
+    expect(out).toMatch(/^### Resting$/m);
+    expect((await o5GetRule("Damage and Healing", "2014"))!.split("\n")[1]).toBe("Rules: 2014 · SRD 5.1");
+  });
+  it("v1-style slugs, full keys and section names resolve", async () => {
+    expect((await o5GetRule("damage-and-healing", "2024"))!.split("\n")[0]).toBe("## Damage and Healing");
+    expect((await o5GetRule("attacking", "2014"))!.split("\n")[0]).toBe("## Attacking");
+    expect((await o5GetRule("srd-2024_combat", "2024"))!.split("\n")[0]).toBe("## Combat");
+    expect((await o5GetRule("Grappling", "2014"))!).toContain("*Part of Attacking*");
+  });
+  it("a repeated 2024 section name resolves to its first chapter", async () => {
+    // Live 2026-10-20: "Ability Checks" is a section of both D20 Tests and Social Interaction.
+    expect((await o5GetRule("Ability Checks", "2024"))!.split("\n")[2]).toBe("*Part of D20 Tests*");
+  });
+  it("a get that misses retries the other document with the rules reason", async () => {
+    expect((await o5GetRule("Madness", "2024"))!.split("\n").slice(1, 3)).toEqual(["Rules: 2014 · SRD 5.1", "(no matching 2024 rules section — 2014 text shown)"]);
+    expect((await o5GetRule("D20 Tests", "2014"))!.split("\n")[2]).toBe("(no matching 2014 rules section — 2024 text shown)");
+    expect(await o5GetRule("Zzz", "2024")).toBeNull();
+  });
+  it("a get keeps the query jump and the max_chars note", async () => {
+    const out = (await o5GetRule("Damage and Healing", "2024", 500, "resting"))!;
+    expect(out).toContain("*(Showing first 500 of ");
+  });
+  it("a search lists the requested document's chapters, tagged", async () => {
+    const out = await o5SearchRules("cover", "2014");
+    expect(out.split("\n")[0]).toBe("Rules: sections from SRD 5.1 (2014).");
+    expect(out).toContain("• **Cover** [2014] (slug: `cover`)");
+  });
+  it("a search that misses lists the other document with the search reason", async () => {
+    const g = await o5SearchRules("grapple", "2024");
+    expect(g.split("\n").slice(0, 2)).toEqual(["Rules: sections from SRD 5.1 (2014).", "(no matching 2024 rules sections — 2014 sections listed)"]);
+    expect(g).toMatch(/^• \*\*Attacking\*\* \[2014\] \(slug: `attacking`\) — .*\bGrappling\b/m);
+    const d = await o5SearchRules("d20 test", "2014");
+    expect(d.split("\n").slice(0, 2)).toEqual(["Rules: sections from SRD 5.2 (2024).", "(no matching 2014 rules sections — 2024 sections listed)"]);
+    expect(await o5SearchRules("zzzz", "2024")).toBe('No rules sections found matching "zzzz" (SRD only).');
   });
 
 });

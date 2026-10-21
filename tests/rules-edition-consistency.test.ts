@@ -35,7 +35,7 @@ vi.mock("../src/session-fetch.js", async (orig) => {
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { server } from "../src/server.js";
-import { SERVER_INSTRUCTIONS, open5eSearchHeader } from "../src/edition.js";
+import { SERVER_INSTRUCTIONS, open5eSearchHeader, searchHeader } from "../src/edition.js";
 import { clearReferenceCache } from "../src/tools/reference.js";
 import { clearMonsterCache } from "../src/tools/monster.js";
 import { clearOpen5eCache, type O5Endpoint } from "../src/open5e.js";
@@ -62,6 +62,8 @@ const FIXTURES: Record<string, (ed: "2024" | "2014") => Record<string, unknown>>
   ddb_search_class_features: ed => ({ name: "action surge", rules_edition: ed }),
   ddb_search_racial_traits: ed => ({ name: "darkvision", rules_edition: ed }),
   ddb_search_site: ed => ({ query: "Fireball", rules_edition: ed }),
+  ddb_search_rules: ed => ({ query: "cover", rules_edition: ed }),
+  ddb_get_rules: ed => ({ name: "Damage and Healing", rules_edition: ed }),
   ddb_rate_encounter: ed => ({ party: [{ count: 4, level: 3 }], monsters: [{ name: "Goblin" }], rules_edition: ed }),
   ddb_encounter_cr: ed => ({ party: [{ count: 4, level: 3 }], difficulty: ed === "2024" ? "moderate" : "medium", rules_edition: ed }),
   ddb_roll_treasure: ed => ({ monsters: [{ name: "Goblin" }], treasure_type: "individual", rules_edition: ed }),
@@ -115,6 +117,8 @@ const EDITION_CHECK: Record<string, (ed: "2024" | "2014") => EditionCheck> = {
   ddb_search_class_features: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
   ddb_search_racial_traits: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
   ddb_search_site: ed => ({ present: [hiddenFooter(ed)], resultTag: true }),
+  ddb_search_rules: ed => ({ present: [searchHeader({ rulesDoc: ed })], resultTag: true }),
+  ddb_get_rules: ed => ({ present: [`Rules: ${ed} · SRD 5.${ed === "2024" ? 2 : 1}`] }),
   ddb_rate_encounter: ed => ({ present: [dmgRulesLine(ed)] }),
   ddb_encounter_cr: ed => ({ present: [dmgRulesLine(ed)] }),
   ddb_roll_treasure: ed => (ed === "2014" ? { present: [TREASURE_NO_2014] } : { present: [], absent: [TREASURE_NO_2014] }),

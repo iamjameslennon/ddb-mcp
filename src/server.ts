@@ -861,16 +861,17 @@ server.tool(
 // ─── ddb_search_rules ─────────────────────────────────────────────────────────
 server.tool(
   "ddb_search_rules",
-  "Search the SRD rules sections by keyword. Searches across section names and full content — e.g. 'grapple' finds the Attacking section (which covers grapple rules) and the Conditions section (which has the Grappled condition). Returns a list of matching sections with their slugs. Use ddb_get_rules to read the full text of a section. No login required.",
+  "Search the SRD rules chapters by keyword, across chapter and section names and text: SRD 5.2 (2024) by default, SRD 5.1 (2014) with rules_edition '2014'. When the requested SRD has no match (SRD 5.2 on Open5e has no Rules Glossary, so e.g. grappling is only in SRD 5.1), the other SRD's chapters are listed and the reply says so. Returns matching chapters with their slugs and matching sections. Use ddb_get_rules to read one. No login required. " + RULES_EDITION_TOOL_NOTE,
   {
     query: z.string().optional().describe(
-      "Keyword to search for (e.g. 'grapple', 'concentration', 'death saving throw'). Omit to list all 45 available sections."
+      "Keyword to search for (e.g. 'grapple', 'concentration', 'death saving throw'). Omit to list every chapter (11 in SRD 5.2, 41 in SRD 5.1)."
     ),
+    rules_edition: RULES_EDITION_PARAM,
   },
   READ_ONLY_NET,
-  async ({ query }) => {
+  async ({ query, rules_edition }) => {
     try {
-      const result = await searchRules(query);
+      const result = await searchRules(query, rules_edition);
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -883,10 +884,10 @@ server.tool(
 // ─── ddb_get_rules ────────────────────────────────────────────────────────────
 server.tool(
   "ddb_get_rules",
-  "Get the full SRD rules text for a topic by section name or slug. Covers all core 5e rules: Spellcasting, Abilities, Attacking, Combat Sequence, Actions in Combat, Damage and Healing, Conditions, Movement, Multiclassing, Rest, Saving Throws, Environment, Traps, Diseases, Madness, Poisons, Weapons, Armor, and more. Use query to jump to a specific topic within a long section. For non-SRD rules or more detail, use ddb_read_book. No login required.",
+  "Get SRD rules text by chapter or section name or slug (e.g. 'Combat', 'Damage and Healing', 'Cover', 'Grappling', 'attacking'). A chapter returns all its sections. Use query to jump to a keyword within long text. For conditions use ddb_get_condition; for non-SRD rules use ddb_read_book. No login required. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().min(1).describe(
-      "Section name or slug (e.g. 'Spellcasting', 'attacking', 'Damage and Healing', 'multiclassing')"
+      "Chapter or section name or slug (e.g. 'Combat', 'Cover', 'Grappling', 'attacking', 'Damage and Healing')"
     ),
     max_chars: z.number().int().min(500).max(30000).default(4000).describe(
       "Max characters to return (default 4000). Some sections are 20,000+ chars — increase if you need the full text."
@@ -894,11 +895,12 @@ server.tool(
     query: z.string().optional().describe(
       "Jump to the first occurrence of this keyword within the section (e.g. 'concentration', 'death saving throw')."
     ),
+    rules_edition: RULES_EDITION_PARAM,
   },
   READ_ONLY_NET,
-  async ({ name, max_chars, query }) => {
+  async ({ name, max_chars, query, rules_edition }) => {
     try {
-      const result = await getRule(name, max_chars, query);
+      const result = await getRule(name, max_chars, query, rules_edition);
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
