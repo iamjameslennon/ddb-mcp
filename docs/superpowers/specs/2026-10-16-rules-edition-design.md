@@ -410,15 +410,15 @@ These tools are not affected: `ddb_login`, `ddb_logout`, `ddb_close_browser`, `d
 5. **Open5e searches get their own header** (see "Label formats").
 6. **Rules come from `/v2/rulesets/`, not `/v2/rules/`** (owner decision 2026-10-21): 11 SRD 5.2 / 41 SRD 5.1 chapters, each nesting all its sections in full. A rules get matches the requested SRD first, exact chapter, exact section, partial chapter, partial section; a section name ("Cover") works too, and a chapter name ("Combat") returns the whole chapter. Known gap: SRD 5.2 on Open5e has no spellcasting chapter, so a 2024 `"spellcasting"` returns SRD 5.2's "Spellcasting" section (part of Multiclassing); the 2014 chapter needs `rules_edition: "2014"`. v1's 2014 Adventuring Gear, Conditions, Legal Information and Rest chapters are gone (Rest's text survives inside other chapters). SRD 5.2 has no condition entries and no "grapple" text, so a 2024 `"grapple"` search falls back to 2014. Rules are not twin-grouped: the requested SRD first, then the other.
 7. **Rules search lines carry the edition tag** (the consistency test requires one on every search line), and a search that falls back gets its own reason line (see "Label formats").
-8. **Unused Open5e exports were deleted:** `fetchO5Cantrips`, `o5GetRace`, `o5SearchWeapons`, `o5SearchArmor`. `o5GetItem` / `o5GetWeapon` / `o5GetArmor` became one `o5GetEquipment`, because exact-before-partial must run across all four equipment endpoints (in SRD 5.2 a partial "Longsword" hits the magic item "Flame Tongue Longsword" before the weapon).
+8. **Unused Open5e exports were deleted:** `fetchO5Cantrips`, `o5GetRace`, `o5SearchWeapons`, `o5SearchArmor`. `o5GetItem` / `o5GetWeapon` / `o5GetArmor` became one `o5GetEquipment`, because exact-before-partial and twin selection must run over every equipment kind at once. A per-endpoint loop would return the first endpoint's partial hit (magicitems' "Flame Tongue Longsword") before reaching the weapons endpoint's exact "Longsword".
 9. **Wider coverage:** the equipment fallback search also covers mundane items and applies `rarity` / `type`; the Open5e monster search applies `size`.
-10. **Conditions moved to `src/tools/conditions.ts`.** The 2024 text is transcribed from SRD 5.2.1; `scripts/check-conditions.mts` compares it with D&D Beyond's rule-data and reports all 15 `ok`.
+10. **Conditions moved to `src/tools/conditions.ts`.** The 2024 text is transcribed from SRD 5.2.1; `scripts/check-conditions.mts` compares it with D&D Beyond's rule-data and reports all 15 `ok`. It splits D&D Beyond's description at the first `<hr>` (D&D Beyond appends the 2014 text after it) and unwraps `[condition]X[/condition]` tags before comparing, so it verifies only the text before the `<hr>`.
 
 Later owner rulings (made while executing the plan, 2026-10-21):
 
 - A fixture-recorder cross-endpoint check skips srd-2014's `items` records "Hide Armor" and "Shield", as it skips Net and Musket.
 - Monster actions restore `usage_limits` and `legendary_action_cost` on the name: "(Recharge 5–6)", "(2/Day)", "(Costs 2 Actions)". v2 `subcategory` is not a subtype and is not printed; the type line is "<size> <type>, <alignment>".
-- When one SRD document fails to load, the whole Open5e call fails and the existing fallback messages apply (the owner chose this over degrading to one document). Known edge: a one-document outage can surface as "not found".
+- When one SRD document fails to load, the whole Open5e call fails (the owner chose this over degrading to one document). What the user sees depends on the caller: the content-fallback callers print their existing "… DnD Beyond and Open5e both failed." messages (a one-document outage can surface as "not found"); the rules tools are Open5e-primary, so `o5SearchRules` / `o5GetRule` throw and `server.ts` answers `Rules search failed: …` / `Rules lookup failed: …`; `o5GetMonsterStats` swallows the failure and returns null, so encounter and treasure continue with "not found".
 - Reaction spells show `reaction_condition` after "1 reaction" (new output). Skill names read "Sleight of Hand".
 - An Open5e spell search with an offset past the end gives the plain no-match line, as D&D Beyond does.
 - Item search no-match text: "No items found matching the criteria (SRD only)." Mundane item line: `• <name> [tag] (<category>)`. Option searches are uncapped. Cost and weight show "—" when 0 or missing.
@@ -525,11 +525,11 @@ Every phase:
 
 ### Phase 4: Open5e v2, rules and conditions (done 2026-10-21)
 
-**Touches:** `src/open5e.ts`, `src/tools/reference.ts` (conditions, rules, fallback call sites), `src/tools/monster.ts` (fallback call sites), `src/index.ts`, README (attribution), tests and recorded v2 fixtures for both SRDs.
+**Touches:** `src/open5e.ts`, new `src/tools/conditions.ts`, `src/tools/reference.ts` (rules and fallback call sites), `src/tools/monster.ts` (fallback call sites), `src/edition.ts` (Open5e search header, rules reasons), `src/edition-renames.ts` (`OPEN5E_ARMOUR_RENAMES`), `src/server.ts` (registrations), `scripts/check-conditions.mts`, README (attribution), tests and recorded v2 fixtures for both SRDs.
 
 **Done when:**
 - The per-endpoint filter tests are committed and pass.
-- All fallbacks use v2 with the srd-2024-first policy and the final fallback labels.
+- All fallbacks use v2, load both SRD documents and select between them together (ruling 2 under "Rulings in the plan"), and carry the final fallback labels.
 - `ddb_get_condition "Exhaustion"` gives the 2024 text by default and the 2014 table on request.
 - Rules search and get respect `rules_edition`, including the miss fallback with the rules reason line.
 - The condition check script reports no differences, or each difference is explained in a comment.
