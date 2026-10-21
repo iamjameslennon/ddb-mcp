@@ -298,9 +298,11 @@ export function getCondition(conditionName: string, rulesEdition: RulesEdition =
   const conditions = TABLES[rulesEdition];
   const key = conditionName.toLowerCase().trim();
 
-  // Exact key match, then partial name match
-  const condition = conditions[key]
-    ?? Object.values(conditions).find(c => c.name.toLowerCase().includes(key));
+  // Exact key match (own keys only: "constructor" is not a condition), then
+  // partial name match. A blank name matches nothing.
+  const condition = !key ? undefined
+    : (Object.hasOwn(conditions, key) ? conditions[key] : undefined)
+      ?? Object.values(conditions).find(c => c.name.toLowerCase().includes(key));
 
   if (!condition) {
     const available = Object.values(conditions).map(c => c.name).join(", ");
