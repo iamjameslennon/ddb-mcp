@@ -1247,6 +1247,297 @@
       "illustration": null
     },
     {
+      "key": "srd_half-red-dragon-veteran",
+      "name": "Half-Red Dragon Veteran",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "type": {
+        "name": "Humanoid",
+        "key": "humanoid"
+      },
+      "size": {
+        "name": "Medium",
+        "key": "medium"
+      },
+      "challenge_rating": 5,
+      "proficiency_bonus": null,
+      "speed": {
+        "walk": 30,
+        "unit": "feet"
+      },
+      "speed_all": {
+        "unit": "feet",
+        "walk": 30,
+        "crawl": 15,
+        "hover": false,
+        "fly": 0,
+        "burrow": 0,
+        "climb": 15,
+        "swim": 15
+      },
+      "category": "Monsters",
+      "subcategory": "Half-Dragon Template",
+      "alignment": "any alignment",
+      "languages": {
+        "as_string": "Common, Draconic",
+        "data": [
+          {
+            "name": "Common",
+            "key": "common",
+            "desc": "Typical speakers are Humans."
+          },
+          {
+            "name": "Draconic",
+            "key": "draconic",
+            "desc": "Typical speakers include dragons and dragonborn."
+          }
+        ]
+      },
+      "armor_class": 18,
+      "armor_detail": "plate",
+      "hit_points": 65,
+      "hit_dice": "10d8+20",
+      "experience_points": 1800,
+      "ability_scores": {
+        "strength": 16,
+        "dexterity": 13,
+        "constitution": 14,
+        "intelligence": 10,
+        "wisdom": 11,
+        "charisma": 10
+      },
+      "modifiers": {
+        "strength": 3,
+        "dexterity": 1,
+        "constitution": 2,
+        "intelligence": 0,
+        "wisdom": 0,
+        "charisma": 0
+      },
+      "initiative_bonus": 1,
+      "saving_throws": {},
+      "saving_throws_all": {
+        "strength": 3,
+        "dexterity": 1,
+        "constitution": 2,
+        "intelligence": 0,
+        "wisdom": 0,
+        "charisma": 0
+      },
+      "skill_bonuses": {
+        "athletics": 5,
+        "perception": 2
+      },
+      "skill_bonuses_all": {
+        "acrobatics": 1,
+        "animal_handling": 0,
+        "arcana": 0,
+        "athletics": 5,
+        "deception": 0,
+        "history": 0,
+        "insight": 0,
+        "intimidation": 0,
+        "investigation": 0,
+        "medicine": 0,
+        "nature": 0,
+        "perception": 2,
+        "performance": 0,
+        "persuasion": 0,
+        "religion": 0,
+        "sleight_of_hand": 1,
+        "stealth": 1,
+        "survival": 0
+      },
+      "passive_perception": 12,
+      "resistances_and_immunities": {
+        "damage_immunities_display": "",
+        "damage_immunities": [],
+        "damage_resistances_display": "fire",
+        "damage_resistances": [
+          {
+            "name": "Fire",
+            "key": "fire"
+          }
+        ],
+        "damage_vulnerabilities_display": "",
+        "damage_vulnerabilities": [],
+        "condition_immunities_display": "",
+        "condition_immunities": []
+      },
+      "normal_sight_range": 10560,
+      "darkvision_range": 60,
+      "blindsight_range": 10,
+      "tremorsense_range": null,
+      "truesight_range": null,
+      "actions": [
+        {
+          "name": "Fire Breath",
+          "desc": "The veteran exhales fire in a 15-foot cone. Each creature in that area must make a DC 15 Dexterity saving throw, taking 24 (7d6) fire damage on a failed save, or half as much damage on a successful one.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [],
+          "action_type": "ACTION",
+          "order_in_statblock": 4,
+          "legendary_action_cost": null,
+          "limited_to_form": null,
+          "usage_limits": {
+            "type": "RECHARGE_ON_ROLL",
+            "param": 5
+          }
+        },
+        {
+          "name": "Heavy Crossbow",
+          "desc": "Ranged Weapon Attack: +3 to hit, range 100/400 ft., one target. Hit: 6 (1d10 + 1) piercing damage.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [
+            {
+              "name": "Heavy Crossbow attack",
+              "attack_type": "WEAPON",
+              "to_hit_mod": 3,
+              "reach": null,
+              "range": 100,
+              "long_range": 400,
+              "target_creature_only": false,
+              "damage_die_count": 1,
+              "damage_die_type": "D10",
+              "damage_bonus": null,
+              "damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "extra_damage_die_count": null,
+              "extra_damage_die_type": null,
+              "extra_damage_bonus": null,
+              "extra_damage_type": null,
+              "distance_unit": "feet"
+            }
+          ],
+          "action_type": "ACTION",
+          "order_in_statblock": 3,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Longsword",
+          "desc": "Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 7 (1d8 + 3) slashing damage, or 8 (1d10 + 3) slashing damage if used with two hands.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [
+            {
+              "name": "Longsword attack",
+              "attack_type": "WEAPON",
+              "to_hit_mod": 5,
+              "reach": 5,
+              "range": null,
+              "long_range": null,
+              "target_creature_only": false,
+              "damage_die_count": 1,
+              "damage_die_type": "D10",
+              "damage_bonus": null,
+              "damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "extra_damage_die_count": null,
+              "extra_damage_die_type": null,
+              "extra_damage_bonus": null,
+              "extra_damage_type": null,
+              "distance_unit": "feet"
+            }
+          ],
+          "action_type": "ACTION",
+          "order_in_statblock": 1,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Multiattack",
+          "desc": "The veteran makes two longsword attacks. If it has a shortsword drawn, it can also make a shortsword attack.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [],
+          "action_type": "ACTION",
+          "order_in_statblock": 0,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        },
+        {
+          "name": "Shortsword",
+          "desc": "Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 6 (1d6 + 3) piercing damage.",
+          "crossreferences": {
+            "to": []
+          },
+          "attacks": [
+            {
+              "name": "Shortsword attack",
+              "attack_type": "WEAPON",
+              "to_hit_mod": 5,
+              "reach": 5,
+              "range": null,
+              "long_range": null,
+              "target_creature_only": false,
+              "damage_die_count": 1,
+              "damage_die_type": "D6",
+              "damage_bonus": null,
+              "damage_type": {
+                "name": "Thunder",
+                "key": "thunder"
+              },
+              "extra_damage_die_count": null,
+              "extra_damage_die_type": null,
+              "extra_damage_bonus": null,
+              "extra_damage_type": null,
+              "distance_unit": "feet"
+            }
+          ],
+          "action_type": "ACTION",
+          "order_in_statblock": 2,
+          "legendary_action_cost": 1,
+          "limited_to_form": null,
+          "usage_limits": null
+        }
+      ],
+      "traits": [],
+      "creaturesets": [],
+      "environments": [
+        {
+          "name": "Desert",
+          "key": "desert"
+        },
+        {
+          "name": "Hills",
+          "key": "hills"
+        },
+        {
+          "name": "Mountain",
+          "key": "mountain"
+        },
+        {
+          "name": "Ruins",
+          "key": "ruins"
+        },
+        {
+          "name": "Plane of Fire",
+          "key": "srd_plane-of-fire"
+        },
+        {
+          "name": "Urban",
+          "key": "urban"
+        }
+      ],
+      "illustration": null
+    },
+    {
       "key": "srd_orc",
       "name": "Orc",
       "document": {

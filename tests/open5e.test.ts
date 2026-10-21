@@ -505,7 +505,8 @@ describe("Open5e v2 equipment and options, fix round 1", () => {
 
 describe("o5GetMonsterStats", () => {
   const RED_DRAGONS = [
-    { name: "Red Dragon Wyrmling", crValue: 4, xp: 1100 }, { name: "Young Red Dragon", crValue: 10, xp: 5900 },
+    { name: "Red Dragon Wyrmling", crValue: 4, xp: 1100 }, { name: "Half-Red Dragon Veteran", crValue: 5, xp: 1800 },
+    { name: "Young Red Dragon", crValue: 10, xp: 5900 },
     { name: "Adult Red Dragon", crValue: 17, xp: 18000 }, { name: "Ancient Red Dragon", crValue: 24, xp: 62000 },
   ];
 
@@ -537,7 +538,7 @@ describe("o5GetMonsterStats", () => {
     sessionMocks.hasValidSession.mockReturnValue(false);
     expect(await getMonsterStats("Red Dragon")).toEqual({ status: "ambiguous", candidates: RED_DRAGONS });
     const out = await rateEncounter([{ count: 4, level: 5 }], [{ name: "Red Dragon" }, { name: "Wolf" }], "2024");
-    expect(out).toContain('⚠ Ambiguous: "Red Dragon" could be Red Dragon Wyrmling (CR 4), Young Red Dragon (CR 10), Adult Red Dragon (CR 17), Ancient Red Dragon (CR 24) — use the full name.');
+    expect(out).toContain('⚠ Ambiguous: "Red Dragon" could be Red Dragon Wyrmling (CR 4), Half-Red Dragon Veteran (CR 5), Young Red Dragon (CR 10), Adult Red Dragon (CR 17), Ancient Red Dragon (CR 24) — use the full name.');
     expect(out).toContain("1 × Wolf [2024] (CR 1/4");
     expect(sessionMocks.hasValidSession).toHaveBeenCalled();
   });

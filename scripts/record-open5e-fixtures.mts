@@ -29,7 +29,7 @@ const NAMES: Record<Endpoint, Names> = {
   spells: { both: ["Fireball", "Fire Bolt", "Acid Arrow", "Arcane Hand", "Sleep"], only2024: ["Befuddlement", "Shining Smite"], only2014: ["Feeblemind", "Branding Smite"] },
   creatures: {
     both: ["Aboleth", "Wolf", "Zombie", "Red Dragon Wyrmling", "Young Red Dragon", "Adult Red Dragon", "Ancient Red Dragon"],
-    only2024: ["Goblin Warrior", "Goblin Boss", "Allosaurus", "Tough"], only2014: ["Goblin", "Thug", "Orc"],
+    only2024: ["Goblin Warrior", "Goblin Boss", "Allosaurus", "Tough"], only2014: ["Goblin", "Thug", "Orc", "Half-Red Dragon Veteran"],
   },
   items: { both: ["Longsword"], only2024: ["Rope", "Antitoxin", "Alchemist's Fire"], only2014: ["Abacus", "Rope, hempen (50 feet)"] },
   magicitems: { both: ["Bag of Holding"], only2024: ["Ammunition (+1)", "Flame Tongue Longsword"], only2014: ["Armor of Resistance (Hide)"] },
