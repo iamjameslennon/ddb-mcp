@@ -291,7 +291,8 @@ function formatO5Spell(hit: O5Hit<O5Spell>, origin: Open5eOrigin): string {
     `Casting Time: ${castingTime(s.casting_time)}${s.reaction_condition ? `, ${s.reaction_condition}` : ""}`,
     `Range: ${s.range_text}`,
     `Components: ${components}`,
-    `Duration: ${s.duration}`,
+    // Open5e lower-cases it: "instantaneous" → "Instantaneous".
+    `Duration: ${s.duration.charAt(0).toUpperCase()}${s.duration.slice(1)}`,
   ];
   const classes = (s.classes ?? []).map(c => c.name).join(", ");
   if (classes) lines.push(`Classes: ${classes}`);

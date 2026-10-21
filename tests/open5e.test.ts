@@ -747,3 +747,15 @@ describe("Open5e single-hit option detail carries the get's rename line", () => 
     expect(out.some(l => l.includes("2014 name:"))).toBe(false);
   });
 });
+
+describe("Open5e spell Duration is capitalized", () => {
+  it("\"instantaneous\" → \"Instantaneous\"; a number stays as it is", async () => {
+    expect(await o5GetSpell("Fireball", "2024", "unavailable")).toMatch(/^Duration: Instantaneous$/m);
+    expect(await o5GetSpell("Sleep", "2014", "unavailable")).toMatch(/^Duration: 1 minute$/m);
+  });
+  it("\"concentration, up to 1 minute\" → \"Concentration, up to 1 minute\"", async () => {
+    const sleep = { ...o5Record<Record<string, unknown>>("srd-2024", "spells", "Sleep"), duration: "concentration, up to 1 minute" };
+    stubFetch(o5FixtureFetch({ "srd-2024/spells": [sleep] }));
+    expect(await o5GetSpell("Sleep", "2024", "unavailable")).toMatch(/^Duration: Concentration, up to 1 minute$/m);
+  });
+});
