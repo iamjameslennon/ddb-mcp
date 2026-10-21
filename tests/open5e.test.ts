@@ -435,6 +435,22 @@ describe("Open5e v2 equipment and options, fix round 1", () => {
     expect(await o5GetEquipment("Chain mail", "2014", "unavailable")).toMatch(/^AC: 16 \| Requires STR 13 \| Stealth disadvantage$/m);
   });
 
+  it("table columns typed as class features are not listed (2014 Warlock, 2024 Druid)", async () => {
+    const row = (name: string, desc: string, gained: number) => ({ key: `x_${name}`, name, desc, feature_type: "CLASS_LEVEL_FEATURE", gained_at: gained ? [{ level: 1, detail: null }] : [], data_for_class_table: gained ? [] : [{ level: 1, value: "1" }] });
+    const warlock = { ...o5Record<Record<string, unknown>>("srd-2014", "classes", "Wizard"), key: "srd_warlock", name: "Warlock",
+      features: [row("Pact Magic", "Your arcane research", 1), row("Invocations Known", "[Column data]", 0), row("Slot Level", "[Column data]", 0)] };
+    const druid = { ...o5Record<Record<string, unknown>>("srd-2024", "classes", "Wizard"), key: "srd-2024_druid", name: "Druid",
+      features: [row("Druid Spell List", "You gain a spell list", 0), row("Cantrips Known", "[Column data]", 0), row("Wild Shape", "The magic of nature", 1)] };
+    stubFetch(o5FixtureFetch({
+      "srd-2014/classes": [...o5Fixture("srd-2014", "classes"), warlock],
+      "srd-2024/classes": [...o5Fixture("srd-2024", "classes"), druid],
+    }));
+    const lock = (await o5SearchClasses({ name: "Warlock", rulesEdition: "2014" }, "unavailable")).split("\n");
+    expect(lock).toContain("Features: Pact Magic");
+    const dr = (await o5SearchClasses({ name: "Druid", rulesEdition: "2024" }, "unavailable")).split("\n");
+    expect(dr).toContain("Features: Druid Spell List, Wild Shape");
+  });
+
   it("species group by base race: under 2024 the 2024 Elf replaces SRD 5.1's Elf and High Elf", async () => {
     const all = await o5SearchRaces({ rulesEdition: "2024" }, "unavailable");
     expect(all).toContain("• Elf [2024] | Speed: 30 feet");
@@ -577,6 +593,15 @@ describe("Open5e twin keys fold hyphens", () => {
     const out = (await o5SearchItems({ name: "adamantine", rulesEdition: "2024" }, "unavailable")).split("\n");
     expect(out.filter(l => l.startsWith("• "))).toEqual(["• Adamantine Armor (Chain Mail) [2024] (Armor, Uncommon)"]);
     expect(out.at(-1)).toBe('1 2014 version hidden — rules_edition: "2014" shows it.');
+  });
+
+  it("a 2014 Shield, an items record with no armour twin, carries the SRD's AC: +2", async () => {
+    // Live srd-2014 items, 2026-10-21: category "Shield", armor null, 10 gp / 6 lb.
+    const shield = { ...o5Record<Record<string, unknown>>("srd-2014", "items", "Abacus"), key: "srd_shield", name: "Shield", category: { name: "Shield", key: "shield" },
+      cost: "10.00", weight: "6.000", desc: "A shield is made from wood or metal and is carried in one hand. Wielding a shield increases your Armor Class by 2." };
+    stubFetch(o5FixtureFetch({ "srd-2014/items": [...o5Fixture("srd-2014", "items"), shield] }));
+    expect((await o5GetEquipment("Shield", "2014", "unavailable"))!.split("\n").slice(0, 4))
+      .toEqual(["Shield (Shield)", U14, "AC: +2", "Cost: 10 gp | Weight: 6 lb"]);
   });
 
   it("a real rename whose names carry hyphens keeps its line, the right way round", async () => {

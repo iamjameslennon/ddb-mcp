@@ -7,7 +7,7 @@ const ENDPOINTS: O5Endpoint[] = ["spells", "creatures", "items", "magicitems", "
 // The "2024 only" / "2014 only" columns of the recorder's name table, per endpoint.
 const ONLY: Record<O5Endpoint, { "2024": string[]; "2014": string[] }> = {
   spells: { "2024": ["Befuddlement", "Shining Smite"], "2014": ["Feeblemind", "Branding Smite"] },
-  creatures: { "2024": ["Goblin Warrior", "Goblin Boss", "Allosaurus", "Tough"], "2014": ["Goblin", "Thug", "Orc"] },
+  creatures: { "2024": ["Goblin Warrior", "Goblin Boss", "Allosaurus", "Tough"], "2014": ["Goblin", "Thug", "Orc", "Half-Red Dragon Veteran"] },
   items: { "2024": ["Rope", "Antitoxin", "Alchemist's Fire"], "2014": ["Abacus", "Rope, hempen (50 feet)"] },
   magicitems: { "2024": ["Ammunition (+1)", "Flame Tongue Longsword"], "2014": ["Armor of Resistance (Hide)"] },
   weapons: { "2024": ["Musket"], "2014": ["Net"] },
@@ -67,6 +67,27 @@ describe("spells loader", () => {
   it("throws when next repeats a URL already fetched", async () => {
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => json({ count: 1, next: spellsUrl, results: [rec("A")] })));
     await expect(loadO5Document("spells", "2024")).rejects.toThrow("paging loop");
+  });
+
+  it("throws when next leaves api.open5e.com, fetching nothing from it, and caches no failure", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => json({ count: 2, next: "https://evil.example/v2/spells/?page=2", results: [rec("A")] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(loadO5Document("spells", "2024")).rejects.toThrow("paging left");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await expect(loadO5Document("spells", "2024")).rejects.toThrow("paging left");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("throws past 20 pages, and caches no failure", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (url: string) => {
+      const page = Number(new URL(url).searchParams.get("page") ?? 1);
+      return json({ count: 99, next: `${spellsUrl}&page=${page + 1}`, results: [rec(`P${page}`)] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(loadO5Document("spells", "2024")).rejects.toThrow("20 pages");
+    expect(fetchMock).toHaveBeenCalledTimes(20);
+    await expect(loadO5Document("spells", "2024")).rejects.toThrow("20 pages");
+    expect(fetchMock).toHaveBeenCalledTimes(40);
   });
 
   it("treats a missing next as the last page", async () => {

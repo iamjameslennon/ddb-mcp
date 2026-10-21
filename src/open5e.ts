@@ -53,12 +53,18 @@ export function docKey(r: { document: { key: string } | string }): string {
 
 const o5Pending = new Map<string, Promise<unknown[]>>();
 
+/** `limit=1000` returns every SRD document in one page; this is far above that, and only bounds a misbehaving `next` chain. */
+const O5_MAX_PAGES = 20;
+const O5_ORIGIN = new URL(O5_V2).origin;
+
 async function fetchPages(firstUrl: string): Promise<unknown[]> {
   const all: unknown[] = [];
   const seen = new Set<string>();
   let url: string | null = firstUrl;
   while (url) {
+    if (new URL(url).origin !== O5_ORIGIN) throw new Error(`Open5e paging left ${O5_ORIGIN}: ${new URL(url).origin}`);
     if (seen.has(url)) throw new Error(`Open5e paging loop: ${new URL(url).pathname}`);
+    if (seen.size >= O5_MAX_PAGES) throw new Error(`Open5e paging passed ${O5_MAX_PAGES} pages: ${new URL(firstUrl).pathname}`);
     seen.add(url);
     const resp: Response = await fetch(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(O5_TIMEOUT_MS) });
     if (!resp.ok) throw new Error(`Open5e ${resp.status}: ${new URL(url).pathname}`);
@@ -605,7 +611,10 @@ function costWeightLine(i: O5Item): string {
 
 function formatO5Item(hit: O5Hit<O5Item>, origin: Open5eOrigin): string {
   const i = hit.entry.record;
-  const lines = [`${i.name} (${i.category.name})`, o5Label(hit.entry.edition, origin, hit), costWeightLine(i)];
+  // srd-2014 has no armour Shield, and its items record carries no AC value (armor is null), only the
+  // prose "increases your Armor Class by 2": the SRD's +2, as the armour formatter prints it for 2024.
+  const ac = o5TwinName(i.name) === "shield" ? [`AC: +2`] : [];
+  const lines = [`${i.name} (${i.category.name})`, o5Label(hit.entry.edition, origin, hit), ...ac, costWeightLine(i)];
   const desc = stripTags(i.desc);
   if (desc) lines.push(``, desc);
   return lines.join("\n");
@@ -818,8 +827,10 @@ interface O5Class extends O5Record {
   saving_throws?: Array<{ name: string }>;
   caster_type?: string | null;
   subclass_of?: { name: string; key: string } | null;
-  features?: Array<{ name: string; feature_type?: string | null }>;
+  features?: Array<{ name: string; desc?: string | null; feature_type?: string | null }>;
 }
+
+const COLUMN_PLACEHOLDER = "[Column data]";
 
 /** A class's hit die, lower-cased; a subclass has none of its own and takes its class's. */
 async function hitDie(entry: O5Entry<O5Class>): Promise<string | undefined> {
@@ -838,7 +849,11 @@ async function formatO5Class(hit: O5Hit<O5Class>, origin: Open5eOrigin): Promise
   if (c.saving_throws?.length) lines.push(`Saving Throws: ${c.saving_throws.map(s => s.name).join(", ")}`);
   if (c.caster_type && c.caster_type !== "NONE") lines.push(`Spellcasting: ${humanize(c.caster_type)}`);
   // Only class-level features: the rest are table rows (spell slots, proficiency bonus, starting equipment).
-  const features = [...new Set((c.features ?? []).filter(f => f.feature_type === "CLASS_LEVEL_FEATURE").map(f => f.name))];
+  // Some of the class table's columns (Invocations Known, Spells Known, Rages, Slot Level, Cantrips Known)
+  // arrive typed as CLASS_LEVEL_FEATURE; live, they are all and only the rows whose desc is this placeholder.
+  const features = [...new Set((c.features ?? [])
+    .filter(f => f.feature_type === "CLASS_LEVEL_FEATURE" && f.desc?.trim() !== COLUMN_PLACEHOLDER)
+    .map(f => f.name))];
   if (features.length) lines.push(`Features: ${features.join(", ")}`);
   return lines.join("\n");
 }
