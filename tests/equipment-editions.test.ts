@@ -142,6 +142,23 @@ describe("ddb_search_equipment rules_edition and source", () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("open5e"))).toBe(false);
   });
 
+  it("the rarity filter matches exactly: common excludes Uncommon; a rarity-less item counts as Common", async () => {
+    installItems([
+      item(20, "Rope", { type: "Adventuring Gear", filterType: "Adventuring Gear" }, [148]),
+      item(21, "Bag of Holding", { rarity: "Uncommon", type: "Wondrous Item", filterType: "Wondrous Item" }, [148]),
+      item(22, "Potion of Climbing", { rarity: "Common", type: "Potion", filterType: "Potion" }, [148]),
+      item(23, "Ten-Foot Pole", { rarity: null, type: "Adventuring Gear", filterType: "Adventuring Gear" }, [148]),
+    ]);
+    const common = (await reference.searchItems({ rarity: "common" })).split("\n");
+    expect(common.filter(l => l.startsWith("- **"))).toEqual([
+      "- **Potion of Climbing** [2024] — Common Potion",
+      "- **Rope** [2024] — Common Adventuring Gear",
+      "- **Ten-Foot Pole** [2024] — Common Adventuring Gear",
+    ]);
+    const uncommon = (await reference.searchItems({ rarity: "Uncommon" })).split("\n");
+    expect(uncommon.filter(l => l.startsWith("- **"))).toEqual(["- **Bag of Holding** [2024] — Uncommon Wondrous Item"]);
+  });
+
   it("homebrew with no sources is tagged [homebrew]", async () => {
     installItems();
     expect(await reference.searchItems({ name: "moon" })).toContain("- **Moon Blade** [homebrew] — Common Weapon");

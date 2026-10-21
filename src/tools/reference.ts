@@ -650,7 +650,7 @@ export async function searchItems(params: ItemSearchParams): Promise<string> {
 
 export async function searchItemsSection(params: ItemSearchParams): Promise<SearchSection> {
   const nameQuery = params.name ? normalizeName(params.name) : "";
-  const rarityQuery = params.rarity?.toLowerCase();
+  const rarityQuery = params.rarity?.trim().toLowerCase();
   const typeQuery = params.type?.toLowerCase();
   return searchCatalogList<DdbItem>(params, {
     load: loadItemCompendium,
@@ -658,7 +658,8 @@ export async function searchItemsSection(params: ItemSearchParams): Promise<Sear
     adapter: {
       ...ITEM_ADAPTER,
       nameMatches: nameQuery ? i => normalizeName(i.name).includes(nameQuery) : undefined,
-      passes: i => (!rarityQuery || !!i.rarity?.toLowerCase().includes(rarityQuery))
+      // Rarity matches exactly ("common" is not "Uncommon"); no rarity is Common, as printed.
+      passes: i => (!rarityQuery || (i.rarity || "Common").toLowerCase() === rarityQuery)
         && (!typeQuery || !!i.type?.toLowerCase().includes(typeQuery) || !!i.filterType?.toLowerCase().includes(typeQuery)),
     },
     // No paging: the first 30, then a hint to refine.

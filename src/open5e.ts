@@ -626,13 +626,14 @@ export async function o5SearchItems(params: {
   rulesEdition?: RulesEdition;
 }, origin: "unavailable" | "not-found"): Promise<string> {
   const requested = params.rulesEdition ?? "2024";
-  const rarity = params.rarity?.toLowerCase();
+  const rarity = params.rarity?.trim().toLowerCase();
   const type = params.type?.toLowerCase();
   const { selected, hidden } = await o5Select<O5Gear>(["magicitems", "items"], requested, {
     name: params.name,
-    // Mundane items have no rarity, so a rarity filter excludes them.
+    // Rarity matches exactly ("common" is not "Uncommon"). Mundane items have
+    // none and count as Common, so "common" lists mundane gear, as on D&D Beyond.
     passes: ({ record: i, endpoint }) =>
-      (!rarity || (endpoint === "magicitems" && (i as O5MagicItem).rarity.name.toLowerCase().includes(rarity)))
+      (!rarity || (endpoint === "magicitems" ? (i as O5MagicItem).rarity.name : "Common").toLowerCase() === rarity)
       && (!type || i.category.name.toLowerCase().includes(type)),
   });
 

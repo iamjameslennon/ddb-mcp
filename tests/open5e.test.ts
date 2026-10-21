@@ -552,3 +552,29 @@ describe("Open5e twin keys fold hyphens", () => {
     expect(twinName("Adamantine Armor (Chain-Mail)")).not.toBe(twinName("Adamantine Armor (Chain Mail)"));
   });
 });
+
+describe("Open5e rarity filter", () => {
+  const potion = {
+    ...o5Record<Record<string, unknown>>("srd-2024", "magicitems", "Bag of Holding"),
+    key: "srd-2024_potion-of-climbing", name: "Potion of Climbing",
+    category: { name: "Potion", key: "potion" }, rarity: { name: "Common", key: "common", rank: 1 },
+  };
+  beforeEach(() => stubFetch(o5FixtureFetch({ "srd-2024/magicitems": [...o5Fixture("srd-2024", "magicitems"), potion] })));
+  const listed = async (rarity: string) => (await o5SearchItems({ rarity, rulesEdition: "2024" }, "unavailable"))
+    .split("\n").filter(l => l.startsWith("• "));
+
+  it("\"common\" lists mundane gear and Common magic items, not Uncommon ones", async () => {
+    const common = await listed("common");
+    expect(common).toContain("• Potion of Climbing [2024] (Potion, Common)");
+    expect(common).toContain("• Antitoxin [2024] (Potion)");
+    expect(common).toContain("• Rope [2024] (Adventuring Gear)");
+    expect(common.some(l => l.includes("Uncommon"))).toBe(false);
+    expect(common.some(l => l.includes("Bag of Holding"))).toBe(false);
+  });
+
+  it("\"uncommon\" still lists Uncommon magic items only", async () => {
+    const uncommon = await listed("Uncommon");
+    expect(uncommon).toContain("• Bag of Holding [2024] (Wondrous Item, Uncommon)");
+    expect(uncommon.every(l => l.endsWith(", Uncommon)"))).toBe(true);
+  });
+});

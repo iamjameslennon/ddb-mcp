@@ -675,7 +675,7 @@ server.tool(
 // ─── ddb_search_equipment ────────────────────────────────────────────────────
 server.tool(
   "ddb_search_equipment",
-  "Search the D&D Beyond item/equipment compendium by name, rarity, or type. Covers mundane weapons (Longsword, Shortbow), armour (Plate, Chain Mail), adventuring gear, and magic items. Filter by rarity='common' to see only mundane equipment. Requires login. A source lists one book's entries and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
+  "Search the D&D Beyond item/equipment compendium by name, rarity, or type. Covers mundane weapons (Longsword, Shortbow), armour (Plate, Chain Mail), adventuring gear, and magic items. Filter by rarity='common' to see mundane equipment along with Common magic items (rarity matches exactly, so 'common' excludes Uncommon). Requires login. A source lists one book's entries and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().optional().describe("Partial item name (e.g. 'sword', 'cloak')"),
     rarity: z.string().optional().describe("Rarity filter (e.g. 'rare', 'legendary', 'uncommon')"),
