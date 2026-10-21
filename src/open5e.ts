@@ -717,6 +717,8 @@ async function o5OptionReply<T>(
 interface O5Trait { name: string; desc: string; type?: string | null; order?: number | null }
 
 interface O5Species extends O5Record {
+  /** SRD 5.1 only: SRD 5.2's is empty. */
+  desc?: string | null;
   subspecies_of?: string | null;
   traits?: O5Trait[];
 }
@@ -744,6 +746,8 @@ async function formatO5Species(hit: O5Hit<O5Species>, origin: Open5eOrigin): Pro
   const lines = [s.name, o5Label(hit.entry.edition, origin, hit)];
   const facts = [size && `Size: ${size.desc.trim()}`, speed && `Speed: ${speed.desc.trim()}`].filter(Boolean);
   if (facts.length) lines.push(facts.join(" | "));
+  const desc = stripTags(s.desc);
+  if (desc) lines.push(``, desc);
   const traits = (s.traits ?? [])
     .map((t, i) => ({ t, order: t.order ?? i }))
     .filter(({ t }) => t !== size && t !== speed)
@@ -833,13 +837,20 @@ export async function o5SearchClasses(params: { name?: string; rulesEdition?: Ru
 // ── Backgrounds
 
 interface O5Background extends O5Record {
+  /** SRD 5.1 only: SRD 5.2's is empty. */
+  desc?: string | null;
   benefits?: Array<{ name: string; desc: string; type?: string | null }>;
 }
 
 function formatO5Background(hit: O5Hit<O5Background>, origin: Open5eOrigin): string {
   const b = hit.entry.record;
+  const desc = stripTags(b.desc);
   const benefits = (b.benefits ?? []).map(x => `**${x.name}:** ${stripTags(x.desc)}`);
-  return [b.name, o5Label(hit.entry.edition, origin, hit), ...(benefits.length ? [``, ...benefits] : [])].join("\n");
+  return [
+    b.name, o5Label(hit.entry.edition, origin, hit),
+    ...(desc ? [``, desc] : []),
+    ...(benefits.length ? [``, ...benefits] : []),
+  ].join("\n");
 }
 
 export async function o5SearchBackgrounds(params: { name?: string; rulesEdition?: RulesEdition }, origin: "unavailable" | "not-found"): Promise<string> {

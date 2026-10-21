@@ -683,3 +683,38 @@ describe("Open5e weapon and armour gets carry the items record's cost and weight
     expect((await lines("Dagger", "2014")).some(l => l.startsWith("Cost:"))).toBe(false);
   });
 });
+
+describe("Open5e species and background desc", () => {
+  const detail = async (call: Promise<string>) => (await call).split("\n");
+
+  it("a 2014 species prints its desc after the size and speed line, before the traits", async () => {
+    const dwarf = await detail(o5SearchRaces({ name: "dwarf", rulesEdition: "2014" }, "unavailable"));
+    expect(dwarf.slice(0, 2)).toEqual(["Dwarf", U14]);
+    expect(dwarf[2]).toMatch(/^Size: .* \| Speed: /);
+    expect(dwarf.slice(3, 6)).toEqual(["", "Your dwarf character has an assortment of inborn abilities, part and parcel of dwarven nature.", ""]);
+    expect(dwarf[6]).toMatch(/^\*\*[^*]+\.\*\* /);
+    const high = await detail(o5SearchRaces({ name: "high elf", rulesEdition: "2014" }, "unavailable"));
+    expect(high).toContain("As a high elf, you have a keen mind and a mastery of at least the basics of magic. In many fantasy gaming worlds, "
+      + "there are two kinds of high elves. One type is haughty and reclusive, believing themselves to be superior to non-elves and even other elves. "
+      + "The other type is more common and more friendly, and often encountered among humans and other races.");
+  });
+
+  it("the 2014 Acolyte prints its desc before its benefits", async () => {
+    const acolyte = await detail(o5SearchBackgrounds({ name: "acolyte", rulesEdition: "2014" }, "unavailable"));
+    expect(acolyte.slice(0, 3)).toEqual(["Acolyte", U14, ""]);
+    expect(acolyte[3]).toMatch(/^You have spent your life in the service of a temple to a specific god or pantheon of gods\./);
+    // The desc keeps its own paragraphs; the benefits follow it after a blank line.
+    const firstBenefit = acolyte.findIndex(l => /^\*\*[^*]+:\*\* /.test(l));
+    expect(firstBenefit).toBeGreaterThan(4);
+    expect(acolyte[firstBenefit - 1]).toBe("");
+  });
+
+  it("an empty SRD 5.2 desc adds no blank paragraph", async () => {
+    const acolyte = await detail(o5SearchBackgrounds({ name: "acolyte", rulesEdition: "2024" }, "unavailable"));
+    expect(acolyte.slice(0, 4)).toEqual(["Acolyte", U24, "", acolyte[3]]);
+    expect(acolyte[3]).toMatch(/^\*\*[^*]+:\*\* /);
+    const elf = await detail(o5SearchRaces({ name: "elf", rulesEdition: "2024" }, "unavailable"));
+    expect(elf[3]).toBe("");
+    expect(elf[4]).toMatch(/^\*\*[^*]+\.\*\* /);
+  });
+});
