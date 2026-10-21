@@ -549,6 +549,11 @@ type O5Gear = O5MagicItem | O5Item;
 
 const stripTags = (text: string | null | undefined): string => (text ?? "").replace(/<[^>]+>/g, "").trim();
 
+/** An API enum as printed: "FULL" → "Full", "FIGHTING_STYLE" → "Fighting Style", "Epic Boon" kept. */
+export const humanize = (value: string): string => value.split(/[_\s]+/).filter(Boolean)
+  .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+  .join(" ");
+
 function formatO5MagicItem(hit: O5Hit<O5MagicItem>, origin: Open5eOrigin): string {
   const i = hit.entry.record;
   const attune = i.requires_attunement ? ` | Requires attunement${i.attunement_detail ? ` (${i.attunement_detail})` : ""}` : "";
@@ -714,9 +719,25 @@ async function formatO5Species(hit: O5Hit<O5Species>, origin: Open5eOrigin): Pro
   return lines.join("\n");
 }
 
+/**
+ * Species group by base race, as on D&D Beyond (nested mode in edition-search.ts):
+ * selected per species name, then a base race with a pick in the requested
+ * edition drops the other edition's picks and counts them hidden. So under 2024
+ * the 2024 Elf replaces SRD 5.1's Elf and High Elf; under 2014 each subrace is
+ * listed; and naming a subrace ("high elf") finds it under either edition.
+ */
+async function o5SelectSpecies(requested: RulesEdition, name?: string): ReturnType<typeof o5Select<O5Species>> {
+  const { selected, hidden } = await o5Select<O5Species>(["species"], requested, { name });
+  const bases = await Promise.all(selected.map(async ({ entry }) =>
+    twinName((await o5Parent<O5Species>("species", entry.edition, entry.record.subspecies_of))?.name ?? entry.record.name)));
+  const withRequested = new Set(bases.filter((_, i) => selected[i].entry.edition === requested));
+  const kept = selected.filter(({ entry }, i) => entry.edition === requested || !withRequested.has(bases[i]));
+  return { selected: kept, hidden: hidden + selected.length - kept.length };
+}
+
 export async function o5SearchRaces(params: { name?: string; rulesEdition?: RulesEdition }, origin: "unavailable" | "not-found"): Promise<string> {
   const requested = params.rulesEdition ?? "2024";
-  return o5OptionReply(requested, origin, await o5Select<O5Species>(["species"], requested, { name: params.name }), {
+  return o5OptionReply(requested, origin, await o5SelectSpecies(requested, params.name), {
     single: !!params.name,
     counted: "race(s)",
     noMatch: "No races found (SRD only).",
@@ -736,7 +757,7 @@ interface O5Class extends O5Record {
   saving_throws?: Array<{ name: string }>;
   caster_type?: string | null;
   subclass_of?: { name: string; key: string } | null;
-  features?: Array<{ name: string }>;
+  features?: Array<{ name: string; feature_type?: string | null }>;
 }
 
 /** A class's hit die, lower-cased; a subclass has none of its own and takes its class's. */
@@ -754,8 +775,9 @@ async function formatO5Class(hit: O5Hit<O5Class>, origin: Open5eOrigin): Promise
   const dice = [die && `Hit Die: ${die}`, hp && `HP at 1st: ${hp}`].filter(Boolean);
   if (dice.length) lines.push(dice.join(" | "));
   if (c.saving_throws?.length) lines.push(`Saving Throws: ${c.saving_throws.map(s => s.name).join(", ")}`);
-  if (c.caster_type && c.caster_type !== "NONE") lines.push(`Spellcasting: ${c.caster_type}`);
-  const features = [...new Set((c.features ?? []).map(f => f.name))];
+  if (c.caster_type && c.caster_type !== "NONE") lines.push(`Spellcasting: ${humanize(c.caster_type)}`);
+  // Only class-level features: the rest are table rows (spell slots, proficiency bonus, starting equipment).
+  const features = [...new Set((c.features ?? []).filter(f => f.feature_type === "CLASS_LEVEL_FEATURE").map(f => f.name))];
   if (features.length) lines.push(`Features: ${features.join(", ")}`);
   return lines.join("\n");
 }
@@ -817,7 +839,7 @@ const prerequisite = (f: O5Feat): string =>
 function formatO5Feat(hit: O5Hit<O5Feat>, origin: Open5eOrigin): string {
   const f = hit.entry.record;
   const lines = [f.name, o5Label(hit.entry.edition, origin, hit)];
-  if (f.type) lines.push(`Type: ${f.type}`);
+  if (f.type) lines.push(`Type: ${humanize(f.type)}`);
   if (prerequisite(f)) lines.push(`Prerequisite: ${prerequisite(f)}`);
   const body = [stripTags(f.desc), ...(f.benefits ?? []).map(x => `• ${stripTags(x.desc)}`)].filter(Boolean);
   if (body.length) lines.push(``, ...body);

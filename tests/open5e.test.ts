@@ -6,7 +6,7 @@ import {
   o5GetSpell, o5GetMonster, o5GetEquipment,
   o5SearchSpells, o5SearchMonsters, o5SearchItems,
   o5SearchRaces, o5SearchClasses, o5SearchBackgrounds, o5SearchFeats,
-  o5SearchSections, o5GetSection, o5GetMonsterStats, crText, castingTime,
+  o5SearchSections, o5GetSection, o5GetMonsterStats, crText, castingTime, humanize,
 } from "../src/open5e.js";
 
 const section = { slug: "combat", name: "Combat", desc: "Roll initiative.", parent: "", document__slug: "wotc-srd" };
@@ -294,6 +294,119 @@ describe("Open5e v2 equipment and character options", () => {
   });
   it("a mundane item prints a dash for a zero cost or weight", async () => {
     expect(await o5GetEquipment("Antitoxin", "2024", "unavailable")).toMatch(/^Cost: 50 gp \| Weight: —$/m);
+  });
+});
+
+describe("Open5e v2 equipment and options, fix round 1", () => {
+  const lines = (out: string | null) => out!.split("\n");
+
+  it("2024 weapon and armour gets carry the SRD 5.2 label", async () => {
+    expect(lines(await o5GetEquipment("Longsword", "2024", "unavailable"))[1]).toBe(U24);
+    expect(lines(await o5GetEquipment("Shield", "2024", "unavailable"))[1]).toBe(U24);
+    expect(lines(await o5GetEquipment("Chain Mail", "2024", "unavailable")).slice(0, 2)).toEqual(["Chain Mail (Heavy Armor)", U24]);
+  });
+
+  it("decision 3: an exact twin in one document beats a partial match in the other", async () => {
+    // SRD 5.1 has only "Rope, hempen (50 feet)": the exact "Rope" is SRD 5.2's.
+    expect(lines(await o5GetEquipment("Rope", "2014", "unavailable")).slice(0, 3))
+      .toEqual(["Rope (Adventuring Gear)", U24, "(no 2014 version found — 2024 text shown)"]);
+  });
+
+  it("a renamed armour's 2014 name reaches SRD 5.2's armour, with the rename line", async () => {
+    const out = (await o5GetEquipment("Hide", "2024", "unavailable"))!;
+    expect(out.split("\n").slice(0, 3)).toEqual(["Hide Armor (Medium Armor)", U24, "(2014 name: Hide · 2024 name: Hide Armor)"]);
+    expect(out).not.toContain("no 2024 version");
+    expect(lines(await o5GetEquipment("Hide", "2014", "unavailable")).slice(0, 2)).toEqual(["Hide (Medium Armor)", U14]);
+  });
+
+  it("the rarity filter keeps the rare magic item and drops the mundane one", async () => {
+    const rare = (await o5SearchItems({ name: "longsword", rarity: "rare", rulesEdition: "2024" }, "unavailable")).split("\n");
+    expect(rare).toContain("• Flame Tongue Longsword [2024] (Weapon, Rare)");
+    expect(rare).not.toContain("• Longsword [2024] (Weapon)");
+    expect((await o5SearchItems({ name: "longsword", rulesEdition: "2024" }, "unavailable")).split("\n")).toContain("• Longsword [2024] (Weapon)");
+  });
+
+  it("the type filter alone excludes a line", async () => {
+    expect(await o5SearchItems({ rulesEdition: "2024" }, "unavailable")).toContain("• Antitoxin [2024] (Potion)");
+    const wondrous = (await o5SearchItems({ type: "wondrous", rulesEdition: "2024" }, "unavailable")).split("\n");
+    expect(wondrous).toContain("• Bag of Holding [2024] (Wondrous Item, Uncommon)");
+    expect(wondrous.some(l => l.includes("Antitoxin"))).toBe(false);
+  });
+
+  it("equipment detail blocks", async () => {
+    expect(lines(await o5GetEquipment("Flame Tongue Longsword", "2024", "unavailable"))[0])
+      .toBe("Flame Tongue Longsword (Weapon, Rare | Requires attunement)");
+    const dagger = (await o5GetEquipment("Dagger", "2014", "unavailable"))!;
+    expect(dagger).toMatch(/^Range: 20\/60 feet$/m);
+    expect(dagger).toMatch(/^Properties: Finesse, Light, Thrown \(range 20\/60\)$/m);
+    expect(await o5GetEquipment("Chain mail", "2014", "unavailable")).toMatch(/^AC: 16 \| Requires STR 13 \| Stealth disadvantage$/m);
+  });
+
+  it("species group by base race: under 2024 the 2024 Elf replaces SRD 5.1's Elf and High Elf", async () => {
+    const all = await o5SearchRaces({ rulesEdition: "2024" }, "unavailable");
+    expect(all).toContain("• Elf [2024] | Speed: 30 feet");
+    expect(all).not.toContain("High Elf [2014]");
+    expect(all.split("\n").at(-1)).toBe('4 2014 versions hidden — rules_edition: "2014" shows them.');
+    const elf = await o5SearchRaces({ name: "elf", rulesEdition: "2024" }, "unavailable");
+    expect(elf.split("\n").slice(0, 2)).toEqual(["Elf", U24]);   // single hit: detail block
+    // The 2024 Elf's Elven Lineage trait names the High Elf lineage; SRD 5.1's High Elf itself is not shown.
+    expect(elf).not.toContain("High Elf [2014]");
+    expect(elf).not.toContain("subrace of");
+    expect(elf.split("\n").at(-1)).toBe('2 2014 versions hidden — rules_edition: "2014" shows them.');
+  });
+
+  it("species under 2014 list each subrace; naming a subrace finds it under either edition", async () => {
+    const elf = (await o5SearchRaces({ name: "elf", rulesEdition: "2014" }, "unavailable")).split("\n");
+    expect(elf.filter(l => l.startsWith("• "))).toEqual([
+      "• Elf [2014] | Speed: Your base walking speed is 30 feet.",
+      "• High Elf [2014] (subrace of Elf) | Speed: Your base walking speed is 30 feet.",
+    ]);
+    expect(elf.at(-1)).toBe("1 2024 version hidden — omit rules_edition to show it.");
+    const high = (await o5SearchRaces({ name: "high elf", rulesEdition: "2024" }, "unavailable")).split("\n");
+    expect(high.slice(0, 3)).toEqual(["High Elf", U14, "(no 2024 version found — 2014 text shown)"]);
+    expect(high.some(l => l.includes("hidden"))).toBe(false);
+  });
+
+  it("class detail: saving throws, humanized spellcasting, class-level features only", async () => {
+    const wizard = lines(await o5SearchClasses({ name: "wizard", rulesEdition: "2024" }, "unavailable"));
+    expect(wizard).toContain("Saving Throws: Intelligence, Wisdom");
+    expect(wizard).toContain("Spellcasting: Full");
+    expect(wizard).toContain("Features: Ability Score Improvement, Arcane Recovery, Epic Boon, Memorize Spell, Ritual Adept, Scholar, "
+      + "Signature Spells, Spell Mastery, Spellcasting, Wizard Spell List, Wizard Subclass");
+    const wizard14 = lines(await o5SearchClasses({ name: "wizard", rulesEdition: "2014" }, "unavailable"));
+    expect(wizard14).toContain("Features: Ability Score Improvement, Arcane Recovery, Arcane Tradition, Signature Spells, Spell Mastery, Spellcasting");
+    expect(wizard14.some(l => l.startsWith("Spellcasting:"))).toBe(false);
+  });
+
+  it("background detail lists its benefits", async () => {
+    const acolyte = lines(await o5SearchBackgrounds({ name: "acolyte", rulesEdition: "2024" }, "unavailable"));
+    expect(acolyte.slice(0, 2)).toEqual(["Acolyte", U24]);
+    expect(acolyte).toContain("**Skill Proficiencies:** Insight and Religion");
+    expect(acolyte).toContain("**Feat:** Magic Initiate (Cleric)");
+  });
+
+  it("feat detail: humanized type, prerequisite, benefits", async () => {
+    const grappler = lines(await o5SearchFeats({ name: "grappler", rulesEdition: "2024" }, "unavailable"));
+    expect(grappler.slice(2, 4)).toEqual(["Type: General", "Prerequisite: Level 4+, Strength or Dexterity 13+"]);
+    expect(grappler).toContain("• You have Advantage on attack rolls against a creature Grappled by you.");
+    expect(lines(await o5SearchFeats({ name: "grappler", rulesEdition: "2014" }, "unavailable"))[2]).toBe("Type: General");
+    const alert = lines(await o5SearchFeats({ name: "alert", rulesEdition: "2024" }, "unavailable"));
+    expect(alert[2]).toBe("Type: Origin");
+    expect(alert.some(l => l.startsWith("Prerequisite:"))).toBe(false);
+  });
+
+  it("humanize title-cases API enums", () => {
+    expect(["FULL", "HALF", "PACT", "GENERAL", "FIGHTING_STYLE", "Epic Boon", "Origin"].map(humanize))
+      .toEqual(["Full", "Half", "Pact", "General", "Fighting Style", "Epic Boon", "Origin"]);
+  });
+
+  it.each([
+    ["races", () => o5SearchRaces({ name: "zzz" }, "unavailable"), "No races found (SRD only)."],
+    ["classes", () => o5SearchClasses({ name: "zzz" }, "unavailable"), "No classes found (SRD only)."],
+    ["backgrounds", () => o5SearchBackgrounds({ name: "zzz" }, "unavailable"), "No backgrounds found (SRD only)."],
+    ["feats", () => o5SearchFeats({ name: "zzz" }, "unavailable"), "No feats found (SRD only)."],
+  ])("a %s search with no match gives the plain message", async (_n, call, expected) => {
+    expect(await call()).toBe(expected);
   });
 });
 

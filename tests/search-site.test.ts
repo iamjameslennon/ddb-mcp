@@ -81,9 +81,9 @@ describe("search (ddb_search_site)", () => {
     expect(text.match(/^Rules: /gm)).toHaveLength(2);
   });
 
-  it('skips an empty "No magic items found …" section', async () => {
+  it('skips an empty "No items found …" section', async () => {
     sections.spells.mockResolvedValue(ddb("**Spell Search** (1 found)"));
-    sections.items.mockResolvedValue(plainSection('No magic items found matching "x" (SRD only).'));
+    sections.items.mockResolvedValue(plainSection("No items found matching the criteria (SRD only)."));
     expect(await search("x", "all", "2024")).not.toContain("## Items");
   });
 

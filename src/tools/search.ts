@@ -20,8 +20,8 @@ const CATEGORY_LABELS: Record<SpecificCategory, string> = {
 };
 
 // Each underlying search returns its own "no results" sentence. Detect them so
-// we can omit empty sections in the "all" rollup. Open5e's item fallback says
-// "No magic items found", hence the several words.
+// we can omit empty sections in the "all" rollup, e.g. Open5e's item fallback:
+// "No items found matching the criteria (SRD only)."
 const EMPTY_RESULT_PATTERN = /^no\s+[\w\s]+?\s+found/i;
 
 export async function search(

@@ -82,8 +82,8 @@ const PATH_MARKER: Record<"ddb" | "open5e", Record<string, Partial<Record<"2024"
     // The edition reaches o5GetMonsterStats: "Goblin" is Goblin Warrior under 2024 and Goblin under 2014.
     ddb_rate_encounter: { "2024": "Goblin Warrior [2024]", "2014": "Goblin [2014]" },
     ddb_roll_treasure: { "2024": "Goblin Warrior [2024]", "2014": "Goblin [2014]" },
-    // The weapon records have no desc. Only SRD 5.2's Longsword has a Mastery line; the 2014 marker is its weapon block.
-    ddb_get_equipment: { "2024": "Mastery: Sap", "2014": "Properties: Versatile (1d10)" },
+    // The weapon records have no desc. Only SRD 5.2's Longsword has a Mastery line; under 2014, the title over the 2014 rules line.
+    ddb_get_equipment: { "2024": "Mastery: Sap", "2014": "Longsword (Martial Weapon)\nRules: 2014 · SRD 5.1" },
   },
 };
 
