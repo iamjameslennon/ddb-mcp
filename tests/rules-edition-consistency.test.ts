@@ -35,11 +35,12 @@ vi.mock("../src/session-fetch.js", async (orig) => {
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { server } from "../src/server.js";
-import { SERVER_INSTRUCTIONS } from "../src/edition.js";
+import { SERVER_INSTRUCTIONS, open5eSearchHeader } from "../src/edition.js";
 import { clearReferenceCache } from "../src/tools/reference.js";
 import { clearMonsterCache } from "../src/tools/monster.js";
 import { clearOpen5eCache } from "../src/open5e.js";
 import { COBALT_URL, GAME_DATA, jsonResponse, makeJwt, spell } from "./fixtures/spell-service.js";
+import { o5FixtureFetch } from "./fixtures/open5e-v2.js";
 
 const TAG = String.raw`\[(?:2024|2014|third-party|homebrew|playtest|edition not stated)\]`;
 const RESULT_LINE = /^(?:- \*\*|• )/;
@@ -74,8 +75,10 @@ const PATH_MARKER: Record<"ddb" | "open5e", Record<string, Partial<Record<"2024"
     ddb_get_equipment: { "2024": "LONGSWORD 2024", "2014": "LONGSWORD 2014" },
   },
   open5e: {
-    ddb_get_spell: { "2024": "A bright streak.", "2014": "A bright streak." },
-    ddb_get_monster: { "2024": "Slash.", "2014": "Slash." },
+    // The two documents' Fireball texts, live 2026-10-20.
+    ddb_get_spell: { "2024": "fiery explosion", "2014": "pointing finger" },
+    // Under 2024, "Goblin" reaches Goblin Warrior through the rename table; under 2014 the title line is the bare name.
+    ddb_get_monster: { "2024": "Goblin Warrior", "2014": "Goblin\n" },
     ddb_get_equipment: { "2024": "A fine blade.", "2014": "A fine blade." },
   },
 };
@@ -89,6 +92,9 @@ const hiddenFooter = (ed: "2024" | "2014") => ed === "2024"
   : "1 2024 version hidden — omit rules_edition to show it.";
 const dmgRulesLine = (ed: "2024" | "2014") => `Rules: ${ed} · Dungeon Master's Guide (${ed})`;
 const TREASURE_NO_2014 = "(no 2014 version exists — 2024 tables used)";
+// Open5e path: searches whose first line must be the Open5e header for the requested
+// edition, so a fallback that drops rulesEdition fails under 2014.
+const O5_HEADER_CHECK = new Set(["ddb_search_spells", "ddb_search_monsters"]);
 // Built from D&D Beyond only (no Open5e path): logged out, they report an error.
 const NO_OPEN5E = new Set(["ddb_search_class_features", "ddb_search_racial_traits"]);
 const EDITION_CHECK: Record<string, (ed: "2024" | "2014") => EditionCheck> = {
@@ -210,18 +216,6 @@ async function route(input: unknown): Promise<Response> {
 
 // ── Open5e fixtures ───────────────────────────────────────────────────────────
 
-const O5_SPELL = {
-  name: "Fireball", level_int: 3, school: "Evocation", casting_time: "1 action", range: "150 feet",
-  components: "V, S, M", duration: "Instantaneous", requires_concentration: false, ritual: "no",
-  desc: "A bright streak.", dnd_class: "Sorcerer, Wizard",
-};
-const O5_MONSTER = {
-  name: "Goblin", size: "Small", type: "humanoid", alignment: "neutral evil", armor_class: 15, hit_points: 7,
-  hit_dice: "2d6", speed: { walk: 30 }, strength: 8, dexterity: 14, constitution: 10, intelligence: 10,
-  wisdom: 8, charisma: 8, skills: {}, senses: "darkvision 60 ft.", languages: "Common", challenge_rating: "1/4",
-  actions: [{ name: "Scimitar", desc: "Slash." }],
-};
-
 const O5_ITEM = { name: "Longsword", type: "Weapon", rarity: "common", desc: "A fine blade." };
 
 // Two records per endpoint, both matching the query: a single hit would render a detail block with no result line.
@@ -238,12 +232,16 @@ const O5_BACKGROUNDS = ["Acolyte", "Acolyte (Temple)"].map(name => ({
 }));
 const O5_FEATS = ["Alert", "Alert (Variant)"].map(name => ({ name, desc: "Stay sharp." }));
 
-/** Open5e answers each endpoint with its fixtures, filtered by the request's search/name query like the real API. */
+const o5v2 = o5FixtureFetch();
+
+/**
+ * Spells and creatures come from the recorded v2 documents. The other kinds
+ * (still on v1) get their fixtures, filtered by the request's search/name query like the real API.
+ */
 function o5Fetch(input: unknown): Promise<Response> {
   const url = String(input);
-  const fixtures = url.includes("/spells/") ? [O5_SPELL]
-    : url.includes("/monsters/") ? [O5_MONSTER]
-    : /\/(magicitems|weapons|armor)\//.test(url) ? [O5_ITEM]
+  if (url.includes("/v2/")) return o5v2(url);
+  const fixtures = /\/(magicitems|weapons|armor)\//.test(url) ? [O5_ITEM]
     : url.includes("/races/") ? O5_RACES
     : url.includes("/classes/") ? O5_CLASSES
     : url.includes("/backgrounds/") ? O5_BACKGROUNDS
@@ -318,6 +316,7 @@ describe.each(["ddb", "open5e"] as const)("labels (%s path)", mode => {
     if (mode === "ddb") expect(text).not.toContain("Open5e fallback");
     const marker = PATH_MARKER[mode][tool]?.[ed];
     if (marker) expect(text).toContain(marker);
+    if (mode === "open5e" && O5_HEADER_CHECK.has(tool)) expect(text.split("\n")[0]).toBe(open5eSearchHeader(ed, "unavailable"));
     const check = mode === "ddb" ? EDITION_CHECK[tool]?.(ed) : undefined;
     if (check) {
       for (const s of check.present) expect(text).toContain(s);

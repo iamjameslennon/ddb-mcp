@@ -12,7 +12,11 @@
  */
 
 import { TtlCache } from "./cache.js";
-import { editionTag, rulesLine, searchHeader, type EditionInfo, type Open5eOrigin, type RulesEdition } from "./edition.js";
+import {
+  editionTag, groupAndSelect, lookupByName, normalizeName, open5eSearchHeader, renameLine, rulesLine, searchFooter,
+  searchHeader, selectByEdition, twinName,
+  type EditionInfo, type Open5eOrigin, type RulesEdition, type SelectionReason,
+} from "./edition.js";
 
 const OPEN5E = "https://api.open5e.com/v1";
 const SRD = "wotc-srd";
@@ -100,7 +104,7 @@ export async function loadO5Document<T extends O5Record>(endpoint: O5Endpoint, e
 
 // ── Edition labels ────────────────────────────────────────────────────────────
 
-// Interim: v1 Open5e serves SRD 5.1 only. Phase 4 moves the fallback to v2 (SRD 5.2/5.1).
+// Interim: the v1 kinds below serve SRD 5.1 only, until they move to v2.
 const O5_INFO: EditionInfo = { ruleset: "2014", book: null };
 
 /** Line 2 of a single lookup. */
@@ -108,58 +112,167 @@ const label = (origin: Open5eOrigin): string => rulesLine(O5_INFO, { open5e: ori
 /** Inline tag after a search result's name. */
 const TAG = editionTag(O5_INFO);
 
-// ── SPELLS ────────────────────────────────────────────────────────────────────
+// ── Selection over both SRD documents ─────────────────────────────────────────
+// Both documents of an endpoint are selected together, each record's ruleset
+// taken from its document, with the same edition code as D&D Beyond entries.
 
-interface O5Spell {
-  name: string;
-  level_int: number;
-  school: string;
-  casting_time: string;
-  range: string;
-  components: string;
-  duration: string;
-  requires_concentration: boolean;
-  ritual: string;
-  desc: string;
-  higher_level?: string;
-  dnd_class?: string;
+interface O5Entry<T> { record: T; endpoint: O5Endpoint; edition: RulesEdition }
+
+interface O5Hit<T> {
+  entry: O5Entry<T>;
+  reason?: SelectionReason;
+  renamed?: { name2014: string; name2024: string };
 }
 
-function formatO5Spell(s: O5Spell, origin: Open5eOrigin): string {
-  const level = s.level_int === 0 ? "Cantrip" : `Level ${s.level_int}`;
-  const conc = s.requires_concentration ? " | Concentration" : "";
-  const ritual = s.ritual === "yes" ? " | Ritual" : "";
-  const lines = [
-    `${s.name} (${level} ${s.school}${conc}${ritual})`,
-    label(origin),
-    `Casting Time: ${s.casting_time}`,
-    `Range: ${s.range}`,
-    `Components: ${s.components}`,
-    `Duration: ${s.duration}`,
-  ];
-  if (s.dnd_class) lines.push(`Classes: ${s.dnd_class}`);
-  lines.push("", s.desc.replace(/<[^>]+>/g, "").trim());
-  if (s.higher_level) lines.push("", `At Higher Levels: ${s.higher_level}`);
+const o5Info = (e: O5Entry<unknown>): EditionInfo => ({ ruleset: e.edition, book: null });
+
+/** Endpoint order (as given), then record key. */
+function o5Tiebreak<T extends O5Record>(endpoints: readonly O5Endpoint[]): (a: O5Entry<T>, b: O5Entry<T>) => number {
+  return (a, b) => endpoints.indexOf(a.endpoint) - endpoints.indexOf(b.endpoint) || a.record.key.localeCompare(b.record.key);
+}
+
+/** Both documents' records, loaded in parallel: the requested document's endpoints first, in the order given, then the other's. */
+async function o5Entries<T extends O5Record>(endpoints: readonly O5Endpoint[], requested: RulesEdition): Promise<O5Entry<T>[]> {
+  const order: RulesEdition[] = requested === "2024" ? ["2024", "2014"] : ["2014", "2024"];
+  const loads = order.flatMap(edition => endpoints.map(async endpoint =>
+    (await loadO5Document<T>(endpoint, edition)).map(record => ({ record, endpoint, edition }))));
+  return (await Promise.all(loads)).flat();
+}
+
+/** A single lookup: exact twin name across both documents, else a partial match, then the requested edition's entry of that group. */
+async function o5Lookup<T extends O5Record>(endpoints: readonly O5Endpoint[], name: string, requested: RulesEdition): Promise<O5Hit<T> | null> {
+  const entries = await o5Entries<T>(endpoints, requested);
+  const found = lookupByName(entries, name, requested, {
+    name: e => e.record.name,
+    info: o5Info,
+    tiebreak: o5Tiebreak<T>(endpoints),
+    // The requested document first, then names starting with the query, then the shortest, then alphabetical.
+    partialMatch: (all, q) => all
+      .filter(e => normalizeName(e.record.name).includes(q))
+      .sort((a, b) =>
+        (a.edition === requested ? 0 : 1) - (b.edition === requested ? 0 : 1)
+        || (normalizeName(a.record.name).startsWith(q) ? 0 : 1) - (normalizeName(b.record.name).startsWith(q) ? 0 : 1)
+        || a.record.name.length - b.record.name.length
+        || a.record.name.localeCompare(b.record.name))[0],
+  });
+  if (!found) return null;
+  // SRD 5.2 keeps some 2014-era names (Arcane Hand): a rename line is printed
+  // only when the shown entry carries its own edition's spelling.
+  const shownName = found.entry.record.name;
+  const ownSpelling = normalizeName(shownName) === twinName(shownName);
+  const keepRename = found.entry.edition === "2024" ? ownSpelling : !ownSpelling;
+  return { entry: found.entry, reason: found.reason, renamed: keepRename ? found.renamed : undefined };
+}
+
+/** A search over both documents: one entry per twin group, the other edition's twins hidden and counted. Sorted by name. */
+async function o5Select<T extends O5Record>(
+  endpoints: readonly O5Endpoint[],
+  requested: RulesEdition,
+  opts: { name?: string; passes?: (e: O5Entry<T>) => boolean },
+): Promise<{ selected: Array<{ entry: O5Entry<T>; reason?: SelectionReason }>; hidden: number }> {
+  const entries = await o5Entries<T>(endpoints, requested);
+  const query = opts.name ? normalizeName(opts.name) : "";
+  const { selected, hidden } = groupAndSelect(entries, requested, {
+    info: o5Info,
+    twinKey: e => twinName(e.record.name),
+    tiebreak: o5Tiebreak<T>(endpoints),
+    nameMatches: query ? e => normalizeName(e.record.name).includes(query) : undefined,
+    passes: opts.passes,
+    countFilteredPicks: true,
+  });
+  return {
+    selected: selected
+      .map(({ entry, reason }) => ({ entry, reason }))
+      .sort((a, b) => a.entry.record.name.localeCompare(b.entry.record.name)),
+    hidden,
+  };
+}
+
+/** The lines under a single lookup's title: the rules line, then the reason line, then the rename line. */
+function o5Label(edition: RulesEdition, origin: Open5eOrigin, extra: { reason?: SelectionReason; renamed?: O5Hit<unknown>["renamed"] } = {}): string {
+  const lines = [rulesLine({ ruleset: edition, book: null }, { open5e: origin, reason: extra.reason })];
+  if (extra.renamed) lines.push(renameLine(extra.renamed.name2014, extra.renamed.name2024));
   return lines.join("\n");
 }
 
-/**
- * Fetch all SRD cantrips from Open5e. Used to supplement the spell compendium
- * so cantrips are available cold (without any character loaded).
- * Returns raw O5Spell objects so they can be converted to DdbSpell shape.
- */
-export async function fetchO5Cantrips(): Promise<O5Spell[]> {
-  let page = 1;
-  const all: O5Spell[] = [];
-  while (true) {
-    const data = await o5fetch(
-      `/spells/?level_int=0&document__slug=${SRD}&limit=100&page=${page}`
-    ) as { count: number; results: O5Spell[]; next: string | null };
-    all.push(...data.results);
-    if (!data.next) break;
-    page++;
-  }
-  return all;
+/** A search reply: the Open5e header, the heading, the lines and the footer. Hidden twins alone keep the header and footer around `noMatch`. */
+function o5SearchReply(
+  requested: RulesEdition,
+  origin: "unavailable" | "not-found",
+  heading: string,
+  lines: string[],
+  hidden: number,
+  noMatch: string,
+): string {
+  const footer = searchFooter(requested, hidden);
+  if (lines.length) return [open5eSearchHeader(requested, origin), heading, ...lines, ...(footer ? [footer] : [])].join("\n");
+  if (footer) return [open5eSearchHeader(requested, origin), noMatch, footer].join("\n");
+  return noMatch;
+}
+
+/** A float challenge rating as printed: 0.25 → "1/4". */
+export function crText(cr: number): string {
+  if (cr === 0.125) return "1/8";
+  if (cr === 0.25) return "1/4";
+  if (cr === 0.5) return "1/2";
+  return String(cr);
+}
+
+const lowerEq = (query: string, ...values: Array<string | null | undefined>): boolean =>
+  values.some(v => v != null && v.toLowerCase() === query.toLowerCase());
+
+// ── SPELLS ────────────────────────────────────────────────────────────────────
+
+interface O5Spell extends O5Record {
+  level: number;
+  school: { name: string; key: string };
+  casting_time: string;
+  range_text: string;
+  verbal: boolean;
+  somatic: boolean;
+  material: boolean;
+  material_specified?: string | null;
+  duration: string;
+  concentration: boolean;
+  ritual: boolean;
+  desc: string;
+  higher_level?: string | null;
+  classes?: Array<{ name: string }>;
+}
+
+const CASTING_TIME: Record<string, string> = {
+  action: "1 action",
+  "bonus-action": "1 bonus action",
+  reaction: "1 reaction",
+  "1minute": "1 minute",
+  "10minutes": "10 minutes",
+  "1hour": "1 hour",
+  "8hours": "8 hours",
+  "12hours": "12 hours",
+  "24hours": "24 hours",
+};
+
+const spellLevel = (s: O5Spell): string => (s.level === 0 ? "Cantrip" : `Level ${s.level}`);
+
+function formatO5Spell(hit: O5Hit<O5Spell>, origin: Open5eOrigin): string {
+  const s = hit.entry.record;
+  const conc = s.concentration ? " | Concentration" : "";
+  const ritual = s.ritual ? " | Ritual" : "";
+  const components = [s.verbal && "V", s.somatic && "S", s.material && `M${s.material_specified ? ` (${s.material_specified})` : ""}`]
+    .filter(Boolean).join(", ");
+  const lines = [
+    `${s.name} (${spellLevel(s)} ${s.school.name}${conc}${ritual})`,
+    o5Label(hit.entry.edition, origin, hit),
+    `Casting Time: ${CASTING_TIME[s.casting_time] ?? s.casting_time}`,
+    `Range: ${s.range_text}`,
+    `Components: ${components}`,
+    `Duration: ${s.duration}`,
+  ];
+  const classes = (s.classes ?? []).map(c => c.name).join(", ");
+  if (classes) lines.push(`Classes: ${classes}`);
+  lines.push("", s.desc.replace(/<[^>]+>/g, "").trim());
+  if (s.higher_level) lines.push("", `At Higher Levels: ${s.higher_level}`);
+  return lines.join("\n");
 }
 
 export async function o5SearchSpells(params: {
@@ -170,149 +283,154 @@ export async function o5SearchSpells(params: {
   ritual?: boolean;
   limit?: number;
   offset?: number;
-}, origin: Open5eOrigin): Promise<string> {
+  rulesEdition?: RulesEdition;
+}, origin: "unavailable" | "not-found"): Promise<string> {
+  const requested = params.rulesEdition ?? "2024";
   const limit = params.limit ?? 20;
   const offset = params.offset ?? 0;
-  // Request enough results to cover the offset window (capped at 100)
-  const qs = new URLSearchParams({ document__slug: SRD, limit: String(Math.min(offset + limit, 100)) });
-  if (params.name) qs.set("search", params.name);
-  if (params.level !== undefined) qs.set("level_int", String(params.level));
-  if (params.school) qs.set("school", params.school.toLowerCase());
-  if (params.concentration !== undefined)
-    qs.set("requires_concentration", String(params.concentration));
-  if (params.ritual !== undefined)
-    qs.set("ritual", params.ritual ? "yes" : "no");
-
-  const data = await o5fetch(`/spells/?${qs}`) as { count: number; results: O5Spell[] };
-  const page = data.results.slice(offset, offset + limit);
-  if (!page.length) return `No spells found matching the criteria (SRD only).`;
-
-  const lines = page.map(s => {
-    const level = s.level_int === 0 ? "Cantrip" : `Level ${s.level_int}`;
-    const conc = s.requires_concentration ? " [C]" : "";
-    const ritual = s.ritual === "yes" ? " [R]" : "";
-    return `• ${s.name} ${TAG} (${level} ${s.school}${conc}${ritual})`;
+  const { selected, hidden } = await o5Select<O5Spell>(["spells"], requested, {
+    name: params.name,
+    passes: ({ record: s }) =>
+      (params.level === undefined || s.level === params.level)
+      && (!params.school || lowerEq(params.school, s.school.key, s.school.name))
+      && (params.concentration === undefined || s.concentration === params.concentration)
+      && (params.ritual === undefined || s.ritual === params.ritual),
   });
 
-  const showing = offset + 1 === offset + page.length
-    ? `${offset + 1}`
-    : `${offset + 1}–${offset + page.length}`;
-  const header = data.count > offset + limit
-    ? `Found ${data.count} spell(s) (showing ${showing}, SRD only — use offset: ${offset + limit} for more):`
-    : `Found ${data.count} spell(s) (showing ${showing}, SRD only):`;
+  const page = selected.slice(offset, offset + limit);
+  const lines = page.map(({ entry }) => {
+    const s = entry.record;
+    const conc = s.concentration ? " [C]" : "";
+    const ritual = s.ritual ? " [R]" : "";
+    return `• ${s.name} ${editionTag(o5Info(entry))} (${spellLevel(s)} ${s.school.name}${conc}${ritual})`;
+  });
 
-  return [label(origin), header, ...lines].join("\n");
+  const showing = page.length === 1 ? `${offset + 1}` : `${offset + 1}–${offset + page.length}`;
+  const heading = selected.length > offset + limit
+    ? `Found ${selected.length} spell(s) (showing ${showing}, SRD only — use offset: ${offset + limit} for more):`
+    : `Found ${selected.length} spell(s) (showing ${showing}, SRD only):`;
+  return o5SearchReply(requested, origin, heading, lines, hidden, "No spells found matching the criteria (SRD only).");
 }
 
-export async function o5GetSpell(name: string, origin: Open5eOrigin): Promise<string | null> {
-  const data = await o5fetch(
-    `/spells/?name=${encodeURIComponent(name)}&limit=5`
-  ) as { results: O5Spell[] };
-
-  const exact = data.results.find(
-    s => s.name.toLowerCase() === name.toLowerCase()
-  );
-  const match = exact ?? data.results[0];
-  if (!match) return null;
-  return formatO5Spell(match, origin);
+export async function o5GetSpell(name: string, rulesEdition: RulesEdition, origin: Open5eOrigin): Promise<string | null> {
+  const hit = await o5Lookup<O5Spell>(["spells"], name, rulesEdition);
+  return hit ? formatO5Spell(hit, origin) : null;
 }
 
 // ── MONSTERS ──────────────────────────────────────────────────────────────────
 
-interface O5Monster {
-  name: string;
-  size: string;
-  type: string;
-  subtype?: string;
-  alignment: string;
-  armor_class: number;
-  armor_desc?: string;
-  hit_points: number;
-  hit_dice: string;
-  speed: Record<string, number>;
-  strength: number;
-  dexterity: number;
-  constitution: number;
-  intelligence: number;
-  wisdom: number;
-  charisma: number;
-  strength_save?: number;
-  dexterity_save?: number;
-  constitution_save?: number;
-  intelligence_save?: number;
-  wisdom_save?: number;
-  charisma_save?: number;
-  skills: Record<string, number>;
-  damage_vulnerabilities?: string;
-  damage_resistances?: string;
-  damage_immunities?: string;
-  condition_immunities?: string;
-  senses: string;
-  languages: string;
-  challenge_rating: string;
-  actions?: Array<{ name: string; desc: string }>;
-  special_abilities?: Array<{ name: string; desc: string }>;
-  reactions?: Array<{ name: string; desc: string }>;
-  legendary_desc?: string;
-  legendary_actions?: Array<{ name: string; desc: string }>;
+type Ability = "strength" | "dexterity" | "constitution" | "intelligence" | "wisdom" | "charisma";
+const ABILITIES: ReadonlyArray<readonly [Ability, string]> = [
+  ["strength", "STR"], ["dexterity", "DEX"], ["constitution", "CON"],
+  ["intelligence", "INT"], ["wisdom", "WIS"], ["charisma", "CHA"],
+];
+
+interface O5Action { name: string; desc: string; action_type?: string | null; order_in_statblock?: number | null }
+
+interface O5Creature extends O5Record {
+  size?: { name: string; key: string } | null;
+  type?: { name: string; key: string } | null;
+  subcategory?: string | null;
+  alignment?: string | null;
+  armor_class?: number | null;
+  armor_detail?: string | null;
+  hit_points?: number | null;
+  hit_dice?: string | null;
+  speed?: Partial<Record<"walk" | "fly" | "swim" | "climb" | "burrow", number>> & { hover?: boolean; unit?: string };
+  ability_scores?: Partial<Record<Ability, number>>;
+  modifiers?: Partial<Record<Ability, number>>;
+  saving_throws?: Partial<Record<Ability, number>>;
+  skill_bonuses?: Record<string, number>;
+  resistances_and_immunities?: Partial<Record<
+    "damage_vulnerabilities_display" | "damage_resistances_display" | "damage_immunities_display" | "condition_immunities_display",
+    string
+  >>;
+  darkvision_range?: number | null;
+  blindsight_range?: number | null;
+  tremorsense_range?: number | null;
+  truesight_range?: number | null;
+  passive_perception?: number | null;
+  languages?: { as_string?: string | null } | null;
+  challenge_rating: number;
+  traits?: Array<{ name: string; desc: string }>;
+  actions?: O5Action[];
 }
 
-function formatO5Monster(m: O5Monster, origin: Open5eOrigin): string {
-  const signed = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
-  const mod = (score: number) => Math.floor((score - 10) / 2);
-  const speedStr = Object.entries(m.speed)
-    .map(([k, v]) => `${k} ${v} ft.`)
+const signed = (n: number): string => (n >= 0 ? `+${n}` : `${n}`);
+
+const ACTION_SECTIONS: ReadonlyArray<readonly [string, string]> = [
+  ["ACTION", "ACTIONS"], ["BONUS_ACTION", "BONUS ACTIONS"], ["REACTION", "REACTIONS"], ["LEGENDARY_ACTION", "LEGENDARY ACTIONS"],
+];
+
+function formatO5Monster(hit: O5Hit<O5Creature>, origin: Open5eOrigin): string {
+  const m = hit.entry.record;
+  const speed = m.speed ?? {};
+  const speedStr = (["walk", "fly", "swim", "climb", "burrow"] as const)
+    .filter(k => typeof speed[k] === "number")
+    .map(k => `${k} ${speed[k]} ft.${k === "fly" && speed.hover === true ? " (hover)" : ""}`)
     .join(", ");
 
-  const saves: string[] = [];
-  const saveNames: [string, number | undefined][] = [
-    ["STR", m.strength_save], ["DEX", m.dexterity_save],
-    ["CON", m.constitution_save], ["INT", m.intelligence_save],
-    ["WIS", m.wisdom_save], ["CHA", m.charisma_save],
-  ];
-  for (const [label, val] of saveNames) {
-    if (val !== null && val !== undefined) saves.push(`${label} ${signed(val)}`);
-  }
-
-  const skills = Object.entries(m.skills)
-    .map(([k, v]) => `${k.charAt(0).toUpperCase() + k.slice(1)} ${signed(v)}`)
+  const mods = m.modifiers ?? {};
+  // A 2024 record lists all six saves; only those differing from the modifier are proficient.
+  const saves = ABILITIES
+    .filter(([k]) => typeof m.saving_throws?.[k] === "number" && m.saving_throws[k] !== (mods[k] ?? 0))
+    .map(([k, abbr]) => `${abbr} ${signed(m.saving_throws![k]!)}`);
+  const skills = Object.entries(m.skill_bonuses ?? {})
+    .map(([k, v]) => `${k.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")} ${signed(v)}`)
     .join(", ");
+  const abilityLine = (pairs: typeof ABILITIES) => pairs
+    .map(([k, abbr]) => {
+      const score = m.ability_scores?.[k];
+      if (score == null) return null;
+      const mod = mods[k];
+      return `${abbr} ${score}${mod != null ? ` (${signed(mod)})` : ""}`;
+    })
+    .filter(Boolean).join("  ");
+
+  const kind = [m.size?.name, m.type?.name].filter(Boolean).join(" ") + (m.subcategory ? ` (${m.subcategory})` : "");
+  const stats = [
+    `CR ${crText(m.challenge_rating)}`,
+    m.armor_class != null ? `AC ${m.armor_class}${m.armor_detail ? ` (${m.armor_detail})` : ""}` : null,
+    m.hit_points != null ? `HP ${m.hit_points}${m.hit_dice ? ` (${m.hit_dice})` : ""}` : null,
+  ].filter(Boolean).join(" | ");
 
   const lines: string[] = [
-    `${m.name}`,
-    label(origin),
-    `${m.size} ${m.type}${m.subtype ? ` (${m.subtype})` : ""}, ${m.alignment}`,
-    `CR ${m.challenge_rating} | AC ${m.armor_class}${m.armor_desc ? ` (${m.armor_desc})` : ""} | HP ${m.hit_points} (${m.hit_dice})`,
-    `Speed: ${speedStr}`,
-    ``,
-    `STR ${m.strength} (${signed(mod(m.strength))})  DEX ${m.dexterity} (${signed(mod(m.dexterity))})  CON ${m.constitution} (${signed(mod(m.constitution))})`,
-    `INT ${m.intelligence} (${signed(mod(m.intelligence))})  WIS ${m.wisdom} (${signed(mod(m.wisdom))})  CHA ${m.charisma} (${signed(mod(m.charisma))})`,
+    m.name,
+    o5Label(hit.entry.edition, origin, hit),
+    [kind, m.alignment].filter(Boolean).join(", "),
+    stats,
   ];
+  if (speedStr) lines.push(`Speed: ${speedStr}`);
+  lines.push(``);
+  for (const half of [ABILITIES.slice(0, 3), ABILITIES.slice(3)]) {
+    const line = abilityLine(half);
+    if (line) lines.push(line);
+  }
   if (saves.length) lines.push(`Saving Throws: ${saves.join(", ")}`);
   if (skills) lines.push(`Skills: ${skills}`);
-  if (m.damage_vulnerabilities) lines.push(`Damage Vulnerabilities: ${m.damage_vulnerabilities}`);
-  if (m.damage_resistances) lines.push(`Damage Resistances: ${m.damage_resistances}`);
-  if (m.damage_immunities) lines.push(`Damage Immunities: ${m.damage_immunities}`);
-  if (m.condition_immunities) lines.push(`Condition Immunities: ${m.condition_immunities}`);
-  lines.push(`Senses: ${m.senses}`);
-  lines.push(`Languages: ${m.languages || "—"}`);
+  const ri = m.resistances_and_immunities ?? {};
+  if (ri.damage_vulnerabilities_display) lines.push(`Damage Vulnerabilities: ${ri.damage_vulnerabilities_display}`);
+  if (ri.damage_resistances_display) lines.push(`Damage Resistances: ${ri.damage_resistances_display}`);
+  if (ri.damage_immunities_display) lines.push(`Damage Immunities: ${ri.damage_immunities_display}`);
+  if (ri.condition_immunities_display) lines.push(`Condition Immunities: ${ri.condition_immunities_display}`);
+  const senses = ([["darkvision", m.darkvision_range], ["blindsight", m.blindsight_range], ["tremorsense", m.tremorsense_range], ["truesight", m.truesight_range]] as const)
+    .filter(([, range]) => range != null)
+    .map(([sense, range]) => `${sense} ${range} ft.`);
+  if (m.passive_perception != null) senses.push(`passive Perception ${m.passive_perception}`);
+  if (senses.length) lines.push(`Senses: ${senses.join(", ")}`);
+  lines.push(`Languages: ${m.languages?.as_string || "—"}`);
 
-  if (m.special_abilities?.length) {
+  if (m.traits?.length) {
     lines.push(``, `TRAITS`);
-    for (const a of m.special_abilities) lines.push(`  ${a.name}. ${a.desc}`);
+    for (const a of m.traits) lines.push(`  ${a.name}. ${a.desc}`);
   }
-  if (m.actions?.length) {
-    lines.push(``, `ACTIONS`);
-    for (const a of m.actions) lines.push(`  ${a.name}. ${a.desc}`);
-  }
-  if (m.reactions?.length) {
-    lines.push(``, `REACTIONS`);
-    for (const a of m.reactions) lines.push(`  ${a.name}. ${a.desc}`);
-  }
-  if (m.legendary_actions?.length) {
-    if (m.legendary_desc) lines.push(``, m.legendary_desc);
-    lines.push(``, `LEGENDARY ACTIONS`);
-    for (const a of m.legendary_actions) lines.push(`  ${a.name}. ${a.desc}`);
+  for (const [type, heading] of ACTION_SECTIONS) {
+    const actions = (m.actions ?? [])
+      .filter(a => a.action_type === type)
+      .sort((a, b) => (a.order_in_statblock ?? 0) - (b.order_in_statblock ?? 0));
+    if (!actions.length) continue;
+    lines.push(``, heading);
+    for (const a of actions) lines.push(`  ${a.name}. ${a.desc}`);
   }
 
   return lines.join("\n");
@@ -323,36 +441,33 @@ export async function o5SearchMonsters(params: {
   cr?: number;
   type?: string;
   size?: string;
-}, origin: Open5eOrigin): Promise<string> {
-  const qs = new URLSearchParams({ document__slug: SRD, limit: "20" });
-  if (params.name) qs.set("search", params.name);
-  if (params.cr !== undefined) qs.set("challenge_rating", String(params.cr));
-  if (params.type) qs.set("type", params.type.toLowerCase());
+  rulesEdition?: RulesEdition;
+}, origin: "unavailable" | "not-found"): Promise<string> {
+  const requested = params.rulesEdition ?? "2024";
+  const { selected, hidden } = await o5Select<O5Creature>(["creatures"], requested, {
+    name: params.name,
+    passes: ({ record: m }) =>
+      (params.cr === undefined || m.challenge_rating === params.cr)
+      && (!params.type || lowerEq(params.type, m.type?.key, m.type?.name))
+      && (!params.size || lowerEq(params.size, m.size?.key, m.size?.name)),
+  });
 
-  const data = await o5fetch(`/monsters/?${qs}`) as { count: number; results: O5Monster[] };
-  if (!data.results.length) return `No monsters found (SRD only).`;
-
-  const lines = data.results.map(
-    m => `• ${m.name} ${TAG} (CR ${m.challenge_rating}, ${m.size} ${m.type})`
+  const shown = selected.slice(0, 20);
+  const lines = shown.map(({ entry }) => {
+    const m = entry.record;
+    const kind = [m.size?.name, m.type?.name].filter(Boolean).join(" ");
+    return `• ${m.name} ${editionTag(o5Info(entry))} (CR ${crText(m.challenge_rating)}${kind ? `, ${kind}` : ""})`;
+  });
+  return o5SearchReply(
+    requested, origin,
+    `Found ${selected.length} monster(s) (showing ${shown.length}, SRD only):`,
+    lines, hidden, "No monsters found (SRD only).",
   );
-  return [
-    label(origin),
-    `Found ${data.count} monster(s) (showing ${data.results.length}, SRD only):`,
-    ...lines,
-  ].join("\n");
 }
 
-export async function o5GetMonster(name: string, origin: Open5eOrigin): Promise<string | null> {
-  const data = await o5fetch(
-    `/monsters/?name=${encodeURIComponent(name)}&limit=5`
-  ) as { results: O5Monster[] };
-
-  const exact = data.results.find(
-    m => m.name.toLowerCase() === name.toLowerCase()
-  );
-  const match = exact ?? data.results[0];
-  if (!match) return null;
-  return formatO5Monster(match, origin);
+export async function o5GetMonster(name: string, rulesEdition: RulesEdition, origin: Open5eOrigin): Promise<string | null> {
+  const hit = await o5Lookup<O5Creature>(["creatures"], name, rulesEdition);
+  return hit ? formatO5Monster(hit, origin) : null;
 }
 
 // ── ITEMS ─────────────────────────────────────────────────────────────────────
@@ -773,27 +888,21 @@ const CR_XP_O5: Record<string, number> = {
   "26": 90000, "27": 105000, "28": 120000, "29": 135000, "30": 155000,
 };
 
-const CR_VALUE_O5: Record<string, number> = {
-  "0": 0, "1/8": 0.125, "1/4": 0.25, "1/2": 0.5,
-};
-
-const o5NameKey = (n: string): string => n.trim().toLowerCase().replace(/[‘’]/g, "'");
-
 /**
- * CR and XP for an exact-name SRD monster, or null (no match, unknown CR, or
- * any Open5e failure). Never guesses: only an exact name counts.
+ * CR and XP for an exact-twin-name SRD monster, or null (no match, unknown CR,
+ * or any Open5e failure). Never guesses: only an exact twin name counts, and
+ * the edition comes from the document the pick is in.
  */
-export async function o5GetMonsterStats(name: string): Promise<{ name: string; crValue: number; xp: number } | null> {
+export async function o5GetMonsterStats(name: string, rulesEdition: RulesEdition): Promise<{ name: string; crValue: number; xp: number; info: EditionInfo } | null> {
   try {
-    const data = await o5fetch(
-      `/monsters/?name=${encodeURIComponent(name)}&limit=5`
-    ) as { results: Array<{ name: string; challenge_rating: string }> };
-    const match = data.results.find(m => o5NameKey(m.name) === o5NameKey(name));
-    if (!match) return null;
-    const crStr = match.challenge_rating;
-    const xp = CR_XP_O5[crStr];
+    const key = twinName(name);
+    const group = (await o5Entries<O5Creature>(["creatures"], rulesEdition)).filter(e => twinName(e.record.name) === key);
+    const picked = selectByEdition(group, rulesEdition, o5Info, o5Tiebreak<O5Creature>(["creatures"]));
+    if (!picked) return null;
+    const m = picked.entry.record;
+    const xp = CR_XP_O5[crText(m.challenge_rating)];
     if (xp === undefined) return null;
-    return { name: match.name, crValue: CR_VALUE_O5[crStr] ?? parseFloat(crStr), xp };
+    return { name: m.name, crValue: m.challenge_rating, xp, info: o5Info(picked.entry) };
   } catch {
     return null;
   }

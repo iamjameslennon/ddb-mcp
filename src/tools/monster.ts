@@ -713,7 +713,7 @@ export async function getMonster(
   const homebrew = isHomebrewSource(source);
   if (!hasValidSession()) {
     if (homebrew) return HOMEBREW_LOGIN_REQUIRED;
-    const o5Result = await o5GetMonster(monsterName, "unavailable").catch(() => null);
+    const o5Result = await o5GetMonster(monsterName, requested, "unavailable").catch(() => null);
     if (o5Result) return withSourceCaveat(o5Result, source);
     return "Monster lookup requires login. Run ddb_login first.";
   }
@@ -801,7 +801,7 @@ export async function getMonster(
       const mapAvailable = (m: DdbMonster) => !isLockedIn(access, m.id);
       let found = lookup(mapAvailable);
       if (!found) {
-        const o5Result = await o5GetMonster(monsterName, "not-found").catch(() => null);
+        const o5Result = await o5GetMonster(monsterName, requested, "not-found").catch(() => null);
         if (o5Result) return o5Result;
         return `Monster "${monsterName}" not found. Try ddb_search_monsters with a partial name.`;
       }
@@ -824,7 +824,7 @@ export async function getMonster(
 
       // Still an empty stat block (unowned content): fall back to Open5e.
       if (isRestricted(detail)) {
-        const o5Result = await o5GetMonster(monsterName, "unavailable").catch(() => null);
+        const o5Result = await o5GetMonster(monsterName, requested, "unavailable").catch(() => null);
         if (o5Result) return o5Result;
       }
     }
@@ -836,7 +836,7 @@ export async function getMonster(
     return detail.data.isHomebrew === false ? statBlock : wrapUntrusted(statBlock);
   } catch {
     if (homebrew) return HOMEBREW_UNREACHABLE;
-    const o5Result = await o5GetMonster(monsterName, "unavailable").catch(() => null);
+    const o5Result = await o5GetMonster(monsterName, requested, "unavailable").catch(() => null);
     if (o5Result) return withSourceCaveat(o5Result, source);
     return `Monster "${monsterName}" not found. DnD Beyond is unavailable and "${monsterName}" is not in the SRD.`;
   }
@@ -949,7 +949,6 @@ export async function getMonsterStats(name: string, opts: { rulesEdition?: Rules
     }
   }
 
-  // Open5e fallback: its monsters are SRD 5.1 (2014) until phase 4 moves it to v2.
-  const o5 = await o5GetMonsterStats(name);
-  return o5 ? { status: "found", ...o5, info: { ruleset: "2014", book: null } } : { status: "not-found" };
+  const o5 = await o5GetMonsterStats(name, requested);
+  return o5 ? { status: "found", ...o5 } : { status: "not-found" };
 }

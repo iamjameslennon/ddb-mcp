@@ -4,7 +4,7 @@ import {
   normalizeName, createTwinNamer, twinName, twinAliases, classOwnerTwinKey, editionSourceId, bookChoiceNote, alsoInLine,
   dedupeById, definitionTiebreak, monsterTiebreak,
   selectByEdition, lookupByName, groupAndSelect,
-  rulesLine, renameLine, RULES_EDITION_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, editionTag, searchHeader, searchFooter, ambiguityMessage,
+  rulesLine, renameLine, RULES_EDITION_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, editionTag, searchHeader, open5eSearchHeader, searchFooter, ambiguityMessage,
   lockedLineSuffix, lockedSwapSummary, lockedEntriesNote, availableElsewhereHint, HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO,
   characterMainEdition, characterTag, characterRulesLine,
   type CategoryRecord, type CharacterEditionEntry, type CharacterEntryKind,
@@ -687,6 +687,13 @@ describe("search labels", () => {
     expect(searchHeader({ sourceBook: "Monster Manual (2024)" })).toBe("Rules: showing every entry in Monster Manual (2024), each tagged with its edition.");
     expect(searchHeader({ rulesDoc: "2024" })).toBe("Rules: sections from SRD 5.2 (2024).");
     expect(searchHeader({ rulesDoc: "2014" })).toBe("Rules: sections from SRD 5.1 (2014).");
+  });
+
+  it("open5eSearchHeader: an Open5e search mixes both SRDs", () => {
+    expect(open5eSearchHeader("2024", "unavailable")).toBe("Rules: 2024 by default — SRD 5.2, with SRD 5.1 entries only where no 2024 version was found (Open5e fallback — D&D Beyond unavailable).");
+    expect(open5eSearchHeader("2024", "not-found")).toBe("Rules: 2024 by default — SRD 5.2, with SRD 5.1 entries only where no 2024 version was found (Open5e fallback — not found on D&D Beyond).");
+    expect(open5eSearchHeader("2014", "unavailable")).toBe("Rules: 2014 requested — SRD 5.1, with SRD 5.2 entries only where no 2014 version was found (Open5e fallback — D&D Beyond unavailable).");
+    expect(open5eSearchHeader("2014", "not-found")).toBe("Rules: 2014 requested — SRD 5.1, with SRD 5.2 entries only where no 2014 version was found (Open5e fallback — not found on D&D Beyond).");
   });
 
   it("searchFooter", () => {

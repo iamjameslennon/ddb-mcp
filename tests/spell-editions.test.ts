@@ -23,6 +23,10 @@ const fsMock = vi.hoisted(() => ({
 vi.mock("fs", () => fsMock);
 
 import { GAME_DATA, jsonResponse, serviceMock, spell } from "./fixtures/spell-service.js";
+import { o5FixtureFetch } from "./fixtures/open5e-v2.js";
+
+const o5 = o5FixtureFetch();
+const realFs = await vi.importActual<typeof import("fs")>("fs");
 
 type ReferenceModule = typeof import("../src/tools/reference.js");
 let reference: ReferenceModule;
@@ -31,12 +35,15 @@ let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(async () => {
   vi.clearAllMocks();
   fsMock.existsSync.mockReset().mockReturnValue(true);
-  fsMock.readFileSync.mockReset().mockReturnValue(JSON.stringify({
+  const session = JSON.stringify({
     cookies: [{
       name: "CobaltSession", value: "SECRET_A", domain: ".dndbeyond.com", path: "/",
       expires: Date.now() / 1000 + 3600, httpOnly: true, secure: true,
     }],
-  }));
+  });
+  // The recorded Open5e documents are read from disk through the real fs.
+  fsMock.readFileSync.mockReset().mockImplementation((path: unknown, ...rest: unknown[]) =>
+    String(path).includes("/fixtures/open5e-v2/") ? realFs.readFileSync(path as URL, ...(rest as [BufferEncoding])) : session);
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
   vi.resetModules();
@@ -197,43 +204,36 @@ describe("source on the spell tools", () => {
     // 403, not 500: a 5xx is retried with backoff, which only slows the test down.
     fetchMock.mockImplementation(async (url: string) => {
       if (url.startsWith(GAME_DATA)) return jsonResponse({}, 403);
-      if (url.includes("open5e")) {
-        return jsonResponse({ count: 1, results: [{
-          name: "Fireball", level_int: 3, school: "Evocation", casting_time: "1 action", range: "150 feet",
-          components: "V, S, M", duration: "Instantaneous", requires_concentration: false, ritual: "no", desc: "Boom.",
-        }] });
-      }
+      if (url.includes("open5e")) return o5(url);
       return serviceMock({})(url);
     });
     const out = await reference.searchSpells({ name: "fireball", source: "phb-2024" });
-    expect(out).toContain("Fireball");
+    expect(out.split("\n")[0]).toBe("Rules: 2024 by default — SRD 5.2, with SRD 5.1 entries only where no 2024 version was found (Open5e fallback — D&D Beyond unavailable).");
+    expect(out).toContain("• Fireball [2024] (Level 3 Evocation)");
     expect(out.endsWith('*Note: source filtering is not available via the Open5e SRD fallback — "phb-2024" was requested but could not be honoured.*')).toBe(true);
   });
 });
 
 describe("Open5e fallback labels", () => {
-  const o5Spell = {
-    name: "Fireball", level_int: 3, school: "Evocation", casting_time: "1 action", range: "150 feet",
-    components: "V, S, M", duration: "Instantaneous", requires_concentration: false, ritual: "no", desc: "Boom.",
-  };
-
   it("labels the Open5e fallback when every D&D Beyond request fails", async () => {
     fetchMock.mockImplementation(async (url: string) => {
       if (url.startsWith(GAME_DATA)) return jsonResponse({}, 403);
-      if (url.includes("open5e")) return jsonResponse({ count: 1, results: [o5Spell] });
+      if (url.includes("open5e")) return o5(url);
       return serviceMock({})(url);
     });
     expect((await reference.getSpell("Fireball")).split("\n")[1])
+      .toBe("Rules: 2024 · SRD 5.2 (Open5e fallback — D&D Beyond unavailable)");
+    expect((await reference.getSpell("Fireball", "2014")).split("\n")[1])
       .toBe("Rules: 2014 · SRD 5.1 (Open5e fallback — D&D Beyond unavailable)");
   });
 
   it("labels the Open5e fallback as not-found when D&D Beyond lacks the spell", async () => {
     const base = serviceMock({ spells: { "8": [spell("Sleep", 1, { id: 201, ...NEW })] } });
     fetchMock.mockImplementation(async (url: string) => {
-      if (url.includes("open5e")) return jsonResponse({ count: 1, results: [o5Spell] });
+      if (url.includes("open5e")) return o5(url);
       return base(url);
     });
     expect((await reference.getSpell("Fireball")).split("\n")[1])
-      .toBe("Rules: 2014 · SRD 5.1 (Open5e fallback — not found on D&D Beyond)");
+      .toBe("Rules: 2024 · SRD 5.2 (Open5e fallback — not found on D&D Beyond)");
   });
 });

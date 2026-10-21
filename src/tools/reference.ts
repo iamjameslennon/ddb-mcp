@@ -672,7 +672,7 @@ export async function getSpell(spellName: string, rulesEdition: RulesEdition = "
     if (!found) {
       // A book the caller asked for is never swapped for SRD content.
       if (resolved) return `Spell "${spellName}" not found in ${resolved.book}.`;
-      const o5Result = await o5GetSpell(spellName, "not-found").catch(() => null);
+      const o5Result = await o5GetSpell(spellName, rulesEdition, "not-found").catch(() => null);
       if (o5Result) return o5Result;
       return `Spell "${spellName}" not found in the compendium. Try ddb_search_spells with a partial name.`;
     }
@@ -680,7 +680,7 @@ export async function getSpell(spellName: string, rulesEdition: RulesEdition = "
     return formatSpell(found.entry, found.rulesLines);
   } catch (err) {
     try {
-      const o5Result = await o5GetSpell(spellName, "unavailable");
+      const o5Result = await o5GetSpell(spellName, rulesEdition, "unavailable");
       if (o5Result) return withSourceCaveat(o5Result, source);
     } catch {
       // fall through

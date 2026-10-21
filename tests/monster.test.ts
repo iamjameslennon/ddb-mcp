@@ -801,9 +801,9 @@ describe("monsterTiebreak final tie-break", () => {
 describe("second-round review follow-ups", () => {
   it("getMonsterStats takes the Open5e stats when logged out", async () => {
     vi.mocked(hasValidSession).mockReturnValue(false);
-    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce({ name: "wolf", crValue: 0.25, xp: 50 });
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce({ name: "wolf", crValue: 0.25, xp: 50, info: { ruleset: "2024", book: null } });
     expect(await getMonsterStats("Wolf")).toMatchObject({ status: "found", name: "wolf", crValue: 0.25, xp: 50 });
-    expect(o5GetMonsterStats).toHaveBeenCalledWith("Wolf");
+    expect(o5GetMonsterStats).toHaveBeenCalledWith("Wolf", "2024");
   });
 
   it("a whitespace-only name is rejected rather than matching every monster", async () => {
@@ -944,12 +944,12 @@ describe("getMonsterStats result union", () => {
     extraMonsters = [TOUGH];
     failSearchTerms.add("tough");
     expect(await getMonsterStats("Tough")).toEqual({ status: "not-found" });
-    expect(o5GetMonsterStats).toHaveBeenCalledWith("Tough");
+    expect(o5GetMonsterStats).toHaveBeenCalledWith("Tough", "2024");
   });
 
-  it("an Open5e result is found with the interim 2014 ruleset", async () => {
-    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce({ name: "Wolf Lord", crValue: 2, xp: 450 });
-    expect(await getMonsterStats("Wolf Lord")).toEqual({ status: "found", name: "Wolf Lord", crValue: 2, xp: 450, info: { ruleset: "2014", book: null } });
+  it("an Open5e result keeps its document's ruleset", async () => {
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce({ name: "Wolf Lord", crValue: 2, xp: 450, info: { ruleset: "2024", book: null } });
+    expect(await getMonsterStats("Wolf Lord")).toEqual({ status: "found", name: "Wolf Lord", crValue: 2, xp: 450, info: { ruleset: "2024", book: null } });
   });
 
   it("rateEncounter lists an ambiguous name and rates the rest", async () => {
@@ -1041,7 +1041,7 @@ describe("a locked twin", () => {
     unownedIds.add(BLIGHT_2024.id as number);
     unownedIds.add(BLIGHT_2014.id as number);
     expect(await getMonster("Twig Blight")).toBe("O5 MONSTER RESULT");
-    expect(o5GetMonster).toHaveBeenCalledWith("Twig Blight", "unavailable");
+    expect(o5GetMonster).toHaveBeenCalledWith("Twig Blight", "2024", "unavailable");
   });
 
   it("both locked and Open5e has nothing: the requested edition's restricted block", async () => {

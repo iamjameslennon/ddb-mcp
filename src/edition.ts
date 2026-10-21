@@ -592,6 +592,16 @@ export function searchHeader(mode: SearchHeaderMode): string {
     : "Rules: 2014 requested — 2024 entries appear only where no 2014 version was found.";
 }
 
+/**
+ * First line of an Open5e fallback search: its lines mix SRD 5.2 and SRD 5.1
+ * entries, selected like D&D Beyond entries.
+ */
+export function open5eSearchHeader(requested: RulesEdition, origin: "unavailable" | "not-found"): string {
+  const other: RulesEdition = requested === "2024" ? "2014" : "2024";
+  const head = requested === "2024" ? "Rules: 2024 by default" : "Rules: 2014 requested";
+  return `${head} — ${SRD_NAME[requested]}, with ${SRD_NAME[other]} entries only where no ${requested} version was found ${OPEN5E_SUFFIX[origin].trim()}.`;
+}
+
 /** Last line of a search when twins were hidden; null when none were. */
 export function searchFooter(requested: RulesEdition, hidden: number): string | null {
   if (hidden <= 0) return null;
