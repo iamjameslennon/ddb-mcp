@@ -28,7 +28,7 @@ function matchesDefinitionQuery(name: string, query: string): boolean {
 
 function formatSpellResult(spell: Record<string, unknown>): string {
   const d = (spell.definition ?? spell) as Record<string, unknown>;
-  const name = String(d.name ?? "Unknown");
+  const name = String(d.name || spell.name || "Unknown");
   const level = Number(d.level ?? 0);
   const school = String(d.school ?? "");
   const levelLabel = level === 0 ? "Cantrip" : `Level ${level}`;
@@ -135,8 +135,11 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
 
   // ── Spells ────────────────────────────────────────────────────────────────
   const allSpells: Record<string, unknown>[] = [
+    // Same fallback as the sheet's classSpellLists (spells.ts): 2024 format uses cs.classSpells.
     ...arr<Record<string, unknown>>(char.classSpells).flatMap(cs =>
-      arr<Record<string, unknown>>(cs.spells)
+      arr<Record<string, unknown>>(cs.spells).length > 0
+        ? arr<Record<string, unknown>>(cs.spells)
+        : arr<Record<string, unknown>>(cs.classSpells)
     ),
     ...Object.values(obj(char.spells)).flatMap(v => arr<Record<string, unknown>>(v)),
   ];
