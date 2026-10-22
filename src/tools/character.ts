@@ -14,6 +14,7 @@ import {
 } from "../session-fetch.js";
 import type { AuthenticatedSession } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
+import { getSourceIndex } from "../game-config.js";
 import { writeFileSync, mkdirSync, realpathSync } from "fs";
 import { join, resolve, relative, basename, dirname, isAbsolute } from "path";
 import { homedir } from "os";
@@ -102,7 +103,7 @@ export async function parseCharacter(
 ): Promise<string> {
   const { json, notice } = await fetchCharacter(characterId);
   const raw = JSON.parse(json) as Record<string, unknown>;
-  return withNotice(parseCharacterData(raw, sections), notice);
+  return withNotice(parseCharacterData(raw, sections, await getSourceIndex()), notice);
 }
 
 /** Character JSON, plus a notice when a logged-in fetch had to go out anonymously. */

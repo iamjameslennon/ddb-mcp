@@ -1,5 +1,6 @@
 import { getCampaign } from "./campaign.js";
 import { fetchCharacter, parseCharacterData, withNotice } from "./character.js";
+import { getSourceIndex } from "../game-config.js";
 
 export async function getParty(campaignId: string): Promise<string> {
   // 1. Get campaign to retrieve character IDs
@@ -18,7 +19,9 @@ export async function getParty(campaignId: string): Promise<string> {
     .map(c => c.url.match(/\/characters\/(\d+)/)?.[1])
     .filter((id): id is string => id != null);
 
-  // 3. Fetch all characters concurrently, max 3 at a time
+  // 3. Fetch all characters concurrently, max 3 at a time, classifying each
+  //    against one source index (getSourceIndex never rejects)
+  const index = await getSourceIndex();
   const results: string[] = [];
   for (let i = 0; i < characterIds.length; i += 3) {
     const batch = characterIds.slice(i, i + 3);
@@ -27,7 +30,7 @@ export async function getParty(campaignId: string): Promise<string> {
         try {
           const { json, notice } = await fetchCharacter(id);
           const raw = JSON.parse(json) as Record<string, unknown>;
-          return withNotice(parseCharacterData(raw, "summary"), notice);
+          return withNotice(parseCharacterData(raw, "summary", index), notice);
         } catch (err) {
           return `[Could not load character ${id}: ${err instanceof Error ? err.message : String(err)}]`;
         }

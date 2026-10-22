@@ -1,5 +1,5 @@
 /**
- * `parseCharacterData(raw, sections)` — the orchestrator.
+ * `parseCharacterData(raw, sections, index)` — the orchestrator.
  *
  * Phase 9 of the character.ts refactor — see docs/character-refactor.md.
  *
@@ -7,9 +7,14 @@
  * spells, inventory, notes) computed once via `computeCoreStats`, then
  * routed through `sections` to pick which blocks to render. No business
  * logic lives here — only the section → block routing.
+ *
+ * `index` (the source index the editions classify against) is passed in so
+ * the parser stays synchronous; callers that can await pass getSourceIndex().
  */
 
 import { addCharacterSpellsToCompendium } from "../reference.js";
+import type { SourceIndex } from "../../edition.js";
+import { peekSourceIndex } from "../../game-config.js";
 import { computeCoreStats } from "./core.js";
 import type { CharData, ParseSection } from "./types.js";
 import { computeIdentity, formatHeaderBlock } from "./identity.js";
@@ -26,6 +31,7 @@ import { computeNotes, formatNotesBlock } from "./notes.js";
 export function parseCharacterData(
   raw: CharData,
   sections: ParseSection = "full",
+  index: SourceIndex = peekSourceIndex(),
 ): string {
   const char = (raw?.data ?? raw) as CharData;
 
@@ -35,7 +41,7 @@ export function parseCharacterData(
   // computeCoreStats produces every value used across multiple sections.
   // After phases 3–8 every domain consumes `core` directly; only profBonus
   // is still needed inline (threaded into vitals for the formatter's prof line).
-  const core = computeCoreStats(char);
+  const core = computeCoreStats(char, index);
   const { profBonus } = core;
 
   const identity  = computeIdentity(core);

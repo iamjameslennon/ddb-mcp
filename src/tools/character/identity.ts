@@ -1,15 +1,18 @@
 /**
  * Identity domain — name, race (with 2024 variant detection), class line,
- * background, XP, inspiration. Owns the header block.
+ * background, XP, inspiration, and the rules summary line. Owns the header
+ * block. Species, class, subclass and background carry their edition tags.
  *
  * Phase 3 of the character.ts refactor — see docs/character-refactor.md.
  */
 
 import { arr, num, obj, str } from "./helpers.js";
+import type { CharacterEditions } from "./editions.js";
 import type { CharData, ClassEntry, CoreStats } from "./types.js";
 
 export interface Identity {
   charName: string;
+  rulesLine: string;
   race: string;
   classLine: string;
   totalLevel: number;
@@ -59,23 +62,27 @@ function deriveRace(char: CharData): string {
   return `${base} (${variant})`;
 }
 
-function buildClassLine(classes: readonly ClassEntry[]): string {
+function buildClassLine(classes: readonly ClassEntry[], editions: CharacterEditions): string {
   return classes.map(c => {
-    const def = obj(c.definition);
+    const name = `${str(obj(c.definition).name)}${editions.classTag(c)}`;
     const sub = obj(c.subclassDefinition);
     const lvl = num(c.level);
-    return sub.name ? `${def.name} (${sub.name}) ${lvl}` : `${def.name} ${lvl}`;
+    return sub.name ? `${name} (${sub.name}${editions.subclassTag(c)}) ${lvl}` : `${name} ${lvl}`;
   }).join(" / ");
 }
 
 export function computeIdentity(core: CoreStats): Identity {
-  const { char, classes, totalLevel } = core;
+  const { char, classes, totalLevel, editions } = core;
+  // A missing species or background stays empty rather than a bare tag.
+  const tagged = (name: string, def: unknown) => (name ? `${name}${editions.tag(def)}` : "");
+  const bgDef = obj(char.background).definition;
   return {
     charName: str(char.name),
-    race: deriveRace(char),
-    classLine: buildClassLine(classes),
+    rulesLine: editions.rulesLine,
+    race: tagged(deriveRace(char), char.race),
+    classLine: buildClassLine(classes, editions),
     totalLevel,
-    background: str(obj(obj(char.background).definition).name),
+    background: tagged(str(obj(bgDef).name), bgDef),
     xp: num(char.currentXp),
     inspiration: !!char.inspiration,
   };
@@ -85,6 +92,7 @@ export function formatHeaderBlock(i: Identity): string[] {
   return [
     `═══════════════════════════════════════`,
     `  ${i.charName}`,
+    `  ${i.rulesLine}`,
     `  ${i.race} | ${i.classLine} | Level ${i.totalLevel}`,
     `  Background: ${i.background || "—"} | XP: ${i.xp}`,
     `  Inspiration: ${i.inspiration ? "Yes" : "No"}`,

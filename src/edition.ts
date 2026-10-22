@@ -523,6 +523,10 @@ const REASON_TEXT = {
 export const RULES_EDITION_TOOL_NOTE =
   "Returns 2024 content by default; set rules_edition to '2014' for 2014 rules. The 'Rules:' line or [tag] in the output names the ruleset.";
 
+/** Appended to the ddb_get_character and ddb_get_party descriptions. */
+export const CHARACTER_RULES_TOOL_NOTE =
+  "The 'Rules:' line under the character's name gives the ruleset of the character's classes and lists content from other rulesets; that content is also tagged inline ([2014], [2024], [homebrew], …).";
+
 /** Appended to ddb_roll_treasure's description, after RULES_EDITION_TOOL_NOTE. */
 export const TREASURE_RULES_EDITION_NOTE =
   "Only 2024 treasure tables exist: '2014' still rolls them and says so, but resolves monster CRs from 2014 stat blocks.";

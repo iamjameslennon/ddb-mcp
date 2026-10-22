@@ -19,7 +19,7 @@ import { MAX_TREASURE_ENTRIES, MAX_MONSTER_COUNT, MAX_INDIVIDUAL_ROLLS, MAX_MONS
 import { searchSpells, getSpell, searchItems, getItem, searchRaces, searchClasses, searchBackgrounds, searchFeats, searchClassFeatures, searchRacialTraits, searchRules, getRule, clearReferenceCache } from "./tools/reference.js";
 import { clearOpen5eCache } from "./open5e.js";
 import { getCondition } from "./tools/conditions.js";
-import { RULES_EDITION_TOOL_NOTE, TREASURE_RULES_EDITION_NOTE, SERVER_INSTRUCTIONS } from "./edition.js";
+import { RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, TREASURE_RULES_EDITION_NOTE, SERVER_INSTRUCTIONS } from "./edition.js";
 
 export const server = new McpServer(
   { name: "dndbeyond", version: "1.0.0" },
@@ -255,7 +255,7 @@ server.tool(
 // ─── ddb_get_character ───────────────────────────────────────────────────────
 server.tool(
   "ddb_get_character",
-  "Parse and display a character sheet. Use sections to reduce output: summary (vitals+stats), combat (adds actions/weapons), spells (spellcasting only), inventory, features, concentration, notes (backstory, traits, bonds), or full (default). Requires login — run ddb_login first if you haven't already.",
+  "Parse and display a character sheet. Use sections to reduce output: summary (vitals+stats), combat (adds actions/weapons), spells (spellcasting only), inventory, features, concentration, notes (backstory, traits, bonds), or full (default). Requires login — run ddb_login first if you haven't already. " + CHARACTER_RULES_TOOL_NOTE,
   {
     character_id: z.string().regex(/^\d+$/, "character_id must be numeric (e.g. '12345678')").optional().describe("The D&D Beyond character ID (e.g. '12345678')"),
     character_name: z.string().min(1).optional().describe("Character name to look up (fuzzy matched — e.g. 'Throin' finds 'Thorin Ironforge')"),
@@ -416,7 +416,7 @@ server.tool(
 // ─── ddb_get_party ────────────────────────────────────────────────────────────
 server.tool(
   "ddb_get_party",
-  "Fetch a compact summary of every character in a campaign. Returns HP, AC, initiative, passive scores, ability scores, and skills for the whole party in one call. Requires login — run ddb_login first if you haven't already.",
+  "Fetch a compact summary of every character in a campaign. Returns HP, AC, initiative, passive scores, ability scores, and skills for the whole party in one call. Requires login — run ddb_login first if you haven't already. " + CHARACTER_RULES_TOOL_NOTE,
   {
     campaign_id: z.string().regex(/^\d+$/, "campaign_id must be numeric").describe("The D&D Beyond campaign ID (found in the campaign URL)"),
   },

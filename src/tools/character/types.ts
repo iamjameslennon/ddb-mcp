@@ -9,6 +9,8 @@
  * future tightening is a one-place change instead of a sweep.
  */
 
+import type { CharacterEditions } from "./editions.js";
+
 export type CharData = Record<string, unknown>;
 export type Mod = Record<string, unknown>;
 export type ClassEntry = Record<string, unknown>;
@@ -111,7 +113,7 @@ export type ParseSection =
 /**
  * The shared context object passed to every per-domain computer module.
  *
- * Computed once by `computeCoreStats(char)` (Phase 2) and threaded through
+ * Computed once by `computeCoreStats(char, index)` (Phase 2) and threaded through
  * vitals/stats/spells/etc. Avoids each module re-deriving statMods,
  * profBonus, allMods, etc.
  */
@@ -125,4 +127,6 @@ export interface CoreStats {
   readonly classes: readonly ClassEntry[];
   readonly inventory: readonly InventoryItem[];
   readonly resolveTemplates: (text: string, classLevel?: number) => string;
+  /** Which ruleset each piece of the character comes from (rules-edition phase 5). */
+  readonly editions: CharacterEditions;
 }

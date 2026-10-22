@@ -94,6 +94,56 @@ function buildSlotLines(char: CharData, classes: readonly ClassEntry[]): string[
     });
 }
 
+// ── Class spell lists ────────────────────────────────────────────────────────
+interface ClassSpellList {
+  className: string;
+  isSpellbook: boolean;
+  spells: Record<string, unknown>[];
+}
+
+// Each char.classSpells entry with its class's name. Ungated: callers apply the
+// spellbook gate (isShownClassSpell) themselves.
+function classSpellLists(char: CharData, classes: readonly ClassEntry[]): ClassSpellList[] {
+  return arr<Record<string, unknown>>(char.classSpells).map(cs => {
+    // Try characterClassId first; fall back to id/classId for 2024-rules format
+    const classEntry = classes.find(c =>
+      c.id === cs.characterClassId ||
+      c.id === cs.id ||
+      c.id === cs.classId
+    );
+    const className = str(obj(classEntry?.definition ?? {}).name);
+    // spells may be under cs.spells or cs.classSpells (2024 format variation)
+    const spells = arr<Record<string, unknown>>(cs.spells).length > 0
+      ? arr<Record<string, unknown>>(cs.spells)
+      : arr<Record<string, unknown>>(cs.classSpells);
+    return { className, isSpellbook: className === "Wizard", spells };
+  });
+}
+
+// Spellbook (Wizard) gate: a leveled spell shows only when prepared or a
+// ritual; cantrips always show.
+function isShownClassSpell(s: Record<string, unknown>, isSpellbook: boolean): boolean {
+  const def = obj(s.definition);
+  if (num(def.level) === 0 || !isSpellbook) return true;
+  return s.prepared === true || def.ritual === true;
+}
+
+/**
+ * The definitions of every spell the SPELLS section lists: gated class spells,
+ * then each SOURCE_LABELS list in order. Not deduped.
+ */
+export function shownSpellDefinitions(char: CharData, classes: readonly ClassEntry[]): Record<string, unknown>[] {
+  const defs: Record<string, unknown>[] = [];
+  for (const { isSpellbook, spells } of classSpellLists(char, classes)) {
+    for (const s of spells) if (isShownClassSpell(s, isSpellbook)) defs.push(obj(s.definition));
+  }
+  const spellsObj = obj(char.spells);
+  for (const key of Object.keys(SOURCE_LABELS)) {
+    for (const s of arr<Record<string, unknown>>(spellsObj[key])) defs.push(obj(s.definition));
+  }
+  return defs;
+}
+
 // ── Spell listing (per class + per non-class source + duplicate warnings) ────
 // Pre-seeds seenSpellIds during the per-class walk so duplicate detection
 // across sources is consistent regardless of section order.
@@ -102,31 +152,14 @@ function buildSpellSections(
   classes: readonly ClassEntry[],
 ): string[] {
   const sections: string[] = [];
-  const classSpells = arr<Record<string, unknown>>(char.classSpells);
   const seenSpellIds = new Map<number, string>(); // spellId → first source label
 
-  for (const cs of classSpells) {
-    // Try characterClassId first; fall back to id/classId for 2024-rules format
-    const classEntry = classes.find(c =>
-      c.id === cs.characterClassId ||
-      c.id === cs.id ||
-      c.id === cs.classId
-    );
-    const className = str(obj(classEntry?.definition ?? {}).name);
-    const isSpellbook = className === "Wizard";
-    // spells may be under cs.spells or cs.classSpells (2024 format variation)
-    const allSpells = arr<Record<string, unknown>>(cs.spells).length > 0
-      ? arr<Record<string, unknown>>(cs.spells)
-      : arr<Record<string, unknown>>(cs.classSpells);
+  for (const { isSpellbook, spells: allSpells } of classSpellLists(char, classes)) {
     const cantrips = allSpells
       .filter(s => num(obj(s.definition).level) === 0)
       .map(s => str(obj(s.definition).name));
     const leveled = allSpells
-      .filter(s => {
-        if (num(obj(s.definition).level) === 0) return false;
-        if (isSpellbook) return s.prepared === true || obj(s.definition).ritual === true;
-        return true;
-      })
+      .filter(s => num(obj(s.definition).level) > 0 && isShownClassSpell(s, isSpellbook))
       .map(s => {
         const def = obj(s.definition);
         const ritual = isSpellbook && def.ritual ? " [ritual]" : "";
@@ -134,7 +167,8 @@ function buildSpellSections(
       });
     if (cantrips.length) sections.push(`  Cantrips: ${cantrips.join(", ")}`);
     if (leveled.length) sections.push(`  Spells: ${leveled.join(", ")}`);
-    // Pre-seed duplicate detection in the same pass
+    // Pre-seed duplicate detection in the same pass, from the ungated list: an
+    // unprepared spellbook spell that another source also grants still warns.
     for (const s of allSpells) {
       const spellId = num(obj(s.definition).id);
       if (spellId && !seenSpellIds.has(spellId)) seenSpellIds.set(spellId, "Spells");
@@ -204,19 +238,8 @@ function buildConcentrationByLevel(
     const bucket = concByLevel.get(level) ?? [];
     if (!bucket.includes(name)) { bucket.push(name); concByLevel.set(level, bucket); }
   };
-  for (const cs of arr<Record<string, unknown>>(char.classSpells)) {
-    const classEntry = classes.find(c =>
-      c.id === cs.characterClassId || c.id === cs.id || c.id === cs.classId
-    );
-    const isSpellbook = str(obj(classEntry?.definition ?? {}).name) === "Wizard";
-    const allSp = arr<Record<string, unknown>>(cs.spells).length > 0
-      ? arr<Record<string, unknown>>(cs.spells)
-      : arr<Record<string, unknown>>(cs.classSpells);
-    for (const s of allSp) {
-      const def = obj(s.definition);
-      if (num(def.level) > 0 && isSpellbook && !(s.prepared === true || def.ritual === true)) continue;
-      addConcSpell(s);
-    }
+  for (const { isSpellbook, spells } of classSpellLists(char, classes)) {
+    for (const s of spells) if (isShownClassSpell(s, isSpellbook)) addConcSpell(s);
   }
   for (const spellList of Object.values(obj(char.spells))) {
     for (const s of arr<Record<string, unknown>>(spellList)) addConcSpell(s);

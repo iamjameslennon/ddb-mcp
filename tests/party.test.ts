@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const { SENTINEL_INDEX } = vi.hoisted(() => ({
+  SENTINEL_INDEX: { sources: new Map(), categories: new Map() },
+}));
+
+vi.mock("../src/game-config.js", () => ({
+  getSourceIndex: vi.fn(async () => SENTINEL_INDEX),
+}));
+
 vi.mock("../src/tools/campaign.js", () => ({
   getCampaign: vi.fn(),
 }));
@@ -13,6 +21,7 @@ vi.mock("../src/tools/character.js", async (importActual) => ({
 import { getParty } from "../src/tools/party.js";
 import { getCampaign } from "../src/tools/campaign.js";
 import { fetchCharacter, parseCharacterData } from "../src/tools/character.js";
+import { getSourceIndex } from "../src/game-config.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -55,7 +64,7 @@ describe("getParty", () => {
     expect(result).toContain("Summary: Hero102");
     expect(result).toContain("Summary: Hero103");
     expect(vi.mocked(fetchCharacter)).toHaveBeenCalledTimes(3);
-    expect(vi.mocked(parseCharacterData)).toHaveBeenCalledWith(expect.anything(), "summary");
+    expect(vi.mocked(parseCharacterData)).toHaveBeenCalledWith(expect.anything(), "summary", SENTINEL_INDEX);
   });
 
   it("empty campaign — returns descriptive message without fetching characters", async () => {
@@ -96,6 +105,17 @@ describe("getParty", () => {
     // Result should contain 6 summaries
     expect(result.split("Summary")).toHaveLength(7); // 6 "Summary" occurrences → 7 parts
     expect(result).toContain("PARTY: Waterdeep");
+  });
+
+  it("fetches the source index once per party", async () => {
+    vi.mocked(getCampaign).mockResolvedValue(campaignJson("Phandelver", [401, 402, 403, 404]));
+    vi.mocked(fetchCharacter).mockImplementation(async id => ({ json: charJson(`Hero${id}`) }));
+    vi.mocked(parseCharacterData).mockImplementation(() => "Summary");
+
+    await getParty("999");
+
+    expect(vi.mocked(parseCharacterData)).toHaveBeenCalledTimes(4);
+    expect(vi.mocked(getSourceIndex)).toHaveBeenCalledTimes(1);
   });
 
   it("shows a fetch notice above that character's summary", async () => {

@@ -14,12 +14,14 @@
 // Saving throw proficiencies: STR, CON (from class modifiers)
 // Skill proficiencies: Athletics (from class modifiers)
 // Feats: Great Weapon Master (real) + Action Surge (__DISGUISE_FEAT, filtered)
+// Rules: pure 2024 — species, class, background and both feats cite PHB 2024 (145)
 export const FIGHTER_5: Record<string, unknown> = {
   data: {
     name: "Thorin",
     race: {
       fullName: "Mountain Dwarf",
       baseName: "Dwarf",
+      sources: [{ sourceId: 145 }],
       weightSpeeds: { normal: { walk: 25, fly: 0, swim: 0, climb: 0, burrow: 0 } },
       racialTraits: [],
     },
@@ -34,12 +36,13 @@ export const FIGHTER_5: Record<string, unknown> = {
           canCastSpells: false,
           spellCastingAbilityId: 0,
           spellRules: {},
+          sources: [{ sourceId: 145 }],
         },
         subclassDefinition: null,
         classFeatures: [],
       },
     ],
-    background: { definition: { name: "Soldier", featureName: null, featureDescription: null } },
+    background: { definition: { name: "Soldier", featureName: null, featureDescription: null, sources: [{ sourceId: 145 }] } },
     currentXp: 6500,
     inspiration: false,
     stats: [
@@ -76,6 +79,7 @@ export const FIGHTER_5: Record<string, unknown> = {
           name: "Great Weapon Master",
           snippet: "On a critical hit or kill, make a bonus attack.",
           categories: [],
+          sources: [{ sourceId: 145 }],
         },
       },
       {
@@ -84,6 +88,7 @@ export const FIGHTER_5: Record<string, unknown> = {
           name: "Action Surge",
           snippet: "Take an extra action.",
           categories: [{ tagName: "__DISGUISE_FEAT" }],
+          sources: [{ sourceId: 145 }],
         },
       },
     ],
@@ -105,12 +110,16 @@ export const FIGHTER_5: Record<string, unknown> = {
 // ── Level-3 Wood Elf Monk wielding a Handaxe ─────────────────────────────────
 // Tests Martial Arts: monk weapons (simple melee + shortsword) use DEX when
 // DEX > STR. Handaxe is simple melee, so should use DEX 16 (+3) over STR 10 (+0).
+// Rules: 2014 — Legacy species, PHB 2014 (2) class and background; the Handaxe
+// cites both Basic Rules (148, 1), so it takes the character's edition.
 export const MONK_3_HANDAXE: Record<string, unknown> = {
   data: {
     name: "Sienna",
     race: {
       fullName: "Wood Elf",
       baseName: "Elf",
+      isLegacy: true,
+      sources: [{ sourceId: 2 }],
       weightSpeeds: { normal: { walk: 35, fly: 0, swim: 0, climb: 0, burrow: 0 } },
       racialTraits: [],
     },
@@ -125,6 +134,7 @@ export const MONK_3_HANDAXE: Record<string, unknown> = {
           canCastSpells: false,
           spellCastingAbilityId: 0,
           spellRules: {},
+          sources: [{ sourceId: 2 }],
         },
         subclassDefinition: null,
         classFeatures: [
@@ -132,7 +142,7 @@ export const MONK_3_HANDAXE: Record<string, unknown> = {
         ],
       },
     ],
-    background: { definition: { name: "Outlander", featureName: null, featureDescription: null } },
+    background: { definition: { name: "Outlander", featureName: null, featureDescription: null, sources: [{ sourceId: 2 }] } },
     currentXp: 900,
     inspiration: false,
     stats: [
@@ -179,6 +189,7 @@ export const MONK_3_HANDAXE: Record<string, unknown> = {
           mastery: "",
           properties: [{ name: "Light" }, { name: "Thrown" }],
           grantedModifiers: [],
+          sources: [{ sourceId: 148 }, { sourceId: 1 }],
         },
       },
     ],
@@ -201,12 +212,15 @@ export const MONK_3_HANDAXE: Record<string, unknown> = {
 // Subclass-source spellcasting: base Rogue.canCastSpells = false, but
 // Arcane Trickster subclass.canCastSpells = true. Tests the subclass-driven
 // spellcasting path.
+// Rules: 2024 (PHB 2024 species, class and subclass) with a 2014 (PHB 2014)
+// background.
 export const ARCANE_TRICKSTER_9: Record<string, unknown> = {
   data: {
     name: "Lyra",
     race: {
       fullName: "Human",
       baseName: "Human",
+      sources: [{ sourceId: 145 }],
       weightSpeeds: { normal: { walk: 30, fly: 0, swim: 0, climb: 0, burrow: 0 } },
       racialTraits: [],
     },
@@ -220,6 +234,7 @@ export const ARCANE_TRICKSTER_9: Record<string, unknown> = {
           hitDice: 8,
           canCastSpells: false,        // base Rogue does NOT cast
           spellCastingAbilityId: 0,
+          sources: [{ sourceId: 145 }],
           spellRules: {
             // Arcane Trickster gets 1/3 caster slots; simplified table for test
             levelSpellSlots: Array.from({ length: 21 }, (_, lvl) =>
@@ -231,11 +246,12 @@ export const ARCANE_TRICKSTER_9: Record<string, unknown> = {
           name: "Arcane Trickster",
           canCastSpells: true,         // subclass IS the source of spellcasting
           spellCastingAbilityId: 4,    // INT
+          sources: [{ sourceId: 145 }],
         },
         classFeatures: [],
       },
     ],
-    background: { definition: { name: "Criminal", featureName: null, featureDescription: null } },
+    background: { definition: { name: "Criminal", featureName: null, featureDescription: null, sources: [{ sourceId: 2 }] } },
     currentXp: 0,
     inspiration: false,
     stats: [

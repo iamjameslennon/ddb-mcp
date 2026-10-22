@@ -3,8 +3,9 @@
 exports[`parseCharacterData snapshots > ARCANE_TRICKSTER_9 — full output 1`] = `
 "═══════════════════════════════════════
   Lyra
+  Rules: 2024 · 2014 content: Criminal (background)
   Human | Rogue (Arcane Trickster) 9 | Level 9
-  Background: Criminal | XP: 0
+  Background: Criminal [2014] | XP: 0
   Inspiration: No
 ═══════════════════════════════════════
 
@@ -87,8 +88,9 @@ No notes or backstory have been recorded for this character."
 exports[`parseCharacterData snapshots > ARCANE_TRICKSTER_9 — spells section only 1`] = `
 "═══════════════════════════════════════
   Lyra
+  Rules: 2024 · 2014 content: Criminal (background)
   Human | Rogue (Arcane Trickster) 9 | Level 9
-  Background: Criminal | XP: 0
+  Background: Criminal [2014] | XP: 0
   Inspiration: No
 ═══════════════════════════════════════
 
@@ -103,6 +105,7 @@ SPELL SLOTS
 exports[`parseCharacterData snapshots > FIGHTER_5 — full output 1`] = `
 "═══════════════════════════════════════
   Thorin
+  Rules: 2024
   Mountain Dwarf | Fighter 5 | Level 5
   Background: Soldier | XP: 6500
   Inspiration: No
@@ -184,6 +187,7 @@ No notes or backstory have been recorded for this character."
 exports[`parseCharacterData snapshots > FIGHTER_5 — summary section only 1`] = `
 "═══════════════════════════════════════
   Thorin
+  Rules: 2024
   Mountain Dwarf | Fighter 5 | Level 5
   Background: Soldier | XP: 6500
   Inspiration: No
@@ -236,6 +240,7 @@ PROFICIENCIES & TRAINING
 exports[`parseCharacterData snapshots > MONK_3_HANDAXE — full output 1`] = `
 "═══════════════════════════════════════
   Sienna
+  Rules: 2014
   Wood Elf | Monk 3 | Level 3
   Background: Outlander | XP: 900
   Inspiration: No

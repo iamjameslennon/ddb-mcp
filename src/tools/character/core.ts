@@ -1,21 +1,23 @@
 /**
- * `computeCoreStats(char)` — the foundation context object for the character
- * module.
+ * `computeCoreStats(char, index)` — the foundation context object for the
+ * character module.
  *
  * Phase 2 of the character.ts refactor — see docs/character-refactor.md.
  *
  * Computes the values that every per-domain module (vitals, stats, ac,
  * weapons, spells, …) needs: flattened modifiers, classes, total level,
- * proficiency bonus, ability scores + mods, inventory, and the template
- * resolver. Computed once at the top of `parseCharacterData` and threaded
- * downstream.
+ * proficiency bonus, ability scores + mods, inventory, the template
+ * resolver, and the character's editions (classified against `index`).
+ * Computed once at the top of `parseCharacterData` and threaded downstream.
  */
 
+import type { SourceIndex } from "../../edition.js";
+import { computeCharacterEditions } from "./editions.js";
 import { arr, isBonusMod, isSetMod, num, modOf, obj, statKeys, statNames } from "./helpers.js";
 import { makeResolveTemplates } from "./templates.js";
 import type { CharData, ClassEntry, CoreStats, InventoryItem, Mod } from "./types.js";
 
-export function computeCoreStats(char: CharData): CoreStats {
+export function computeCoreStats(char: CharData, index: SourceIndex): CoreStats {
   const classes = arr<ClassEntry>(char.classes);
   const totalLevel = classes.reduce((s, c) => s + num(c.level), 0);
   const profBonus = Math.floor((totalLevel - 1) / 4) + 2;
@@ -154,5 +156,6 @@ export function computeCoreStats(char: CharData): CoreStats {
     classes,
     inventory,
     resolveTemplates,
+    editions: computeCharacterEditions(char, index),
   };
 }
