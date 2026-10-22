@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildSourceIndex, categoryRuleset, classifyEdition, KNOWN_CATEGORY_IDS,
-  normalizeName, createTwinNamer, twinName, twinAliases, classOwnerTwinKey, editionSourceId, bookChoiceNote, alsoInLine,
+  normalizeName, createTwinNamer, twinName, twinAliases, classOwnerTwinKey, editionSourceId, entrySourceIds, bookChoiceNote, alsoInLine,
   dedupeById, definitionTiebreak, monsterTiebreak,
   selectByEdition, lookupByName, groupAndSelect,
   rulesLine, reasonLine, renameLine, RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, editionTag, searchHeader, open5eSearchHeader, searchFooter, ambiguityMessage,
@@ -961,5 +961,12 @@ describe("locked-content labels", () => {
     expect(searchHeader({ sourceBook: HOMEBREW_SOURCE_BOOK })).toBe("Rules: showing every entry in homebrew content, each tagged with its edition.");
     expect(rulesLine(HOMEBREW_INFO)).toBe("Rules: homebrew (edition not stated)");
     expect(editionTag(HOMEBREW_INFO)).toBe("[homebrew]");
+  });
+});
+
+describe("entrySourceIds with malformed sources", () => {
+  it("treats a non-array sources as empty", () => {
+    expect(entrySourceIds({ sourceId: 5, sources: {} } as unknown as EditionMarkers)).toEqual([5]);
+    expect(entrySourceIds({ sources: "145" } as unknown as EditionMarkers)).toEqual([]);
   });
 });

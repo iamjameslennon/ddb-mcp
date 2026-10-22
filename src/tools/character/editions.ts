@@ -77,13 +77,14 @@ export function computeCharacterEditions(char: CharData, index: SourceIndex): Ch
 
   const entries: CharacterEditionEntry[] = [...classEntries];
   for (const c of classes) {
-    if (subclassDiffers(c)) entries.push(entry(str(obj(c.subclassDefinition).name), "subclass", c.subclassDefinition));
+    if (subclassDiffers(c) && str(obj(c.subclassDefinition).name)) entries.push(entry(str(obj(c.subclassDefinition).name), "subclass", c.subclassDefinition));
   }
   if (isObject(char.race)) {
-    entries.push(entry(str(char.race.fullName || char.race.baseName), "species", char.race));
+    const speciesName = str(char.race.fullName || char.race.baseName);
+    if (speciesName) entries.push(entry(speciesName, "species", char.race));
   }
   const background = obj(char.background).definition;
-  if (isObject(background)) entries.push(entry(str(background.name), "background", background));
+  if (isObject(background) && str(background.name)) entries.push(entry(str(background.name), "background", background));
   for (const f of arr<Mod>(char.feats)) {
     if (hasTag(f, "__INITIAL_ASI")) continue;
     entries.push(entry(str(obj(f.definition).name), "feat", f.definition));

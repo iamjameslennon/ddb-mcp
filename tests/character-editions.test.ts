@@ -126,4 +126,24 @@ describe("character Rules line and header tags", () => {
     });
     expect(sheet(c)).toContain("  Elf (Wood Elf) [2014] | Fighter 5 | Level 5");
   });
+
+  it("a nameless species, background or subclass object adds no summary item", () => {
+    const c = variant(FIGHTER_5, d => {
+      d.race = {};
+      d.background = { definition: { sources: S(2) } };
+      d.classes[0].subclassDefinition = { sources: S(2) };
+    });
+    const out = sheet(c);
+    expect(out).toContain("  Rules: 2024\n");
+    expect(out).not.toMatch(/\(species\)|\(background\)|\(subclass\)/);
+  });
+
+  it("a nameless spell from a source list is neither counted nor printed", () => {
+    const c = variant(FIGHTER_5, d => {
+      d.spells = { race: [{ definition: { id: 7, level: 1, sources: S(2) } }] };
+    });
+    const out = sheet(c);
+    expect(out).not.toMatch(/2014 content: .*spell/);
+    expect(out).not.toContain("From ");
+  });
 });

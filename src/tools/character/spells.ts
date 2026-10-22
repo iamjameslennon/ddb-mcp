@@ -139,7 +139,10 @@ export function shownSpellDefinitions(char: CharData, classes: readonly ClassEnt
   }
   const spellsObj = obj(char.spells);
   for (const key of Object.keys(SOURCE_LABELS)) {
-    for (const s of arr<Record<string, unknown>>(spellsObj[key])) defs.push(obj(s.definition));
+    for (const s of arr<Record<string, unknown>>(spellsObj[key])) {
+      // buildSpellSections drops a nameless spell from "From X:", so it isn't shown.
+      if (str(obj(s.definition).name)) defs.push(obj(s.definition));
+    }
   }
   return defs;
 }

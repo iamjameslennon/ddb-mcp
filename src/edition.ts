@@ -157,7 +157,7 @@ export function classifyEdition(entry: EditionMarkers, index: SourceIndex): Edit
 /** Every source id an entry names: its own `sourceId` (when numeric) plus each of its `sources`, deduped. */
 export function entrySourceIds(entry: EditionMarkers): number[] {
   const ids: number[] = [];
-  for (const id of [entry.sourceId, ...(entry.sources ?? []).map(s => s?.sourceId)]) {
+  for (const id of [entry.sourceId, ...(Array.isArray(entry.sources) ? entry.sources : []).map(s => s?.sourceId)]) {
     if (typeof id === "number" && !ids.includes(id)) ids.push(id);
   }
   return ids;
