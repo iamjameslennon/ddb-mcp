@@ -691,14 +691,6 @@ describe("search labels", () => {
     expect(READ_BOOK_TOOL_NOTE).toBe("A 'Rules:' line under the title names the book's ruleset.");
   });
 
-  it("LIBRARY_LIST_TOOL_NOTE", () => {
-    expect(LIBRARY_LIST_TOOL_NOTE).toBe("Each book carries an edition tag ([2024], [2014], …).");
-  });
-
-  it("READ_BOOK_TOOL_NOTE", () => {
-    expect(READ_BOOK_TOOL_NOTE).toBe("A 'Rules:' line under the title names the book's ruleset.");
-  });
-
   it("CHARACTER_RULES_TOOL_NOTE", () => {
     expect(CHARACTER_RULES_TOOL_NOTE).toBe("The 'Rules:' line under the character's name gives the ruleset of the character's classes and lists content from other rulesets; that content is also tagged inline ([2014], [2024], [homebrew], …).");
   });
