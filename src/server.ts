@@ -19,7 +19,7 @@ import { MAX_TREASURE_ENTRIES, MAX_MONSTER_COUNT, MAX_INDIVIDUAL_ROLLS, MAX_MONS
 import { searchSpells, getSpell, searchItems, getItem, searchRaces, searchClasses, searchBackgrounds, searchFeats, searchClassFeatures, searchRacialTraits, searchRules, getRule, clearReferenceCache } from "./tools/reference.js";
 import { clearOpen5eCache } from "./open5e.js";
 import { getCondition } from "./tools/conditions.js";
-import { RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, TREASURE_RULES_EDITION_NOTE, SERVER_INSTRUCTIONS } from "./edition.js";
+import { RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, TREASURE_RULES_EDITION_NOTE, SERVER_INSTRUCTIONS } from "./edition.js";
 
 export const server = new McpServer(
   { name: "dndbeyond", version: "1.0.0" },
@@ -557,7 +557,7 @@ server.tool(
 // ─── ddb_list_library ─────────────────────────────────────────────────────────
 server.tool(
   "ddb_list_library",
-  "List all books and sourcebooks you own in your D&D Beyond library. Requires login — run ddb_login first if you haven't already.",
+  "List all books and sourcebooks you own in your D&D Beyond library. Requires login — run ddb_login first if you haven't already. " + LIBRARY_LIST_TOOL_NOTE,
   {},
   READ_ONLY_NET,
   async () => {
@@ -575,7 +575,7 @@ server.tool(
 // ─── ddb_read_book ────────────────────────────────────────────────────────────
 server.tool(
   "ddb_read_book",
-  "Read a D&D Beyond book. Accepts either a slug (e.g. dnd/phb-2024) or a plain title (e.g. \"Player's Handbook\" or \"monster manual\") — the server resolves titles against your library automatically. Specify chapter_slug for a chapter, query to jump to a heading, and max_chars to control response size. Requires login — run ddb_login first if you haven't already.",
+  "Read a D&D Beyond book. Accepts either a slug (e.g. dnd/phb-2024) or a plain title (e.g. \"Player's Handbook\" or \"monster manual\") — the server resolves titles against your library automatically. Specify chapter_slug for a chapter, query to jump to a heading, and max_chars to control response size. Requires login — run ddb_login first if you haven't already. " + READ_BOOK_TOOL_NOTE,
   {
     book_slug: z
       .string()

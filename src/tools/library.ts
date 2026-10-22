@@ -1,7 +1,9 @@
 import * as cheerio from "cheerio";
 import type { AnyNode } from "domhandler";
 import { sessionFetch, hasValidSession } from "../session-fetch.js";
-import { wrapUntrusted } from "../utils.js";
+import { wrapUntrusted, stripHtml } from "../utils.js";
+import { getSourceIndex } from "../game-config.js";
+import { classifyEdition, normalizeName, rulesLine, editionTag, type EditionInfo, type SourceIndex } from "../edition.js";
 
 const LIBRARY_URL =
   "https://www.dndbeyond.com/en/library?type=sourcebooks&ownership=owned-shared";
@@ -138,31 +140,91 @@ export function matchBookSlug(
 }
 
 /**
- * Resolve a user-supplied book identifier to a slug.
+ * Resolve a user-supplied book identifier to a slug and, when it came from the
+ * library list, that book's title.
  * If input already contains "/" it is treated as a slug and returned as-is.
  * Otherwise, listLibrary() is called and the title is fuzzy-matched.
  */
-export async function resolveBookSlug(input: string): Promise<string> {
-  if (input.includes("/")) return input;
+export async function resolveBookSlug(input: string): Promise<{ slug: string; title: string | null }> {
+  if (input.includes("/")) return { slug: input, title: null };
   const raw = await listLibrary();
   const { books } = JSON.parse(raw) as { books: Array<{ title: string; slug: string }> };
-  return matchBookSlug(books, input);
+  const slug = matchBookSlug(books, input);
+  return { slug, title: books.find(b => b.slug === slug)?.title ?? null };
+}
+
+// ── Edition join ─────────────────────────────────────────────────────────────
+
+const lastSegment = (path: string | null | undefined): string =>
+  (path ?? "").split("/").filter(Boolean).pop() ?? "";
+
+/** Choose one id among candidates: agreeing editions take the lowest id; disagreeing ones fail. */
+function pickCandidate(ids: number[], index: SourceIndex): number | null {
+  if (ids.length === 0) return null;
+  const sorted = [...ids].sort((a, b) => a - b);
+  const staged = sorted.filter(id => classifyEdition({ sourceId: id }, index).ruleset !== "unstated");
+  if (staged.length === 0) return sorted[0];
+  const rulesets = new Set(staged.map(id => classifyEdition({ sourceId: id }, index).ruleset));
+  return rulesets.size === 1 ? staged[0] : null;
+}
+
+/**
+ * Join a library book to a game-config source: (a) the slug's last segment
+ * equals a source's `sourceURL` last segment, else (b) the title equals a
+ * source's description or book label. An ambiguous step fails.
+ */
+export function librarySourceId(
+  book: { slug: string; title: string | null },
+  index: SourceIndex,
+): number | null {
+  const seg = lastSegment(book.slug);
+  if (seg) {
+    const ids = [...index.sources].filter(([, s]) => lastSegment(s.sourceURL) === seg).map(([id]) => id);
+    const hit = pickCandidate(ids, index);
+    if (hit !== null) return hit;
+  }
+  const title = book.title ? normalizeName(book.title) : "";
+  if (title) {
+    const ids = [...index.sources]
+      .filter(([, s]) => normalizeName(stripHtml(s.description ?? "")) === title || normalizeName(s.book) === title)
+      .map(([id]) => id);
+    return pickCandidate(ids, index);
+  }
+  return null;
+}
+
+export function libraryBookInfo(
+  book: { slug: string; title: string | null },
+  index: SourceIndex,
+): EditionInfo {
+  const id = librarySourceId(book, index);
+  return id === null ? { ruleset: "unstated", book: null } : classifyEdition({ sourceId: id }, index);
+}
+
+export function tagLibraryBooks(
+  books: readonly LibraryBook[],
+  index: SourceIndex,
+): Array<LibraryBook & { edition: string }> {
+  return books.map(b => ({ ...b, edition: editionTag(libraryBookInfo(b, index)) }));
 }
 
 // ── Public tools ─────────────────────────────────────────────────────────────
+
+async function fetchLibraryBooks(): Promise<LibraryBook[]> {
+  const resp = await sessionFetch(LIBRARY_URL);
+  if (!resp.ok) {
+    throw new Error(`Library fetch failed: ${resp.status} ${resp.statusText}`);
+  }
+  return parseSourcesFromLibraryHtml(await resp.text());
+}
 
 export async function listLibrary(): Promise<string> {
   if (!hasValidSession()) {
     throw new Error("Not logged in. Please run ddb_login first.");
   }
 
-  const resp = await sessionFetch(LIBRARY_URL);
-  if (!resp.ok) {
-    throw new Error(`Library fetch failed: ${resp.status} ${resp.statusText}`);
-  }
-  const html = await resp.text();
-  const books = parseSourcesFromLibraryHtml(html);
-  return JSON.stringify({ count: books.length, books });
+  const books = await fetchLibraryBooks();
+  return JSON.stringify({ count: books.length, books: tagLibraryBooks(books, await getSourceIndex()) });
 }
 
 /**
@@ -223,7 +285,22 @@ export async function readBook(
   }
 
   // Resolve plain title → slug (passthrough if input already contains "/")
-  const resolvedSlug = await resolveBookSlug(bookSlug);
+  const resolved = await resolveBookSlug(bookSlug);
+  const resolvedSlug = resolved.slug;
+
+  // Edition: join by slug; when that fails and no title is known yet, look the
+  // slug up in the library once. A failed lookup just leaves the book unlabelled.
+  const index = await getSourceIndex();
+  let bookRef = resolved;
+  if (bookRef.title === null && librarySourceId(bookRef, index) === null) {
+    try {
+      const title = (await fetchLibraryBooks()).find(b => b.slug === resolvedSlug)?.title ?? null;
+      bookRef = { slug: resolvedSlug, title };
+    } catch {
+      // no title: stays "edition not stated"
+    }
+  }
+  const rules = rulesLine(libraryBookInfo(bookRef, index));
 
   // Encode per path segment so legitimate slug separators (e.g. 'dnd/phb-2024')
   // are preserved while any other character is percent-encoded. Defense in depth
@@ -265,5 +342,5 @@ export async function readBook(
   // Book text is DDB-served page content — keep it inside untrusted
   // delimiters (and the tool-generated truncation note outside them), same
   // as the ddb_navigate / ddb_get_page scrapers.
-  return `# ${resolvedSlug}${chapterSlug ? ` / ${chapterSlug}` : ""}\nURL: ${url}\n\n${wrapUntrusted(body)}${truncNote}`;
+  return `# ${resolvedSlug}${chapterSlug ? ` / ${chapterSlug}` : ""}\n${rules}\nURL: ${url}\n\n${wrapUntrusted(body)}${truncNote}`;
 }

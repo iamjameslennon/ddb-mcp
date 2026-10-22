@@ -531,6 +531,12 @@ export const CHARACTER_RULES_TOOL_NOTE =
 export const CHARACTER_LOOKUP_TOOL_NOTE =
   "Each result carries a 'Rules:' line naming the entry's ruleset; a list of matches tags each line instead.";
 
+/** Appended to the ddb_list_library description. */
+export const LIBRARY_LIST_TOOL_NOTE = "Each book carries an edition tag ([2024], [2014], …).";
+
+/** Appended to the ddb_read_book description. */
+export const READ_BOOK_TOOL_NOTE = "A 'Rules:' line under the title names the book's ruleset.";
+
 /** Appended to ddb_roll_treasure's description, after RULES_EDITION_TOOL_NOTE. */
 export const TREASURE_RULES_EDITION_NOTE =
   "Only 2024 treasure tables exist: '2014' still rolls them and says so, but resolves monster CRs from 2014 stat blocks.";

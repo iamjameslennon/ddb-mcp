@@ -4,7 +4,7 @@ import {
   normalizeName, createTwinNamer, twinName, twinAliases, classOwnerTwinKey, editionSourceId, entrySourceIds, bookChoiceNote, alsoInLine,
   dedupeById, definitionTiebreak, monsterTiebreak,
   selectByEdition, lookupByName, groupAndSelect,
-  rulesLine, reasonLine, renameLine, RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, editionTag, searchHeader, open5eSearchHeader, searchFooter, ambiguityMessage,
+  rulesLine, reasonLine, renameLine, RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, editionTag, searchHeader, open5eSearchHeader, searchFooter, ambiguityMessage,
   lockedLineSuffix, lockedSwapSummary, lockedEntriesNote, availableElsewhereHint, HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO,
   characterMainEdition, characterTag, characterRulesLine, classifyCharacterEntry,
   type CategoryRecord, type CharacterEditionEntry, type CharacterEntryKind,
@@ -681,6 +681,22 @@ describe("search labels", () => {
 
   it("CHARACTER_LOOKUP_TOOL_NOTE", () => {
     expect(CHARACTER_LOOKUP_TOOL_NOTE).toBe("Each result carries a 'Rules:' line naming the entry's ruleset; a list of matches tags each line instead.");
+  });
+
+  it("LIBRARY_LIST_TOOL_NOTE", () => {
+    expect(LIBRARY_LIST_TOOL_NOTE).toBe("Each book carries an edition tag ([2024], [2014], …).");
+  });
+
+  it("READ_BOOK_TOOL_NOTE", () => {
+    expect(READ_BOOK_TOOL_NOTE).toBe("A 'Rules:' line under the title names the book's ruleset.");
+  });
+
+  it("LIBRARY_LIST_TOOL_NOTE", () => {
+    expect(LIBRARY_LIST_TOOL_NOTE).toBe("Each book carries an edition tag ([2024], [2014], …).");
+  });
+
+  it("READ_BOOK_TOOL_NOTE", () => {
+    expect(READ_BOOK_TOOL_NOTE).toBe("A 'Rules:' line under the title names the book's ruleset.");
   });
 
   it("CHARACTER_RULES_TOOL_NOTE", () => {
