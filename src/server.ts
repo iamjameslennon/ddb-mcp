@@ -19,7 +19,7 @@ import { MAX_TREASURE_ENTRIES, MAX_MONSTER_COUNT, MAX_INDIVIDUAL_ROLLS, MAX_MONS
 import { searchSpells, getSpell, searchItems, getItem, searchRaces, searchClasses, searchBackgrounds, searchFeats, searchClassFeatures, searchRacialTraits, searchRules, getRule, clearReferenceCache } from "./tools/reference.js";
 import { clearOpen5eCache } from "./open5e.js";
 import { getCondition } from "./tools/conditions.js";
-import { RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, TREASURE_RULES_EDITION_NOTE, SERVER_INSTRUCTIONS } from "./edition.js";
+import { RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, TREASURE_RULES_EDITION_NOTE, SERVER_INSTRUCTIONS } from "./edition.js";
 
 export const server = new McpServer(
   { name: "dndbeyond", version: "1.0.0" },
@@ -290,7 +290,7 @@ server.tool(
 // ─── ddb_character_lookup ────────────────────────────────────────────────────
 server.tool(
   "ddb_character_lookup",
-  "Look up the full description of a spell, feat, class feature, subclass feature, racial trait, background feature, or equipped item by name. Supports partial and fuzzy name matching (e.g. 'cutting' finds Cutting Words, 'sheild' finds Shield). Accepts either a numeric character_id or a character_name. Requires login — run ddb_login first if you haven't already.",
+  "Look up the full description of a spell, feat, class feature, subclass feature, racial trait, background feature, or equipped item by name. Supports partial and fuzzy name matching (e.g. 'cutting' finds Cutting Words, 'sheild' finds Shield). Accepts either a numeric character_id or a character_name. Requires login — run ddb_login first if you haven't already. " + CHARACTER_LOOKUP_TOOL_NOTE,
   {
     character_id: z.string().regex(/^\d+$/, "character_id must be numeric").optional().describe("The D&D Beyond character ID"),
     character_name: z.string().min(1).optional().describe("Character name (fuzzy matched against your account)"),

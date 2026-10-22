@@ -4,7 +4,7 @@ import {
   normalizeName, createTwinNamer, twinName, twinAliases, classOwnerTwinKey, editionSourceId, entrySourceIds, bookChoiceNote, alsoInLine,
   dedupeById, definitionTiebreak, monsterTiebreak,
   selectByEdition, lookupByName, groupAndSelect,
-  rulesLine, reasonLine, renameLine, RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, editionTag, searchHeader, open5eSearchHeader, searchFooter, ambiguityMessage,
+  rulesLine, reasonLine, renameLine, RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, editionTag, searchHeader, open5eSearchHeader, searchFooter, ambiguityMessage,
   lockedLineSuffix, lockedSwapSummary, lockedEntriesNote, availableElsewhereHint, HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO,
   characterMainEdition, characterTag, characterRulesLine, classifyCharacterEntry,
   type CategoryRecord, type CharacterEditionEntry, type CharacterEntryKind,
@@ -677,6 +677,10 @@ describe("search labels", () => {
 
   it("RULES_EDITION_TOOL_NOTE", () => {
     expect(RULES_EDITION_TOOL_NOTE).toBe("Returns 2024 content by default; set rules_edition to '2014' for 2014 rules. The 'Rules:' line or [tag] in the output names the ruleset.");
+  });
+
+  it("CHARACTER_LOOKUP_TOOL_NOTE", () => {
+    expect(CHARACTER_LOOKUP_TOOL_NOTE).toBe("Each result carries a 'Rules:' line naming the entry's ruleset; a list of matches tags each line instead.");
   });
 
   it("CHARACTER_RULES_TOOL_NOTE", () => {

@@ -527,6 +527,10 @@ export const RULES_EDITION_TOOL_NOTE =
 export const CHARACTER_RULES_TOOL_NOTE =
   "The 'Rules:' line under the character's name gives the ruleset of the character's classes and lists content from other rulesets; that content is also tagged inline ([2014], [2024], [homebrew], …).";
 
+/** Appended to the ddb_character_lookup description. */
+export const CHARACTER_LOOKUP_TOOL_NOTE =
+  "Each result carries a 'Rules:' line naming the entry's ruleset; a list of matches tags each line instead.";
+
 /** Appended to ddb_roll_treasure's description, after RULES_EDITION_TOOL_NOTE. */
 export const TREASURE_RULES_EDITION_NOTE =
   "Only 2024 treasure tables exist: '2014' still rolls them and says so, but resolves monster CRs from 2014 stat blocks.";

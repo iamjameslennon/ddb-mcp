@@ -12,8 +12,12 @@
  */
 
 import { stripHtml as stripHtmlFull } from "../../utils.js";
+import { classifyEdition, editionTag, rulesLine, type EditionInfo, type EditionMarkers, type SourceIndex } from "../../edition.js";
+import { getSourceIndex } from "../../game-config.js";
 import { fetchCharacter, withNotice } from "../character.js";
+import { computeCharacterEditions, type CharacterEditions } from "./editions.js";
 import { levenshteinDistance } from "./helpers.js";
+import type { CharData } from "./types.js";
 
 function matchesDefinitionQuery(name: string, query: string): boolean {
   const n = name.toLowerCase();
@@ -110,10 +114,14 @@ function formatItemResult(item: Record<string, unknown>): string {
 
 interface DefinitionHit {
   type: string;
+  /** The entry's own name; every `format*Result` first line starts with it. */
+  name: string;
+  /** Whose ruleset the entry belongs to (decision 6). */
+  info: EditionInfo;
   text: string;
 }
 
-function searchDefinitions(char: Record<string, unknown>, query: string): DefinitionHit[] {
+function searchDefinitions(char: Record<string, unknown>, query: string, editions: CharacterEditions, index: SourceIndex): DefinitionHit[] {
   const results: DefinitionHit[] = [];
 
   // searchDefinitions intentionally keeps these as locals (not the shared
@@ -135,7 +143,7 @@ function searchDefinitions(char: Record<string, unknown>, query: string): Defini
   for (const spell of allSpells) {
     const name = str(obj(spell.definition).name || spell.name);
     if (name && matchesDefinitionQuery(name, query)) {
-      results.push({ type: "Spell", text: formatSpellResult(spell) });
+      results.push({ type: "Spell", name, info: editions.info(spell.definition ?? spell), text: formatSpellResult(spell) });
     }
   }
 
@@ -143,7 +151,7 @@ function searchDefinitions(char: Record<string, unknown>, query: string): Defini
   for (const feat of arr<Record<string, unknown>>(char.feats)) {
     const name = str(obj(feat.definition).name);
     if (name && matchesDefinitionQuery(name, query)) {
-      results.push({ type: "Feat", text: formatFeatResult(feat) });
+      results.push({ type: "Feat", name, info: editions.info(feat.definition), text: formatFeatResult(feat) });
     }
   }
 
@@ -161,6 +169,8 @@ function searchDefinitions(char: Record<string, unknown>, query: string): Defini
         seen.add(name);
         results.push({
           type: "Class Feature",
+          name,
+          info: classifyEdition(obj(cls.definition) as EditionMarkers, index),
           text: formatClassFeatureResult(cf, className, requiredLevel),
         });
       }
@@ -177,6 +187,8 @@ function searchDefinitions(char: Record<string, unknown>, query: string): Defini
         seen.add(name);
         results.push({
           type: "Subclass Feature",
+          name,
+          info: editions.info(subDef),
           text: formatClassFeatureResult(cf, label, requiredLevel),
         });
       }
@@ -188,7 +200,7 @@ function searchDefinitions(char: Record<string, unknown>, query: string): Defini
   for (const trait of arr<Record<string, unknown>>(obj(char.race).racialTraits)) {
     const name = str(obj(trait.definition).name);
     if (name && matchesDefinitionQuery(name, query)) {
-      results.push({ type: "Racial Trait", text: formatRacialTraitResult(trait, raceName) });
+      results.push({ type: "Racial Trait", name, info: editions.info(char.race), text: formatRacialTraitResult(trait, raceName) });
     }
   }
 
@@ -200,6 +212,8 @@ function searchDefinitions(char: Record<string, unknown>, query: string): Defini
     const bgDesc = stripHtmlFull(str(bgDef.featureDescription));
     results.push({
       type: "Background Feature",
+      name: bgFeatureName,
+      info: editions.info(bgDef),
       text: `${bgFeatureName} (${bgName})\n\n${bgDesc}`,
     });
   }
@@ -209,7 +223,7 @@ function searchDefinitions(char: Record<string, unknown>, query: string): Defini
     if (!item.equipped) continue;
     const name = str(obj(item.definition).name);
     if (name && matchesDefinitionQuery(name, query)) {
-      results.push({ type: "Item", text: formatItemResult(item) });
+      results.push({ type: "Item", name, info: editions.info(item.definition), text: formatItemResult(item) });
     }
   }
 
@@ -223,19 +237,32 @@ export async function getDefinition(
   const { json, notice } = await fetchCharacter(characterId);
   const raw = JSON.parse(json) as Record<string, unknown>;
   const char = (raw?.data ?? raw) as Record<string, unknown>;
+  const index = await getSourceIndex();
 
-  return withNotice(formatDefinitionHits(searchDefinitions(char, query), query), notice);
+  return withNotice(formatCharacterLookup(char, query, index), notice);
 }
 
-function formatDefinitionHits(hits: ReturnType<typeof searchDefinitions>, query: string): string {
+/** Pure: the formatted lookup reply for a character, labelled with each hit's ruleset. */
+export function formatCharacterLookup(char: Record<string, unknown>, query: string, index: SourceIndex): string {
+  const editions = computeCharacterEditions(char as CharData, index);
+  return formatDefinitionHits(searchDefinitions(char, query, editions, index), query);
+}
+
+function formatDefinitionHits(hits: DefinitionHit[], query: string): string {
   if (hits.length === 0) {
     return `No definition found matching "${query}" on this character. Try a partial name like "hunter" for Hunter's Mark.`;
   }
 
   if (hits.length > 3) {
-    const list = hits.map((h, i) => `${i + 1}. [${h.type}] ${h.text.split("\n")[0]}`).join("\n");
+    const list = hits.map((h, i) => {
+      const first = h.text.split("\n")[0];
+      return `${i + 1}. [${h.type}] ${h.name} ${editionTag(h.info)}${first.slice(h.name.length)}`;
+    }).join("\n");
     return `Found ${hits.length} matches for "${query}". Be more specific, or here are the matches:\n\n${list}`;
   }
 
-  return hits.map(h => `[${h.type}]\n${h.text}`).join("\n\n===\n\n");
+  return hits.map(h => {
+    const [first, ...rest] = h.text.split("\n");
+    return `[${h.type}]\n${[first, rulesLine(h.info), ...rest].join("\n")}`;
+  }).join("\n\n===\n\n");
 }
