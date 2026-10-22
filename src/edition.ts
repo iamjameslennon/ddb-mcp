@@ -696,6 +696,32 @@ export function characterMainEdition(entries: readonly CharacterEditionEntry[]):
   return { main: [...editions][0], mixed: false };
 }
 
+/**
+ * Classify one entry on a character sheet. A non-Legacy, non-homebrew
+ * definition that lists a book in a 2024 category and one in a 2014 category
+ * (Dagger, Shield, Leather: one definition printed in both editions) is valid
+ * under either, so on a 2024 or 2014 character it takes the main edition and
+ * that edition's first book. Everything else, and any character whose main
+ * edition is unstated, classifies as classifyEdition does. Never used for
+ * classes: they decide the main edition.
+ */
+export function classifyCharacterEntry(
+  entry: EditionMarkers,
+  index: SourceIndex,
+  main: RulesEdition | "unstated",
+): EditionInfo {
+  if (main !== "unstated" && entry.isHomebrew !== true && entry.isLegacy !== true) {
+    const books = entrySourceIds(entry).flatMap(id => {
+      const src = index.sources.get(id);
+      return src ? [{ ruleset: categoryRuleset(src.categoryId), book: src.book }] : [];
+    });
+    const mine = books.find(b => b.ruleset === main);
+    const other = main === "2024" ? "2014" : "2024";
+    if (mine && books.some(b => b.ruleset === other)) return { ruleset: main, book: mine.book };
+  }
+  return classifyEdition(entry, index);
+}
+
 /** Inline tag for one character entry: null when it matches the main edition; non-edition entries always tagged. */
 export function characterTag(info: EditionInfo, main: RulesEdition | "unstated"): string | null {
   return isEdition(info.ruleset) && info.ruleset === main ? null : editionTag(info);
@@ -716,7 +742,9 @@ const CHARACTER_GROUPS: ReadonlyArray<readonly [Ruleset, string]> = [
  * Entries are listed in the order given. Entries matching the main edition are
  * never listed. That includes "edition not stated" entries when the main
  * edition is itself unstated: the head already says so, and characterTag()
- * still tags each one inline.
+ * still tags each one inline. Within a group, entries other than spells and
+ * items are named; spells and items follow as counts ("8 spells, 26 items"),
+ * since a sheet can hold dozens and the inline tags name each one.
  */
 export function characterRulesLine(entries: readonly CharacterEditionEntry[]): string {
   const { main, mixed } = characterMainEdition(entries);
@@ -737,9 +765,14 @@ export function characterRulesLine(entries: readonly CharacterEditionEntry[]): s
   const groups: string[] = [];
   for (const [ruleset, label] of CHARACTER_GROUPS) {
     if (ruleset === main) continue;
-    const items = rest
-      .filter(e => e.info.ruleset === ruleset)
+    const inGroup = rest.filter(e => e.info.ruleset === ruleset);
+    const items = inGroup
+      .filter(e => e.kind !== "spell" && e.kind !== "item")
       .map(e => `${e.kind === "class" ? classLabel(e) : e.name} (${e.kind})`);
+    const spells = inGroup.filter(e => e.kind === "spell").length;
+    const gear = inGroup.filter(e => e.kind === "item").length;
+    if (spells) items.push(`${spells} ${spells === 1 ? "spell" : "spells"}`);
+    if (gear) items.push(`${gear} ${gear === 1 ? "item" : "items"}`);
     if (items.length) groups.push(`${label}: ${items.join(", ")}`);
   }
   return [head, ...groups].join(" · ");

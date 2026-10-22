@@ -6,7 +6,7 @@ import {
   selectByEdition, lookupByName, groupAndSelect,
   rulesLine, reasonLine, renameLine, RULES_EDITION_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, editionTag, searchHeader, open5eSearchHeader, searchFooter, ambiguityMessage,
   lockedLineSuffix, lockedSwapSummary, lockedEntriesNote, availableElsewhereHint, HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO,
-  characterMainEdition, characterTag, characterRulesLine,
+  characterMainEdition, characterTag, characterRulesLine, classifyCharacterEntry,
   type CategoryRecord, type CharacterEditionEntry, type CharacterEntryKind,
   type EditionInfo, type EditionMarkers, type Ruleset, type SourceRecord,
 } from "../src/edition.js";
@@ -718,6 +718,35 @@ describe("character edition labels", () => {
   const ent = (name: string, kind: CharacterEntryKind, ruleset: Ruleset, level?: number): CharacterEditionEntry =>
     ({ name, kind, level, info: info(ruleset) });
 
+  it("classifyCharacterEntry: a non-Legacy definition with 2024 and 2014 books takes the main edition", () => {
+    const dagger = { sources: [{ sourceId: 148 }, { sourceId: 1 }] };
+    expect(classifyCharacterEntry(dagger, INDEX, "2014")).toEqual({ ruleset: "2014", book: "Basic Rules (2014)" });
+    expect(classifyCharacterEntry(dagger, INDEX, "2024")).toEqual({ ruleset: "2024", book: "D&D Beyond Basic Rules" });
+    expect(classifyCharacterEntry(dagger, INDEX, "unstated")).toEqual(classifyEdition(dagger, INDEX));
+  });
+
+  it("classifyCharacterEntry: Legacy, homebrew and single-edition definitions classify as usual", () => {
+    const legacy = { isLegacy: true, sources: [{ sourceId: 148 }, { sourceId: 1 }] };
+    expect(classifyCharacterEntry(legacy, INDEX, "2024").ruleset).toBe("2014");
+    expect(classifyCharacterEntry({ isHomebrew: true, sources: [{ sourceId: 148 }, { sourceId: 1 }] }, INDEX, "2014").ruleset).toBe("homebrew");
+    expect(classifyCharacterEntry({ sources: [{ sourceId: 2 }] }, INDEX, "2024")).toEqual({ ruleset: "2014", book: "Player's Handbook (2014)" });
+  });
+
+  it("counts spells and items after the named entries of each group", () => {
+    const entries = [
+      ent("Cleric", "class", "2024", 12), ent("Grave Domain", "subclass", "2014"), ent("Noble", "background", "2014"),
+      ent("Friends", "spell", "2014"), ent("Web", "spell", "2014"), ent("Bedroll", "item", "2014"),
+      ent("Spelldriver", "feat", "homebrew"), ent("Torch", "item", "2014"),
+    ];
+    expect(characterRulesLine(entries)).toBe(
+      "Rules: 2024 · 2014 content: Grave Domain (subclass), Noble (background), 2 spells, 2 items · homebrew: Spelldriver (feat)");
+  });
+
+  it("singular counts", () => {
+    const entries = [ent("Bard", "class", "2024", 1), ent("Frostbite", "spell", "2014"), ent("Torch", "item", "2014")];
+    expect(characterRulesLine(entries)).toBe("Rules: 2024 · 2014 content: 1 spell, 1 item");
+  });
+
   it("pure 2024", () => {
     const entries = [ent("Bard", "class", "2024", 5), ent("Sage", "background", "2024"), ent("Alert", "feat", "2024")];
     expect(characterMainEdition(entries)).toEqual({ main: "2024", mixed: false });
@@ -768,7 +797,7 @@ describe("character edition labels", () => {
 
   it("unstated entries under an edition get the 'edition not stated' group", () => {
     const entries = [ent("Bard", "class", "2024", 5), ent("Mystery Trinket", "item", "unstated")];
-    expect(characterRulesLine(entries)).toBe("Rules: 2024 · edition not stated: Mystery Trinket (item)");
+    expect(characterRulesLine(entries)).toBe("Rules: 2024 · edition not stated: 1 item");
   });
 
   it("characterTag: tag entries that differ from the main edition; non-edition always", () => {
