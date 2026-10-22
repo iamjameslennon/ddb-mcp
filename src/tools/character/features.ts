@@ -28,12 +28,6 @@ export interface Features {
   background: BackgroundFeature;
 }
 
-// A name followed by its edition tag; a nameless entry keeps today's output (no bare tag).
-function named(def: Record<string, unknown>, editions: CharacterEditions): string {
-  const name = str(def.name);
-  return name ? `${name}${editions.tag(def)}` : name;
-}
-
 // ── Feats ────────────────────────────────────────────────────────────────────
 function buildFeatLines(char: CharData, resolveTemplates: TemplateResolver, editions: CharacterEditions): {
   featLines: string[]; disguisedFeatLines: string[]; realFeatCount: number;
@@ -49,9 +43,9 @@ function buildFeatLines(char: CharData, resolveTemplates: TemplateResolver, edit
   const featLines = realFeats.map(f => {
     const def = obj(f.definition);
     const snippet = resolveTemplates(stripHtml(str(def.snippet || def.description))).slice(0, 120);
-    return `• ${named(def, editions)}${snippet ? `: ${snippet}${snippet.length >= 120 ? "…" : ""}` : ""}`;
+    return `• ${editions.named(str(def.name), def)}${snippet ? `: ${snippet}${snippet.length >= 120 ? "…" : ""}` : ""}`;
   });
-  const disguisedFeatLines = disguisedFeats.map(f => `• ${named(obj(f.definition), editions)}`);
+  const disguisedFeatLines = disguisedFeats.map(f => `• ${editions.named(str(obj(f.definition).name), f.definition)}`);
   return { featLines, disguisedFeatLines, realFeatCount: realFeats.length };
 }
 

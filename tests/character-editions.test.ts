@@ -214,9 +214,40 @@ describe("inline tags", () => {
     expect(sheet(c)).toMatch(/^• Longsword \[2014\] [+-]\d+ to hit/m);
   });
 
+  it("a short tagged weapon is padded with its tag to 16 characters", () => {
+    const dagger = (id: number) => ({ equipped: true, quantity: 1, definition: {
+      id, name: "Dagger", filterType: "Weapon", isLegacy: true, sources: S(1), categoryId: 1,
+      attackType: 1, damage: { diceString: "1d4" }, damageType: "Piercing", properties: [], grantedModifiers: [],
+    } });
+    const c = variant(FIGHTER_5, d => { d.inventory = [dagger(1), dagger(2)]; });
+    expect(sheet(c)).toMatch(/^• ×2 Dagger \[2014\] {4}[+-]\d+ to hit/m);
+  });
+
+  it("same-named items of different rulesets stay separate in INVENTORY", () => {
+    const c = variant(FIGHTER_5, d => {
+      d.inventory = [
+        item(1, "Bedroll", "Other Gear", { isLegacy: true, sources: S(1, 2) }),
+        item(2, "Bedroll", "Other Gear", { isLegacy: true, sources: S(1, 2) }),
+        item(3, "Bedroll", "Other Gear", { sources: S(145) }),
+      ];
+    });
+    expect(sheet(c)).toContain("Bedroll [2014] ×2, Bedroll");
+  });
+
   it("dual-edition weapon on a 2014 character is untagged", () => {
     const out = sheet(MONK_3_HANDAXE);
     expect(out).toMatch(/^• Handaxe +\+5 to hit/m);
     expect(out).not.toMatch(TAG);
+  });
+
+  it("nameless spells and items print as before but are not counted in the Rules line", () => {
+    const c = variant(FIGHTER_5, d => {
+      d.inventory = [item(950, undefined as unknown as string, "Other Gear", { sources: [] })];
+      delete d.inventory[0].definition.name;
+      d.classSpells = [{ characterClassId: 1, spells: [{ definition: { id: 951, level: 0, sources: [] } }] }];
+    });
+    const out = sheet(c);
+    expect(out).toContain("  Rules: 2024\n");
+    expect(out).not.toContain("edition not stated");
   });
 });

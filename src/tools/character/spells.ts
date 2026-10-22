@@ -102,12 +102,6 @@ interface ClassSpellList {
   spells: Record<string, unknown>[];
 }
 
-// A spell name followed by its edition tag; a nameless spell keeps today's output (no bare tag).
-function tagged(def: Record<string, unknown>, editions: CharacterEditions): string {
-  const name = str(def.name);
-  return name ? `${name}${editions.tag(def)}` : name;
-}
-
 // Each char.classSpells entry with its class's name. Ungated: callers apply the
 // spellbook gate (isShownClassSpell) themselves.
 function classSpellLists(char: CharData, classes: readonly ClassEntry[]): ClassSpellList[] {
@@ -168,13 +162,13 @@ function buildSpellSections(
   for (const { isSpellbook, spells: allSpells } of classSpellLists(char, classes)) {
     const cantrips = allSpells
       .filter(s => num(obj(s.definition).level) === 0)
-      .map(s => tagged(obj(s.definition), editions));
+      .map(s => editions.named(str(obj(s.definition).name), s.definition));
     const leveled = allSpells
       .filter(s => num(obj(s.definition).level) > 0 && isShownClassSpell(s, isSpellbook))
       .map(s => {
         const def = obj(s.definition);
         const ritual = isSpellbook && def.ritual ? " [ritual]" : "";
-        return `${tagged(def, editions)} (L${num(def.level)}${ritual})`;
+        return `${editions.named(str(def.name), def)} (L${num(def.level)}${ritual})`;
       });
     if (cantrips.length) sections.push(`  Cantrips: ${cantrips.join(", ")}`);
     if (leveled.length) sections.push(`  Spells: ${leveled.join(", ")}`);
@@ -200,7 +194,7 @@ function buildSpellSections(
           if (!spellId) return true;
           if (seenSpellIds.has(spellId)) {
             const firstLabel = seenSpellIds.get(spellId)!;
-            const spellName = tagged(def, editions);
+            const spellName = editions.named(str(def.name), def);
             const lvl = num(def.level);
             const spellStr = lvl === 0 ? spellName : `${spellName} (L${lvl})`;
             duplicateWarnings.push(`  • ${spellStr} — already granted by ${firstLabel}, also in ${label}`);
@@ -211,7 +205,7 @@ function buildSpellSections(
         })
         .map(s => {
           const def = obj(s.definition);
-          const n = tagged(def, editions);
+          const n = editions.named(str(def.name), def);
           return n ? (num(def.level) === 0 ? n : `${n} (L${num(def.level)})`) : "";
         })
         .filter(n => n.length > 0)
@@ -243,7 +237,7 @@ function buildConcentrationByLevel(
   const addConcSpell = (s: Record<string, unknown>) => {
     const def = obj(s.definition);
     if (!str(def.name)) return;
-    const name = tagged(def, editions);
+    const name = editions.named(str(def.name), def);
     const level = num(def.level);
     const isConc = isConcentrationSpell(def) ?? false;
     if (!isConc) return;

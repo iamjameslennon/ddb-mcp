@@ -74,15 +74,14 @@ function buildClassLine(classes: readonly ClassEntry[], editions: CharacterEditi
 export function computeIdentity(core: CoreStats): Identity {
   const { char, classes, totalLevel, editions } = core;
   // A missing species or background stays empty rather than a bare tag.
-  const tagged = (name: string, def: unknown) => (name ? `${name}${editions.tag(def)}` : "");
   const bgDef = obj(char.background).definition;
   return {
     charName: str(char.name),
     rulesLine: editions.rulesLine,
-    race: tagged(deriveRace(char), char.race),
+    race: editions.named(deriveRace(char), char.race),
     classLine: buildClassLine(classes, editions),
     totalLevel,
-    background: tagged(str(obj(bgDef).name), bgDef),
+    background: editions.named(str(obj(bgDef).name), bgDef),
     xp: num(char.currentXp),
     inspiration: !!char.inspiration,
   };

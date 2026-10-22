@@ -35,7 +35,7 @@ export function computeInventory(core: CoreStats): Inventory {
   let attuned = 0;
   for (const i of inventory) {
     const def = obj(i.definition);
-    const iName = `${str(def.name)}${str(def.name) ? editions.tag(def) : ""}`;
+    const iName = editions.named(str(def.name), def);
     const filterType = str(def.filterType);
     const qty = num(i.quantity) || 1;
     if (i.isAttuned) attuned++;

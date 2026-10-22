@@ -29,6 +29,8 @@ export interface CharacterEditions {
   info(def: unknown): EditionInfo;
   /** "" when characterTag(info(def), main) is null, else " [2014]" etc. Non-class definitions. */
   tag(def: unknown): string;
+  /** `name + tag(def)`, or "" when the name is empty so an empty name never gets a bare tag. */
+  named(name: string, def: unknown): string;
   /** The class definition's tag from classifyEdition (decision 11), same "" / " [x]" form. */
   classTag(cls: ClassEntry): string;
   /** "" for a null subclass or one whose ruleset equals its class's (classifyEdition for the class, info() for the subclass), else " " + editionTag(subclass info). */
@@ -89,19 +91,22 @@ export function computeCharacterEditions(char: CharData, index: SourceIndex): Ch
     if (hasTag(f, "__INITIAL_ASI")) continue;
     entries.push(entry(str(obj(f.definition).name), "feat", f.definition));
   }
-  for (const def of dedupeDefinitions(shownSpellDefinitions(char, classes))) {
+  // A nameless spell or item is printed as an empty slot but is not counted.
+  for (const def of dedupeDefinitions(shownSpellDefinitions(char, classes).filter(d => str(d.name)))) {
     entries.push(entry(str(def.name), "spell", def));
   }
-  for (const def of dedupeDefinitions(shownItemDefinitions(arr<InventoryItem>(char.inventory)))) {
+  for (const def of dedupeDefinitions(shownItemDefinitions(arr<InventoryItem>(char.inventory)).filter(d => str(d.name)))) {
     entries.push(entry(str(def.name), "item", def));
   }
 
   const asTag = (t: string | null): string => (t ? ` ${t}` : "");
+  const tag = (def: unknown): string => asTag(characterTag(info(def), main));
   return {
     main,
     rulesLine: characterRulesLine(entries),
     info,
-    tag: def => asTag(characterTag(info(def), main)),
+    tag,
+    named: (name, def) => (name ? `${name}${tag(def)}` : ""),
     classTag: cls => asTag(characterTag(classInfo(cls), main)),
     subclassTag: cls => (subclassDiffers(cls) ? ` ${editionTag(info(cls.subclassDefinition))}` : ""),
   };
