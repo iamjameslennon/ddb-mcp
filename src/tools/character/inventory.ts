@@ -29,13 +29,13 @@ function buildCurrencyLine(char: CharData): string {
 }
 
 export function computeInventory(core: CoreStats): Inventory {
-  const { char, inventory } = core;
+  const { char, inventory, editions } = core;
   const equippedNonWeapons: string[] = [];
   const carriedItems = new Map<string, number>();
   let attuned = 0;
   for (const i of inventory) {
     const def = obj(i.definition);
-    const iName = str(def.name);
+    const iName = `${str(def.name)}${str(def.name) ? editions.tag(def) : ""}`;
     const filterType = str(def.filterType);
     const qty = num(i.quantity) || 1;
     if (i.isAttuned) attuned++;

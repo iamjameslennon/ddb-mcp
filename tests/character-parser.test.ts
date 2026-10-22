@@ -526,6 +526,7 @@ describe("parseCharacterData — comma-in-type-name weapon proficiency", () => {
           equipped: true,
           quantity: 1,
           definition: {
+            sources: [{ sourceId: 145 }],
             name: "Crossbow, Light",
             type: "Crossbow, Light",
             filterType: "Weapon",
@@ -1218,7 +1219,7 @@ describe("parseCharacterData — resolveTemplates expression evaluation", () => 
 // ── char.spells cross-source deduplication and duplicate warnings ─────────────
 describe("parseCharacterData — cross-source spell deduplication", () => {
   const makeSpell = (id: number, name: string, level: number) => ({
-    definition: { id, name, level },
+    definition: { id, name, level, sources: [{ sourceId: 145 }] },
   });
 
   it("shows each spell once and emits no warning when there are no duplicates", () => {
@@ -1266,7 +1267,7 @@ describe("parseCharacterData — cross-source spell deduplication", () => {
         ...((FIGHTER_5.data) as Record<string, unknown>),
         classSpells: [{
           characterClassId: 1,
-          spells: [{ definition: { id: 123, name: "Speak with Animals", level: 1 } }],
+          spells: [{ definition: { id: 123, name: "Speak with Animals", level: 1, sources: [{ sourceId: 145 }] } }],
         }],
         spells: {
           class: [makeSpell(123, "Speak with Animals", 1)],

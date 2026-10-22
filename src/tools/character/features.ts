@@ -11,6 +11,7 @@
 import { arr, hasTag, num, obj, str, stripHtml } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
 import type { TemplateResolver } from "./templates.js";
+import type { CharacterEditions } from "./editions.js";
 
 export interface BackgroundFeature {
   name: string;        // empty string when there's no background feature to show
@@ -27,8 +28,14 @@ export interface Features {
   background: BackgroundFeature;
 }
 
+// A name followed by its edition tag; a nameless entry keeps today's output (no bare tag).
+function named(def: Record<string, unknown>, editions: CharacterEditions): string {
+  const name = str(def.name);
+  return name ? `${name}${editions.tag(def)}` : name;
+}
+
 // ── Feats ────────────────────────────────────────────────────────────────────
-function buildFeatLines(char: CharData, resolveTemplates: TemplateResolver): {
+function buildFeatLines(char: CharData, resolveTemplates: TemplateResolver, editions: CharacterEditions): {
   featLines: string[]; disguisedFeatLines: string[]; realFeatCount: number;
 } {
   // DDB stores some non-feat entries in the feats array.
@@ -42,9 +49,9 @@ function buildFeatLines(char: CharData, resolveTemplates: TemplateResolver): {
   const featLines = realFeats.map(f => {
     const def = obj(f.definition);
     const snippet = resolveTemplates(stripHtml(str(def.snippet || def.description))).slice(0, 120);
-    return `• ${str(def.name)}${snippet ? `: ${snippet}${snippet.length >= 120 ? "…" : ""}` : ""}`;
+    return `• ${named(def, editions)}${snippet ? `: ${snippet}${snippet.length >= 120 ? "…" : ""}` : ""}`;
   });
-  const disguisedFeatLines = disguisedFeats.map(f => `• ${str(obj(f.definition).name)}`);
+  const disguisedFeatLines = disguisedFeats.map(f => `• ${named(obj(f.definition), editions)}`);
   return { featLines, disguisedFeatLines, realFeatCount: realFeats.length };
 }
 
@@ -95,8 +102,8 @@ function buildBackgroundFeature(char: CharData, resolveTemplates: TemplateResolv
 
 // ── Public API ───────────────────────────────────────────────────────────────
 export function computeFeatures(core: CoreStats): Features {
-  const { char, classes, resolveTemplates } = core;
-  const { featLines, disguisedFeatLines, realFeatCount } = buildFeatLines(char, resolveTemplates);
+  const { char, classes, resolveTemplates, editions } = core;
+  const { featLines, disguisedFeatLines, realFeatCount } = buildFeatLines(char, resolveTemplates, editions);
   return {
     featLines,
     disguisedFeatLines,

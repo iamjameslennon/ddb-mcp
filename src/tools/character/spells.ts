@@ -17,6 +17,7 @@
 import { isConcentrationSpell } from "../reference.js";
 import { arr, num, obj, signed, statNames, str } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats } from "./types.js";
+import type { CharacterEditions } from "./editions.js";
 
 export interface Spells {
   spellcastingLines: string[];                  // "  Wizard: INT  Spell Attack: +5  Save DC: 13"
@@ -101,6 +102,12 @@ interface ClassSpellList {
   spells: Record<string, unknown>[];
 }
 
+// A spell name followed by its edition tag; a nameless spell keeps today's output (no bare tag).
+function tagged(def: Record<string, unknown>, editions: CharacterEditions): string {
+  const name = str(def.name);
+  return name ? `${name}${editions.tag(def)}` : name;
+}
+
 // Each char.classSpells entry with its class's name. Ungated: callers apply the
 // spellbook gate (isShownClassSpell) themselves.
 function classSpellLists(char: CharData, classes: readonly ClassEntry[]): ClassSpellList[] {
@@ -153,6 +160,7 @@ export function shownSpellDefinitions(char: CharData, classes: readonly ClassEnt
 function buildSpellSections(
   char: CharData,
   classes: readonly ClassEntry[],
+  editions: CharacterEditions,
 ): string[] {
   const sections: string[] = [];
   const seenSpellIds = new Map<number, string>(); // spellId → first source label
@@ -160,13 +168,13 @@ function buildSpellSections(
   for (const { isSpellbook, spells: allSpells } of classSpellLists(char, classes)) {
     const cantrips = allSpells
       .filter(s => num(obj(s.definition).level) === 0)
-      .map(s => str(obj(s.definition).name));
+      .map(s => tagged(obj(s.definition), editions));
     const leveled = allSpells
       .filter(s => num(obj(s.definition).level) > 0 && isShownClassSpell(s, isSpellbook))
       .map(s => {
         const def = obj(s.definition);
         const ritual = isSpellbook && def.ritual ? " [ritual]" : "";
-        return `${str(def.name)} (L${num(def.level)}${ritual})`;
+        return `${tagged(def, editions)} (L${num(def.level)}${ritual})`;
       });
     if (cantrips.length) sections.push(`  Cantrips: ${cantrips.join(", ")}`);
     if (leveled.length) sections.push(`  Spells: ${leveled.join(", ")}`);
@@ -192,7 +200,7 @@ function buildSpellSections(
           if (!spellId) return true;
           if (seenSpellIds.has(spellId)) {
             const firstLabel = seenSpellIds.get(spellId)!;
-            const spellName = str(def.name);
+            const spellName = tagged(def, editions);
             const lvl = num(def.level);
             const spellStr = lvl === 0 ? spellName : `${spellName} (L${lvl})`;
             duplicateWarnings.push(`  • ${spellStr} — already granted by ${firstLabel}, also in ${label}`);
@@ -203,7 +211,7 @@ function buildSpellSections(
         })
         .map(s => {
           const def = obj(s.definition);
-          const n = str(def.name);
+          const n = tagged(def, editions);
           return n ? (num(def.level) === 0 ? n : `${n} (L${num(def.level)})`) : "";
         })
         .filter(n => n.length > 0)
@@ -229,12 +237,13 @@ function buildSpellSections(
 function buildConcentrationByLevel(
   char: CharData,
   classes: readonly ClassEntry[],
+  editions: CharacterEditions,
 ): Map<number, string[]> {
   const concByLevel = new Map<number, string[]>();
   const addConcSpell = (s: Record<string, unknown>) => {
     const def = obj(s.definition);
-    const name = str(def.name);
-    if (!name) return;
+    if (!str(def.name)) return;
+    const name = tagged(def, editions);
     const level = num(def.level);
     const isConc = isConcentrationSpell(def) ?? false;
     if (!isConc) return;
@@ -252,12 +261,12 @@ function buildConcentrationByLevel(
 
 // ── Public API ───────────────────────────────────────────────────────────────
 export function computeSpells(core: CoreStats): Spells {
-  const { char, classes, statMods, profBonus } = core;
+  const { char, classes, statMods, profBonus, editions } = core;
   return {
     spellcastingLines: buildSpellcastingLines(classes, statMods, profBonus),
     slotLines: buildSlotLines(char, classes),
-    spellSections: buildSpellSections(char, classes),
-    concentrationByLevel: buildConcentrationByLevel(char, classes),
+    spellSections: buildSpellSections(char, classes, editions),
+    concentrationByLevel: buildConcentrationByLevel(char, classes, editions),
   };
 }
 

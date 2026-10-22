@@ -147,3 +147,76 @@ describe("character Rules line and header tags", () => {
     expect(out).not.toContain("From ");
   });
 });
+
+describe("inline tags", () => {
+  it("feat lines", () => {
+    const out = sheet(bgAndFeat());
+    expect(out).toContain("• Sharpshooter [2014]: Long shots.");
+    expect(out).toContain("• Great Weapon Master: On a critical hit or kill, make a bonus attack.");
+  });
+
+  it("disguised feats in OTHER FEATURES", () => {
+    const c = variant(FIGHTER_5, d => {
+      d.feats.push({ definition: { name: "Dark Bargain", categories: [{ tagName: "__DISGUISE_FEAT" }], sources: S(193) } });
+    });
+    const out = sheet(c);
+    expect(out).toContain("• Dark Bargain [third-party]");
+    expect(out).toMatch(/^• Action Surge$/m);
+  });
+
+  const spellChar = (extraRace: unknown[] = []) => variant(ARCANE_TRICKSTER_9, d => {
+    d.classSpells = [{ characterClassId: 3, spells: [
+      { definition: { id: 911, name: "Fire Bolt", level: 0, sources: S(2) } },
+      { definition: { id: 912, name: "Shield", level: 1, sources: S(145) } },
+    ] }];
+    d.spells = { ...d.spells, race: [{ definition: { id: 913, name: "Toll the Dead", level: 0, sources: S(27) } }, ...extraRace] };
+  });
+
+  it("class spells and granted spells", () => {
+    const out = sheet(spellChar());
+    expect(out).toContain("  Cantrips: Fire Bolt [2014]");
+    expect(out).toContain("  Spells: Shield (L1)");
+    expect(out).toContain("  From Racial Trait: Toll the Dead [2014]");
+  });
+
+  it("duplicate warning keeps the tag", () => {
+    const out = sheet(spellChar([{ definition: { id: 911, name: "Fire Bolt", level: 0, sources: S(2) } }]));
+    expect(out).toContain("  • Fire Bolt [2014] — already granted by Spells, also in Racial Trait");
+  });
+
+  it("concentration block", () => {
+    const c = variant(FIGHTER_5, d => {
+      d.spells = { feat: [{ definition: { id: 914, name: "Hex", level: 1, concentration: true, sources: S(2) } }] };
+    });
+    expect(sheet(c, "concentration")).toContain("    • Hex [2014] [1st-level slot]");
+  });
+
+  it("inventory and equipped armour", () => {
+    const c = variant(FIGHTER_5, d => {
+      d.inventory = [
+        item(903, "Bedroll", "Other Gear", { isLegacy: true, sources: S(1, 2) }),
+        item(905, "Platinum Ring", "Other Gear", { sources: [] }),
+        item(906, "Studded Leather", "Armor", { isLegacy: true, sources: S(1), armorClass: 12 }, true),
+      ];
+    });
+    const out = sheet(c);
+    expect(out).toContain("  Studded Leather [2014] (AC 12)");
+    expect(out).toContain("  Bedroll [2014], Platinum Ring [edition not stated]");
+  });
+
+  it("weapon line pads the tag with the name", () => {
+    const c = variant(FIGHTER_5, d => {
+      d.inventory = [{ equipped: true, quantity: 1, definition: {
+        id: 907, name: "Longsword", filterType: "Weapon", isLegacy: true, sources: S(1), categoryId: 2,
+        attackType: 1, damage: { diceString: "1d8" }, damageType: "Slashing", properties: [], grantedModifiers: [],
+      } }];
+    });
+    expect(sheet(c)).toMatch(/^• Longsword \[2014\] [+-]\d+ to hit/m);
+  });
+
+  it("dual-edition weapon on a 2014 character is untagged", () => {
+    const out = sheet(MONK_3_HANDAXE);
+    expect(out).toMatch(/^• Handaxe +\+5 to hit/m);
+    expect(out).not.toMatch(TAG);
+  });
+});

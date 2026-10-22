@@ -13,7 +13,7 @@ import { arr, isBonusMod, isProficiencyMod, num, obj, signed, str } from "./help
 import type { CoreStats } from "./types.js";
 
 export function computeWeaponAttacks(core: CoreStats): string[] {
-  const { allMods, classes, inventory, statMods, profBonus } = core;
+  const { allMods, classes, inventory, statMods, profBonus, editions } = core;
   const dexMod = statMods[1];
 
   const weaponProfSlugs = new Set(
@@ -44,6 +44,7 @@ export function computeWeaponAttacks(core: CoreStats): string[] {
     if (i.equipped !== true) continue; // only show equipped weapons in ACTIONS
 
     const wName = str(def.name);
+    const wLabel = `${wName}${wName ? editions.tag(def) : ""}`;
     const dmg = obj(def.damage);
     const dmgDice = str(dmg.diceString);
     const dmgType = str(def.damageType).toLowerCase();
@@ -75,10 +76,10 @@ export function computeWeaponAttacks(core: CoreStats): string[] {
     const rangeStr = isRanged ? `range ${range}/${longRange} ft.` : `reach 5 ft.`;
     const propsStr = [...props, ...(mastery ? [mastery] : [])].join(", ");
 
-    const line = `• ${wName.padEnd(16)} ${signed(hitBonus)} to hit   ${dmgStr} ${dmgType}   ${rangeStr}${propsStr ? `   ${propsStr}` : ""}`;
+    const line = `• ${wLabel.padEnd(16)} ${signed(hitBonus)} to hit   ${dmgStr} ${dmgType}   ${rangeStr}${propsStr ? `   ${propsStr}` : ""}`;
 
     // Consolidate duplicates by key
-    const key = wName + dmgDice;
+    const key = wLabel + dmgDice;
     const existing = weaponInventoryMap.get(key);
     if (existing) {
       existing.qty += num(i.quantity) || 1;
