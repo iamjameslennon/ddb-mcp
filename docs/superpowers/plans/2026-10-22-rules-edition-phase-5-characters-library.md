@@ -1,6 +1,6 @@
 # Rules Edition Phase 5 (Characters and Library) Implementation Plan
 
-**Outcome (2026-10-23):** done. Commits `2325dbc..399601b` (features `2325dbc`, `2b3ee46`, `4195941`, `2ca28ae`, `2e5248a`; fix rounds `872e46e`, `cd25e72`, `5cc8104`, `399601b`) on phase start `57f61ca`, docs commit on top. The owner approved the cumulative snapshot and live diff on 2026-10-23 (decision 12). Live check: all 15 characters differ from the phase-start code only by Rules lines and tags; the live library joined 8 of 8 books by slug. Owner rulings made while executing are recorded in the spec under "Characters — phase 5" and "Library — phase 5".
+**Outcome (2026-10-23):** done. Commits `b705004..8ee84e3` (features `b705004`, `db7895d`, `8ada7c3`, `3c63c0a`, `f6d19f7`; fix rounds `a3274db`, `3a30149`, `8db9433`, `8ee84e3`) on phase start `4b1216c`, docs commit on top. The owner approved the cumulative snapshot and live diff on 2026-10-23 (decision 12). Live check: all 15 characters differ from the phase-start code only by Rules lines and tags; the live library joined 8 of 8 books by slug. Owner rulings made while executing are recorded in the spec under "Characters — phase 5" and "Library — phase 5".
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
