@@ -494,8 +494,8 @@ Owner rulings made while executing the plan (2026-10-22/23):
 
 ### Library — phase 5
 
-- **Joining a library book to its game-config source:** compare the last path segment of the library slug (`dnd/phb-2024` → `phb-2024`) with the last segment of the source's `sourceURL` (`sources/dnd/phb-2024` → `phb-2024`).
-- If that fails, compare normalized title with normalized `description`.
+- **Joining a library book to its game-config source:** compare a path segment of the library slug (`dnd/phb-2024` → `phb-2024`) with the last segment of the source's `sourceURL` (`sources/dnd/phb-2024` → `phb-2024`). The rulings below say which segment: they are tried right to left, so a chapter path joins on its book segment.
+- If that fails, compare the normalized title with the normalized `description` or the book label (rulings below).
 - If both fail, the book is `unstated`.
 - `ddb_list_library` tags each book. `ddb_read_book` puts a rules line under the title.
 
