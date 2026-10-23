@@ -174,10 +174,10 @@ Can a character use the Help action to assist with a skill check?
 | `ddb_login` | Authenticate with D&D Beyond (Wizards ID). Run once — session is saved to disk and reused. |
 | `ddb_logout` | Revoke this server's local access: blocks further authenticated calls immediately, deletes the saved session file, and closes any open browser context. No account input, no remote logout call. See [Logging out](#logging-out) — this is a local-only logout, not a D&D Beyond account logout. |
 | `ddb_list_characters` | List all characters in your account with ID, level, race, and class. |
-| `ddb_get_character` | Parse a character into a compact, readable sheet. Covers all stats, skills, spells, actions, and inventory. Use `sections` to get just `summary`, `combat`, `spells`, `inventory`, `features`, `concentration`, `notes`, or `full`. Accepts name (fuzzy matched) or numeric ID. |
+| `ddb_get_character` | Parse a character into a compact, readable sheet. Covers all stats, skills, spells, actions, and inventory. Use `sections` to get just `summary`, `combat`, `spells`, `inventory`, `features`, `concentration`, `notes`, or `full`. Accepts name (fuzzy matched) or numeric ID. A `Rules:` line under the character's name gives the ruleset of the classes and lists content from other rulesets, which is also tagged inline (`[2014]`, `[homebrew]`, …). |
 | `ddb_get_character_raw` | Fetch raw character JSON from the D&D Beyond API. Use `ddb_get_character` for all normal use. |
 | `ddb_download_character` | Save a character's full JSON to a local file (must be under ~/Downloads or ~/Documents). |
-| `ddb_character_lookup` | Look up the full description of a spell, feat, class feature, racial trait, or item on a character sheet. Supports partial and fuzzy name matching. |
+| `ddb_character_lookup` | Look up the full description of a spell, feat, class feature, racial trait, or item on a character sheet. Supports partial and fuzzy name matching. Each result carries a `Rules:` line; a list of matches tags each line. |
 
 ### Campaign Tools
 
@@ -185,7 +185,7 @@ Can a character use the Help action to assist with a skill check?
 |------|-------------|
 | `ddb_list_campaigns` | List all campaigns you're part of (as DM or player). |
 | `ddb_get_campaign` | Fetch campaign details — DM, description, and active characters with their levels. |
-| `ddb_get_party` | Fetch a compact summary of every character in a campaign — HP, AC, initiative, passive scores, ability scores, and skills for the whole party in one call. |
+| `ddb_get_party` | Fetch a compact summary of every character in a campaign — HP, AC, initiative, passive scores, ability scores, and skills for the whole party in one call. Each member carries a `Rules:` line, and classes, subclass, species and background from another ruleset are tagged. |
 
 ### Monster & Encounter Tools
 
@@ -221,8 +221,8 @@ In these searches, entries that aren't 2014 or 2024 content are tagged `[homebre
 
 | Tool | Description |
 |------|-------------|
-| `ddb_list_library` | List all sourcebooks you own, purchased, or have shared with you. |
-| `ddb_read_book` | Read content from an owned sourcebook by book slug and optional chapter. |
+| `ddb_list_library` | List all sourcebooks you own, purchased, or have shared with you. Each book carries an edition tag (`[2024]`, `[2014]`, …). |
+| `ddb_read_book` | Read content from an owned sourcebook by book slug and optional chapter. A `Rules:` line under the title names the book's ruleset. |
 | `ddb_search_site` | Search D&D Beyond by keyword across spells, monsters, items, races, classes, and feats. Defaults to 2024; set `rules_edition: "2014"` for the 2014 versions. Each result is tagged `[2024]` / `[2014]`. Across all categories the reply has one `Rules:` header and one last line counting the hidden other-edition versions. Takes no `source`; use the per-category search tools to pick a book. |
 | `ddb_navigate` | Navigate to any D&D Beyond URL and return its text content. Keeps the browser open for follow-up calls. |
 | `ddb_interact` | Click, fill (requires `confirm_fill: true`), or screenshot the currently loaded page. |

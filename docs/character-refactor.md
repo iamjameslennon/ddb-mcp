@@ -60,7 +60,8 @@ src/tools/character/
   types.ts                             ← Mod, ClassEntry, CoreStats, ParseSection
   helpers.ts                           ← str/num/arr/obj/signed/modOf/capitalize/hasTag
   templates.ts                         ← makeResolveTemplates(profBonus, totalLevel)
-  core.ts                              ← computeCoreStats(char) → CoreStats
+  core.ts                              ← computeCoreStats(char, index) → CoreStats (index: SourceIndex, for editions)
+  editions.ts                          ← computeCharacterEditions: main edition, `Rules:` line, inline-tag helpers (rules-edition phase 5)
   identity.ts                          ← race-variant detection + formatHeaderBlock
   vitals.ts                            ← HP/HitDice/Speed/Init/DeathSaves + formatVitalsBlock
   ac.ts                                ← computeAc (the most rule-tangled single calc)
@@ -72,7 +73,7 @@ src/tools/character/
   spells.ts                            ← Spellcasting/Slots/Spells/Concentration + 2 blocks
   inventory.ts                         ← Equipped/Carried/Attunement/Currency + block
   notes.ts                             ← Traits/Backstory/Allies + formatNotesBlock
-  parse.ts                             ← parseCharacterData orchestrator (~80 lines)
+  parse.ts                             ← parseCharacterData(raw, sections, index) orchestrator (~80 lines)
   definition.ts                        ← getDefinition (separate concern, also long today)
 ```
 
@@ -114,7 +115,7 @@ export function parseCharacterData(raw: CharData, sections: ParseSection = "full
   const char = (raw?.data ?? raw) as CharData;
   addCharacterSpellsToCompendium(char);
 
-  const core = computeCoreStats(char);
+  const core = computeCoreStats(char, index);
   const want = SECTION_INCLUDES[sections];
   const out: string[] = [];
 
