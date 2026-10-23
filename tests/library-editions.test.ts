@@ -64,6 +64,17 @@ describe("librarySourceId", () => {
     ], []);
     expect(librarySourceId({ slug: "outer/inner/chapter", title: null }, idx)).toBe(2);
   });
+  it("a disagreeing rightmost segment stops the walk", () => {
+    const mk = (extra: Array<Record<string, unknown>> = []) => buildSourceIndex([
+      { id: 1, name: "A", description: "Alpha", sourceURL: "https://www.dndbeyond.com/sources/dnd/shared", sourceCategoryId: 26 },
+      { id: 2, name: "B", description: "Beta", sourceURL: "https://www.dndbeyond.com/sources/dnd/shared", sourceCategoryId: 24 },
+      { id: 3, name: "C", description: "Gamma", sourceURL: "https://www.dndbeyond.com/sources/dnd/phb-x", sourceCategoryId: 24 },
+      ...extra,
+    ] as never, []);
+    expect(librarySourceId({ slug: "dnd/phb-x/shared", title: null }, mk())).toBeNull();
+    const idx = mk([{ id: 4, name: "D", description: "Delta Tome", sourceURL: null, sourceCategoryId: 24 }]);
+    expect(librarySourceId({ slug: "dnd/phb-x/shared", title: "Delta Tome" }, idx)).toBe(4);
+  });
   it("no join", () => {
     expect(librarySourceId({ slug: "dnd/nope", title: "Nope" }, INDEX)).toBeNull();
   });
@@ -118,6 +129,11 @@ describe("library tools", () => {
     route([PHB]);
     const out = await readBook("dnd/phb-2024/creating-a-character");
     expect(out.split("\n")[1]).toBe("Rules: 2024 · Player's Handbook (2024)");
+  });
+  it("readBook title fallback matches a chapter path's book by prefix", async () => {
+    route([{ name: "Player's Handbook (2014)", relativePath: "/sources/dnd/old-phb", isOwned: true }]);
+    const out = await readBook("dnd/old-phb/chapter-1");
+    expect(out.split("\n")[1]).toBe("Rules: 2014 · Player's Handbook (2014)");
   });
   it("readBook by slug skips the library when the slug joins", async () => {
     route([PHB]);

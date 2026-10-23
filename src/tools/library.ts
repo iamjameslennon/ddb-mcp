@@ -298,7 +298,11 @@ export async function readBook(
   let bookRef = resolved;
   if (bookRef.title === null && librarySourceId(bookRef, index) === null) {
     try {
-      const title = (await fetchLibraryBooks()).find(b => b.slug === resolvedSlug)?.title ?? null;
+      const path = resolvedSlug;
+      const match = (await fetchLibraryBooks())
+        .filter(b => b.slug && (path === b.slug || path.startsWith(b.slug + "/")))
+        .sort((a, b) => b.slug.length - a.slug.length)[0];
+      const title = match?.title ?? null;
       bookRef = { slug: resolvedSlug, title };
     } catch {
       // no title: stays "edition not stated"
