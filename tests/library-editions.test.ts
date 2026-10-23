@@ -54,6 +54,16 @@ describe("librarySourceId", () => {
     ], []);
     expect(librarySourceId({ slug: "dnd/shared", title: "Gamma Tome" }, idx)).toBe(3);
   });
+  it("a chapter path joins on its book segment", () => {
+    expect(librarySourceId({ slug: "dnd/phb-2024/creating-a-character", title: null }, INDEX)).toBe(145);
+  });
+  it("the rightmost segment with candidates decides, even over an earlier match", () => {
+    const idx = buildSourceIndex([
+      { id: 1, name: "A", description: "Alpha", sourceURL: "https://www.dndbeyond.com/sources/dnd/outer", sourceCategoryId: 26 },
+      { id: 2, name: "B", description: "Beta", sourceURL: "https://www.dndbeyond.com/sources/dnd/inner", sourceCategoryId: 24 },
+    ], []);
+    expect(librarySourceId({ slug: "outer/inner/chapter", title: null }, idx)).toBe(2);
+  });
   it("no join", () => {
     expect(librarySourceId({ slug: "dnd/nope", title: "Nope" }, INDEX)).toBeNull();
   });
@@ -103,6 +113,11 @@ describe("library tools", () => {
     route([{ name: "Player's Handbook (2014)", relativePath: "/sources/dnd/old-phb", isOwned: true }]);
     const out = await readBook("dnd/old-phb");
     expect(out.split("\n")[1]).toBe("Rules: 2014 · Player's Handbook (2014)");
+  });
+  it("readBook with a chapter path labels the book", async () => {
+    route([PHB]);
+    const out = await readBook("dnd/phb-2024/creating-a-character");
+    expect(out.split("\n")[1]).toBe("Rules: 2024 · Player's Handbook (2024)");
   });
   it("readBook by slug skips the library when the slug joins", async () => {
     route([PHB]);

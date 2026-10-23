@@ -177,11 +177,15 @@ export function librarySourceId(
   book: { slug: string; title: string | null },
   index: SourceIndex,
 ): number | null {
-  const seg = lastSegment(book.slug);
-  if (seg) {
+  // Segments right to left: a chapter path ("dnd/phb-2024/chapter") joins on
+  // its book segment. The first segment with any candidate decides step (a).
+  const segs = book.slug.split("/").filter(Boolean).reverse();
+  for (const seg of segs) {
     const ids = [...index.sources].filter(([, s]) => lastSegment(s.sourceURL) === seg).map(([id]) => id);
+    if (ids.length === 0) continue;
     const hit = pickCandidate(ids, index);
     if (hit !== null) return hit;
+    break;
   }
   const title = book.title ? normalizeName(book.title) : "";
   if (title) {
