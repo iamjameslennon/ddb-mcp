@@ -135,6 +135,24 @@ describe("library tools", () => {
     const out = await readBook("dnd/old-phb/chapter-1");
     expect(out.split("\n")[1]).toBe("Rules: 2014 · Player's Handbook (2014)");
   });
+  it("readBook fallback: the longest matching slug wins", async () => {
+    route([
+      { name: "Xanathar's Guide to Everything", relativePath: "/sources/dnd/old", isOwned: true },
+      { name: "Player's Handbook (2014)", relativePath: "/sources/dnd/old/phb", isOwned: true },
+    ]);
+    const out = await readBook("dnd/old/phb/ch-1");
+    expect(out.split("\n")[1]).toBe("Rules: 2014 · Player's Handbook (2014)");
+  });
+  it("readBook fallback: a prefix must end at a path boundary", async () => {
+    route([{ name: "Player's Handbook (2014)", relativePath: "/sources/dnd/old-ph", isOwned: true }]);
+    const out = await readBook("dnd/old-phb/ch-1");
+    expect(out.split("\n")[1]).toBe("Rules: edition not stated");
+  });
+  it("readBook fallback: a book with an empty slug is skipped", async () => {
+    route([{ name: "Player's Handbook (2014)", relativePath: "/elsewhere/phb", isOwned: true }]);
+    const out = await readBook("dnd/nope/ch-1");
+    expect(out.split("\n")[1]).toBe("Rules: edition not stated");
+  });
   it("readBook by slug skips the library when the slug joins", async () => {
     route([PHB]);
     await readBook("dnd/phb-2024");
