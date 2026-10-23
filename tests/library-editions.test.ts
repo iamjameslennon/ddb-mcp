@@ -46,6 +46,14 @@ describe("librarySourceId", () => {
     expect(librarySourceId(book, idx)).toBeNull();
     expect(libraryBookInfo(book, idx)).toEqual({ ruleset: "unstated", book: null });
   });
+  it("a slug step whose sources disagree on edition falls through to the title step", () => {
+    const idx = buildSourceIndex([
+      { id: 1, name: "A", description: "Alpha", sourceURL: "https://www.dndbeyond.com/sources/dnd/shared", sourceCategoryId: 26 },
+      { id: 2, name: "B", description: "Beta", sourceURL: "https://www.dndbeyond.com/sources/dnd/shared", sourceCategoryId: 24 },
+      { id: 3, name: "C", description: "Gamma Tome", sourceURL: null, sourceCategoryId: 24 },
+    ], []);
+    expect(librarySourceId({ slug: "dnd/shared", title: "Gamma Tome" }, idx)).toBe(3);
+  });
   it("no join", () => {
     expect(librarySourceId({ slug: "dnd/nope", title: "Nope" }, INDEX)).toBeNull();
   });

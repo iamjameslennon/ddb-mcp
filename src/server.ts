@@ -19,7 +19,7 @@ import { MAX_TREASURE_ENTRIES, MAX_MONSTER_COUNT, MAX_INDIVIDUAL_ROLLS, MAX_MONS
 import { searchSpells, getSpell, searchItems, getItem, searchRaces, searchClasses, searchBackgrounds, searchFeats, searchClassFeatures, searchRacialTraits, searchRules, getRule, clearReferenceCache } from "./tools/reference.js";
 import { clearOpen5eCache } from "./open5e.js";
 import { getCondition } from "./tools/conditions.js";
-import { RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, TREASURE_RULES_EDITION_NOTE, SERVER_INSTRUCTIONS } from "./edition.js";
+import { RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, PARTY_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, TREASURE_RULES_EDITION_NOTE, SERVER_INSTRUCTIONS } from "./edition.js";
 
 export const server = new McpServer(
   { name: "dndbeyond", version: "1.0.0" },
@@ -416,7 +416,7 @@ server.tool(
 // ─── ddb_get_party ────────────────────────────────────────────────────────────
 server.tool(
   "ddb_get_party",
-  "Fetch a compact summary of every character in a campaign. Returns HP, AC, initiative, passive scores, ability scores, and skills for the whole party in one call. Requires login — run ddb_login first if you haven't already. " + CHARACTER_RULES_TOOL_NOTE,
+  "Fetch a compact summary of every character in a campaign. Returns HP, AC, initiative, passive scores, ability scores, and skills for the whole party in one call. Requires login — run ddb_login first if you haven't already. " + PARTY_RULES_TOOL_NOTE,
   {
     campaign_id: z.string().regex(/^\d+$/, "campaign_id must be numeric").describe("The D&D Beyond campaign ID (found in the campaign URL)"),
   },

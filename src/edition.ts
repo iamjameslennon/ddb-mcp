@@ -523,9 +523,13 @@ const REASON_TEXT = {
 export const RULES_EDITION_TOOL_NOTE =
   "Returns 2024 content by default; set rules_edition to '2014' for 2014 rules. The 'Rules:' line or [tag] in the output names the ruleset.";
 
-/** Appended to the ddb_get_character and ddb_get_party descriptions. */
+/** Appended to the ddb_get_character description. */
 export const CHARACTER_RULES_TOOL_NOTE =
   "The 'Rules:' line under the character's name gives the ruleset of the character's classes and lists content from other rulesets; that content is also tagged inline ([2014], [2024], [homebrew], …).";
+
+/** Appended to the ddb_get_party description. */
+export const PARTY_RULES_TOOL_NOTE =
+  "Each member's 'Rules:' line gives the ruleset of their classes and lists content from other rulesets; classes, subclass, species and background from another ruleset are also tagged in the header.";
 
 /** Appended to the ddb_character_lookup description. */
 export const CHARACTER_LOOKUP_TOOL_NOTE =
@@ -757,7 +761,7 @@ const CHARACTER_GROUPS: ReadonlyArray<readonly [Ruleset, string]> = [
  * never listed. That includes "edition not stated" entries when the main
  * edition is itself unstated: the head already says so, and characterTag()
  * still tags each one inline. Within a group, entries other than spells and
- * items are named; spells and items follow as counts ("8 spells, 26 items"),
+ * items are named; spells and items follow as counts ("8 spells, 27 items"),
  * since a sheet can hold dozens and the inline tags name each one.
  */
 export function characterRulesLine(entries: readonly CharacterEditionEntry[]): string {

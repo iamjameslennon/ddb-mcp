@@ -4,7 +4,7 @@ import {
   normalizeName, createTwinNamer, twinName, twinAliases, classOwnerTwinKey, editionSourceId, entrySourceIds, bookChoiceNote, alsoInLine,
   dedupeById, definitionTiebreak, monsterTiebreak,
   selectByEdition, lookupByName, groupAndSelect,
-  rulesLine, reasonLine, renameLine, RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, editionTag, searchHeader, open5eSearchHeader, searchFooter, ambiguityMessage,
+  rulesLine, reasonLine, renameLine, RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, PARTY_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, editionTag, searchHeader, open5eSearchHeader, searchFooter, ambiguityMessage,
   lockedLineSuffix, lockedSwapSummary, lockedEntriesNote, availableElsewhereHint, HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO,
   characterMainEdition, characterTag, characterRulesLine, classifyCharacterEntry,
   type CategoryRecord, type CharacterEditionEntry, type CharacterEntryKind,
@@ -691,6 +691,9 @@ describe("search labels", () => {
     expect(READ_BOOK_TOOL_NOTE).toBe("A 'Rules:' line under the title names the book's ruleset.");
   });
 
+  it("PARTY_RULES_TOOL_NOTE", () => {
+    expect(PARTY_RULES_TOOL_NOTE).toBe("Each member's 'Rules:' line gives the ruleset of their classes and lists content from other rulesets; classes, subclass, species and background from another ruleset are also tagged in the header.");
+  });
   it("CHARACTER_RULES_TOOL_NOTE", () => {
     expect(CHARACTER_RULES_TOOL_NOTE).toBe("The 'Rules:' line under the character's name gives the ruleset of the character's classes and lists content from other rulesets; that content is also tagged inline ([2014], [2024], [homebrew], …).");
   });

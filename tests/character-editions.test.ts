@@ -138,6 +138,30 @@ describe("character Rules line and header tags", () => {
     expect(out).not.toMatch(/\(species\)|\(background\)|\(subclass\)/);
   });
 
+  it("a nameless feat adds no summary item", () => {
+    for (const feat of [{ definition: null }, { definition: { sources: S(2) } }]) {
+      const c = variant(FIGHTER_5, d => { d.feats.push(feat); });
+      const out = sheet(c);
+      expect(out).toContain("  Rules: 2024\n");
+      expect(out).not.toMatch(/\(feat\)/);
+    }
+  });
+
+  it("the Wizard spellbook gate applies to the Rules-line spell count", () => {
+    const c = variant(FIGHTER_5, d => {
+      d.classes[0].definition = { ...d.classes[0].definition, name: "Wizard", sources: S(145) };
+      d.classSpells = [{ characterClassId: d.classes[0].id, spells: [
+        { prepared: false, definition: { id: 981, name: "Cantrip A", level: 0, sources: S(2) } },
+        { prepared: false, definition: { id: 982, name: "Plain B", level: 1, ritual: false, sources: S(2) } },
+        { prepared: false, definition: { id: 983, name: "Ritual C", level: 1, ritual: true, sources: S(2) } },
+        { prepared: true, definition: { id: 984, name: "Prepared D", level: 1, ritual: false, sources: S(2) } },
+      ] }];
+    });
+    const out = sheet(c);
+    expect(out).toContain("  Rules: 2024 · 2014 content: 3 spells\n");
+    expect(out).not.toContain("Plain B");
+  });
+
   it("a nameless spell from a source list is neither counted nor printed", () => {
     const c = variant(FIGHTER_5, d => {
       d.spells = { race: [{ definition: { id: 7, level: 1, sources: S(2) } }] };

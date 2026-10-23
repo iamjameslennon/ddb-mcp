@@ -35,7 +35,7 @@ vi.mock("../src/session-fetch.js", async (orig) => {
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { server } from "../src/server.js";
-import { SERVER_INSTRUCTIONS, CHARACTER_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, open5eSearchHeader, searchHeader } from "../src/edition.js";
+import { SERVER_INSTRUCTIONS, CHARACTER_RULES_TOOL_NOTE, PARTY_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, open5eSearchHeader, searchHeader } from "../src/edition.js";
 import { clearReferenceCache } from "../src/tools/reference.js";
 import { clearMonsterCache } from "../src/tools/monster.js";
 import { clearOpen5eCache, type O5Endpoint } from "../src/open5e.js";
@@ -291,7 +291,7 @@ it("character and library tools carry their rules notes", async () => {
   const { tools } = await client.listTools();
   const desc = (n: string) => tools.find(t => t.name === n)?.description ?? "";
   expect(desc("ddb_get_character").endsWith(CHARACTER_RULES_TOOL_NOTE)).toBe(true);
-  expect(desc("ddb_get_party").endsWith(CHARACTER_RULES_TOOL_NOTE)).toBe(true);
+  expect(desc("ddb_get_party").endsWith(PARTY_RULES_TOOL_NOTE)).toBe(true);
   expect(desc("ddb_character_lookup").endsWith(CHARACTER_LOOKUP_TOOL_NOTE)).toBe(true);
   expect(desc("ddb_list_library").endsWith(LIBRARY_LIST_TOOL_NOTE)).toBe(true);
   expect(desc("ddb_read_book").endsWith(READ_BOOK_TOOL_NOTE)).toBe(true);

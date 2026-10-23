@@ -89,7 +89,8 @@ export function computeCharacterEditions(char: CharData, index: SourceIndex): Ch
   if (isObject(background) && str(background.name)) entries.push(entry(str(background.name), "background", background));
   for (const f of arr<Mod>(char.feats)) {
     if (hasTag(f, "__INITIAL_ASI")) continue;
-    entries.push(entry(str(obj(f.definition).name), "feat", f.definition));
+    const featName = str(obj(f.definition).name);
+    if (featName) entries.push(entry(featName, "feat", f.definition));
   }
   // A nameless spell or item is printed as an empty slot but is not counted.
   for (const def of dedupeDefinitions(shownSpellDefinitions(char, classes).filter(d => str(d.name)))) {
