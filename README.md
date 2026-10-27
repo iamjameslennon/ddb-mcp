@@ -524,7 +524,7 @@ Your session is saved to a per-user config directory:
 - **macOS/Linux**: `~/.config/ddb-mcp/session.json`
 - **Windows**: `%APPDATA%\ddb-mcp\session.json`
 
-This file contains your D&D Beyond login cookies, and nothing else. A sign-in that goes through Google or Apple does not store that provider's session here — only `dndbeyond.com` cookies and site storage are kept. Keep the file private — it grants access to your D&D Beyond account.
+This file holds only D&D Beyond cookies and site storage (`dndbeyond.com` and its subdomains). A sign-in that goes through Google or Apple does not store that provider's session here. Keep the file private — it grants access to your D&D Beyond account.
 
 ---
 

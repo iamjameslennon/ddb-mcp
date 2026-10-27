@@ -124,7 +124,7 @@ beforeEach(async () => {
   sessionFileContent = "";
   fsMock.existsSync.mockImplementation((p: string) => {
     const s = String(p);
-    if (s.endsWith("session.json.tmp")) return false;
+    if (s.endsWith(".tmp")) return false;
     if (s.endsWith("session.json")) return sessionFileExists;
     return true; // the session directory always "exists"
   });

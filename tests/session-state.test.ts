@@ -105,8 +105,14 @@ describe("third-party credentials are not part of the session", () => {
     let file = mixedFile();
     fsMock.existsSync.mockReturnValue(true);
     fsMock.readFileSync.mockImplementation(() => file);
-    fsMock.writeFileSync.mockImplementation((_fd: unknown, data: string) => { file = data; });
-    fsMock.renameSync.mockImplementation(() => { /* file already replaced in writeFileSync */ });
+    // The temp file holds the write until the rename moves it into place.
+    let tmp = "";
+    fsMock.writeFileSync.mockImplementation((_fd: unknown, data: string) => { tmp = data; });
+    fsMock.renameSync.mockImplementation((from: string, to: string) => {
+      expect(from).toBe(`${state.SESSION_PATH}.${process.pid}.tmp`);
+      expect(to).toBe(state.SESSION_PATH);
+      file = tmp;
+    });
 
     const snap = state.captureSession();
     expect(snap.state.kind).toBe("authenticated");
@@ -127,6 +133,49 @@ describe("third-party credentials are not part of the session", () => {
     expect(again.generation).toBe(snap.generation);
     expect(again.state).toBe(snap.state);
     expect(fsMock.renameSync).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not rename over a session file another process changed or deleted before the rename", () => {
+    const original = mixedFile();
+    const otherLogin = JSON.stringify({ cookies: [makeCookie({ value: "OTHER_ACCOUNT" })] });
+    let file: string | null = original;
+    fsMock.existsSync.mockImplementation(() => file !== null);
+    fsMock.readFileSync.mockImplementation(() => {
+      if (file === null) throw new Error("ENOENT");
+      return file;
+    });
+    // Another process replaces the file (a new ddb_login) while the temp file
+    // is being written, i.e. after our read and before our rename.
+    fsMock.writeFileSync.mockImplementation(() => { file = otherLogin; });
+
+    const first = state.captureSession();
+    expect(fsMock.renameSync).not.toHaveBeenCalled();
+    expect(fsMock.rmSync).toHaveBeenCalledWith(`${state.SESSION_PATH}.${process.pid}.tmp`, { force: true });
+    expect(file).toBe(otherLogin);
+    // In memory: only the D&D Beyond cookie of the file that was read.
+    if (first.state.kind === "authenticated") {
+      expect(first.state.cookies.map(c => c.value)).toEqual(["cobalt"]);
+    } else {
+      throw new Error("expected authenticated");
+    }
+
+    // The next read observes the other process's file as a new authority.
+    const second = state.captureSession();
+    expect(second.generation).not.toBe(first.generation);
+    if (second.state.kind === "authenticated") {
+      expect(second.state.cookies.map(c => c.value)).toEqual(["OTHER_ACCOUNT"]);
+    }
+    expect(fsMock.renameSync).not.toHaveBeenCalled();
+
+    // A logout (file deleted) between read and rename: the file stays gone.
+    state.__resetSessionStateForTests();
+    file = original;
+    fsMock.writeFileSync.mockImplementation(() => { file = null; });
+    vi.mocked(fsMock.rmSync).mockClear();
+    state.captureSession();
+    expect(fsMock.renameSync).not.toHaveBeenCalled();
+    expect(file).toBeNull();
+    expect(fsMock.rmSync).toHaveBeenCalledWith(`${state.SESSION_PATH}.${process.pid}.tmp`, { force: true });
   });
 
   it("keeps only the D&D Beyond cookies in memory when the rewrite fails, and retries without churning", () => {

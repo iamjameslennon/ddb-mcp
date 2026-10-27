@@ -150,10 +150,14 @@ export function sanitizeSessionStorage(parsed: unknown): SanitizedSessionStorage
 /**
  * Atomically replace the session file. POSIX creates the temp file 0600
  * (O_NOFOLLOW, no umask window); Windows relies on the user-profile ACL.
- * Callers create the parent directory first.
+ * Callers create the parent directory first. With `expected`, the file is
+ * re-read just before the rename and replaced only if it still holds exactly
+ * `expected`; otherwise the temp file is removed and this throws.
  */
-export function writeSessionFile(json: string): void {
-  const tmpPath = `${SESSION_PATH}.tmp`;
+export function writeSessionFile(json: string, expected?: string): void {
+  // Per process: two ddb-mcp processes can share one session file, and a
+  // shared temp path would let one rename the other's half-written state.
+  const tmpPath = `${SESSION_PATH}.${process.pid}.tmp`;
   if (process.platform === "win32") {
     writeFileSync(tmpPath, json, "utf8");
   } else {
@@ -168,7 +172,23 @@ export function writeSessionFile(json: string): void {
       closeSync(fd);
     }
   }
+  if (expected !== undefined && readSessionFileOrNull() !== expected) {
+    // Another process logged out (deleted the file) or logged in (replaced
+    // it) since `expected` was read: renaming now would put the old account's
+    // session back. Drop the temp file and leave the session file alone.
+    try { rmSync(tmpPath, { force: true }); } catch { /* best-effort */ }
+    throw new Error("Session file changed before the rewrite; not replaced.");
+  }
   renameSync(tmpPath, SESSION_PATH);
+}
+
+/** The session file's content, or null when it is missing or unreadable. */
+function readSessionFileOrNull(): string | null {
+  try {
+    return existsSync(SESSION_PATH) ? readFileSync(SESSION_PATH, "utf8") : null;
+  } catch {
+    return null;
+  }
 }
 
 // ── Typed cancellation ────────────────────────────────────────────────────────
@@ -310,7 +330,9 @@ function refreshAuthority(): SessionState {
           // Drop third-party cookies from disk as well as from memory. Key the
           // bytes we wrote so the next read of the cleaned file is the same
           // generation, not an account change.
-          writeSessionFile(cleaned);
+          // Replace only the file we read: another process may have logged
+          // out or in since, and its file must not be overwritten.
+          writeSessionFile(cleaned, content);
           key = contentKey(cleaned);
         } catch {
           // The file still holds the extra credentials. Don't cache that as a

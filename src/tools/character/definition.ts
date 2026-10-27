@@ -246,7 +246,10 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
   const usedCustom = Object.keys(customBgDef).length > 0;
   const bgDef = usedCustom ? customBgDef : stockBgDef;
   const bgFeatureName = str(bgDef.featureName);
-  if (bgFeatureName && matchesDefinitionQuery(bgFeatureName, query)) {
+  // A feature that is a feat is the feat's own entry (found above), as on the
+  // sheet, which leaves it out of BACKGROUND FEATURE.
+  const bgFeatureIsFeat = bgDef.featureIsFeat === true;
+  if (bgFeatureName && !bgFeatureIsFeat && matchesDefinitionQuery(bgFeatureName, query)) {
     const bgName = str(bgDef.name || stockBgDef.name);
     const bgDesc = stripHtmlFull(str(bgDef.featureDescription));
     results.push({
