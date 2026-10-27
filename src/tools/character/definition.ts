@@ -11,7 +11,7 @@
  * the other way around).
  */
 
-import { stripHtml as stripHtmlFull } from "../../utils.js";
+import { stripHtml as stripHtmlFull, wrapIfHomebrew } from "../../utils.js";
 import { classifyEdition, editionTag, rulesLine, type EditionInfo, type EditionMarkers, type SourceIndex } from "../../edition.js";
 import { getSourceIndex } from "../../game-config.js";
 import { fetchCharacter, withNotice } from "../character.js";
@@ -112,6 +112,10 @@ function formatItemResult(item: Record<string, unknown>): string {
   return `${name} (${type}, ${rarity})\n${weight}\n${desc}`;
 }
 
+function isHomebrew(record: Record<string, unknown>): boolean {
+  return record.isHomebrew === true;
+}
+
 interface DefinitionHit {
   type: string;
   /** The entry's own name; every `format*Result` first line starts with it. */
@@ -119,6 +123,8 @@ interface DefinitionHit {
   /** Whose ruleset the entry belongs to (decision 6). */
   info: EditionInfo;
   text: string;
+  /** Homebrew or a player-written custom background: the text is user-authored. */
+  untrusted: boolean;
 }
 
 function searchDefinitions(char: Record<string, unknown>, query: string, editions: CharacterEditions, index: SourceIndex): DefinitionHit[] {
@@ -146,7 +152,12 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
   for (const spell of allSpells) {
     const name = str(obj(spell.definition).name || spell.name);
     if (name && matchesDefinitionQuery(name, query)) {
-      results.push({ type: "Spell", name, info: editions.info(spell.definition ?? spell), text: formatSpellResult(spell) });
+      // A homebrew spell (including one listed under classSpells[].classSpells,
+      // the 2024 format) can come from another player's shared collection.
+      results.push({
+        type: "Spell", name, info: editions.info(spell.definition ?? spell), text: formatSpellResult(spell),
+        untrusted: isHomebrew(obj(spell.definition)) || isHomebrew(spell),
+      });
     }
   }
 
@@ -154,7 +165,10 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
   for (const feat of arr<Record<string, unknown>>(char.feats)) {
     const name = str(obj(feat.definition).name);
     if (name && matchesDefinitionQuery(name, query)) {
-      results.push({ type: "Feat", name, info: editions.info(feat.definition), text: formatFeatResult(feat) });
+      results.push({
+        type: "Feat", name, info: editions.info(feat.definition), text: formatFeatResult(feat),
+        untrusted: isHomebrew(obj(feat.definition)) || isHomebrew(feat),
+      });
     }
   }
 
@@ -162,7 +176,9 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
   const seen = new Set<string>();
   for (const cls of arr<Record<string, unknown>>(char.classes)) {
     const charLevel = num(cls.level);
-    const className = str(obj(cls.definition).name);
+    const classDef = obj(cls.definition);
+    const className = str(classDef.name);
+    const classHomebrew = isHomebrew(classDef) || isHomebrew(cls);
 
     for (const cf of arr<Record<string, unknown>>(cls.classFeatures)) {
       const d = obj(cf.definition);
@@ -173,14 +189,16 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
         results.push({
           type: "Class Feature",
           name,
-          info: classifyEdition(obj(cls.definition) as EditionMarkers, index),
+          info: classifyEdition(classDef as EditionMarkers, index),
           text: formatClassFeatureResult(cf, className, requiredLevel),
+          untrusted: classHomebrew || isHomebrew(d) || isHomebrew(cf),
         });
       }
     }
 
     const subDef = obj(cls.subclassDefinition);
     const subName = str(subDef.name);
+    const subHomebrew = classHomebrew || isHomebrew(subDef);
     for (const cf of arr<Record<string, unknown>>(subDef.classFeatures)) {
       const d = obj(cf.definition);
       const name = str(d.name);
@@ -193,31 +211,50 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
           name,
           info: editions.info(subDef),
           text: formatClassFeatureResult(cf, label, requiredLevel),
+          untrusted: subHomebrew || isHomebrew(d) || isHomebrew(cf),
         });
       }
     }
   }
 
   // ── Racial Traits ─────────────────────────────────────────────────────────
-  const raceName = str(obj(char.race).fullName || obj(char.race).baseName);
-  for (const trait of arr<Record<string, unknown>>(obj(char.race).racialTraits)) {
-    const name = str(obj(trait.definition).name);
+  const race = obj(char.race);
+  const raceName = str(race.fullName || race.baseName);
+  const raceHomebrew = isHomebrew(race);
+  for (const trait of arr<Record<string, unknown>>(race.racialTraits)) {
+    const def = obj(trait.definition);
+    const name = str(def.name);
     if (name && matchesDefinitionQuery(name, query)) {
-      results.push({ type: "Racial Trait", name, info: editions.info(char.race), text: formatRacialTraitResult(trait, raceName) });
+      results.push({
+        type: "Racial Trait", name, info: editions.info(char.race), text: formatRacialTraitResult(trait, raceName),
+        untrusted: raceHomebrew || isHomebrew(def) || isHomebrew(trait),
+      });
     }
   }
 
   // ── Background Feature ────────────────────────────────────────────────────
-  const bgDef = obj(obj(char.background).definition);
+  // Same resolution as the character sheet (features.ts): a custom
+  // background's feature text is the player's, and it wins over the stock
+  // definition. The rules line stays the stock background's, as in the header.
+  const bgObj = obj(char.background);
+  const stockBgDef = obj(bgObj.definition);
+  const customBg = obj(bgObj.customBackground);
+  const featuresBackgroundDef = obj(obj(customBg.featuresBackground).definition);
+  const customBgDef = Object.keys(featuresBackgroundDef).length > 0
+    ? featuresBackgroundDef
+    : obj(customBg.definition);
+  const usedCustom = Object.keys(customBgDef).length > 0;
+  const bgDef = usedCustom ? customBgDef : stockBgDef;
   const bgFeatureName = str(bgDef.featureName);
   if (bgFeatureName && matchesDefinitionQuery(bgFeatureName, query)) {
-    const bgName = str(bgDef.name);
+    const bgName = str(bgDef.name || stockBgDef.name);
     const bgDesc = stripHtmlFull(str(bgDef.featureDescription));
     results.push({
       type: "Background Feature",
       name: bgFeatureName,
-      info: editions.info(bgDef),
+      info: editions.info(stockBgDef),
       text: `${bgFeatureName} (${bgName})\n\n${bgDesc}`,
+      untrusted: usedCustom || isHomebrew(bgDef) || isHomebrew(bgObj),
     });
   }
 
@@ -226,7 +263,10 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
     if (!item.equipped) continue;
     const name = str(obj(item.definition).name);
     if (name && matchesDefinitionQuery(name, query)) {
-      results.push({ type: "Item", name, info: editions.info(item.definition), text: formatItemResult(item) });
+      results.push({
+        type: "Item", name, info: editions.info(item.definition), text: formatItemResult(item),
+        untrusted: isHomebrew(obj(item.definition)) || isHomebrew(item),
+      });
     }
   }
 
@@ -259,13 +299,14 @@ function formatDefinitionHits(hits: DefinitionHit[], query: string): string {
   if (hits.length > 3) {
     const list = hits.map((h, i) => {
       const first = h.text.split("\n")[0];
-      return `${i + 1}. [${h.type}] ${h.name} ${editionTag(h.info)}${first.slice(h.name.length)}`;
+      return wrapIfHomebrew(`${i + 1}. [${h.type}] ${h.name} ${editionTag(h.info)}${first.slice(h.name.length)}`, h.untrusted);
     }).join("\n");
     return `Found ${hits.length} matches for "${query}". Be more specific, or here are the matches:\n\n${list}`;
   }
 
   return hits.map(h => {
     const [first, ...rest] = h.text.split("\n");
-    return `[${h.type}]\n${[first, rulesLine(h.info), ...rest].join("\n")}`;
+    // The whole block, rules line included, is delimited when it is user-authored.
+    return `[${h.type}]\n${wrapIfHomebrew([first, rulesLine(h.info), ...rest].join("\n"), h.untrusted)}`;
   }).join("\n\n===\n\n");
 }

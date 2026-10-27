@@ -92,6 +92,8 @@ describe("formatCharacterLookup", () => {
 
   it("a homebrew full hit reads Rules: homebrew (edition not stated)", () => {
     const char = variant(FIGHTER_5, d => { d.feats.push({ definition: { name: "Zany Trick", snippet: "Zany.", isHomebrew: true } }); }).data as Record<string, unknown>;
-    expect(formatCharacterLookup(char, "zany", INDEX).split("\n")[2]).toBe("Rules: homebrew (edition not stated)");
+    // The homebrew block is delimited as untrusted, rules line included.
+    expect(formatCharacterLookup(char, "zany", INDEX).split("\n").slice(0, 4)).toEqual(
+      ["[Feat]", "<untrusted_dndbeyond_content>", "Zany Trick", "Rules: homebrew (edition not stated)"]);
   });
 });

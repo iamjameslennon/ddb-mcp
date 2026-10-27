@@ -9,6 +9,11 @@ const fsMock = vi.hoisted(() => ({
   rmSync: vi.fn(),
   mkdirSync: vi.fn(),
   writeFileSync: vi.fn(),
+  openSync: vi.fn(() => 3),
+  closeSync: vi.fn(),
+  fchmodSync: vi.fn(),
+  renameSync: vi.fn(),
+  constants: { O_CREAT: 1, O_TRUNC: 2, O_WRONLY: 4, O_NOFOLLOW: 8 },
 }));
 vi.mock("fs", () => fsMock);
 
@@ -52,7 +57,94 @@ beforeEach(async () => {
   vi.clearAllMocks();
   fsMock.readFileSync.mockReset();
   fsMock.existsSync.mockReset();
+  fsMock.writeFileSync.mockReset();
+  fsMock.openSync.mockReset();
+  fsMock.openSync.mockReturnValue(3);
+  fsMock.renameSync.mockReset();
   state = await loadState();
+});
+
+describe("isDndBeyondHost", () => {
+  it("accepts dndbeyond.com and its subdomains, including a leading dot", () => {
+    for (const host of ["dndbeyond.com", ".dndbeyond.com", "www.dndbeyond.com", "auth-service.dndbeyond.com", "DNDBEYOND.COM"]) {
+      expect(state.isDndBeyondHost(host)).toBe(true);
+    }
+  });
+
+  it("rejects lookalikes and other providers", () => {
+    for (const host of [
+      "notdndbeyond.com", ".notdndbeyond.com", "dndbeyond.com.evil.example",
+      "evil.dndbeyond.com.attacker.test", ".google.com", "accounts.google.com",
+      ".apple.com", "appleid.apple.com", "signin.wizards.com", "", "https://www.dndbeyond.com",
+    ]) {
+      expect(state.isDndBeyondHost(host)).toBe(false);
+    }
+  });
+});
+
+describe("third-party credentials are not part of the session", () => {
+  function mixedFile(): string {
+    return JSON.stringify({
+      cookies: [
+        makeCookie({ name: "SID", value: "GOOGLE", domain: ".google.com" }),
+        makeCookie({ value: "cobalt" }),
+        makeCookie({ name: "aid", value: "APPLE", domain: ".apple.com" }),
+        makeCookie({ name: "wiz", value: "WIZ", domain: "signin.wizards.com" }),
+        makeCookie({ name: "lookalike", value: "EVIL", domain: "dndbeyond.com.evil.example" }),
+      ],
+      origins: [
+        { origin: "https://accounts.google.com", localStorage: [{ name: "token", value: "G" }] },
+        { origin: "https://appleid.apple.com", localStorage: [{ name: "token", value: "A" }] },
+        { origin: "https://www.dndbeyond.com", localStorage: [{ name: "theme", value: "dark" }] },
+        { origin: "not a url", localStorage: [{ name: "x", value: "y" }] },
+      ],
+    });
+  }
+
+  it("drops them from memory and rewrites the file without changing generation", () => {
+    let file = mixedFile();
+    fsMock.existsSync.mockReturnValue(true);
+    fsMock.readFileSync.mockImplementation(() => file);
+    fsMock.writeFileSync.mockImplementation((_fd: unknown, data: string) => { file = data; });
+    fsMock.renameSync.mockImplementation(() => { /* file already replaced in writeFileSync */ });
+
+    const snap = state.captureSession();
+    expect(snap.state.kind).toBe("authenticated");
+    if (snap.state.kind === "authenticated") {
+      expect(snap.state.cookies).toHaveLength(1);
+      expect(snap.state.cookies[0].value).toBe("cobalt");
+    }
+
+    const saved = JSON.parse(file) as { cookies: Array<{ value: string }>; origins: Array<{ origin: string }> };
+    expect(saved.cookies.map(c => c.value)).toEqual(["cobalt"]);
+    expect(saved.origins.map(o => o.origin)).toEqual(["https://www.dndbeyond.com"]);
+    expect(file).not.toContain("GOOGLE");
+    expect(file).not.toContain("APPLE");
+    expect(file).not.toContain("WIZ");
+    expect(file).not.toContain("EVIL");
+
+    const again = state.captureSession();
+    expect(again.generation).toBe(snap.generation);
+    expect(again.state).toBe(snap.state);
+    expect(fsMock.renameSync).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps only the D&D Beyond cookies in memory when the rewrite fails, and retries without churning", () => {
+    const file = mixedFile();
+    fsMock.existsSync.mockReturnValue(true);
+    fsMock.readFileSync.mockReturnValue(file);
+    fsMock.openSync.mockImplementation(() => { throw new Error("EACCES"); });
+
+    const first = state.captureSession();
+    const second = state.captureSession();
+    expect(second.generation).toBe(first.generation);
+    if (first.state.kind === "authenticated") {
+      expect(first.state.cookies).toHaveLength(1);
+      expect(first.state.cookies[0].value).toBe("cobalt");
+    }
+    expect(fsMock.renameSync).not.toHaveBeenCalled();
+    expect(fsMock.openSync).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("captureSession", () => {

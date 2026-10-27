@@ -17,7 +17,7 @@ import {
   captureSession, assertSessionCurrent, onSessionInvalidated, SessionChangedError,
 } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
-import { stripHtml } from "../utils.js";
+import { stripHtml, wrapIfHomebrew } from "../utils.js";
 import {
   twinName, classOwnerTwinKey, classifyEdition, selectByEdition, definitionTiebreak, isEdition,
   normalizeName, searchFooter, dedupeById,
@@ -397,7 +397,9 @@ function formatSpell(spell: DdbSpell, rulesLines: string[]): string {
     "",
     stripHtml(d.description),
   ];
-  return lines.join("\n");
+  // Homebrew spell text (name and description) can come from another player's
+  // shared collection. Official spells are left plain.
+  return wrapIfHomebrew(lines.join("\n"), d.isHomebrew);
 }
 
 /** The spell catalog: classified by the definition, twinned by name, listed by level then name. */
@@ -480,7 +482,7 @@ export async function searchSpellsSection(params: SpellSearchParams): Promise<Se
       if (d.concentration) tags.push("Conc.");
       if (d.ritual) tags.push("Ritual");
       const tagStr = tags.length ? ` (${tags.join(", ")})` : "";
-      return `- **${d.name}** ${hit.label} — ${level} ${d.school}${tagStr}`;
+      return wrapIfHomebrew(`- **${d.name}** ${hit.label} — ${level} ${d.school}${tagStr}`, d.isHomebrew);
     }, limit, offset, provenanceNote);
     return {
       header,
@@ -621,7 +623,7 @@ function formatItem(item: DdbItem, rulesLines: string[]): string {
     lines.push(`Properties: ${item.properties.map(p => p.name).join(", ")}`);
   }
   lines.push("", stripHtml(item.description || item.snippet || "No description available."));
-  return lines.join("\n");
+  return wrapIfHomebrew(lines.join("\n"), item.isHomebrew);
 }
 
 /** The item catalog: classified by the item, twinned by name, listed by name. */
@@ -670,7 +672,7 @@ export async function searchItemsSection(params: ItemSearchParams): Promise<Sear
         const rarity = item.rarity || "Common";
         const type = item.filterType || item.type || "Item";
         const attune = item.requiresAttunement ? " (attunement)" : "";
-        lines.push(`- **${item.name}** ${label} — ${rarity} ${type}${attune}`);
+        lines.push(wrapIfHomebrew(`- **${item.name}** ${label} — ${rarity} ${type}${attune}`, item.isHomebrew));
       }
       if (total > 30) lines.push(`\n*Refine your search to see more results.*`);
       return lines.join("\n");
@@ -810,7 +812,14 @@ async function searchOptionList<T>(
     },
     plural: spec.plural,
     adapter: { ...spec.adapter, passes: spec.passes },
-    render: hits => paginateResults(spec.heading, hits, spec.format, params.limit ?? spec.defaultLimit, params.offset ?? 0),
+    // Homebrew lines (tag and book note included) can be another player's text.
+    render: hits => paginateResults(
+      spec.heading,
+      hits,
+      hit => wrapIfHomebrew(spec.format(hit), spec.adapter.markers(hit.entry).isHomebrew),
+      params.limit ?? spec.defaultLimit,
+      params.offset ?? 0,
+    ),
     notFound: spec.notFound,
     fallback: spec.fallback,
     unavailable: `${spec.plural[0].toUpperCase()}${spec.plural.slice(1)} unavailable — DnD Beyond and Open5e both failed.`,

@@ -1,8 +1,5 @@
 import { chromium, Browser, BrowserContext, Page } from "playwright";
-import {
-  existsSync, mkdirSync, openSync, closeSync, writeFileSync, fchmodSync,
-  renameSync, constants,
-} from "fs";
+import { existsSync, mkdirSync } from "fs";
 import { spawn } from "child_process";
 import { createRequire } from "module";
 import { dirname, join } from "path";
@@ -10,6 +7,7 @@ import {
   invalidateSessionCache, tightenSessionPermissions, SESSION_DIR, SESSION_PATH,
   onSessionInvalidated, captureSession, assertSessionCurrent, SessionChangedError,
 } from "./session-fetch.js";
+import { sanitizeSessionStorage, writeSessionFile } from "./session-state.js";
 
 export { SESSION_DIR, SESSION_PATH };
 
@@ -258,33 +256,12 @@ export async function saveSession(context: BrowserContext): Promise<void> {
   }
 
   ensureSessionDir();
-  // Capture state in memory and write it atomically:
-  //   (1) write to a tempfile in the same directory, then renameSync into
-  //       place — readers always see either the previous file or the new one,
-  //       never a truncated mid-write file;
-  //   (2) on POSIX, open with O_NOFOLLOW + mode 0600 so a planted symlink at
-  //       the tempfile path can't redirect the write and the file is created
-  //       0600 from the start (no umask race window).
-  // Windows has no O_NOFOLLOW; rely on user-profile ACL inheritance for the
-  // parent %APPDATA% directory.
-  const state = await context.storageState();
-  const json = JSON.stringify(state);
-  const tmpPath = `${SESSION_PATH}.tmp`;
-  if (process.platform === "win32") {
-    writeFileSync(tmpPath, json, "utf8");
-  } else {
-    const flags = constants.O_CREAT | constants.O_TRUNC | constants.O_WRONLY | constants.O_NOFOLLOW;
-    const fd = openSync(tmpPath, flags, 0o600);
-    try {
-      // Force 0600 even if a prior crashed run left tmpPath behind (the mode
-      // arg to open() is only honored when the file is freshly created).
-      fchmodSync(fd, 0o600);
-      writeFileSync(fd, json, "utf8");
-    } finally {
-      closeSync(fd);
-    }
-  }
-  renameSync(tmpPath, SESSION_PATH);
+  // Playwright's storageState is the whole browser profile: a Wizards ID login
+  // via Google or Apple leaves that provider's session cookies and localStorage
+  // in here. Persist only dndbeyond.com cookies and origin storage. The write
+  // itself is atomic (temp file, 0600, rename) — see writeSessionFile.
+  const { storage } = sanitizeSessionStorage(await context.storageState());
+  writeSessionFile(JSON.stringify(storage));
   // Publish the new session as ONE lifecycle transition: advance the generation
   // and notify every consumer hook so old-account caches/browsers are retired.
   // The login's own context (loginContext) is separate and unaffected.
