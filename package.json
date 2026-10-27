@@ -19,7 +19,7 @@
     "build": "tsc",
     "build:watch": "tsc --watch",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "test": "vitest run",
     "release": "node scripts/release.js",
     "lobehub:manifest": "node scripts/generate-lobehub-manifest.mjs"

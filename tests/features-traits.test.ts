@@ -435,7 +435,8 @@ describe("racial traits", () => {
 
   it("is independent of input order", () => {
     const rev = <T,>(a: T[]): T[] => [...a].reverse();
-    const races = rev(RACES).map((r) => ({ ...r, racialTraits: rev(r.racialTraits) }));
+    type Trait = (typeof RACES)[number]["racialTraits"][number];
+    const races = rev(RACES).map((r) => ({ ...r, racialTraits: rev<Trait>(r.racialTraits) }));
     const entries = rev([...optByKey.entries()]).map(
       ([k, v]) => [k, { ...v, definitionData: rev((v.definitionData ?? []) as unknown[]) }] as [string, OptionalCollection],
     );
