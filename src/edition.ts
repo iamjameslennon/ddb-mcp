@@ -754,8 +754,14 @@ const CHARACTER_GROUPS: ReadonlyArray<readonly [Ruleset, string]> = [
   ["unstated", NOT_STATED],
 ];
 
-const HOMEBREW_KIND_ORDER = ["class", "subclass", "species", "background", "feat", "spell", "item"] as const;
-const kindPlural = (kind: string) => (kind === "species" ? kind : kind === "class" ? "classes" : `${kind}s`);
+// Keyed by every CharacterEntryKind, so a new kind fails typecheck until it is added here.
+// Key order is the homebrew count order.
+const KIND_PLURAL: Record<CharacterEntryKind, string> = {
+  class: "classes", subclass: "subclasses", species: "species", background: "backgrounds",
+  feat: "feats", spell: "spells", item: "items",
+};
+const HOMEBREW_KIND_ORDER = Object.keys(KIND_PLURAL) as CharacterEntryKind[];
+const kindPlural = (kind: CharacterEntryKind) => KIND_PLURAL[kind];
 
 /**
  * "Rules: 2024 · 2014 content: Criminal / Spy (background)", or for a

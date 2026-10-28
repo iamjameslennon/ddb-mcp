@@ -769,6 +769,13 @@ describe("character edition labels", () => {
     const line = characterRulesLine(entries);
     expect(line).toBe("Rules: 2024 · homebrew: 1 species, 1 feat, 2 spells");
     expect(line).not.toContain("Dhampir");
+    const all = [
+      ent("Fighter", "class", "2024", 5), ent("Item+", "item", "homebrew"), ent("Hex+", "spell", "homebrew"),
+      ent("F+", "feat", "homebrew"), ent("Bg+", "background", "homebrew"), ent("Sp+", "species", "homebrew"),
+      ent("Sub1+", "subclass", "homebrew"), ent("Sub2+", "subclass", "homebrew"), ent("Cls+", "class", "homebrew", 1),
+    ];
+    expect(characterRulesLine(all)).toBe(
+      "Rules: 2024 · homebrew: 1 class, 2 subclasses, 1 species, 1 background, 1 feat, 1 spell, 1 item");
     const classes = [ent("Fighter", "class", "2024", 5), ent("A", "class", "homebrew", 1), ent("B", "class", "homebrew", 2)];
     expect(characterRulesLine(classes)).toBe("Rules: 2024 · homebrew: 2 classes");
   });
