@@ -154,6 +154,105 @@ describe("lookupCatalog", () => {
   });
 });
 
+describe("dual-edition entries (adapter.dualEdition, decision 4)", () => {
+  // A non-Legacy, non-homebrew definition in a 2024 book and a 2014 book is valid under either edition.
+  const dual = (query?: string) => ({ ...flat(query), dualEdition: true });
+  const LONGSWORD = entry(12, "Longsword", [148, 1]);
+
+  it("a dual entry alone in its group takes the requested edition and that edition's book, nothing hidden", () => {
+    const s2014 = selectCatalog([LONGSWORD], "2014", dual(), INDEX);
+    expect(s2014.hits.map(h => [h.label, h.info])).toEqual([["[2014]", { ruleset: "2014", book: "Basic Rules (2014)" }]]);
+    expect(s2014.hidden).toBe(0);
+    const s2024 = selectCatalog([LONGSWORD], "2024", dual(), INDEX);
+    expect(s2024.hits.map(h => [h.label, h.info])).toEqual([["[2024]", { ruleset: "2024", book: "D&D Beyond Basic Rules" }]]);
+    expect(s2024.hidden).toBe(0);
+  });
+
+  it("without dualEdition the same entry stays 2024 under either edition", () => {
+    expect(selectCatalog([LONGSWORD], "2014", flat(), INDEX).hits[0].label).toBe("[2024]");
+  });
+
+  it("a Legacy or homebrew entry is never dual", () => {
+    const legacy = entry(13, "Shortsword", [148, 1], { isLegacy: true });
+    const brew = entry(14, "Moon Blade", [148, 1], { isHomebrew: true });
+    expect(selectCatalog([legacy, brew], "2024", dual(), INDEX).hits.map(h => `${h.entry.name} ${h.label}`))
+      .toEqual(["Moon Blade [homebrew]", "Shortsword [2014]"]);
+  });
+
+  it("with a source, the book's edition decides: a 2014 book tags it [2014], a 2024 book [2024]", () => {
+    const br2014 = selectCatalog([LONGSWORD], "2024", dual(), INDEX, resolveSource(INDEX, "basic-rules-2014")!);
+    expect(br2014.hits.map(h => h.label)).toEqual(["[2014]"]);
+    expect(br2014.note).toBe('(source "basic-rules-2014" is a 2014 book — rules_edition "2024" was ignored)');
+    const br2024 = selectCatalog([LONGSWORD], "2014", dual(), INDEX, resolveSource(INDEX, "br-2024")!);
+    expect(br2024.hits.map(h => h.label)).toEqual(["[2024]"]);
+  });
+
+  it("with a source whose book has no edition, the requested edition decides", () => {
+    const index = buildSourceIndex(
+      [
+        ...[...INDEX.sources].map(([id, s]) => ({ id, name: s.name, description: s.description, sourceURL: s.sourceURL, sourceCategoryId: s.categoryId })),
+        { id: 900, name: "UA", description: "Unearthed Arcana", sourceURL: "sources/dnd/ua", sourceCategoryId: 3 },
+      ],
+      [{ id: 3, name: "Playtest" }, { id: 24, name: "5.5e Core Rules" }, { id: 26, name: "5e Core Rules" }],
+    );
+    const odd = entry(30, "Odd Blade", [900, 148, 1]);
+    expect(selectCatalog([odd], "2014", dual(), index, resolveSource(index, "ua")!).hits.map(h => h.label)).toEqual(["[2014]"]);
+    expect(selectCatalog([odd], "2024", dual(), index, resolveSource(index, "ua")!).hits.map(h => h.label)).toEqual(["[2024]"]);
+  });
+
+  it("lookupCatalog: the requested edition, with no reason line; under a 2014 source, the source note", () => {
+    expect(lookupCatalog([LONGSWORD], "Longsword", "2014", dual(), INDEX)?.rulesLines).toEqual(["Rules: 2014 · Basic Rules (2014)"]);
+    expect(lookupCatalog([LONGSWORD], "Longsword", "2024", dual(), INDEX)?.rulesLines).toEqual(["Rules: 2024 · D&D Beyond Basic Rules"]);
+    expect(lookupCatalog([LONGSWORD], "Longsword", "2024", dual(), INDEX, resolveSource(INDEX, "basic-rules-2014")!)?.rulesLines).toEqual([
+      "Rules: 2014 · Basic Rules (2014)",
+      '(source "basic-rules-2014" is a 2014 book — rules_edition "2024" was ignored)',
+    ]);
+  });
+
+  // The real snapshot ids of the two Dungeon Master's Guides.
+  const DMG_INDEX = buildSourceIndex(
+    [
+      ...[...INDEX.sources].map(([id, s]) => ({ id, name: s.name, description: s.description, sourceURL: s.sourceURL, sourceCategoryId: s.categoryId })),
+      { id: 3, name: "DMG", description: "Dungeon Master's Guide (2014)", sourceURL: "sources/dnd/dmg-2014", sourceCategoryId: 26 },
+      { id: 146, name: "DMG-2024", description: "Dungeon Master's Guide", sourceURL: "sources/dnd/dmg-2024", sourceCategoryId: 24 },
+    ],
+    [{ id: 24, name: "5.5e Core Rules" }, { id: 26, name: "5e Core Rules" }],
+  );
+
+  it("a non-dual entry of the requested edition beats a dual one: the group selects as without the rule (option B)", () => {
+    // Live shape (Robe of the Archmagi): a dual definition and a Legacy 2014 printing.
+    const legacy = entry(11422918, "Robe of the Archmagi", [3, 1], { isLegacy: true });
+    const robe = entry(4742, "Robe of the Archmagi", [146, 1, 148]);
+    const s2014 = selectCatalog([legacy, robe], "2014", dual(), DMG_INDEX);
+    expect(s2014.hits.map(h => [h.entry, h.label])).toEqual([[legacy, "[2014]"]]);
+    expect(s2014.hidden).toBe(1);
+    expect(lookupCatalog([legacy, robe], "Robe of the Archmagi", "2014", dual(), DMG_INDEX)).toEqual({
+      entry: legacy, info: { ruleset: "2014", book: "Dungeon Master's Guide (2014)" }, rulesLines: ["Rules: 2014 · Dungeon Master's Guide (2014)"],
+    });
+    const s2024 = selectCatalog([legacy, robe], "2024", dual(), DMG_INDEX);
+    expect(s2024.hits.map(h => [h.entry, h.label])).toEqual([[robe, "[2024]"]]);
+    expect(s2024.hidden).toBe(1);
+    // The exception holds under a source too: the Legacy printing carries the 2014 text.
+    const inBook = selectCatalog([legacy, robe], "2024", dual(), DMG_INDEX, resolveSource(DMG_INDEX, "basic-rules-2014")!);
+    expect(inBook.hits.map(h => `${h.entry.id} ${h.label}`)).toEqual(["4742 [2024]", "11422918 [2014]"]);
+  });
+
+  it("a book note names a dual pick's book in the requested edition", () => {
+    // Two dual definitions and no single-edition one: both are 2014 under 2014.
+    const a = entry(40, "Gem Blade", [146, 1]);
+    const b = entry(41, "Gem Blade", [148, 3]);
+    const sel = selectCatalog([a, b], "2014", dual(), DMG_INDEX);
+    expect(sel.hits.map(h => h.entry)).toEqual([a]);
+    expect(sel.hits[0].label).toBe(`[2014] · ${sourceLabel(DMG_INDEX, 1)} (also in ${sourceLabel(DMG_INDEX, 3)} — pass source to choose)`);
+    expect(lookupCatalog([a, b], "Gem Blade", "2014", dual(), DMG_INDEX)?.rulesLines).toEqual([
+      "Rules: 2014 · Basic Rules (2014)",
+      `(also in ${sourceLabel(DMG_INDEX, 3)} — pass source to choose)`,
+    ]);
+    expect(selectCatalog([a, b], "2024", dual(), DMG_INDEX).hits[0].label)
+      .toBe(`[2024] · ${sourceLabel(DMG_INDEX, 146)} (also in ${sourceLabel(DMG_INDEX, 148)} — pass source to choose)`);
+  });
+});
+
 describe("selectCatalog, nested mode by groupKey (species)", () => {
   const ELF = entry(1, "Elf", [145]);
   const HIGH = entry(2, "High Elf", [1], { isLegacy: true });

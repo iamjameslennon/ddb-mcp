@@ -270,16 +270,22 @@ export function classOwnerTwinKey(className: string, subclassName?: string | nul
 export interface TiebreakFields { id: number; isHomebrew?: boolean | null; isLegacy?: boolean | null }
 export interface MonsterTiebreakFields extends TiebreakFields { sourceId?: number | null }
 
-/** First occurrence of each definition id (one spell arrives from several class lists). */
-export function dedupeById<T extends { id: number }>(entries: readonly T[]): T[] {
-  const seen = new Set<number>();
+/** First entry per key, in order. */
+export function dedupeByKey<T>(entries: readonly T[], key: (t: T) => string): T[] {
+  const seen = new Set<string>();
   const out: T[] = [];
   for (const entry of entries) {
-    if (seen.has(entry.id)) continue;
-    seen.add(entry.id);
+    const k = key(entry);
+    if (seen.has(k)) continue;
+    seen.add(k);
     out.push(entry);
   }
   return out;
+}
+
+/** First occurrence of each definition id (one spell arrives from several class lists). */
+export function dedupeById<T extends { id: number }>(entries: readonly T[]): T[] {
+  return dedupeByKey(entries, e => String(e.id));
 }
 
 /** Every non-monster type: official before homebrew, then non-Legacy before Legacy, then lowest definition id. Dedupe by id first. */
@@ -715,29 +721,48 @@ export function characterMainEdition(entries: readonly CharacterEditionEntry[]):
 }
 
 /**
- * Classify one entry on a character sheet. A non-Legacy, non-homebrew
- * definition that lists a book in a 2024 category and one in a 2014 category
- * (Dagger, Shield, Leather: one definition printed in both editions) is valid
- * under either, so on a 2024 or 2014 character it takes the main edition and
- * that edition's first book. Everything else, and any character whose main
- * edition is unstated, classifies as classifyEdition does. Never used for
- * classes: they decide the main edition.
+ * The dual-edition rule (decision 4), used by character sheets and the item
+ * catalog. A non-Legacy, non-homebrew definition that lists a book in a 2024
+ * category and one in a 2014 category (Dagger, Shield, Leather: one definition
+ * printed in both editions) is valid under either, so for a 2024 or 2014
+ * `edition` (a character's main edition, or the requested edition) it takes
+ * that edition and that edition's first book. Everything else, and any
+ * `edition` of "unstated", classifies as classifyEdition does. Never used for
+ * classes: they decide a character's main edition.
  */
-export function classifyCharacterEntry(
+export function classifyForEdition(
   entry: EditionMarkers,
   index: SourceIndex,
-  main: RulesEdition | "unstated",
+  edition: RulesEdition | "unstated",
 ): EditionInfo {
-  if (main !== "unstated" && entry.isHomebrew !== true && entry.isLegacy !== true) {
-    const books = entrySourceIds(entry).flatMap(id => {
-      const src = index.sources.get(id);
-      return src ? [{ ruleset: categoryRuleset(src.categoryId), book: src.book }] : [];
-    });
-    const mine = books.find(b => b.ruleset === main);
-    const other = main === "2024" ? "2014" : "2024";
-    if (mine && books.some(b => b.ruleset === other)) return { ruleset: main, book: mine.book };
-  }
-  return classifyEdition(entry, index);
+  const dual = dualBook(entry, index, edition);
+  return dual ? { ruleset: dual.ruleset, book: dual.book } : classifyEdition(entry, index);
+}
+
+/** The id of the source whose book classifyForEdition reports (see editionSourceId). */
+export function editionSourceIdFor(entry: EditionMarkers, index: SourceIndex, edition: RulesEdition | "unstated"): number | null {
+  return dualBook(entry, index, edition)?.id ?? editionSourceId(entry, index);
+}
+
+/** Whether the dual-edition rule applies: non-Legacy, non-homebrew, with a 2024-category book and a 2014-category book. */
+export function isDualEdition(entry: EditionMarkers, index: SourceIndex): boolean {
+  return dualBook(entry, index, "2024") !== null;
+}
+
+/** The dual-edition rule's pick: `edition`'s first book, or null when the rule does not apply. */
+function dualBook(
+  entry: EditionMarkers,
+  index: SourceIndex,
+  edition: RulesEdition | "unstated",
+): { id: number; ruleset: RulesEdition; book: string | null } | null {
+  if (edition === "unstated" || entry.isHomebrew === true || entry.isLegacy === true) return null;
+  const books = entrySourceIds(entry).flatMap(id => {
+    const src = index.sources.get(id);
+    return src ? [{ id, ruleset: categoryRuleset(src.categoryId), book: src.book }] : [];
+  });
+  const mine = books.find(b => b.ruleset === edition);
+  const other = edition === "2024" ? "2014" : "2024";
+  return mine && books.some(b => b.ruleset === other) ? { id: mine.id, ruleset: edition, book: mine.book } : null;
 }
 
 /** Inline tag for one character entry: null when it matches the main edition; non-edition entries always tagged. */

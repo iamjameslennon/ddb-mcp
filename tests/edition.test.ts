@@ -2,11 +2,11 @@ import { describe, it, expect } from "vitest";
 import {
   buildSourceIndex, categoryRuleset, classifyEdition, KNOWN_CATEGORY_IDS,
   normalizeName, createTwinNamer, twinName, twinAliases, classOwnerTwinKey, editionSourceId, entrySourceIds, bookChoiceNote, alsoInLine,
-  dedupeById, definitionTiebreak, monsterTiebreak,
+  dedupeById, dedupeByKey, definitionTiebreak, monsterTiebreak,
   selectByEdition, lookupByName, groupAndSelect,
   rulesLine, reasonLine, renameLine, RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, PARTY_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, editionTag, searchHeader, open5eSearchHeader, searchFooter, ambiguityMessage,
   lockedLineSuffix, lockedSwapSummary, lockedEntriesNote, availableElsewhereHint, HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO,
-  characterMainEdition, characterTag, characterRulesLine, classifyCharacterEntry,
+  characterMainEdition, characterTag, characterRulesLine, classifyForEdition,
   type CategoryRecord, type CharacterEditionEntry, type CharacterEntryKind,
   type EditionInfo, type EditionMarkers, type Ruleset, type SourceRecord,
 } from "../src/edition.js";
@@ -289,6 +289,11 @@ const ids = (xs: Array<{ entry: E }>) => xs.map(x => x.entry.id);
 describe("tiebreaks", () => {
   it("dedupes by definition id, keeping the first", () => {
     expect(dedupeById([e(1, "A", "2024"), e(2, "B", "2024"), e(1, "A again", "2024")]).map(x => x.name)).toEqual(["A", "B"]);
+  });
+
+  it("dedupes by any key, keeping the first", () => {
+    const rows = [{ k: "a", n: 1 }, { k: "b", n: 2 }, { k: "a", n: 3 }];
+    expect(dedupeByKey(rows, r => r.k).map(r => r.n)).toEqual([1, 2]);
   });
 
   it("definitions: official before homebrew, then lowest id", () => {
@@ -737,18 +742,18 @@ describe("character edition labels", () => {
   const ent = (name: string, kind: CharacterEntryKind, ruleset: Ruleset, level?: number): CharacterEditionEntry =>
     ({ name, kind, level, info: info(ruleset) });
 
-  it("classifyCharacterEntry: a non-Legacy definition with 2024 and 2014 books takes the main edition", () => {
+  it("classifyForEdition: a non-Legacy definition with 2024 and 2014 books takes the main edition", () => {
     const dagger = { sources: [{ sourceId: 148 }, { sourceId: 1 }] };
-    expect(classifyCharacterEntry(dagger, INDEX, "2014")).toEqual({ ruleset: "2014", book: "Basic Rules (2014)" });
-    expect(classifyCharacterEntry(dagger, INDEX, "2024")).toEqual({ ruleset: "2024", book: "D&D Beyond Basic Rules" });
-    expect(classifyCharacterEntry(dagger, INDEX, "unstated")).toEqual(classifyEdition(dagger, INDEX));
+    expect(classifyForEdition(dagger, INDEX, "2014")).toEqual({ ruleset: "2014", book: "Basic Rules (2014)" });
+    expect(classifyForEdition(dagger, INDEX, "2024")).toEqual({ ruleset: "2024", book: "D&D Beyond Basic Rules" });
+    expect(classifyForEdition(dagger, INDEX, "unstated")).toEqual(classifyEdition(dagger, INDEX));
   });
 
-  it("classifyCharacterEntry: Legacy, homebrew and single-edition definitions classify as usual", () => {
+  it("classifyForEdition: Legacy, homebrew and single-edition definitions classify as usual", () => {
     const legacy = { isLegacy: true, sources: [{ sourceId: 148 }, { sourceId: 1 }] };
-    expect(classifyCharacterEntry(legacy, INDEX, "2024").ruleset).toBe("2014");
-    expect(classifyCharacterEntry({ isHomebrew: true, sources: [{ sourceId: 148 }, { sourceId: 1 }] }, INDEX, "2014").ruleset).toBe("homebrew");
-    expect(classifyCharacterEntry({ sources: [{ sourceId: 2 }] }, INDEX, "2024")).toEqual({ ruleset: "2014", book: "Player's Handbook (2014)" });
+    expect(classifyForEdition(legacy, INDEX, "2024").ruleset).toBe("2014");
+    expect(classifyForEdition({ isHomebrew: true, sources: [{ sourceId: 148 }, { sourceId: 1 }] }, INDEX, "2014").ruleset).toBe("homebrew");
+    expect(classifyForEdition({ sources: [{ sourceId: 2 }] }, INDEX, "2024")).toEqual({ ruleset: "2014", book: "Player's Handbook (2014)" });
   });
 
   it("counts spells and items after the named entries of each group", () => {

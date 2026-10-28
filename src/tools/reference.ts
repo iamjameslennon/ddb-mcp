@@ -20,7 +20,7 @@ import { TtlCache } from "../cache.js";
 import { stripHtml, wrapIfHomebrew } from "../utils.js";
 import {
   twinName, classOwnerTwinKey, classifyEdition, selectByEdition, definitionTiebreak, isEdition,
-  normalizeName, searchFooter, dedupeById,
+  normalizeName, searchFooter, dedupeByKey,
   type RulesEdition,
 } from "../edition.js";
 import { peekSourceIndex, getSourceIndex } from "../game-config.js";
@@ -532,7 +532,11 @@ export async function getSpell(spellName: string, rulesEdition: RulesEdition = "
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface DdbItem {
+  /** Not unique: ids repeat across entityTypeIds (live id 3 is Crossbow Bolts, Dagger and Studded Leather). */
   id: number;
+  entityTypeId?: number | null;
+  /** `${entityTypeId}:${id}`, unique per definition. */
+  definitionKey?: string | null;
   name: string;
   type: string;
   filterType: string;
@@ -561,15 +565,21 @@ interface DdbItem {
 
 let itemCompendium: DdbItem[] | null = null;
 
+/** One entry per definition. An id alone would drop every later item type that reuses it. */
+function dedupeItems(items: readonly DdbItem[]): DdbItem[] {
+  return dedupeByKey(items, i => i.definitionKey ?? `${i.entityTypeId}:${i.id}`);
+}
+
 async function loadItemCompendium(): Promise<DdbItem[]> {
   // Boundary check before the early singleton/cache return (see loadSpellCompendium).
   const snapshot = captureSession();
 
   if (itemCompendium) return itemCompendium;
 
-  const cached = referenceCache.get("item-compendium");
+  // v2: v1 lists were deduped by id alone and lack the items that reuse one.
+  const cached = referenceCache.get("item-compendium-v2");
   if (cached) {
-    itemCompendium = dedupeById(JSON.parse(cached) as DdbItem[]);
+    itemCompendium = dedupeItems(JSON.parse(cached) as DdbItem[]);
     return itemCompendium;
   }
 
@@ -578,12 +588,12 @@ async function loadItemCompendium(): Promise<DdbItem[]> {
   if (!resp.ok) throw new Error(`Item compendium fetch failed: ${resp.status} ${resp.statusText}`);
 
   const json = await resp.json() as { data?: DdbItem[] } | DdbItem[];
-  const items = dedupeById((Array.isArray(json) ? json : json.data) ?? []);
+  const items = dedupeItems((Array.isArray(json) ? json : json.data) ?? []);
 
   // Don't cache one account's item list into another account's generation.
   assertSessionCurrent(snapshot);
   itemCompendium = items;
-  referenceCache.set("item-compendium", JSON.stringify(items));
+  referenceCache.set("item-compendium-v2", JSON.stringify(items));
   return items;
 }
 
@@ -626,8 +636,13 @@ function formatItem(item: DdbItem, rulesLines: string[]): string {
   return wrapIfHomebrew(lines.join("\n"), item.isHomebrew);
 }
 
-/** The item catalog: classified by the item, twinned by name, listed by name. */
+/**
+ * The item catalog: classified by the item, twinned by name, listed by name.
+ * Dual-edition (decision 4): a definition printed in both editions (Longsword,
+ * Studded Leather) is the requested edition's version.
+ */
 const ITEM_ADAPTER: CatalogAdapter<DdbItem> & { name: (i: DdbItem) => string } = {
+  dualEdition: true,
   markers: i => i,
   twinKey: i => twinName(i.name),
   tiebreak: definitionTiebreak,

@@ -5,7 +5,7 @@
  * Rules-edition phase 5 — see docs/superpowers/specs/2026-10-16-rules-edition-design.md.
  *
  * Classes decide the main edition and always classify with plain
- * `classifyEdition`. Everything else goes through `classifyCharacterEntry`, so
+ * `classifyEdition`. Everything else goes through `classifyForEdition`, so
  * a definition printed in both editions (Dagger, Leather) takes the main one.
  * Only what the sheet shows is classified: feats (real and disguised), the
  * spells the SPELLS section lists, and the items the sheet prints. All label
@@ -13,7 +13,7 @@
  */
 
 import {
-  characterMainEdition, characterRulesLine, characterTag, classifyCharacterEntry, classifyEdition, editionTag,
+  characterMainEdition, characterRulesLine, characterTag, classifyForEdition, classifyEdition, editionTag,
   type CharacterEditionEntry, type CharacterEntryKind, type EditionInfo, type EditionMarkers,
   type RulesEdition, type SourceIndex,
 } from "../../edition.js";
@@ -25,7 +25,7 @@ export interface CharacterEditions {
   main: RulesEdition | "unstated";
   /** characterRulesLine over the classified entries (decisions 2–4). */
   rulesLine: string;
-  /** classifyCharacterEntry(def, index, main), for every non-class definition (decision 11). */
+  /** classifyForEdition(def, index, main), for every non-class definition (decision 11). */
   info(def: unknown): EditionInfo;
   /** "" when characterTag(info(def), main) is null, else " [2014]" etc. Non-class definitions. */
   tag(def: unknown): string;
@@ -71,7 +71,7 @@ export function computeCharacterEditions(char: CharData, index: SourceIndex): Ch
   }));
   const { main } = characterMainEdition(classEntries);
 
-  const info = (def: unknown): EditionInfo => classifyCharacterEntry(markers(def), index, main);
+  const info = (def: unknown): EditionInfo => classifyForEdition(markers(def), index, main);
   const entry = (name: string, kind: CharacterEntryKind, def: unknown): CharacterEditionEntry =>
     ({ name, kind, info: info(def) });
   const subclassDiffers = (cls: ClassEntry): boolean =>

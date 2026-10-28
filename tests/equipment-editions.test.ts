@@ -124,13 +124,13 @@ describe("ddb_search_equipment rules_edition and source", () => {
     expect(lines.at(-1)).toBe('1 2014 version hidden — rules_edition: "2014" shows it.');
   });
 
-  it("source basic-rules-2014 lists the reprint, tagged by its own classification", async () => {
+  it("source basic-rules-2014 lists the reprint, tagged with the book's edition (it is dual-edition)", async () => {
     installItems();
     const lines = (await reference.searchItems({ name: "studded", source: "basic-rules-2014" })).split("\n");
     expect(lines[0]).toMatch(/^Rules: showing every entry in .*Basic Rules/);
     expect(lines[1]).toBe(sourceNote("basic-rules-2014", "2014", "2024"));
     expect(lines[2]).toBe("**Item Search** (1 found)");
-    expect(lines).toContain("- **Studded Leather** [2024] — Common Armor");
+    expect(lines).toContain("- **Studded Leather** [2014] — Common Armor");
     expect(lines.some(l => l.includes("hidden"))).toBe(false);
   });
 
@@ -201,5 +201,90 @@ describe("ddb_search_equipment rules_edition and source", () => {
       return jsonResponse({});
     });
     await expect(reference.searchItems({ name: "longsword" })).rejects.toThrow("Item compendium fetch failed: 403");
+  });
+});
+
+describe("the item compendium keeps every item type (carry-over (e))", () => {
+  // Live 2026-10-23: item ids repeat across entityTypeIds (ammunition, weapons, armour).
+  const shared = (entityTypeId: number, name: string, type: string, definitionKey?: string) =>
+    item(3, name, { entityTypeId, type, filterType: type, ...(definitionKey ? { definitionKey } : {}) }, [148, 1]);
+
+  it("the item compendium keeps items that share an id across entity types", async () => {
+    installItems([
+      shared(2103445194, "Crossbow Bolts", "Ammunition"),
+      shared(1782728300, "Dagger", "Weapon"),
+      shared(701257905, "Studded Leather", "Armor"),
+      item(900, "Glamoured Studded Leather", { type: "Armor", filterType: "Armor", rarity: "Rare", magic: true }, [146]),
+    ]);
+    expect((await reference.getItem("Studded Leather")).split("\n")[0]).toBe("**Studded Leather** — Armor, Common");
+    expect((await reference.getItem("Dagger")).split("\n")[0]).toBe("**Dagger** — Weapon, Common");
+    expect((await reference.getItem("Crossbow Bolts")).split("\n")[0]).toBe("**Crossbow Bolts** — Ammunition, Common");
+  });
+
+  it("dedupes by definitionKey when the payload carries one", async () => {
+    installItems([
+      shared(1782728300, "Dagger", "Weapon", "1782728300:3"),
+      shared(1782728300, "Dagger", "Weapon", "1782728300:3"),
+      shared(701257905, "Studded Leather", "Armor", "701257905:3"),
+    ]);
+    const lines = (await reference.searchItems({})).split("\n").filter(l => l.startsWith("- **"));
+    expect(lines).toEqual(["- **Dagger** [2024] — Common Weapon", "- **Studded Leather** [2024] — Common Armor"]);
+  });
+});
+
+describe("dual-edition items take the requested edition (decision 4)", () => {
+  const LONGSWORD = item(12, "Longsword", { isLegacy: false }, [148, 1]);
+
+  it("a dual-edition item under rules_edition 2014 is the 2014 version", async () => {
+    installItems([LONGSWORD]);
+    const as2014 = (await reference.getItem("Longsword", "2014")).split("\n");
+    expect(as2014[1]).toBe("Rules: 2014 · Basic Rules (2014)");
+    expect(as2014[2]).not.toMatch(/^\(/);
+    const as2024 = (await reference.getItem("Longsword", "2024")).split("\n");
+    expect(as2024[1]).toBe("Rules: 2024 · D&D Beyond Basic Rules");
+    expect(as2024[2]).not.toMatch(/^\(/);
+  });
+
+  it("a 2014 equipment search tags dual items [2014]", async () => {
+    installItems([LONGSWORD]);
+    const text = await reference.searchItems({ name: "longsword", rulesEdition: "2014" });
+    expect(text).toContain("- **Longsword** [2014] — Common Weapon");
+    expect(text).not.toContain("hidden");
+  });
+
+  it("a source search classifies a dual item by the book's edition", async () => {
+    installItems([LONGSWORD]);
+    expect(await reference.searchItems({ name: "longsword", source: "basic-rules-2014" }))
+      .toContain("- **Longsword** [2014] — Common Weapon");
+    expect(await reference.searchItems({ name: "longsword", source: "br-2024", rulesEdition: "2014" }))
+      .toContain("- **Longsword** [2024] — Common Weapon");
+    const got = (await reference.getItem("Longsword", "2024", "basic-rules-2014")).split("\n");
+    expect(got.slice(1, 3)).toEqual(["Rules: 2014 · Basic Rules (2014)", sourceNote("basic-rules-2014", "2014", "2024")]);
+  });
+
+  it("a non-dual 2014 item beats a dual one: Efficient Quiver under 2014 is the Legacy printing (option B)", async () => {
+    // Live 2026-10-23 records, trimmed. The rename table twins the two names.
+    const efficient = item(4628, "Efficient Quiver",
+      { isLegacy: true, type: "Wondrous item", filterType: "Wondrous item", rarity: "Uncommon", magic: true }, [1, 2]);
+    const ehlonna = item(5367, "Quiver of Ehlonna",
+      { isLegacy: false, type: "Wondrous item", filterType: "Wondrous item", rarity: "Uncommon", magic: true }, [146, 148, 3, 66, 103, 79]);
+    installItems([efficient, ehlonna]);
+    const got = (await reference.getItem("Efficient Quiver", "2014")).split("\n");
+    expect(got.slice(0, 3)).toEqual(["**Efficient Quiver** — Wondrous item, Uncommon", "Rules: 2014 · Basic Rules (2014)", ""]);
+    const s2014 = (await reference.searchItems({ name: "quiver", rulesEdition: "2014" })).split("\n");
+    expect(s2014.filter(l => l.startsWith("- **"))).toEqual(["- **Efficient Quiver** [2014] — Uncommon Wondrous item"]);
+    expect(s2014.at(-1)).toBe("1 2024 version hidden — omit rules_edition to show it.");
+    expect((await reference.getItem("Efficient Quiver")).split("\n")[0]).toBe("**Quiver of Ehlonna** — Wondrous item, Uncommon");
+  });
+
+  it("a Legacy or homebrew item is not dual", async () => {
+    installItems([
+      item(30, "Old Sword", { isLegacy: true }, [148, 1]),
+      item(31, "Brew Sword", { isHomebrew: true }, [148, 1]),
+    ]);
+    expect((await reference.getItem("Old Sword", "2024")).split("\n")[1]).toBe("Rules: 2014 · Basic Rules (2014)");
+    const lines = (await reference.searchItems({ name: "sword", rulesEdition: "2024" })).split("\n");
+    expect(lines).toContain("- **Old Sword** [2014] — Common Weapon");
+    expect(lines.some(l => l.includes("**Brew Sword** [homebrew]"))).toBe(true);
   });
 });
