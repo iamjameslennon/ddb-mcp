@@ -51,7 +51,7 @@ describe("character Rules line and header tags", () => {
     const out = sheet(c);
     // Action Surge is FIGHTER_5's __DISGUISE_FEAT (sourced 145), classified like a feat (decision 4).
     expect(out).toContain(
-      "  Rules: edition not stated · 2024 content: Mountain Dwarf (species), Soldier (background), Great Weapon Master (feat), Action Surge (feat) · homebrew: Blood Hunter 5 (class)",
+      "  Rules: edition not stated · 2024 content: Mountain Dwarf (species), Soldier (background), Great Weapon Master (feat), Action Surge (feat) · homebrew: 1 class",
     );
     expect(out).toContain("  Mountain Dwarf [2024] | Blood Hunter [homebrew] 5 | Level 5");
     expect(out).toContain("  Background: Soldier [2024] | XP: 6500");

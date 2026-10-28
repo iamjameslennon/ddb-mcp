@@ -758,7 +758,19 @@ describe("character edition labels", () => {
       ent("Spelldriver", "feat", "homebrew"), ent("Torch", "item", "2014"),
     ];
     expect(characterRulesLine(entries)).toBe(
-      "Rules: 2024 · 2014 content: Grave Domain (subclass), Noble (background), 2 spells, 2 items · homebrew: Spelldriver (feat)");
+      "Rules: 2024 · 2014 content: Grave Domain (subclass), Noble (background), 2 spells, 2 items · homebrew: 1 feat");
+  });
+
+  it("characterRulesLine counts homebrew entries instead of naming them", () => {
+    const entries = [
+      ent("Fighter", "class", "2024", 5), ent("Dhampir (HB)", "species", "homebrew"), ent("Shadow Touched+", "feat", "homebrew"),
+      ent("Hex+", "spell", "homebrew"), ent("Bolt+", "spell", "homebrew"),
+    ];
+    const line = characterRulesLine(entries);
+    expect(line).toBe("Rules: 2024 · homebrew: 1 species, 1 feat, 2 spells");
+    expect(line).not.toContain("Dhampir");
+    const classes = [ent("Fighter", "class", "2024", 5), ent("A", "class", "homebrew", 1), ent("B", "class", "homebrew", 2)];
+    expect(characterRulesLine(classes)).toBe("Rules: 2024 · homebrew: 2 classes");
   });
 
   it("singular counts", () => {
@@ -800,7 +812,7 @@ describe("character edition labels", () => {
 
   it("non-edition entries get their own groups", () => {
     const entries = [ent("Bard", "class", "2024", 5), ent("Blood Hunter", "class", "homebrew", 2), ent("Firearm Specialist", "feat", "third-party")];
-    expect(characterRulesLine(entries)).toBe("Rules: 2024 · homebrew: Blood Hunter 2 (class) · third-party: Firearm Specialist (feat)");
+    expect(characterRulesLine(entries)).toBe("Rules: 2024 · homebrew: 1 class · third-party: Firearm Specialist (feat)");
   });
 
   it("a subclass with a different ruleset is listed on its own", () => {
@@ -811,7 +823,7 @@ describe("character edition labels", () => {
   it("no 2014/2024 class: edition not stated, every other group listed", () => {
     const entries = [ent("Blood Hunter", "class", "homebrew", 5), ent("Alert", "feat", "2024"), ent("Mystery", "item", "unstated")];
     expect(characterMainEdition(entries)).toEqual({ main: "unstated", mixed: false });
-    expect(characterRulesLine(entries)).toBe("Rules: edition not stated · 2024 content: Alert (feat) · homebrew: Blood Hunter 5 (class)");
+    expect(characterRulesLine(entries)).toBe("Rules: edition not stated · 2024 content: Alert (feat) · homebrew: 1 class");
   });
 
   it("unstated entries under an edition get the 'edition not stated' group", () => {
@@ -841,7 +853,7 @@ describe("character edition labels", () => {
 
   it("mixed character with a homebrew class: homebrew class listed in its own group", () => {
     const entries = [ent("Bard", "class", "2024", 5), ent("Ranger", "class", "2014", 3), ent("Blood Hunter", "class", "homebrew", 2)];
-    expect(characterRulesLine(entries)).toBe("Rules: mixed — 2024: Bard 5 · 2014: Ranger 3 · homebrew: Blood Hunter 2 (class)");
+    expect(characterRulesLine(entries)).toBe("Rules: mixed — 2024: Bard 5 · 2014: Ranger 3 · homebrew: 1 class");
   });
 
   it("class without a level: head is plain edition, no number", () => {

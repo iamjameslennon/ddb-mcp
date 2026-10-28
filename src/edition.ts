@@ -754,6 +754,9 @@ const CHARACTER_GROUPS: ReadonlyArray<readonly [Ruleset, string]> = [
   ["unstated", NOT_STATED],
 ];
 
+const HOMEBREW_KIND_ORDER = ["class", "subclass", "species", "background", "feat", "spell", "item"] as const;
+const kindPlural = (kind: string) => (kind === "species" ? kind : kind === "class" ? "classes" : `${kind}s`);
+
 /**
  * "Rules: 2024 · 2014 content: Criminal / Spy (background)", or for a
  * mixed-edition multiclass "Rules: mixed — 2024: Bard 5 · 2014: Ranger 3 · …".
@@ -762,7 +765,10 @@ const CHARACTER_GROUPS: ReadonlyArray<readonly [Ruleset, string]> = [
  * edition is itself unstated: the head already says so, and characterTag()
  * still tags each one inline. Within a group, entries other than spells and
  * items are named; spells and items follow as counts ("8 spells, 27 items"),
- * since a sheet can hold dozens and the inline tags name each one.
+ * since a sheet can hold dozens and the inline tags name each one. The
+ * homebrew group counts every kind and names none ("homebrew: 1 species,
+ * 2 spells"): homebrew names are other players' free text, and this line is
+ * not delimited as untrusted.
  */
 export function characterRulesLine(entries: readonly CharacterEditionEntry[]): string {
   const { main, mixed } = characterMainEdition(entries);
@@ -784,13 +790,21 @@ export function characterRulesLine(entries: readonly CharacterEditionEntry[]): s
   for (const [ruleset, label] of CHARACTER_GROUPS) {
     if (ruleset === main) continue;
     const inGroup = rest.filter(e => e.info.ruleset === ruleset);
-    const items = inGroup
-      .filter(e => e.kind !== "spell" && e.kind !== "item")
-      .map(e => `${e.kind === "class" ? classLabel(e) : e.name} (${e.kind})`);
-    const spells = inGroup.filter(e => e.kind === "spell").length;
-    const gear = inGroup.filter(e => e.kind === "item").length;
-    if (spells) items.push(`${spells} ${spells === 1 ? "spell" : "spells"}`);
-    if (gear) items.push(`${gear} ${gear === 1 ? "item" : "items"}`);
+    // Homebrew is other players' free text: count every kind, never name one.
+    const items = ruleset === "homebrew"
+      ? HOMEBREW_KIND_ORDER.flatMap(kind => {
+          const n = inGroup.filter(e => e.kind === kind).length;
+          return n ? [`${n} ${n === 1 ? kind : kindPlural(kind)}`] : [];
+        })
+      : [
+          ...inGroup
+            .filter(e => e.kind !== "spell" && e.kind !== "item")
+            .map(e => `${e.kind === "class" ? classLabel(e) : e.name} (${e.kind})`),
+          ...(["spell", "item"] as const).flatMap(kind => {
+            const n = inGroup.filter(e => e.kind === kind).length;
+            return n ? [`${n} ${n === 1 ? kind : kindPlural(kind)}`] : [];
+          }),
+        ];
     if (items.length) groups.push(`${label}: ${items.join(", ")}`);
   }
   return [head, ...groups].join(" · ");
