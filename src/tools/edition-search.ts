@@ -103,12 +103,18 @@ export interface CatalogAdapter<T> {
 
 /**
  * An adapter for single lookups: the entry's name and the content kind's twin
- * namer (`twinNames[kind]`), which must be the one `twinKey` applies, so a get
- * reaches only its own kind's renames.
+ * namer (`twinNames[kind]`), so a get reaches only its own kind's renames. It
+ * has no `twinKey` of its own: lookupCatalogAdapter derives it from these two,
+ * so a search and a get of one catalog can't twin by different namers.
  */
-export interface LookupAdapter<T> extends CatalogAdapter<T> {
+export interface LookupAdapter<T> extends Omit<CatalogAdapter<T>, "twinKey"> {
   name: (t: T) => string;
   twinName: TwinNamer;
+}
+
+/** A lookup adapter as a catalog adapter: its twin key is always `twinName(name(t))`. */
+export function lookupCatalogAdapter<T>(adapter: LookupAdapter<T>): CatalogAdapter<T> & LookupAdapter<T> {
+  return { ...adapter, twinKey: t => adapter.twinName(adapter.name(t)) };
 }
 
 export interface CatalogHit<T> { entry: T; info: EditionInfo; label: string }
@@ -454,7 +460,7 @@ export function lookupCatalog<T>(
   index: SourceIndex,
   source?: ResolvedSource,
 ): { entry: T; info: EditionInfo; rulesLines: string[] } | null {
-  const classify = classifier(all, adapter, index, requested, source);
+  const classify = classifier(all, lookupCatalogAdapter(adapter), index, requested, source);
   const info = classify.info;
   const pool = source ? all.filter(t => inSources(adapter.markers(t), source.ids)) : all;
   const found = lookupByName(pool, query, requested, { name: adapter.name, info, tiebreak: adapter.tiebreak, twinName: adapter.twinName });

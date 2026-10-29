@@ -26,7 +26,7 @@ import {
 import { peekSourceIndex, getSourceIndex } from "../game-config.js";
 import { resolveSource, unknownSourceError, withSourceCaveat, GENERIC_SOURCE_HINT, type ResolvedSource } from "../source-filter.js";
 import {
-  paginateResults, renderSection, plainSection, selectCatalog, lookupCatalog,
+  paginateResults, renderSection, plainSection, selectCatalog, lookupCatalog, lookupCatalogAdapter,
   type CatalogAdapter, type CatalogHit, type LookupAdapter, type SearchSection,
 } from "./edition-search.js";
 import { createSpellStore, addSpells, spellList, type DdbSpell, type SpellStore } from "./spell-store.js";
@@ -405,7 +405,6 @@ function formatSpell(spell: DdbSpell, rulesLines: string[]): string {
 /** The spell catalog: classified by the definition, twinned by name, listed by level then name. */
 const SPELL_ADAPTER: LookupAdapter<DdbSpell> = {
   markers: s => s.definition,
-  twinKey: s => twinNames.spell(s.definition.name),
   twinName: twinNames.spell,
   tiebreak: (a, b) => definitionTiebreak(a.definition, b.definition),
   compare: (a, b) => {
@@ -445,7 +444,7 @@ export async function searchSpellsSection(params: SpellSearchParams): Promise<Se
     const nameQuery = params.name ? normalizeName(params.name) : "";
     const schoolQuery = params.school?.toLowerCase();
 
-    const { hits, hidden, header, note } = selectCatalog(spellList(store), requested, {
+    const { hits, hidden, header, note } = selectCatalog(spellList(store), requested, lookupCatalogAdapter({
       ...SPELL_ADAPTER,
       nameMatches: nameQuery ? s => normalizeName(s.definition.name).includes(nameQuery) : undefined,
       passes: s => {
@@ -455,7 +454,7 @@ export async function searchSpellsSection(params: SpellSearchParams): Promise<Se
           && (params.concentration === undefined || d.concentration === params.concentration)
           && (params.ritual === undefined || d.ritual === params.ritual);
       },
-    }, index, source, { bookNotes: params.bookNotes });
+    }), index, source, { bookNotes: params.bookNotes });
 
     const limit = params.limit ?? 20;
     const offset = params.offset ?? 0;
@@ -656,7 +655,6 @@ function formatItem(item: DdbItem, rulesLines: string[]): string {
 const ITEM_ADAPTER: LookupAdapter<DdbItem> = {
   dualEdition: true,
   markers: i => i,
-  twinKey: i => twinNames.item(i.name),
   twinName: twinNames.item,
   tiebreak: definitionTiebreak,
   compare: (a, b) => a.name.localeCompare(b.name),
@@ -685,13 +683,13 @@ export async function searchItemsSection(params: ItemSearchParams): Promise<Sear
   return searchCatalogList<DdbItem>(params, {
     load: loadItemCompendium,
     plural: "items",
-    adapter: {
+    adapter: lookupCatalogAdapter({
       ...ITEM_ADAPTER,
       nameMatches: nameQuery ? i => normalizeName(i.name).includes(nameQuery) : undefined,
       // Rarity matches exactly ("common" is not "Uncommon"); no rarity is Common, as printed.
       passes: i => (!rarityQuery || (i.rarity || "Common").toLowerCase() === rarityQuery)
         && (!typeQuery || !!i.type?.toLowerCase().includes(typeQuery) || !!i.filterType?.toLowerCase().includes(typeQuery)),
-    },
+    }),
     // No paging: the first 30, then a hint to refine.
     render: hits => {
       const total = hits.length;

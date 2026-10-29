@@ -151,7 +151,10 @@ export function classifyEdition(
   sources: SourceIndex,
 ): EditionInfo;
 
-export function twinName(name: string): string;      // normalized, renames applied
+// One namer per content kind, each over only its kind's rename pairs (decision 5, 2026-10-29).
+// "none" has no pairs: feats, races, classes and racial traits.
+export const twinNames: Readonly<Record<"spell" | "item" | "monster" | "subclass" | "background" | "none", TwinNamer>>;
+                                                     // twinNames.<kind>(name): normalized, that kind's renames applied
 
 export function selectByEdition<T>(
   group: T[],                     // one twin group
@@ -213,15 +216,17 @@ A **twin group** is every entry (of any ruleset) sharing one twin key. Twins are
 
 | Content | Twin key |
 |---|---|
-| Spells, items, monsters, feats, backgrounds, races, classes | `twinName(name)` |
-| Class features | not twinned per feature; they select by owner (owner decision 2026-10-20): `classOwnerTwinKey` is `twinName(className)` (base and optional features) or `twinName(className) + "/" + twinName(subclassName)` (subclass features). "Extra Attack" for Paladin 2014 never meets Fighter 2024 |
-| Racial traits, species (races search) | the species by `twinName(fullName)` within an edition group of `twinName(baseRaceName \|\| baseName \|\| fullName)`, so the 2024 Elf replaces the 2014 High Elf, Wood Elf and Eladrin (Variant) |
+| Spells, items, monsters, backgrounds | `twinNames.<kind>(name)`: `twinNames.spell`, `.item` (magic items, poisons, gear), `.monster`, `.background` |
+| Feats, classes | `twinNames.none(name)` (no rename pairs) |
+| Class features | not twinned per feature; they select by owner (owner decision 2026-10-20): `classOwnerTwinKey` is `twinNames.subclass(className)` (base and optional features) or `twinNames.subclass(className) + "/" + twinNames.subclass(subclassName)` (subclass features). "Extra Attack" for Paladin 2014 never meets Fighter 2024 |
+| Racial traits, species (races search) | the species by `twinNames.none(fullName)` within an edition group of `twinNames.none(baseRaceName \|\| baseName \|\| fullName)`, so the 2024 Elf replaces the 2014 High Elf, Wood Elf and Eladrin (Variant) |
 | Rules sections, conditions | not grouped (see phase 4) |
+| Open5e records | each endpoint's kind: spells → spell, creatures → monster, items / magicitems / weapons / armor → item (plus the Open5e-only armour pairs), backgrounds → background, `/classes/` → subclass (Open5e files subclasses there; owner ruling 2026-10-29), species / feats / rulesets → none |
 
-`twinName` works in four steps:
+Each `twinNames.<kind>` namer works in four steps:
 1. Lowercase and trim.
 2. Fold the apostrophes `'` and `'` to `'`, then collapse whitespace.
-3. If the result is a **normalized** 2014 name in the rename table, replace it with the **normalized 2024 name**. The canonical side is always 2024.
+3. If the result is a **normalized** 2014 name in its kind's rename pairs, replace it with the **normalized 2024 name**. The canonical side is always 2024.
 4. Rename-table lookups use the same normalization on both sides.
 
 ### Selection (`selectByEdition`)
@@ -327,12 +332,12 @@ These tools are not affected: `ddb_login`, `ddb_logout`, `ddb_close_browser`, `d
 
 - **Types widen:** `SpellDefinition` gains `id`, `isLegacy`, `sources`, `isHomebrew`. The tests' `spell()` helper in `tests/spell-compendium-endpoints.test.ts` builds them.
 - **The cache key changes** to `"spell-compendium-v2"`. Old entries (including the pre-2.7.2 bare-array compatibility path) lack the fields and are discarded, not read.
-- The compendium stores **every** definition, keyed by definition `id`, with a `twinName → ids[]` index. This replaces the name-keyed first-wins merge. No new requests are made: the 16 existing requests already return both editions.
+- The compendium stores **every** definition, keyed by definition `id`, with a `twinNames.spell → ids[]` index. This replaces the name-keyed first-wins merge. No new requests are made: the 16 existing requests already return both editions.
 - `characterSpellBuffer` is keyed by definition `id` too, and its entries are classified like everything else.
 - **Concentration** (`buildConcentrationByLevel`), using the character's own definition:
   1. a boolean `def.concentration` wins;
   2. else the compendium entry with the same definition `id`;
-  3. else the compendium's selection for `twinName(def.name)` using `classifyEdition(def)`'s ruleset when that is 2014/2024, else 2024.
+  3. else the compendium's selection for `twinNames.spell(def.name)` using `classifyEdition(def)`'s ruleset when that is 2014/2024, else 2024.
 
   `isConcentrationSpell` takes `(def)` instead of `(name)`.
 - `getSpell(name, rulesEdition)` uses the gather algorithm. `searchSpells({ …, rulesEdition })` uses the search pipeline.

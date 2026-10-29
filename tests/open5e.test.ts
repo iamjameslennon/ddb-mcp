@@ -674,20 +674,24 @@ describe("Open5e twin keys fold hyphens", () => {
 
 // Decision 5 (carry-over (a)): each Open5e endpoint uses only its own kind's pairs.
 describe("Open5e twin names by endpoint kind", () => {
-  it("creatures use the monster pairs, feats and species none", () => {
+  it("creatures use the monster pairs; feats, species and rulesets use none", () => {
     expect(o5TwinNameFor("creatures")("Thug")).toBe("tough");
-    for (const endpoint of ["feats", "species", "classes", "rulesets"] as const) {
-      expect(o5TwinNameFor(endpoint)("Thug")).toBe("thug");
-      expect(o5TwinNameFor(endpoint)("Leather")).toBe("leather");
-    }
-    for (const endpoint of ["feats", "species", "rulesets", "creatures"] as const) {
-      expect(o5TwinNameFor(endpoint)("School of Evocation")).toBe("school of evocation");
+    expect(o5TwinNameFor("creatures")("School of Evocation")).toBe("school of evocation");
+    // One 2014 name of each kind's pairs, plus an Open5e armour pair.
+    for (const endpoint of ["feats", "species", "rulesets"] as const) {
+      for (const name of ["Thug", "Leather", "School of Evocation", "Acid Arrow", "Efficient Quiver", "Criminal / Spy"]) {
+        expect(o5TwinNameFor(endpoint)(name)).toBe(name.toLowerCase());
+      }
     }
   });
 
-  it("classes, which hold Open5e's subclasses, use the subclass pairs", () => {
+  // Owner ruling 2026-10-29: Open5e files subclasses on /classes/, so it takes the subclass pairs.
+  it("classes, which hold Open5e's subclasses, use the subclass pairs and no other kind's", () => {
     expect(o5TwinNameFor("classes")("School of Evocation")).toBe("evoker");
     expect(o5TwinNameFor("classes")("Wizard")).toBe("wizard");
+    for (const name of ["Thug", "Leather", "Acid Arrow", "Efficient Quiver", "Criminal / Spy"]) {
+      expect(o5TwinNameFor("classes")(name)).toBe(name.toLowerCase());
+    }
   });
 
   it("items, magic items, weapons and armour use the item pairs plus the armour pairs", () => {

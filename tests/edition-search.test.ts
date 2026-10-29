@@ -3,7 +3,7 @@ import { buildSourceIndex, definitionTiebreak, normalizeName, twinNames, type Ed
 import { resolveSource, sourceLabel } from "../src/source-filter.js";
 import {
   selectCatalog, lookupCatalog, paginateResults, renderSection, plainSection,
-  type CatalogAdapter, type CatalogOwner, type LookupAdapter,
+  lookupCatalogAdapter, type CatalogAdapter, type CatalogOwner, type LookupAdapter,
 } from "../src/tools/edition-search.js";
 
 // The real snapshot ids and categories of the books these tests name.
@@ -28,16 +28,15 @@ const entry = (id: number, name: string, sources: number[], opts: { isLegacy?: b
   ({ id, name, ...opts, sources: sources.map(sourceId => ({ sourceId })) });
 
 /** A flat adapter keyed by the entry's own name, with an optional name filter. */
-function flat(query?: string): LookupAdapter<Entry> {
-  return {
+function flat(query?: string): CatalogAdapter<Entry> & LookupAdapter<Entry> {
+  return lookupCatalogAdapter<Entry>({
     markers: e => e,
-    twinKey: e => normalizeName(e.name),
     twinName: twinNames.none,
     tiebreak: definitionTiebreak,
     compare: (a, b) => a.name.localeCompare(b.name),
     nameMatches: query ? e => normalizeName(e.name).includes(query) : undefined,
     name: e => e.name,
-  };
+  });
 }
 
 const GOBLIN_VGTM = entry(3, "Goblin", [15], { isLegacy: true });
@@ -123,6 +122,17 @@ describe("selectCatalog, flat mode", () => {
 });
 
 describe("lookupCatalog", () => {
+  it("a lookup adapter's twin key is always its namer over its name", () => {
+    const tough = entry(5195235, "Tough", [148]);
+    const thug = entry(17035, "Thug", [1], { isLegacy: true });
+    expect(lookupCatalogAdapter({ ...flat(), twinName: twinNames.monster }).twinKey(thug)).toBe("tough");
+    expect(flat().twinKey(thug)).toBe("thug");
+    // A spread keeps the old twin key; lookupCatalogAdapter re-derives it.
+    const sel = selectCatalog([thug, tough], "2024", lookupCatalogAdapter({ ...flat(), twinName: twinNames.monster }), INDEX);
+    expect(sel.hits.map(h => h.entry)).toEqual([tough]);
+    expect(sel.hidden).toBe(1);
+  });
+
   it("matches by the adapter's own namer, not another kind's pairs", () => {
     const tough = entry(5195235, "Tough", [148]);
     expect(lookupCatalog([tough], "Thug", "2024", flat(), INDEX)).toBeNull();
@@ -248,7 +258,7 @@ describe("dual-edition entries (adapter.dualEdition, decision 4)", () => {
   it("B holds when the adapter's markers return a fresh object each call", () => {
     const efficient = entry(4628, "Efficient Quiver", [1, 2], { isLegacy: true });
     const ehlonna = entry(5367, "Quiver of Ehlonna", [146, 148, 3]);
-    const copying = { ...dual(), markers: (e: Entry): EditionMarkers => ({ ...e }), twinKey: (e: Entry) => twinNames.item(e.name), twinName: twinNames.item };
+    const copying = lookupCatalogAdapter({ ...dual(), markers: (e: Entry): EditionMarkers => ({ ...e }), twinName: twinNames.item });
     const sel = selectCatalog([efficient, ehlonna], "2014", copying, DMG_INDEX);
     expect(sel.hits.map(h => [h.entry, h.label])).toEqual([[efficient, "[2014]"]]);
     expect(sel.hidden).toBe(1);
