@@ -200,9 +200,12 @@ describe("Open5e v2 spells and monsters", () => {
     expect(out).not.toContain("Zombie");
   });
 
-  it("an offset past the end gives the plain message, with no header or footer", async () => {
-    // 8 spells selected and 6 twins hidden: the page past them is still a plain no-match.
-    expect(await o5SearchSpells({ offset: 50, rulesEdition: "2024" }, "unavailable")).toBe("No spells found matching the criteria (SRD only).");
+  it("an offset past the end keeps the Open5e header and prints the shared past-the-end line", async () => {
+    const out = await o5SearchSpells({ offset: 50, rulesEdition: "2024" }, "unavailable");
+    const lines = out.split("\n");
+    expect(lines[0]).toBe(open5eSearchHeader("2024", "unavailable"));
+    expect(lines[1]).toMatch(/^\*\*Spell Search\*\* — offset 50 is past the end \(\d+ found\)$/);
+    expect(out).not.toContain("•");
   });
 
   it("the school filter alone excludes a spell", async () => {

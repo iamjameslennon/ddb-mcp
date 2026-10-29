@@ -21,6 +21,7 @@ import {
   searchHeader, selectByEdition,
   type EditionInfo, type Open5eOrigin, type RulesEdition, type SelectionReason, type TwinNamer,
 } from "./edition.js";
+import { paginateResults } from "./tools/edition-search.js";
 import { EDITION_RENAMES, OPEN5E_ARMOUR_RENAMES, type RenameKind } from "./edition-renames.js";
 
 // 1-hour cache — Open5e data doesn't change often
@@ -389,8 +390,11 @@ export async function o5SearchSpells(params: {
   });
 
   const noMatch = "No spells found matching the criteria (SRD only).";
-  // An offset past the end lists nothing: the plain reply, as on the D&D Beyond path.
-  if (selected.length && offset >= selected.length) return noMatch;
+  // An offset past the end lists nothing: the shared past-the-end line under the Open5e header.
+  if (selected.length && offset >= selected.length) {
+    const footer = searchFooter(requested, hidden);
+    return [open5eSearchHeader(requested, origin), paginateResults("Spell", selected, () => "", limit, offset), ...(footer ? [footer] : [])].join("\n");
+  }
   const page = selected.slice(offset, offset + limit);
   const lines = page.map(({ entry }) => {
     const s = entry.record;

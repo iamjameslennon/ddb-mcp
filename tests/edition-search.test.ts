@@ -61,6 +61,10 @@ describe("sections", () => {
     expect(paginateResults("Races", twenty, s => s, 30, 20)).toBe("**Races Search** — offset 20 is past the end (20 found)");
     expect(paginateResults("Races", twenty, s => `- ${s}`, 30, 19)).toContain("- i19");
   });
+
+  it("the past-the-end line keeps the note after it", () => {
+    expect(paginateResults("Races", ["a"], s => s, 30, 5, "\nWARN\n")).toBe("**Races Search** — offset 5 is past the end (1 found)\n\nWARN\n");
+  });
 });
 
 describe("selectCatalog, flat mode", () => {
@@ -345,6 +349,17 @@ describe("selectCatalog, nested mode by owner (features)", () => {
     nameMatches: f => normalizeName(f.name).includes(query),
   });
   const lines = (sel: ReturnType<typeof selectCatalog<Feature>>) => sel.hits.map(h => `${h.entry.name} L${h.entry.level} ${h.label}`);
+
+  it("owners that tie on every tiebreak field are chosen the same whatever the input order", () => {
+    // Same definition id, as two species with one entityRaceId and different entityRaceTypeId have.
+    const A = owner("1:5", 5, [145]);
+    const B = owner("2:5", 5, [145]);
+    const fa = feature(A, "Trait", 1);
+    const fb = feature(B, "Trait", 1);
+    const pick = (input: Feature[]) => selectCatalog(input, "2024", features("trait"), INDEX).hits.map(h => h.entry.owner.id);
+    expect(pick([fa, fb])).toEqual(["1:5"]);
+    expect(pick([fb, fa])).toEqual(["1:5"]);
+  });
 
   it("2024 lists only the 2024 class's matching features and counts the 2014 lines", () => {
     const sel = selectCatalog(FIGHTER, "2024", features("ability score"), INDEX);

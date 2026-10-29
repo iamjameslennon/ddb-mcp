@@ -64,7 +64,10 @@ export function paginateResults<T>(
   const total = items.length;
   if (total === 0) return "";
   // An offset at or past the end would print an inverted range ("showing 31–30 of 20").
-  if (offset >= total) return `**${label} Search** — offset ${offset} is past the end (${total} found)`;
+  if (offset >= total) {
+    const line = `**${label} Search** — offset ${offset} is past the end (${total} found)`;
+    return note ? `${line}\n${note}` : line;
+  }
 
   const page = items.slice(offset, offset + limit);
   const header = total > limit
