@@ -292,3 +292,42 @@ describe("source and failures", () => {
     expect(fetchMock.mock.calls.filter(([url]) => String(url).startsWith(`${GAME_DATA}/feats`))).toHaveLength(2);
   });
 });
+
+describe("no-name searches that match nothing", () => {
+  it("say 'matching the criteria', never 'undefined'", async () => {
+    install({ races: [], classes: [], backgrounds: [], feats: [] });
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.includes("api.open5e.com")) return new Response("down", { status: 500 });
+      return jsonResponse({ token: makeJwt("99"), data: [] });
+    });
+    for (const text of [await reference.searchRaces(), await reference.searchClasses(), await reference.searchBackgrounds()]) {
+      expect(text).toContain('matching the criteria');
+      expect(text).not.toContain("undefined");
+    }
+  });
+
+  it("keep the name when one was given", async () => {
+    install({ races: [], classes: [], backgrounds: [] });
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.includes("api.open5e.com")) return new Response("down", { status: 500 });
+      return jsonResponse({ token: makeJwt("99"), data: [] });
+    });
+    expect(await reference.searchRaces({ name: "zzz" })).toContain('matching "zzz"');
+  });
+});
+
+describe("species with one entityRaceId and different entityRaceTypeId", () => {
+  const A = race(5, "Twin Folk", [148], { entityRaceId: 5, entityRaceTypeId: 2, description: "TYPE TWO" });
+  const B = race(5, "Twin Folk", [148], { entityRaceId: 5, entityRaceTypeId: 1, description: "TYPE ONE" });
+
+  it("order the same whatever the input order", async () => {
+    install({ races: [A, B] });
+    const forward = await reference.searchRaces({ name: "twin" });
+    reference.clearReferenceCache();
+    install({ races: [B, A] });
+    const backward = await reference.searchRaces({ name: "twin" });
+    expect(entryLines(forward)).toEqual(entryLines(backward));
+    expect(forward).toBe(backward);
+    expect(forward).toContain("TYPE ONE");
+  });
+});

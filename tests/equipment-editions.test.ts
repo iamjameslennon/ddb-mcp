@@ -23,6 +23,22 @@ const fsMock = vi.hoisted(() => ({
 }));
 vi.mock("fs", () => fsMock);
 
+const selectionBug = vi.hoisted(() => ({ on: false }));
+vi.mock("../src/tools/edition-search.js", async importOriginal => {
+  const real = await importOriginal<typeof import("../src/tools/edition-search.js")>();
+  return {
+    ...real,
+    selectCatalog: ((...args: Parameters<typeof real.selectCatalog>) => {
+      if (selectionBug.on) throw new Error("selection bug");
+      return real.selectCatalog(...args);
+    }) as typeof real.selectCatalog,
+    lookupCatalog: ((...args: Parameters<typeof real.lookupCatalog>) => {
+      if (selectionBug.on) throw new Error("selection bug");
+      return real.lookupCatalog(...args);
+    }) as typeof real.lookupCatalog,
+  };
+});
+
 import { COBALT_URL, GAME_DATA, jsonResponse, makeJwt } from "./fixtures/spell-service.js";
 
 const realFs = await vi.importActual<typeof import("fs")>("fs");
@@ -33,6 +49,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  selectionBug.on = false;
   fsMock.existsSync.mockReset().mockReturnValue(true);
   const session = JSON.stringify({
     cookies: [{
@@ -334,5 +351,15 @@ describe("dual-edition items take the requested edition (decision 4)", () => {
     const lines = (await reference.searchItems({ name: "sword", rulesEdition: "2024" })).split("\n");
     expect(lines).toContain("- **Old Sword** [2014] — Common Weapon");
     expect(lines.some(l => l.includes("**Brew Sword** [homebrew]"))).toBe(true);
+  });
+});
+
+describe("a selection bug is not a load failure", () => {
+  it("searchItems and getItem reject with the bug and never ask Open5e", async () => {
+    installItems();
+    selectionBug.on = true;
+    await expect(reference.searchItems({ name: "longsword" })).rejects.toThrow("selection bug");
+    await expect(reference.getItem("Longsword")).rejects.toThrow("selection bug");
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("open5e"))).toBe(false);
   });
 });

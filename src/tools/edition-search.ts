@@ -63,6 +63,8 @@ export function paginateResults<T>(
 ): string {
   const total = items.length;
   if (total === 0) return "";
+  // An offset at or past the end would print an inverted range ("showing 31–30 of 20").
+  if (offset >= total) return `**${label} Search** — offset ${offset} is past the end (${total} found)`;
 
   const page = items.slice(offset, offset + limit);
   const header = total > limit
@@ -411,8 +413,9 @@ function selectNested<T>(
     if (owner) byOwner.set(owner.id, unit);
   }
 
+  // Owner ids are unique, so comparing them last makes the order total.
   const order = (a: Unit<T>, b: Unit<T>) => (a.owner && b.owner
-    ? definitionTiebreak(a.owner.tiebreak, b.owner.tiebreak)
+    ? definitionTiebreak(a.owner.tiebreak, b.owner.tiebreak) || a.owner.id.localeCompare(b.owner.id)
     : adapter.tiebreak(a.first, b.first));
   const linesOf = (unit: Unit<T>, note: string) => unit.entries.map(entry => {
     const i = classify.info(entry);

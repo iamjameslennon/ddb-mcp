@@ -245,7 +245,8 @@ describe("source: homebrew, further paths", () => {
     expect(paged).toContain("Dawn Bolt");
     expect(paged).not.toContain("Dusk Bolt");
     expect(paged).not.toContain("Moon Beam");
-    expect(await reference.searchSpells({ source: "homebrew", offset: 10 })).toBe("No homebrew spells found matching the criteria.");
+    // Three homebrew-mode hits, offset past the end: the shared helper's line, not the no-match line.
+    expect(await reference.searchSpells({ source: "homebrew", offset: 10 })).toContain("**Spell Search** — offset 10 is past the end (");
   });
 
   it("two same-named homebrew entries resolve to the lowest id", async () => {
@@ -304,6 +305,18 @@ describe("source: homebrew for class features and racial traits", () => {
     expect(rt).toContain("[homebrew]");
     expect(rt).toContain("untrusted_dndbeyond_content");
     expect(rt).not.toContain("[2024]");
+    // The homebrew Tiefling's trait is listed; official traits (2024 Elf, Goliath) are not.
+    expect(rt).toContain("Darkvision");
+    expect(rt).toContain("Tiefling");
+    expect(rt).not.toContain("Elven Lineage Spells");
+    expect(rt).not.toContain("Large Form");
+    expect(rt).not.toContain("Languages");
+  });
+
+  it("a class-feature offset past the end prints the past-the-end line", async () => {
+    installOwned();
+    const out = await reference.searchClassFeatures({ source: "homebrew", offset: 50 });
+    expect(out).toMatch(/\*\*Class Feature Search\*\* — offset 50 is past the end \(\d+ found\)/);
   });
 
   it("homebrew mode never fetches the game config (the index is unused)", async () => {

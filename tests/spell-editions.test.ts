@@ -22,6 +22,22 @@ const fsMock = vi.hoisted(() => ({
 }));
 vi.mock("fs", () => fsMock);
 
+const selectionBug = vi.hoisted(() => ({ on: false }));
+vi.mock("../src/tools/edition-search.js", async importOriginal => {
+  const real = await importOriginal<typeof import("../src/tools/edition-search.js")>();
+  return {
+    ...real,
+    selectCatalog: ((...args: Parameters<typeof real.selectCatalog>) => {
+      if (selectionBug.on) throw new Error("selection bug");
+      return real.selectCatalog(...args);
+    }) as typeof real.selectCatalog,
+    lookupCatalog: ((...args: Parameters<typeof real.lookupCatalog>) => {
+      if (selectionBug.on) throw new Error("selection bug");
+      return real.lookupCatalog(...args);
+    }) as typeof real.lookupCatalog,
+  };
+});
+
 import { GAME_DATA, jsonResponse, serviceMock, spell } from "./fixtures/spell-service.js";
 import { o5FixtureFetch } from "./fixtures/open5e-v2.js";
 
@@ -34,6 +50,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  selectionBug.on = false;
   fsMock.existsSync.mockReset().mockReturnValue(true);
   const session = JSON.stringify({
     cookies: [{
@@ -257,5 +274,24 @@ describe("Open5e fallback labels", () => {
     });
     expect((await reference.getSpell("Fireball")).split("\n")[1])
       .toBe("Rules: 2024 · SRD 5.2 (Open5e fallback — not found on D&D Beyond)");
+  });
+});
+
+describe("a selection bug is not a load failure", () => {
+  const open5eCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).includes("open5e"));
+
+  it("getSpell and searchSpells reject with the bug and never ask Open5e", async () => {
+    installBasics();
+    selectionBug.on = true;
+    await expect(reference.getSpell("Sleep")).rejects.toThrow("selection bug");
+    await expect(reference.searchSpells({ name: "sleep" })).rejects.toThrow("selection bug");
+    await expect(reference.searchSpellsSection({ name: "sleep" })).rejects.toThrow("selection bug");
+    expect(open5eCalls()).toHaveLength(0);
+  });
+
+  it("an offset past the end prints the shared past-the-end line", async () => {
+    installBasics();
+    const text = await reference.searchSpells({ name: "sleep", rulesEdition: "2024", offset: 30 });
+    expect(text).toContain("**Spell Search** — offset 30 is past the end (1 found)");
   });
 });

@@ -449,9 +449,19 @@ export async function searchSpells(params: SpellSearchParams): Promise<string> {
 export async function searchSpellsSection(params: SpellSearchParams): Promise<SearchSection> {
   const source = await resolveSourceParam(params.source, SPELL_KIND);
   if (isSourceReply(source)) return plainSection(source.reply);
+  const requested = params.rulesEdition ?? "2024";
+  let store;
   try {
-    const requested = params.rulesEdition ?? "2024";
-    const store = await loadSpellCompendium();
+    store = await loadSpellCompendium();
+  } catch (err) {
+    if (source === "homebrew") return plainSection(homebrewUnreachable("spells"));
+    try {
+      return plainSection(withSourceCaveat(await o5SearchSpells(params, "unavailable"), params.source));
+    } catch {
+      throw err;
+    }
+  }
+  {
     const index = await getSourceIndex();
     const nameQuery = params.name ? normalizeName(params.name) : "";
     const schoolQuery = params.school?.toLowerCase();
@@ -473,8 +483,7 @@ export async function searchSpellsSection(params: SpellSearchParams): Promise<Se
     if (hits.length === 0 && hidden > 0) {
       return hiddenOnlySection(header, "No spells found matching the criteria.", requested, hidden);
     }
-    // An offset past the end is "none found" too, not an empty heading.
-    if (hits.slice(offset, offset + limit).length === 0) {
+    if (hits.length === 0) {
       return plainSection(source && source !== "homebrew"
         ? `No spells found matching the criteria in ${source.book}.`
         : source ? homebrewNoMatch("spells") : "No spells found matching the criteria.");
@@ -502,21 +511,26 @@ export async function searchSpellsSection(params: SpellSearchParams): Promise<Se
       footer: searchFooter(requested, hidden),
       hidden,
     };
-  } catch (err) {
-    if (source === "homebrew") return plainSection(homebrewUnreachable("spells"));
-    try {
-      return plainSection(withSourceCaveat(await o5SearchSpells(params, "unavailable"), params.source));
-    } catch {
-      throw err;
-    }
   }
 }
 
 export async function getSpell(spellName: string, rulesEdition: RulesEdition = "2024", source?: string): Promise<string> {
   const resolved = await resolveSourceParam(source, SPELL_KIND);
   if (isSourceReply(resolved)) return resolved.reply;
+  let store;
   try {
-    const store = await loadSpellCompendium();
+    store = await loadSpellCompendium();
+  } catch (err) {
+    if (resolved === "homebrew") return homebrewUnreachable("spells");
+    try {
+      const o5Result = await o5GetSpell(spellName, rulesEdition, "unavailable");
+      if (o5Result) return withSourceCaveat(o5Result, source);
+    } catch {
+      // fall through
+    }
+    throw err;
+  }
+  {
     const index = await getSourceIndex();
     const found = lookupCatalog(spellList(store), spellName, rulesEdition, SPELL_ADAPTER, index, resolved);
 
@@ -530,15 +544,6 @@ export async function getSpell(spellName: string, rulesEdition: RulesEdition = "
     }
 
     return formatSpell(found.entry, found.rulesLines);
-  } catch (err) {
-    if (resolved === "homebrew") return homebrewUnreachable("spells");
-    try {
-      const o5Result = await o5GetSpell(spellName, rulesEdition, "unavailable");
-      if (o5Result) return withSourceCaveat(o5Result, source);
-    } catch {
-      // fall through
-    }
-    throw err;
   }
 }
 
@@ -728,8 +733,18 @@ export async function searchItemsSection(params: ItemSearchParams): Promise<Sear
 export async function getItem(itemName: string, rulesEdition: RulesEdition = "2024", source?: string): Promise<string> {
   const resolved = await resolveSourceParam(source, ITEM_KIND);
   if (isSourceReply(resolved)) return resolved.reply;
+  let items;
   try {
-    const items = await loadItemCompendium();
+    items = await loadItemCompendium();
+  } catch (err) {
+    if (resolved === "homebrew") return homebrewUnreachable("items");
+    try {
+      const result = await o5GetEquipment(itemName, rulesEdition, "unavailable");
+      if (result) return withSourceCaveat(result, source);
+    } catch { /* fall through to the compendium's error */ }
+    throw err;
+  }
+  {
     const index = await getSourceIndex();
     const found = lookupCatalog(items, itemName, rulesEdition, ITEM_ADAPTER, index, resolved);
 
@@ -743,13 +758,6 @@ export async function getItem(itemName: string, rulesEdition: RulesEdition = "20
     }
 
     return formatItem(found.entry, found.rulesLines);
-  } catch (err) {
-    if (resolved === "homebrew") return homebrewUnreachable("items");
-    try {
-      const result = await o5GetEquipment(itemName, rulesEdition, "unavailable");
-      if (result) return withSourceCaveat(result, source);
-    } catch { /* fall through to the compendium's error */ }
-    throw err;
   }
 }
 
@@ -797,11 +805,9 @@ async function searchCatalogList<T>(
   if (isSourceReply(source)) return plainSection(source.reply);
   const requested = params.rulesEdition ?? "2024";
 
-  let selection;
+  let all: T[];
   try {
-    const all = await spec.load();
-    const index = await getSourceIndex();
-    selection = selectCatalog(all, requested, spec.adapter, index, source, { bookNotes: params.bookNotes });
+    all = await spec.load();
   } catch (err) {
     if (source === "homebrew") return plainSection(homebrewUnreachable(spec.homebrew.plural));
     let text: string;
@@ -814,7 +820,8 @@ async function searchCatalogList<T>(
     return plainSection(withSourceCaveat(text, params.source));
   }
 
-  const { hits, hidden, header, note } = selection;
+  const index = await getSourceIndex();
+  const { hits, hidden, header, note } = selectCatalog(all, requested, spec.adapter, index, source, { bookNotes: params.bookNotes });
   if (hits.length === 0) {
     if (source === "homebrew") return plainSection(homebrewNoMatch(spec.homebrew.plural));
     if (source) return plainSection(`No ${spec.plural} found matching the criteria in ${source.book}.`);
@@ -903,6 +910,9 @@ interface DdbRace {
   sources: Array<{ sourceId: number }>;
 }
 
+/** "matching "x"" for a name search, "matching the criteria" for a search with no name. */
+const matching = (name: string | undefined) => (name ? `matching "${name}"` : "matching the criteria");
+
 const raceName = (r: DdbRace) => r.fullName || r.baseName;
 
 /**
@@ -914,10 +924,11 @@ const RACE_ADAPTER: CatalogAdapter<DdbRace> = {
   markers: r => r,
   twinKey: r => twinNames.none(raceName(r)),
   groupKey: r => twinNames.none(r.baseRaceName || r.baseName || raceName(r)),
+  // entityRaceId repeats across entityRaceTypeId, so the type id ends the order.
   tiebreak: (a, b) => definitionTiebreak(
     { id: a.entityRaceId, isHomebrew: a.isHomebrew, isLegacy: a.isLegacy },
     { id: b.entityRaceId, isHomebrew: b.isHomebrew, isLegacy: b.isLegacy },
-  ),
+  ) || a.entityRaceTypeId - b.entityRaceTypeId,
   compare: (a, b) => raceName(a).localeCompare(raceName(b)),
 };
 
@@ -944,7 +955,7 @@ export async function searchRacesSection(params: RaceSearchParams = {}): Promise
       const desc = clip(race.description, 100);
       return `- **${raceName(race)}** ${label}${race.isSubRace ? " *(Subrace)*" : ""}${desc ? ` — ${desc}` : ""}`;
     },
-    notFound: `No races found matching "${params.name}".`,
+    notFound: `No races found ${matching(params.name)}.`,
     fallback: kind => o5SearchRaces({ name: params.name, rulesEdition: params.rulesEdition }, kind),
   });
 }
@@ -996,7 +1007,7 @@ export async function searchClassesSection(params: ClassSearchParams = {}): Prom
       const desc = clip(cls.description, 120);
       return `- **${cls.name}** ${label} — Hit Die: ${hitDie}${spellcasting}${desc ? `\n  ${desc}` : ""}`;
     },
-    notFound: `No classes found matching "${params.name}".`,
+    notFound: `No classes found ${matching(params.name)}.`,
     fallback: kind => o5SearchClasses({ name: params.name, rulesEdition: params.rulesEdition }, kind),
   });
 }
@@ -1038,7 +1049,7 @@ export async function searchBackgroundsSection(params: BackgroundSearchParams = 
       const desc = clip(bg.description, 120);
       return `- **${bg.name}** ${label}${desc ? ` — ${desc}` : ""}`;
     },
-    notFound: `No backgrounds found matching "${params.name}".`,
+    notFound: `No backgrounds found ${matching(params.name)}.`,
     fallback: kind => o5SearchBackgrounds({ name: params.name, rulesEdition: params.rulesEdition }, kind),
   });
 }

@@ -54,6 +54,13 @@ describe("sections", () => {
     expect(paginateResults("Thing", ["a", "b"], s => `- ${s}`, 30, 0, "NOTE")).toBe("**Thing Search** (2 found)\nNOTE\n- a\n- b");
     expect(paginateResults("Thing", [], s => s)).toBe("");
   });
+
+  it("an offset past the end prints the past-the-end line", () => {
+    const twenty = Array.from({ length: 20 }, (_, i) => `i${i}`);
+    expect(paginateResults("Races", twenty, s => s, 30, 30)).toBe("**Races Search** — offset 30 is past the end (20 found)");
+    expect(paginateResults("Races", twenty, s => s, 30, 20)).toBe("**Races Search** — offset 20 is past the end (20 found)");
+    expect(paginateResults("Races", twenty, s => `- ${s}`, 30, 19)).toContain("- i19");
+  });
 });
 
 describe("selectCatalog, flat mode", () => {
