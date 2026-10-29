@@ -309,7 +309,8 @@ describe("Open5e v2 spells and monsters", () => {
   });
 
   it("a not-found search keeps its plain message", async () => {
-    stubFetch(o5FixtureFetch({ "srd-2024/spells": [], "srd-2014/spells": [] }));
+    // A document is never empty on Open5e (the loader rejects an empty one), so keep one record that does not match.
+    stubFetch(o5FixtureFetch({ "srd-2024/spells": o5Fixture("srd-2024", "spells").slice(0, 1), "srd-2014/spells": o5Fixture("srd-2014", "spells").slice(0, 1) }));
     expect(await o5SearchSpells({ name: "zzz" }, "not-found")).toBe("No spells found matching the criteria (SRD only).");
   });
 });
@@ -759,7 +760,7 @@ describe("Open5e searches capped at 20 lines", () => {
   });
 
   it("a capped item search adds the refine hint; an uncapped one does not", async () => {
-    stubFetch(o5FixtureFetch({ "srd-2024/items": many("srd-2024", "items", "Rope", 21), "srd-2014/items": [] }));
+    stubFetch(o5FixtureFetch({ "srd-2024/items": many("srd-2024", "items", "Rope", 21), "srd-2014/items": o5Fixture("srd-2014", "items").slice(0, 1) }));
     const out = (await o5SearchItems({ name: "rope", rulesEdition: "2024" }, "unavailable")).split("\n");
     expect(out.filter(l => l.startsWith("• "))).toHaveLength(20);
     expect(out.slice(-2)).toEqual(["", REFINE]);

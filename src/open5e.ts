@@ -31,6 +31,7 @@ const open5eCache = new TtlCache<unknown>(60 * 60_000, 100);
 export function clearOpen5eCache(): void {
   open5eCache.clear();
   o5Pending.clear();
+  o5Failures.clear();
 }
 
 // ── v2 document loader ────────────────────────────────────────────────────────
@@ -40,6 +41,10 @@ export function clearOpen5eCache(): void {
 
 const O5_V2 = "https://api.open5e.com/v2";
 const O5_TIMEOUT_MS = 20_000;
+/** One deadline across every page of a document, combined with the per-request timeout. */
+export const O5_DOCUMENT_DEADLINE_MS = 30_000;
+/** How long a failed document load is remembered, so an outage costs one attempt a minute per document. */
+export const O5_FAILURE_TTL_MS = 60_000;
 
 export type O5Endpoint = "spells" | "creatures" | "items" | "magicitems" | "weapons" | "armor" | "species" | "classes" | "backgrounds" | "feats" | "rulesets";
 
@@ -53,6 +58,8 @@ export function docKey(r: { document: { key: string } | string }): string {
 }
 
 const o5Pending = new Map<string, Promise<unknown[]>>();
+/** Remembered failures per document URL; the only place a failure is kept. Dropped by `clearOpen5eCache()`. */
+const o5Failures = new Map<string, { error: Error; until: number }>();
 
 /** `limit=1000` returns every SRD document in one page; this is far above that, and only bounds a misbehaving `next` chain. */
 const O5_MAX_PAGES = 20;
@@ -62,21 +69,38 @@ async function fetchPages(firstUrl: string): Promise<unknown[]> {
   const all: unknown[] = [];
   const seen = new Set<string>();
   let url: string | null = firstUrl;
-  while (url) {
-    if (new URL(url).origin !== O5_ORIGIN) throw new Error(`Open5e paging left ${O5_ORIGIN}: ${new URL(url).origin}`);
-    if (seen.has(url)) throw new Error(`Open5e paging loop: ${new URL(url).pathname}`);
-    if (seen.size >= O5_MAX_PAGES) throw new Error(`Open5e paging passed ${O5_MAX_PAGES} pages: ${new URL(firstUrl).pathname}`);
-    seen.add(url);
-    const resp: Response = await fetch(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(O5_TIMEOUT_MS) });
-    if (!resp.ok) throw new Error(`Open5e ${resp.status}: ${new URL(url).pathname}`);
-    const body = await resp.json() as { next?: string | null; results?: unknown[] };
-    all.push(...(body.results ?? []));
-    url = body.next || null;
+  let expected: number | undefined;
+  const deadline = new AbortController();
+  const timer = setTimeout(
+    () => deadline.abort(new Error(`Open5e document load passed ${O5_DOCUMENT_DEADLINE_MS} ms: ${new URL(firstUrl).pathname}`)),
+    O5_DOCUMENT_DEADLINE_MS,
+  );
+  try {
+    while (url) {
+      if (new URL(url).origin !== O5_ORIGIN) throw new Error(`Open5e paging left ${O5_ORIGIN}: ${new URL(url).origin}`);
+      if (seen.has(url)) throw new Error(`Open5e paging loop: ${new URL(url).pathname}`);
+      if (seen.size >= O5_MAX_PAGES) throw new Error(`Open5e paging passed ${O5_MAX_PAGES} pages: ${new URL(firstUrl).pathname}`);
+      seen.add(url);
+      const signal = AbortSignal.any([AbortSignal.timeout(O5_TIMEOUT_MS), deadline.signal]);
+      const resp: Response = await fetch(url, { headers: { Accept: "application/json" }, signal });
+      // fetch follows redirects; a real response always carries its final url (an empty one only comes from a hand-built Response).
+      if (resp.url && new URL(resp.url).origin !== O5_ORIGIN) throw new Error(`Open5e redirected off ${O5_ORIGIN}: ${new URL(resp.url).origin}`);
+      if (!resp.ok) throw new Error(`Open5e ${resp.status}: ${new URL(url).pathname}`);
+      const body = await resp.json() as { count?: number; next?: string | null; results?: unknown[] };
+      if (expected === undefined && typeof body.count === "number") expected = body.count;
+      all.push(...(body.results ?? []));
+      url = body.next || null;
+    }
+  } finally {
+    clearTimeout(timer);
   }
+  const path = new URL(firstUrl).pathname;
+  if (all.length === 0) throw new Error(`Open5e returned no records: ${path}`);
+  if (expected !== undefined && expected > all.length) throw new Error(`Open5e returned ${all.length} of ${expected} records: ${path}`);
   return all;
 }
 
-/** One whole SRD document of an endpoint, other documents' records dropped. Cached 1 h; concurrent callers share one fetch; failures are never cached. */
+/** One whole SRD document of an endpoint, other documents' records dropped. Cached 1 h; concurrent callers share one fetch; a failure is remembered for 60 s (and rethrown without fetching), never cached as data. */
 export async function loadO5Document<T extends O5Record>(endpoint: O5Endpoint, edition: RulesEdition): Promise<T[]> {
   const doc = O5_DOC[edition];
   const url = `${O5_V2}/${endpoint}/?document__key__in=${doc}&limit=1000`;
@@ -84,12 +108,21 @@ export async function loadO5Document<T extends O5Record>(endpoint: O5Endpoint, e
   if (cached !== undefined) return cached;
   let pending = o5Pending.get(url);
   if (!pending) {
+    const remembered = o5Failures.get(url);
+    if (remembered) {
+      if (Date.now() < remembered.until) throw remembered.error;
+      o5Failures.delete(url);
+    }
     const p: Promise<unknown[]> = fetchPages(url)
       .then(records => {
         const kept = (records as T[]).filter(r => docKey(r) === doc);
         // A clear while this fetch was in flight dropped its entry: don't repopulate.
         if (o5Pending.get(url) === p) open5eCache.set(url, kept);
         return kept;
+      }, (error: unknown) => {
+        // A clear while this fetch was in flight dropped its entry: remember nothing.
+        if (o5Pending.get(url) === p) o5Failures.set(url, { error: error instanceof Error ? error : new Error(String(error)), until: Date.now() + O5_FAILURE_TTL_MS });
+        throw error;
       })
       .finally(() => { if (o5Pending.get(url) === p) o5Pending.delete(url); });
     o5Pending.set(url, p);

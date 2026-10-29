@@ -1,6 +1,7 @@
 // Recorded Open5e v2 documents (scripts/record-open5e-fixtures.mts) and a fetch
 // stub that serves them. Each file holds the named records of one document and
-// endpoint; its `count` is the live document's, not the number kept.
+// endpoint. The stub serves `count` as the number of records kept (the recorded files hold a
+// subset of the live document, and the loader rejects a count above what it collected).
 import { readFileSync } from "node:fs";
 import type { O5Endpoint, O5Record } from "../../src/open5e.js";
 
@@ -37,7 +38,7 @@ export function o5FixtureFetch(overrides: Partial<Record<string, unknown[]>> = {
       return new Response("not found", { status: 404 });
     }
     const results = overrides[`${doc}/${endpoint}`] ?? body.results;
-    const count = overrides[`${doc}/${endpoint}`] ? results.length : body.count;
+    const count = results.length;
     return new Response(JSON.stringify({ count, next: null, previous: null, results }), { status: 200, headers: { "Content-Type": "application/json" } });
   };
 }

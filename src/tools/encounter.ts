@@ -262,6 +262,12 @@ export async function rateEncounter(
   const notFound: string[] = [];
   const ambiguous: string[] = [];
 
+  // Distinct names resolve concurrently; the loop below keeps input order.
+  const lookupNames = [...new Set(monsters.filter(m => m.cr === undefined && m.name).map(m => m.name as string))];
+  const lookups = new Map<string, Awaited<ReturnType<typeof getMonsterStats>>>(
+    (await Promise.all(lookupNames.map(async n => [n, await getMonsterStats(n, { rulesEdition })] as const))),
+  );
+
   for (const m of monsters) {
     const count = m.count ?? 1;
 
@@ -278,7 +284,7 @@ export async function rateEncounter(
       );
       xpEach = CR_XP[crKey] ?? 0;
     } else if (m.name) {
-      const stats = await getMonsterStats(m.name, { rulesEdition });
+      const stats = lookups.get(m.name)!;
       if (stats.status === "not-found") {
         notFound.push(m.name);
         continue;
