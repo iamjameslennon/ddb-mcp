@@ -61,6 +61,13 @@ describe("isConcentrationSpell", () => {
     expect(isConcentrationSpell({ name: "Barkskin" })).toBe(false); // edition not stated → 2024
   });
 
+  it("groups by the spell namer: another kind's pair (Thug → Tough) is no twin", () => {
+    addCharacterSpellsToCompendium({ classSpells: [{ spells: [{ definition: { id: 30, name: "Tough", concentration: true } }] }] });
+    expect(isConcentrationSpell({ name: "Thug" })).toBeNull();
+    addCharacterSpellsToCompendium({ classSpells: [{ spells: [{ definition: { id: 31, name: "Melf's Acid Arrow", concentration: false } }] }] });
+    expect(isConcentrationSpell({ name: "Acid Arrow" })).toBe(false);
+  });
+
   it("returns null for an unknown spell with no boolean", () => {
     expect(isConcentrationSpell({ name: "Nope" })).toBeNull();
   });

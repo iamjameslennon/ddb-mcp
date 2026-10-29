@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { buildSourceIndex, definitionTiebreak, normalizeName, twinName, type EditionMarkers } from "../src/edition.js";
+import { buildSourceIndex, definitionTiebreak, normalizeName, twinNames, type EditionMarkers } from "../src/edition.js";
 import { resolveSource, sourceLabel } from "../src/source-filter.js";
 import {
   selectCatalog, lookupCatalog, paginateResults, renderSection, plainSection,
-  type CatalogAdapter, type CatalogOwner,
+  type CatalogAdapter, type CatalogOwner, type LookupAdapter,
 } from "../src/tools/edition-search.js";
 
 // The real snapshot ids and categories of the books these tests name.
@@ -28,10 +28,11 @@ const entry = (id: number, name: string, sources: number[], opts: { isLegacy?: b
   ({ id, name, ...opts, sources: sources.map(sourceId => ({ sourceId })) });
 
 /** A flat adapter keyed by the entry's own name, with an optional name filter. */
-function flat(query?: string): CatalogAdapter<Entry> & { name: (e: Entry) => string } {
+function flat(query?: string): LookupAdapter<Entry> {
   return {
     markers: e => e,
     twinKey: e => normalizeName(e.name),
+    twinName: twinNames.none,
     tiebreak: definitionTiebreak,
     compare: (a, b) => a.name.localeCompare(b.name),
     nameMatches: query ? e => normalizeName(e.name).includes(query) : undefined,
@@ -122,6 +123,13 @@ describe("selectCatalog, flat mode", () => {
 });
 
 describe("lookupCatalog", () => {
+  it("matches by the adapter's own namer, not another kind's pairs", () => {
+    const tough = entry(5195235, "Tough", [148]);
+    expect(lookupCatalog([tough], "Thug", "2024", flat(), INDEX)).toBeNull();
+    expect(lookupCatalog([tough], "Thug", "2024", { ...flat(), twinName: twinNames.monster }, INDEX)?.rulesLines)
+      .toEqual(["Rules: 2024 · D&D Beyond Basic Rules", "(2014 name: Thug · 2024 name: Tough)"]);
+  });
+
   it("returns the pick with its rules, reason and also-in lines", () => {
     const found = lookupCatalog([GOBLIN_VGTM, GOBLIN_MOTM], "Goblin", "2024", flat(), INDEX);
     expect(found?.entry).toBe(GOBLIN_MOTM);
@@ -240,7 +248,7 @@ describe("dual-edition entries (adapter.dualEdition, decision 4)", () => {
   it("B holds when the adapter's markers return a fresh object each call", () => {
     const efficient = entry(4628, "Efficient Quiver", [1, 2], { isLegacy: true });
     const ehlonna = entry(5367, "Quiver of Ehlonna", [146, 148, 3]);
-    const copying = { ...dual(), markers: (e: Entry): EditionMarkers => ({ ...e }), twinKey: (e: Entry) => twinName(e.name) };
+    const copying = { ...dual(), markers: (e: Entry): EditionMarkers => ({ ...e }), twinKey: (e: Entry) => twinNames.item(e.name), twinName: twinNames.item };
     const sel = selectCatalog([efficient, ehlonna], "2014", copying, DMG_INDEX);
     expect(sel.hits.map(h => [h.entry, h.label])).toEqual([[efficient, "[2014]"]]);
     expect(sel.hidden).toBe(1);

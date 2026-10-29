@@ -4,7 +4,7 @@
  * id and grouped by twin name; choosing between editions is the caller's job.
  */
 
-import { twinName } from "../edition.js";
+import { twinNames } from "../edition.js";
 
 export interface SpellDefinition {
   id: number;
@@ -31,7 +31,7 @@ export interface DdbSpell {
 
 export interface SpellStore {
   byId: Map<number, DdbSpell>;
-  /** `twinName(definition.name)` → definition ids, in insertion order. */
+  /** `twinNames.spell(definition.name)` → definition ids, in insertion order. */
   byTwin: Map<string, number[]>;
 }
 
@@ -59,7 +59,7 @@ export function addSpells(store: SpellStore, spells: Iterable<unknown>): number 
     }
     if (store.byId.has(id)) continue;
     store.byId.set(id, entry as DdbSpell);
-    const key = twinName(name);
+    const key = twinNames.spell(name);
     const ids = store.byTwin.get(key);
     if (ids) ids.push(id); else store.byTwin.set(key, [id]);
   }

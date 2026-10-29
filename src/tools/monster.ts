@@ -15,7 +15,7 @@ import {
 } from "../session-fetch.js";
 import { getGameConfig, getSourceIndex, type GameConfig } from "../game-config.js";
 import {
-  classifyEdition, selectByEdition, lookupByName, groupAndSelect, monsterTiebreak, twinName, twinAliases,
+  classifyEdition, selectByEdition, lookupByName, groupAndSelect, monsterTiebreak, twinNames, twinAliases,
   normalizeName, dedupeById, isEdition, rulesLine, renameLine, sourceNote, editionTag, searchHeader, searchFooter,
   isLockedReason, lockedLineSuffix, lockedSwapSummary, lockedEntriesNote, availableElsewhereHint,
   HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO,
@@ -33,6 +33,9 @@ import { renderSection, plainSection, sourceFraming, type SearchSection } from "
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const MONSTER_SERVICE = "https://monster-service.dndbeyond.com";
+
+/** Monster twin names: the monster rename pairs only (decision 5), so "Evoker" never also queries "School of Evocation". */
+const monsterTwin = twinNames.monster;
 
 const SIZE_MAP: Record<number, string> = {
   2: "Tiny", 3: "Small", 4: "Medium", 5: "Large", 6: "Huge", 7: "Gargantuan",
@@ -254,7 +257,7 @@ async function fetchCandidates(name: string, take: number, sourceIds?: number[])
   // One snapshot for every alias query, as in fetchMonsterPages: lists fetched
   // either side of an account change must not merge.
   const snapshot = captureSession();
-  const [typed, ...others] = twinAliases(name);
+  const [typed, ...others] = twinAliases(name, monsterTwin);
   const [first, ...rest] = await Promise.all([
     fetchMonsterList(typed, take, sourceIds),
     ...others.map(alias => fetchMonsterList(alias, take, sourceIds).catch(() => null)),
@@ -546,7 +549,7 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
   // but a search for one never returns the other), under one snapshot, as in
   // fetchCandidates. Only the typed term's own query fails the search.
   const snapshot = captureSession();
-  const [typed, ...aliases] = searchTerm ? twinAliases(searchTerm) : [""];
+  const [typed, ...aliases] = searchTerm ? twinAliases(searchTerm, monsterTwin) : [""];
   const results = await Promise.all([fetchTerm(typed), ...aliases.map(alias => fetchTerm(alias).catch(() => null))]);
   assertSessionCurrent(snapshot);
   // `total` is the alias totals' sum minus the duplicates met while merging:
@@ -590,7 +593,7 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
     // filters while the other edition's pick passes is counted as hidden, as in
     // the catalog searches. A locked group's swapped pick is never counted.
     const picked = groupAndSelect(fetched, requested, {
-      info, twinKey: m => twinName(m.name), tiebreak: monsterTiebreak(index), passes,
+      info, twinKey: m => monsterTwin(m.name), tiebreak: monsterTiebreak(index), passes,
       available: m => !isLockedIn(access, m.id),
       countFilteredPicks: true,
     });
@@ -754,8 +757,8 @@ export async function getMonster(
     } else if (source) {
       // With a source, require an exact (twin) name: a partial match would
       // quietly turn "Zombie" in mm-2014 into Beholder Zombie. Near names are offered instead.
-      const key = twinName(monsterName);
-      const picked = selectByEdition(candidates.filter(m => twinName(m.name) === key), requested, info, tiebreak);
+      const key = monsterTwin(monsterName);
+      const picked = selectByEdition(candidates.filter(m => monsterTwin(m.name) === key), requested, info, tiebreak);
       if (!picked) {
         // A requested book is never silently swapped for another edition or the SRD.
         // Homebrew names are user-authored — keep them out of this hint.
@@ -789,6 +792,7 @@ export async function getMonster(
         name: m => m.name,
         info,
         tiebreak,
+        twinName: monsterTwin,
         // No name contains the query (typos, word order: "Beholdr", "red dragon
         // adult"), but the service ranks its fuzzy hits best-first: take the top
         // hit, whose whole twin group is then the target.
@@ -852,11 +856,11 @@ async function availableElsewhere(
   name: string, pick: DdbMonster, sourceIds: number[], index: SourceIndex,
 ): Promise<string | null> {
   const { data, access } = await fetchCandidates(name, 20);
-  const key = twinName(pick.name);
+  const key = monsterTwin(pick.name);
   const inBook = (m: DdbMonster) =>
     sourceIds.includes(m.sourceId) || (m.sources ?? []).some(s => sourceIds.includes(s.sourceId));
   const alt = data
-    .filter(m => twinName(m.name) === key && m.isHomebrew === false && index.sources.has(m.sourceId)
+    .filter(m => monsterTwin(m.name) === key && m.isHomebrew === false && index.sources.has(m.sourceId)
       && !isLockedIn(access, m.id) && !inBook(m))
     .sort(monsterTiebreak(index))[0];
   if (!alt) return null;
@@ -872,8 +876,8 @@ async function availableElsewhere(
 function renamedFromQuery(query: string, shownName: string): { name2014: string; name2024: string } | undefined {
   const normalizedQuery = normalizeName(query);
   if (normalizeName(shownName) === normalizedQuery) return undefined;
-  const typed = twinName.spell?.(normalizedQuery) ?? query.replace(/[‘’]/g, "'").replace(/\s+/g, " ").trim();
-  return normalizeName(shownName) === twinName(shownName)
+  const typed = monsterTwin.spell?.(normalizedQuery) ?? query.replace(/[‘’]/g, "'").replace(/\s+/g, " ").trim();
+  return normalizeName(shownName) === monsterTwin(shownName)
     ? { name2014: typed, name2024: shownName }
     : { name2014: shownName, name2024: typed };
 }
@@ -917,8 +921,8 @@ export async function getMonsterStats(name: string, opts: { rulesEdition?: Rules
         return picked ? { status: "found", ...stats(picked.entry), info: info(picked.entry) } : null;
       };
 
-      const key = twinName(name);
-      const exact = official.filter(m => twinName(m.name) === key);
+      const key = monsterTwin(name);
+      const exact = official.filter(m => monsterTwin(m.name) === key);
       if (exact.length) {
         const result = found(exact);
         if (result) return result;
@@ -928,7 +932,7 @@ export async function getMonsterStats(name: string, opts: { rulesEdition?: Rules
       const groups = new Map<string, DdbMonster[]>();
       for (const m of official) {
         if (!normalizeName(m.name).includes(query)) continue;
-        const k = twinName(m.name);
+        const k = monsterTwin(m.name);
         groups.set(k, [...(groups.get(k) ?? []), m]);
       }
       if (groups.size === 1) {

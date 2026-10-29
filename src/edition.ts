@@ -10,7 +10,7 @@
  */
 
 import { stripHtml } from "./utils.js";
-import { EDITION_RENAMES } from "./edition-renames.js";
+import { EDITION_RENAMES, type RenameKind } from "./edition-renames.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -242,25 +242,39 @@ export function createTwinNamer(pairs: ReadonlyArray<readonly [string, string]>)
   return namer;
 }
 
-/** The twin key for spells, items, monsters, feats, backgrounds, species and classes. */
-export const twinName: TwinNamer = createTwinNamer(EDITION_RENAMES);
+/**
+ * The twin key per content kind, each over only its own kind's rename pairs
+ * (decision 5): spells, items (magic items, poisons, gear), monsters,
+ * subclasses (class-feature owners) and backgrounds. `none` has no pairs and
+ * serves feats, species, classes and racial traits. There is deliberately no
+ * kind-free namer: one would bring back cross-kind hits (a feat "Thug"
+ * renamed to the monster "Tough").
+ */
+export const twinNames: Readonly<Record<RenameKind | "none", TwinNamer>> = {
+  spell: createTwinNamer(EDITION_RENAMES.spell),
+  item: createTwinNamer(EDITION_RENAMES.item),
+  monster: createTwinNamer(EDITION_RENAMES.monster),
+  subclass: createTwinNamer(EDITION_RENAMES.subclass),
+  background: createTwinNamer(EDITION_RENAMES.background),
+  none: createTwinNamer([]),
+};
 
 /**
- * Every spelling of a name's twin group, the name as given first, so a caller
- * that searches D&D Beyond by name can query each (Thug and Tough are one
- * creature, but a search for one never returns the other). Just `[name]` when
- * the name has no twin or the namer has no alias support.
+ * Every spelling of a name's twin group under `namer`, the name as given
+ * first, so a caller that searches D&D Beyond by name can query each (Thug and
+ * Tough are one creature, but a search for one never returns the other). Just
+ * `[name]` when the name has no twin or the namer has no alias support.
  */
-export function twinAliases(name: string, namer: TwinNamer = twinName): string[] {
+export function twinAliases(name: string, namer: TwinNamer): string[] {
   return namer.aliases ? namer.aliases(name) : [name];
 }
 
 /**
  * The owner of a class feature: the class, or class/subclass for a subclass
  * feature. Features select by owner, so the Fighter's Extra Attack never twins
- * with the Paladin's.
+ * with the Paladin's. The subclass pairs (The Fiend → Fiend Patron) apply.
  */
-export function classOwnerTwinKey(className: string, subclassName?: string | null, namer = twinName): string {
+export function classOwnerTwinKey(className: string, subclassName?: string | null, namer: TwinNamer = twinNames.subclass): string {
   const cls = namer(className);
   return subclassName && subclassName.trim() ? `${cls}/${namer(subclassName)}` : cls;
 }
@@ -373,8 +387,8 @@ export interface LookupOptions<T> {
   tiebreak: (a: T, b: T) => number;
   /** The tool's partial-match order. Default: first entry, in array order, whose normalized name contains the query. */
   partialMatch?: (all: readonly T[], normalizedQuery: string) => T | undefined;
-  /** Defaults to twinName (the committed rename table). Tests inject their own. */
-  twinName?: TwinNamer;
+  /** The content kind's namer (`twinNames[kind]`); tests inject their own. */
+  twinName: TwinNamer;
   /** Whether the account can see an entry; see selectByEdition. Omit: every entry is available. */
   available?: (c: T) => boolean;
 }
@@ -395,7 +409,7 @@ export function lookupByName<T>(
   requested: RulesEdition,
   opts: LookupOptions<T>,
 ): LookupResult<T> | null {
-  const namer: TwinNamer = opts.twinName ?? twinName;
+  const namer: TwinNamer = opts.twinName;
   const normalizedQuery = normalizeName(query);
   if (!normalizedQuery) return null; // "" is a substring of every name
   const queryKey = namer(query);

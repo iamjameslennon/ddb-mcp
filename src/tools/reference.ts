@@ -19,7 +19,7 @@ import {
 import { TtlCache } from "../cache.js";
 import { stripHtml, wrapIfHomebrew } from "../utils.js";
 import {
-  twinName, classOwnerTwinKey, classifyEdition, selectByEdition, definitionTiebreak, isEdition,
+  twinNames, classOwnerTwinKey, classifyEdition, selectByEdition, definitionTiebreak, isEdition,
   normalizeName, searchFooter, dedupeByKey,
   type RulesEdition,
 } from "../edition.js";
@@ -27,7 +27,7 @@ import { peekSourceIndex, getSourceIndex } from "../game-config.js";
 import { resolveSource, unknownSourceError, withSourceCaveat, GENERIC_SOURCE_HINT, type ResolvedSource } from "../source-filter.js";
 import {
   paginateResults, renderSection, plainSection, selectCatalog, lookupCatalog,
-  type CatalogAdapter, type CatalogHit, type SearchSection,
+  type CatalogAdapter, type CatalogHit, type LookupAdapter, type SearchSection,
 } from "./edition-search.js";
 import { createSpellStore, addSpells, spellList, type DdbSpell, type SpellStore } from "./spell-store.js";
 import {
@@ -325,14 +325,14 @@ export function isConcentrationSpell(def: Record<string, unknown>): boolean | nu
   }
 
   if (typeof def.name === "string" && def.name !== "") {
-    const key = twinName(def.name);
+    const key = twinNames.spell(def.name);
     const group = new Map<number, DdbSpell>();
     for (const id of spellStore?.byTwin.get(key) ?? []) {
       const spell = spellStore?.byId.get(id);
       if (spell) group.set(id, spell);
     }
     for (const [id, spell] of characterSpellBuffer) {
-      if (!group.has(id) && twinName(spell.definition?.name ?? "") === key) group.set(id, spell);
+      if (!group.has(id) && twinNames.spell(spell.definition?.name ?? "") === key) group.set(id, spell);
     }
     if (group.size > 0) {
       const index = peekSourceIndex();
@@ -403,9 +403,10 @@ function formatSpell(spell: DdbSpell, rulesLines: string[]): string {
 }
 
 /** The spell catalog: classified by the definition, twinned by name, listed by level then name. */
-const SPELL_ADAPTER: CatalogAdapter<DdbSpell> & { name: (s: DdbSpell) => string } = {
+const SPELL_ADAPTER: LookupAdapter<DdbSpell> = {
   markers: s => s.definition,
-  twinKey: s => twinName(s.definition.name),
+  twinKey: s => twinNames.spell(s.definition.name),
+  twinName: twinNames.spell,
   tiebreak: (a, b) => definitionTiebreak(a.definition, b.definition),
   compare: (a, b) => {
     const da = a.definition, db = b.definition;
@@ -652,10 +653,11 @@ function formatItem(item: DdbItem, rulesLines: string[]): string {
  * Dual-edition (decision 4): a definition printed in both editions (Longsword,
  * Studded Leather) is the requested edition's version.
  */
-const ITEM_ADAPTER: CatalogAdapter<DdbItem> & { name: (i: DdbItem) => string } = {
+const ITEM_ADAPTER: LookupAdapter<DdbItem> = {
   dualEdition: true,
   markers: i => i,
-  twinKey: i => twinName(i.name),
+  twinKey: i => twinNames.item(i.name),
+  twinName: twinNames.item,
   tiebreak: definitionTiebreak,
   compare: (a, b) => a.name.localeCompare(b.name),
   name: i => i.name,
@@ -888,8 +890,8 @@ const raceName = (r: DdbRace) => r.fullName || r.baseName;
  */
 const RACE_ADAPTER: CatalogAdapter<DdbRace> = {
   markers: r => r,
-  twinKey: r => twinName(raceName(r)),
-  groupKey: r => twinName(r.baseRaceName || r.baseName || raceName(r)),
+  twinKey: r => twinNames.none(raceName(r)),
+  groupKey: r => twinNames.none(r.baseRaceName || r.baseName || raceName(r)),
   tiebreak: (a, b) => definitionTiebreak(
     { id: a.entityRaceId, isHomebrew: a.isHomebrew, isLegacy: a.isLegacy },
     { id: b.entityRaceId, isHomebrew: b.isHomebrew, isLegacy: b.isLegacy },
@@ -940,7 +942,7 @@ interface DdbClass {
 
 const CLASS_ADAPTER: CatalogAdapter<DdbClass> = {
   markers: c => c,
-  twinKey: c => twinName(c.name),
+  twinKey: c => twinNames.none(c.name),
   tiebreak: definitionTiebreak,
   compare: (a, b) => a.name.localeCompare(b.name),
 };
@@ -985,7 +987,7 @@ interface DdbBackground {
 
 const BACKGROUND_ADAPTER: CatalogAdapter<DdbBackground> = {
   markers: b => b,
-  twinKey: b => twinName(b.name),
+  twinKey: b => twinNames.background(b.name),
   tiebreak: definitionTiebreak,
   compare: (a, b) => a.name.localeCompare(b.name),
 };
@@ -1028,7 +1030,7 @@ interface DdbFeat {
 
 const FEAT_ADAPTER: CatalogAdapter<DdbFeat> = {
   markers: f => f,
-  twinKey: f => twinName(f.name),
+  twinKey: f => twinNames.none(f.name),
   tiebreak: definitionTiebreak,
   compare: (a, b) => a.name.localeCompare(b.name),
 };
@@ -1237,7 +1239,7 @@ async function searchOwnedEntries<T>(
 }
 
 const classFeatureOwnerKey = (e: ClassFeatureEntry) =>
-  classOwnerTwinKey(e.className, e.kind === "subclass" ? e.subclassName : null);
+  classOwnerTwinKey(e.className, e.kind === "subclass" ? e.subclassName : null, twinNames.subclass);
 
 /**
  * Class features, picked per owner: the class (base and optional features) or
@@ -1325,8 +1327,8 @@ async function loadRacialTraits(): Promise<CachedBuild<RacialTraitEntry>> {
  */
 const RACIAL_TRAIT_ADAPTER: CatalogAdapter<RacialTraitEntry> = {
   markers: e => ({ sources: e.sources, isLegacy: e.isLegacy, isHomebrew: e.isHomebrew }),
-  twinKey: e => twinName(e.speciesName),
-  groupKey: e => twinName(e.baseRaceName || e.speciesName),
+  twinKey: e => twinNames.none(e.speciesName),
+  groupKey: e => twinNames.none(e.baseRaceName || e.speciesName),
   owner: e => ({
     id: e.raceKey,
     markers: { sources: e.ownerSources, isLegacy: e.isLegacy, isHomebrew: e.isHomebrew },

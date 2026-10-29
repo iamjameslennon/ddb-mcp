@@ -24,6 +24,17 @@ describe("spell store", () => {
     expect(store.byTwin.get("melf's acid arrow")).toEqual([10, 11]);
   });
 
+  // Review Focus 2: the store keys by the spell namer, so a monster pair (Thug → Tough) or a
+  // subclass pair (School of Evocation → Evoker) never groups spells.
+  it("the spell store keys by the spell namer", () => {
+    const store = createSpellStore();
+    addSpells(store, [spell("Thug", 1, { id: 20 }), spell("Tough", 1, { id: 21 }), spell("School of Evocation", 1, { id: 22 })]);
+    expect(store.byTwin.get("thug")).toEqual([20]);
+    expect(store.byTwin.get("tough")).toEqual([21]);
+    expect(store.byTwin.get("school of evocation")).toEqual([22]);
+    expect(store.byTwin.has("evoker")).toBe(false);
+  });
+
   it("drops and counts entries with no definition, id or name", () => {
     const store = createSpellStore();
     const dropped = addSpells(store, [null, {}, { definition: null }, { definition: { name: "X" } },

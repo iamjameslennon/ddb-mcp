@@ -7,13 +7,14 @@
 //
 // Candidates are evidence, not answers. Keep a pair only after reading both
 // descriptions: same thing, same level/rarity/CR, text clearly a revision.
-// Pairs already in EDITION_RENAMES no longer show up as orphans.
+// Pairs already in EDITION_RENAMES no longer show up as orphans; each kind is
+// twinned with its own kind's pairs only (twinNames[kind]), as the tools do.
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { beginAuthenticatedSession } from "../src/session-fetch.js";
 import {
-  buildSourceIndex, classifyEdition, normalizeName, twinName, KNOWN_CATEGORY_IDS,
-  type CategoryRecord, type EditionMarkers, type SourceIndex, type SourceRecord,
+  buildSourceIndex, classifyEdition, normalizeName, twinNames, KNOWN_CATEGORY_IDS,
+  type CategoryRecord, type EditionMarkers, type SourceIndex, type SourceRecord, type TwinNamer,
 } from "../src/edition.js";
 import { stripHtml } from "../src/utils.js";
 
@@ -166,10 +167,10 @@ function similarity(a: Set<string>, b: Set<string>): number {
   return union ? both / union : 0;
 }
 
-function report(kind: string, loaded: Entry[]): void {
+function report(kind: string, twin: TwinNamer, loaded: Entry[]): void {
   const seen = new Set<number>();
   const all = loaded.filter(e => !seen.has(e.id) && seen.add(e.id));
-  const rows = all.map(e => ({ e, info: classifyEdition(e, index), key: twinName(e.name), w: words(e.text) }));
+  const rows = all.map(e => ({ e, info: classifyEdition(e, index), key: twin(e.name), w: words(e.text) }));
   const keysOf = (ruleset: string) => new Set(rows.filter(x => x.info.ruleset === ruleset).map(x => x.key));
   const keys2024 = keysOf("2024");
   const keys2014 = keysOf("2014");
@@ -202,20 +203,21 @@ function report(kind: string, loaded: Entry[]): void {
   console.log(`\n--- ${kind}: every 2024 name with no 2014 twin ---\n${orphans2024.map(o => o.e.name).sort().join(", ")}`);
 }
 
-const loaders: Array<[string, () => Promise<Entry[]>]> = [
-  ["spell", loadSpells],
-  ["item", () => loadSimple("item", "items?sharingSetting=2", { bucket: r => `rarity ${String(r.rarity)}` })],
-  ["species", () => loadSimple("species", "races", { id: "entityRaceId", name: "fullName" })],
-  ["class", () => loadSimple("class", "classes")],
-  ["background", () => loadSimple("background", "backgrounds")],
-  ["feat", () => loadSimple("feat", "feats")],
-  ["monster", loadMonsters],
+// Each loader's twin namer: the rename kind its tool uses (feats, species and classes have no pairs).
+const loaders: Array<[string, TwinNamer, () => Promise<Entry[]>]> = [
+  ["spell", twinNames.spell, loadSpells],
+  ["item", twinNames.item, () => loadSimple("item", "items?sharingSetting=2", { bucket: r => `rarity ${String(r.rarity)}` })],
+  ["species", twinNames.none, () => loadSimple("species", "races", { id: "entityRaceId", name: "fullName" })],
+  ["class", twinNames.none, () => loadSimple("class", "classes")],
+  ["background", twinNames.background, () => loadSimple("background", "backgrounds")],
+  ["feat", twinNames.none, () => loadSimple("feat", "feats")],
+  ["monster", twinNames.monster, loadMonsters],
 ];
 // No process.exit here: on a pipe, stdout writes are async and exiting early drops the tail.
 if (!snapshotOnly) {
-  for (const [kind, load] of loaders) {
+  for (const [kind, twin, load] of loaders) {
     try {
-      report(kind, await load());
+      report(kind, twin, await load());
     } catch (e) {
       console.log(`\n=== ${kind}: FAILED — ${(e as Error).message} ===`);
     }

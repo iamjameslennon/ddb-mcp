@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildSourceIndex, categoryRuleset, classifyEdition, KNOWN_CATEGORY_IDS,
-  normalizeName, createTwinNamer, twinName, twinAliases, classOwnerTwinKey, editionSourceId, entrySourceIds, bookChoiceNote, alsoInLine,
+  normalizeName, createTwinNamer, twinNames, twinAliases, classOwnerTwinKey, editionSourceId, entrySourceIds, bookChoiceNote, alsoInLine,
   dedupeById, dedupeByKey, definitionTiebreak, monsterTiebreak,
   selectByEdition, lookupByName, groupAndSelect,
   rulesLine, reasonLine, renameLine, RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, PARTY_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, editionTag, searchHeader, open5eSearchHeader, searchFooter, ambiguityMessage,
@@ -10,7 +10,7 @@ import {
   type CategoryRecord, type CharacterEditionEntry, type CharacterEntryKind,
   type EditionInfo, type EditionMarkers, type Ruleset, type SourceRecord,
 } from "../src/edition.js";
-import { EDITION_RENAMES } from "../src/edition-renames.js";
+import { ALL_EDITION_RENAMES, EDITION_RENAMES, type RenameKind } from "../src/edition-renames.js";
 import { SNAPSHOT_CATEGORIES, SNAPSHOT_DATE, SNAPSHOT_SOURCES } from "../src/source-snapshot.js";
 
 // ── Fixture source index ──────────────────────────────────────────────────────
@@ -248,34 +248,99 @@ describe("twinAliases", () => {
   });
 
   it("works with the real table", () => {
-    expect(twinAliases("Acid Arrow")).toContain("Melf's Acid Arrow");
-    expect(twinAliases("Thug")).toEqual(["Thug", "Tough"]);
+    expect(twinAliases("Acid Arrow", twinNames.spell)).toContain("Melf's Acid Arrow");
+    expect(twinAliases("Thug", twinNames.monster)).toEqual(["Thug", "Tough"]);
+  });
+});
+
+// Decision 5 (carry-over (a)): each tool uses only its own kind's pairs.
+describe("kind-scoped twin names", () => {
+  const KINDS = Object.keys(EDITION_RENAMES) as RenameKind[];
+
+  it("a monster lookup for Evoker queries only Evoker", () => {
+    expect(twinAliases("Evoker", twinNames.monster)).toEqual(["Evoker"]);
+    expect(twinAliases("Evoker", twinNames.subclass)).toEqual(["Evoker", "School of Evocation"]);
+  });
+
+  it("the feat namer does not map Thug to Tough", () => {
+    expect(twinNames.none("Thug")).toBe("thug");
+    expect(twinNames.monster("Thug")).toBe("tough");
+  });
+
+  it("the background namer does not twin Acolyte with Priest Acolyte", () => {
+    expect(twinNames.background("Acolyte")).toBe("acolyte");
+    expect(twinNames.background("Acolyte")).not.toBe(twinNames.background("Priest Acolyte"));
+    expect(twinNames.background("Criminal / Spy")).toBe("criminal");
+  });
+
+  it("the item namer does not twin with the Mule monster", () => {
+    expect(twinNames.monster("Donkey (or Mule)")).toBe("donkey (or mule)");
+    expect(twinNames.item("Donkey (or Mule)")).toBe("mule");
+  });
+
+  it("the spell namer maps only spell pairs", () => {
+    expect(twinNames.spell("Acid Arrow")).toBe("melf's acid arrow");
+    expect(twinNames.spell("Efficient Quiver")).toBe("efficient quiver");
+    expect(twinNames.item("Efficient Quiver")).toBe("quiver of ehlonna");
+  });
+
+  it("none has no pairs", () => {
+    for (const [a, b] of ALL_EDITION_RENAMES) {
+      expect(twinNames.none(a)).toBe(normalizeName(a));
+      expect(twinAliases(b, twinNames.none)).toEqual([b]);
+    }
+  });
+
+  it.each(KINDS)("the %s namer maps its own pairs and no other kind's", kind => {
+    for (const [a, b] of EDITION_RENAMES[kind]) expect(twinNames[kind](a)).toBe(normalizeName(b));
+    for (const other of KINDS.filter(k => k !== kind)) {
+      for (const [a] of EDITION_RENAMES[other]) expect(twinNames[kind](a)).toBe(normalizeName(a));
+    }
+  });
+
+  it("class-feature owners use the subclass namer by default", () => {
+    expect(classOwnerTwinKey("Wizard", "School of Evocation")).toBe("wizard/evoker");
+    expect(classOwnerTwinKey("Fighter", "Thug")).toBe("fighter/thug");
   });
 });
 
 describe("EDITION_RENAMES table", () => {
-  const pairs = EDITION_RENAMES.map(([a, b]) => [normalizeName(a), normalizeName(b)] as const);
+  const check = (label: string, list: ReadonlyArray<readonly [string, string]>) => describe(label, () => {
+    const pairs = list.map(([a, b]) => [normalizeName(a), normalizeName(b)] as const);
 
-  it("maps each 2014 name once", () => {
-    expect(new Set(pairs.map(([a]) => a)).size).toBe(pairs.length);
+    it("is not empty", () => {
+      expect(pairs.length).toBeGreaterThan(0);
+    });
+
+    it("maps each 2014 name once", () => {
+      expect(new Set(pairs.map(([a]) => a)).size).toBe(pairs.length);
+    });
+
+    it("never maps a name to itself", () => {
+      for (const [a, b] of pairs) expect(a).not.toBe(b);
+    });
+
+    it("no two 2014 names map to one 2024 name", () => {
+      expect(new Set(pairs.map(([, b]) => b)).size).toBe(pairs.length);
+    });
+
+    it("has no chains: no 2024 name is also a 2014 name", () => {
+      const olds = new Set(pairs.map(([a]) => a));
+      for (const [, b] of pairs) expect(olds.has(b)).toBe(false);
+    });
   });
 
-  it("never maps a name to itself", () => {
-    for (const [a, b] of pairs) expect(a).not.toBe(b);
+  for (const kind of Object.keys(EDITION_RENAMES) as RenameKind[]) check(kind, EDITION_RENAMES[kind]);
+  check("the flat list", ALL_EDITION_RENAMES);
+
+  it("the flat list is every kind's pairs", () => {
+    expect(ALL_EDITION_RENAMES).toEqual(Object.values(EDITION_RENAMES).flat());
   });
 
-  it("no two 2014 names map to one 2024 name", () => {
-    expect(new Set(pairs.map(([, b]) => b)).size).toBe(pairs.length);
-  });
-
-  it("is wired into twinName", () => {
-    expect(twinName("Acid Arrow")).toBe("melf's acid arrow");
-    expect(twinName("Thug")).toBe("tough");
-  });
-
-  it("has no chains: no 2024 name is also a 2014 name", () => {
-    const olds = new Set(pairs.map(([a]) => a));
-    for (const [, b] of pairs) expect(olds.has(b)).toBe(false);
+  it("is wired into twinNames", () => {
+    expect(twinNames.spell("Acid Arrow")).toBe("melf's acid arrow");
+    expect(twinNames.monster("Thug")).toBe("tough");
+    expect(twinNames.subclass("The Fiend")).toBe("fiend patron");
   });
 });
 
@@ -936,13 +1001,13 @@ describe("selectByEdition with an availability predicate", () => {
 
   it("lookupByName passes the predicate through", () => {
     expect(lookupByName([A24, A14], "Twig Blight", "2024", {
-      name: c => c.name, info: infoOf, tiebreak: definitionTiebreak, available: c => c.id !== 1,
+      name: c => c.name, info: infoOf, tiebreak: definitionTiebreak, twinName: twinNames.monster, available: c => c.id !== 1,
     })).toEqual({ entry: A14, reason: "locked-2024" });
   });
 });
 
 describe("groupAndSelect with an availability predicate", () => {
-  const twinKey = (c: E) => twinName(c.name);
+  const twinKey = (c: E) => twinNames.monster(c.name);
   const run = (all: E[], requested: "2024" | "2014", locked: number[]) =>
     groupAndSelect(all, requested, { info: infoOf, twinKey, tiebreak: definitionTiebreak, available: c => !locked.includes(c.id) });
 

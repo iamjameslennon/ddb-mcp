@@ -6,14 +6,14 @@ vi.mock("../src/session-fetch.js", async (orig) => ({
   ...(await orig<typeof import("../src/session-fetch.js")>()),
   hasValidSession: sessionMocks.hasValidSession,
 }));
-import { open5eSearchHeader, twinName } from "../src/edition.js";
+import { open5eSearchHeader, twinNames } from "../src/edition.js";
 import { o5Fixture, o5FixtureFetch, o5Record } from "./fixtures/open5e-v2.js";
 import {
   clearOpen5eCache,
   o5GetSpell, o5GetMonster, o5GetEquipment,
   o5SearchSpells, o5SearchMonsters, o5SearchItems,
   o5SearchRaces, o5SearchClasses, o5SearchBackgrounds, o5SearchFeats,
-  o5SearchRules, o5GetRule, o5GetMonsterStats, crText, castingTime, humanize,
+  o5SearchRules, o5GetRule, o5GetMonsterStats, crText, castingTime, humanize, o5TwinNameFor,
 } from "../src/open5e.js";
 import { getMonsterStats } from "../src/tools/monster.js";
 import { rateEncounter } from "../src/tools/encounter.js";
@@ -382,8 +382,8 @@ describe("Open5e v2 equipment and options, fix round 1", () => {
   });
 
   it("the armour pairs are Open5e-only: the shared namer leaves Hide alone", async () => {
-    expect(twinName("Hide")).toBe("hide");
-    expect(twinName("Plate Armor")).toBe("plate armor");
+    expect(twinNames.item("Hide")).toBe("hide");
+    expect(twinNames.item("Plate Armor")).toBe("plate armor");
     expect(lines(await o5GetEquipment("Hide", "2024", "unavailable"))[0]).toBe("Hide Armor (Medium Armor)");
   });
 
@@ -667,8 +667,49 @@ describe("Open5e twin keys fold hyphens", () => {
     });
   });
 
-  it("the D&D Beyond twinName does not fold hyphens", () => {
-    expect(twinName("Adamantine Armor (Chain-Mail)")).not.toBe(twinName("Adamantine Armor (Chain Mail)"));
+  it("the D&D Beyond twin namers do not fold hyphens", () => {
+    expect(twinNames.item("Adamantine Armor (Chain-Mail)")).not.toBe(twinNames.item("Adamantine Armor (Chain Mail)"));
+  });
+});
+
+// Decision 5 (carry-over (a)): each Open5e endpoint uses only its own kind's pairs.
+describe("Open5e twin names by endpoint kind", () => {
+  it("creatures use the monster pairs, feats and species none", () => {
+    expect(o5TwinNameFor("creatures")("Thug")).toBe("tough");
+    for (const endpoint of ["feats", "species", "classes", "rulesets"] as const) {
+      expect(o5TwinNameFor(endpoint)("Thug")).toBe("thug");
+      expect(o5TwinNameFor(endpoint)("Leather")).toBe("leather");
+    }
+    for (const endpoint of ["feats", "species", "rulesets", "creatures"] as const) {
+      expect(o5TwinNameFor(endpoint)("School of Evocation")).toBe("school of evocation");
+    }
+  });
+
+  it("classes, which hold Open5e's subclasses, use the subclass pairs", () => {
+    expect(o5TwinNameFor("classes")("School of Evocation")).toBe("evoker");
+    expect(o5TwinNameFor("classes")("Wizard")).toBe("wizard");
+  });
+
+  it("items, magic items, weapons and armour use the item pairs plus the armour pairs", () => {
+    for (const endpoint of ["items", "magicitems", "weapons", "armor"] as const) {
+      expect(o5TwinNameFor(endpoint)("Efficient Quiver")).toBe("quiver of ehlonna");
+      expect(o5TwinNameFor(endpoint)("Leather")).toBe("leather armor");
+      expect(o5TwinNameFor(endpoint)("Thug")).toBe("thug");
+    }
+    expect(o5TwinNameFor("creatures")("Donkey (or Mule)")).toBe("donkey (or mule)");
+  });
+
+  it("spells use the spell pairs only, backgrounds the background pairs only", () => {
+    expect(o5TwinNameFor("spells")("Acid Arrow")).toBe("melfs acid arrow");
+    expect(o5TwinNameFor("spells")("Leather")).toBe("leather");
+    expect(o5TwinNameFor("backgrounds")("Criminal / Spy")).toBe("criminal");
+    expect(o5TwinNameFor("backgrounds")("Acolyte")).toBe("acolyte");
+    expect(o5TwinNameFor("creatures")("Acolyte")).toBe("priest acolyte");
+  });
+
+  it("keeps the hyphen and apostrophe fold on every kind", () => {
+    expect(o5TwinNameFor("creatures")("Will-o'-Wisp")).toBe(o5TwinNameFor("creatures")("will o wisp"));
+    expect(o5TwinNameFor("spells")("Melf’s Acid Arrow")).toBe(o5TwinNameFor("spells")("Acid Arrow"));
   });
 });
 

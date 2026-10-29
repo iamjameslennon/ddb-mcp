@@ -30,7 +30,7 @@
 import {
   classifyEdition, classifyForEdition, editionSourceId, editionSourceIdFor, editionTag, isDualEdition, isEdition, groupAndSelect, lookupByName, definitionTiebreak,
   rulesLine, renameLine, sourceNote, searchHeader, bookChoiceNote, alsoInLine,
-  type EditionInfo, type EditionMarkers, type RulesEdition, type SourceIndex, type TiebreakFields,
+  type EditionInfo, type EditionMarkers, type RulesEdition, type SourceIndex, type TiebreakFields, type TwinNamer,
 } from "../edition.js";
 import { inSources, sourceLabel, type ResolvedSource } from "../source-filter.js";
 
@@ -99,6 +99,16 @@ export interface CatalogAdapter<T> {
   owner?: (t: T) => CatalogOwner;
   /** Classify with the dual-edition rule (classifyForEdition) rather than classifyEdition. */
   dualEdition?: boolean;
+}
+
+/**
+ * An adapter for single lookups: the entry's name and the content kind's twin
+ * namer (`twinNames[kind]`), which must be the one `twinKey` applies, so a get
+ * reaches only its own kind's renames.
+ */
+export interface LookupAdapter<T> extends CatalogAdapter<T> {
+  name: (t: T) => string;
+  twinName: TwinNamer;
 }
 
 export interface CatalogHit<T> { entry: T; info: EditionInfo; label: string }
@@ -440,14 +450,14 @@ export function lookupCatalog<T>(
   all: readonly T[],
   query: string,
   requested: RulesEdition,
-  adapter: CatalogAdapter<T> & { name: (t: T) => string },
+  adapter: LookupAdapter<T>,
   index: SourceIndex,
   source?: ResolvedSource,
 ): { entry: T; info: EditionInfo; rulesLines: string[] } | null {
   const classify = classifier(all, adapter, index, requested, source);
   const info = classify.info;
   const pool = source ? all.filter(t => inSources(adapter.markers(t), source.ids)) : all;
-  const found = lookupByName(pool, query, requested, { name: adapter.name, info, tiebreak: adapter.tiebreak });
+  const found = lookupByName(pool, query, requested, { name: adapter.name, info, tiebreak: adapter.tiebreak, twinName: adapter.twinName });
   if (!found) return null;
 
   const shown = info(found.entry);

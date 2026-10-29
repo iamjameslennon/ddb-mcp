@@ -932,6 +932,12 @@ describe("getMonsterStats result union", () => {
     expect(listUrls.some(u => u.includes("search=Tough"))).toBe(true);
   });
 
+  it("a monster lookup for Evoker queries only Evoker (the subclass pair is not a monster pair)", async () => {
+    await getMonsterStats("Evoker");
+    expect(listUrls.some(u => u.includes("search=Evoker"))).toBe(true);
+    expect(listUrls.some(u => /search=School/i.test(u))).toBe(false);
+  });
+
   it("a failed alias query doesn't fail the lookup", async () => {
     extraMonsters = [TOUGH];
     failSearchTerms.add("thug");
