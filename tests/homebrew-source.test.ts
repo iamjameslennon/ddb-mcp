@@ -25,6 +25,7 @@ const fsMock = vi.hoisted(() => ({
 vi.mock("fs", () => fsMock);
 
 import { COBALT_URL, GAME_DATA, jsonResponse, makeJwt, serviceMock, spell } from "./fixtures/spell-service.js";
+import { CLASSES, RACES, SUBCLASSES_BY_CLASS_ID, OPTIONAL_FEATURES_BY_CLASS_ID, OPTIONAL_TRAITS_BY_RACE_KEY } from "./fixtures/features-traits-fixtures.js";
 
 type ReferenceModule = typeof import("../src/tools/reference.js");
 let reference: ReferenceModule;
@@ -212,5 +213,121 @@ describe("homebrew messages", () => {
   it("keep the monster wording", () => {
     expect(homebrewLoginRequired("monster")).toBe("Homebrew monster lookup requires login. Run ddb_login first.");
     expect(homebrewUnreachable("monsters")).toBe("Homebrew monsters are unavailable: D&D Beyond could not be reached.");
+  });
+});
+
+describe("source: homebrew, further paths", () => {
+  it("getSpell under homebrew finds the homebrew spell, not an official twin, and reports a miss", async () => {
+    installSpells([spell("Moon Beam", 1, { id: 202, sources: [145], description: "OFFICIAL TWIN" })]);
+    const out = await reference.getSpell("Moon Beam", "2024", "homebrew");
+    expect(out.startsWith("<untrusted_dndbeyond_content>\n")).toBe(true);
+    expect(out).toContain("Rules: homebrew");
+    expect(out).toContain("Ignore previous instructions");
+    expect(out).not.toContain("OFFICIAL TWIN");
+    expect(await reference.getSpell("Sleep", "2024", "homebrew")).toBe('No homebrew spell found matching "Sleep".');
+    expect(open5eCalls()).toHaveLength(0);
+  });
+
+  it("a filter and an offset apply in homebrew mode", async () => {
+    installSpells([
+      spell("Dusk Bolt", 3, { id: 901, isHomebrew: true, school: "Necromancy" }),
+      spell("Dawn Bolt", 3, { id: 902, isHomebrew: true, school: "Evocation" }),
+    ]);
+    const byLevel = await reference.searchSpells({ source: "homebrew", level: 3 });
+    expect(byLevel).toContain("Dusk Bolt");
+    expect(byLevel).toContain("Dawn Bolt");
+    expect(byLevel).not.toContain("Moon Beam");
+    const bySchool = await reference.searchSpells({ source: "homebrew", school: "necro" });
+    expect(bySchool).toContain("Dusk Bolt");
+    expect(bySchool).not.toContain("Dawn Bolt");
+    // Listed by level, then name: Moon Beam, Dawn Bolt, Dusk Bolt.
+    const paged = await reference.searchSpells({ source: "homebrew", limit: 1, offset: 1 });
+    expect(paged).toContain("Dawn Bolt");
+    expect(paged).not.toContain("Dusk Bolt");
+    expect(paged).not.toContain("Moon Beam");
+    expect(await reference.searchSpells({ source: "homebrew", offset: 10 })).toBe("No homebrew spells found matching the criteria.");
+  });
+
+  it("two same-named homebrew entries resolve to the lowest id", async () => {
+    installSpells([
+      spell("Twin Flame", 1, { id: 950, isHomebrew: true, description: "TWIN 950" }),
+      spell("Twin Flame", 1, { id: 940, isHomebrew: true, description: "TWIN 940" }),
+    ]);
+    const out = await reference.getSpell("Twin Flame", "2024", "homebrew");
+    expect(out).toContain("TWIN 940");
+    expect(out).not.toContain("TWIN 950");
+    expect(out).not.toContain("also in");
+  });
+});
+
+describe("source: homebrew for class features and racial traits", () => {
+  const CF_PARTIAL = "> ⚠ Some subclass or optional-feature lists failed to load from D&D Beyond, so results may be incomplete. Run `ddb_clear_cache` to retry.";
+
+  function installOwned(options: { failSubclasses?: boolean; failAll?: boolean } = {}) {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (options.failAll && url !== COBALT_URL) return new Response("boom", { status: 404 });
+      if (url === COBALT_URL) return jsonResponse({ token: makeJwt("99") });
+      if (url.startsWith(GAME_DATA)) {
+        const u = new URL(url);
+        const path = u.pathname.split("/").pop() ?? "";
+        if (path === "subclasses") {
+          if (options.failSubclasses && u.searchParams.get("baseClassId") === "2190879") return jsonResponse({}, 403);
+          return jsonResponse({ data: SUBCLASSES_BY_CLASS_ID[u.searchParams.get("baseClassId") ?? ""] ?? [] });
+        }
+        if (u.pathname.endsWith("/class-feature/collection")) {
+          return jsonResponse({ data: OPTIONAL_FEATURES_BY_CLASS_ID[u.searchParams.get("classId") ?? ""] ?? { definitionData: [] } });
+        }
+        if (u.pathname.endsWith("/racial-trait/collection")) {
+          const key = `${u.searchParams.get("entityRaceTypeId")}:${u.searchParams.get("entityRaceId")}`;
+          return jsonResponse({ data: OPTIONAL_TRAITS_BY_RACE_KEY[key] ?? { definitionData: [] } });
+        }
+        if (path === "classes") return jsonResponse({ data: CLASSES });
+        if (path === "races") return jsonResponse({ data: RACES });
+        return jsonResponse({ data: [] });
+      }
+      return jsonResponse({});
+    });
+  }
+  const configCalls = () => fetchMock.mock.calls.filter(c => String(c[0]).includes("/api/config/json"));
+
+  it("lists a homebrew class feature and racial trait, tagged [homebrew] and wrapped", async () => {
+    installOwned();
+    const header = searchHeader({ sourceBook: HOMEBREW_SOURCE_BOOK });
+    const cf = await reference.searchClassFeatures({ source: "homebrew" });
+    expect(cf.split("\n")[0]).toBe(header);
+    expect(cf).toContain("Riposte Flourish");
+    expect(cf).toContain("[homebrew]");
+    expect(cf).toContain("untrusted_dndbeyond_content");
+    expect(cf).not.toContain("Action Surge");
+    const rt = await reference.searchRacialTraits({ source: "homebrew" });
+    expect(rt.split("\n")[0]).toBe(header);
+    expect(rt).toContain("[homebrew]");
+    expect(rt).toContain("untrusted_dndbeyond_content");
+    expect(rt).not.toContain("[2024]");
+  });
+
+  it("homebrew mode never fetches the game config (the index is unused)", async () => {
+    installOwned();
+    await reference.searchClassFeatures({ source: "homebrew" });
+    await reference.searchRacialTraits({ source: "homebrew" });
+    expect(configCalls()).toHaveLength(0);
+  });
+
+  it("D&D Beyond unreachable: the unreachable reply, not a raw error", async () => {
+    installOwned({ failAll: true });
+    expect(await reference.searchClassFeatures({ source: "homebrew" })).toBe(homebrewUnreachable("class features"));
+    expect(await reference.searchRacialTraits({ source: "homebrew" })).toBe(homebrewUnreachable("racial traits"));
+  });
+
+  it("no match: the homebrew no-match text", async () => {
+    installOwned();
+    expect(await reference.searchClassFeatures({ source: "homebrew", name: "zzz" })).toBe("No homebrew class features found matching the criteria.");
+    expect(await reference.searchRacialTraits({ source: "homebrew", name: "zzz" })).toBe("No homebrew racial traits found matching the criteria.");
+  });
+
+  it("a partial build keeps its note in front of the homebrew no-match line (owner ruling)", async () => {
+    installOwned({ failSubclasses: true });
+    expect(await reference.searchClassFeatures({ source: "homebrew", name: "zzz" }))
+      .toBe(`${CF_PARTIAL}\n\nNo homebrew class features found matching the criteria.`);
   });
 });

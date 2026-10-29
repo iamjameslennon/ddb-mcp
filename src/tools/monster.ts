@@ -468,7 +468,6 @@ function formatStatBlock(
 
 // ── Exported tool functions ───────────────────────────────────────────────────
 
-
 // `source: "homebrew"` never returns official entries, so when D&D Beyond
 // can't be used these replace the Open5e (SRD) fallback, for get and search alike.
 const HOMEBREW_LOGIN_REQUIRED = homebrewLoginRequired("monster");

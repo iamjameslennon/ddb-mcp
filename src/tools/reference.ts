@@ -1256,7 +1256,8 @@ async function searchOwnedEntries<T>(
     throw err;
   }
   const partial = build.source === "ddb-partial" ? `${spec.partialNote}\n\n` : "";
-  const index = await getSourceIndex();
+  // Homebrew mode never uses the index: don't let a config fetch decide its reply.
+  const index = source === "homebrew" ? peekSourceIndex() : await getSourceIndex();
   const { hits, hidden, header, note } = selectCatalog(build.entries, requested, spec.adapter, index, source);
   if (hits.length === 0) {
     return plainSection(source === "homebrew"
