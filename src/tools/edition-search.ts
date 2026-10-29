@@ -20,10 +20,11 @@
  * 2024 or 2014. A dual definition alone in its twin group is therefore listed
  * under either edition with no reason line and is never counted as hidden.
  * But a non-dual entry of that edition beats a dual one (owner ruling
- * 2026-10-28, option B): when the dual definition's twin group in the catalog
- * holds one (a Legacy 2014 printing: Efficient Quiver, Robe of the Archmagi),
- * the dual definition classifies as classifyEdition does, so those groups
- * select exactly as without the rule.
+ * 2026-10-28, option B): when the dual definition's twin group holds one that
+ * passes the filters (a Legacy 2014 printing: Efficient Quiver, Robe of the
+ * Archmagi), the dual definition classifies as classifyEdition does, so those
+ * groups select exactly as without the rule. Under a `source` only the book's
+ * entries count (B within the book). See classifier().
  */
 
 import {
@@ -110,10 +111,15 @@ export interface SelectOptions {
 
 // ── Classification ────────────────────────────────────────────────────────────
 
-/** How one call classifies markers: an entry's (or owner's) ruleset and book, and that book's source id. */
-interface Classifier {
-  info: (m: EditionMarkers) => EditionInfo;
-  sourceId: (m: EditionMarkers) => number | null;
+/**
+ * How one call classifies: an entry's ruleset and book, and that book's source
+ * id; `markers*` do the same for an owner's markers (nested mode).
+ */
+interface Classifier<T> {
+  info: (t: T) => EditionInfo;
+  sourceId: (t: T) => number | null;
+  markersInfo: (m: EditionMarkers) => EditionInfo;
+  markersSourceId: (m: EditionMarkers) => number | null;
 }
 
 /** The ruleset of a `source` book: what its resolved ids classify as together. */
@@ -124,10 +130,16 @@ function sourceRuleset(source: ResolvedSource, index: SourceIndex): EditionInfo[
 /**
  * Plain classifyEdition, or with `dualEdition` the dual-edition rule for the
  * call's edition: `requested`, or under a `source` the book's edition when it
- * is 2024 or 2014. A dual entry whose twin group in `all` (the whole catalog,
- * also under a `source`) has a non-dual entry of that edition keeps its plain
- * classification. Dual adapters must return the entry's own object from
- * `markers` (the item adapter does): the exceptions are held by identity.
+ * is 2024 or 2014.
+ *
+ * Option B: a dual entry keeps its plain classification when its twin group
+ * holds a non-dual entry of that edition. The scan covers the entries in
+ * scope (under a `source`, only the book's entries: "B within the book") that
+ * pass the adapter's `passes` filter, so a Legacy twin the filters reject
+ * does not demote the dual entry. That matches countFilteredPicks: when only
+ * the dual entry passes, both editions would list that same entry, so it is
+ * listed, not counted as hidden. The exceptions are a set of entries, so an
+ * adapter's `markers` may return a fresh object each call.
  */
 function classifier<T>(
   all: readonly T[],
@@ -135,27 +147,33 @@ function classifier<T>(
   index: SourceIndex,
   requested: RulesEdition,
   source?: ResolvedSource,
-): Classifier {
-  const plain: Classifier = { info: m => classifyEdition(m, index), sourceId: m => editionSourceId(m, index) };
-  if (!adapter.dualEdition) return plain;
+): Classifier<T> {
+  if (!adapter.dualEdition) {
+    const info = (m: EditionMarkers) => classifyEdition(m, index);
+    const sourceId = (m: EditionMarkers) => editionSourceId(m, index);
+    return { info: t => info(adapter.markers(t)), sourceId: t => sourceId(adapter.markers(t)), markersInfo: info, markersSourceId: sourceId };
+  }
   const bookRuleset = source ? sourceRuleset(source, index) : null;
   const edition = bookRuleset && isEdition(bookRuleset) ? bookRuleset : requested;
 
-  const dual = new Set<EditionMarkers>();
+  const scope = source ? all.filter(t => inSources(adapter.markers(t), source.ids)) : all;
+  const passes = adapter.passes ?? (() => true);
+  const duals: T[] = [];
   const singleEditionKeys = new Set<string>();
-  for (const t of all) {
+  for (const t of scope) {
     const m = adapter.markers(t);
-    if (isDualEdition(m, index)) dual.add(m);
-    else if (classifyEdition(m, index).ruleset === edition) singleEditionKeys.add(adapter.twinKey(t));
+    if (isDualEdition(m, index)) duals.push(t);
+    else if (classifyEdition(m, index).ruleset === edition && passes(t)) singleEditionKeys.add(adapter.twinKey(t));
   }
-  const plainDual = new Set<EditionMarkers>();
-  for (const t of all) {
-    const m = adapter.markers(t);
-    if (dual.has(m) && singleEditionKeys.has(adapter.twinKey(t))) plainDual.add(m);
-  }
+  const plainDual = new Set<T>(duals.filter(t => singleEditionKeys.has(adapter.twinKey(t))));
+
+  const markersInfo = (m: EditionMarkers) => classifyForEdition(m, index, edition);
+  const markersSourceId = (m: EditionMarkers) => editionSourceIdFor(m, index, edition);
   return {
-    info: m => plainDual.has(m) ? plain.info(m) : classifyForEdition(m, index, edition),
-    sourceId: m => plainDual.has(m) ? plain.sourceId(m) : editionSourceIdFor(m, index, edition),
+    info: t => plainDual.has(t) ? classifyEdition(adapter.markers(t), index) : markersInfo(adapter.markers(t)),
+    sourceId: t => plainDual.has(t) ? editionSourceId(adapter.markers(t), index) : markersSourceId(adapter.markers(t)),
+    markersInfo,
+    markersSourceId,
   };
 }
 
@@ -168,17 +186,16 @@ function classifier<T>(
 function bookChoice<U>(
   pick: U,
   alternatives: readonly U[] | undefined,
-  markers: (u: U) => EditionMarkers,
-  classify: Classifier,
+  sourceId: (u: U) => number | null,
   index: SourceIndex,
 ): { chosen: string; others: string[] } | null {
   if (!alternatives?.length) return null;
-  const pickId = classify.sourceId(markers(pick));
+  const pickId = sourceId(pick);
   if (pickId == null) return null;
   const chosen = sourceLabel(index, pickId);
   const others: string[] = [];
   for (const alt of alternatives) {
-    const id = classify.sourceId(markers(alt));
+    const id = sourceId(alt);
     if (id == null) continue;
     const label = sourceLabel(index, id);
     if (label !== chosen && !others.includes(label)) others.push(label);
@@ -190,11 +207,10 @@ function bookChoice<U>(
 function bookNoteSuffix<U>(
   pick: U,
   alternatives: readonly U[] | undefined,
-  markers: (u: U) => EditionMarkers,
-  classify: Classifier,
+  sourceId: (u: U) => number | null,
   index: SourceIndex,
 ): string {
-  const choice = bookChoice(pick, alternatives, markers, classify, index);
+  const choice = bookChoice(pick, alternatives, sourceId, index);
   return choice ? " " + bookChoiceNote(choice.chosen, choice.others) : "";
 }
 
@@ -237,7 +253,7 @@ export function selectCatalog<T>(
   options: SelectOptions = {},
 ): CatalogSelection<T> {
   const classify = classifier(all, adapter, index, requested, source);
-  const info = (t: T) => classify.info(adapter.markers(t));
+  const info = classify.info;
   // Equal display names (a 2024 entry and a homebrew one, two homebrew
   // entries) would otherwise keep payload order.
   const order = (a: T, b: T) => adapter.compare(a, b) || adapter.tiebreak(a, b);
@@ -259,7 +275,7 @@ export function selectCatalog<T>(
   const owner = adapter.owner;
   if (owner) {
     const band = new Map(hits.map(h => {
-      const ruleset = classify.info(owner(h.entry).markers).ruleset;
+      const ruleset = classify.markersInfo(owner(h.entry).markers).ruleset;
       return [h, ruleset === requested ? 0 : isEdition(ruleset) ? 1 : 2];
     }));
     hits.sort((a, b) => band.get(a)! - band.get(b)! || order(a.entry, b.entry));
@@ -273,13 +289,13 @@ function selectFlat<T>(
   all: readonly T[],
   requested: RulesEdition,
   adapter: CatalogAdapter<T>,
-  classify: Classifier,
+  classify: Classifier<T>,
   index: SourceIndex,
   bookNotes: boolean,
 ): { hits: CatalogHit<T>[]; hidden: number } {
   const passes = adapter.passes;
   const { selected, hidden } = groupAndSelect(all, requested, {
-    info: t => classify.info(adapter.markers(t)),
+    info: classify.info,
     twinKey: adapter.twinKey,
     tiebreak: adapter.tiebreak,
     nameMatches: adapter.nameMatches,
@@ -292,7 +308,7 @@ function selectFlat<T>(
     return {
       entry: sel.entry,
       info: sel.info,
-      label: editionTag(sel.info) + (bookNotes ? bookNoteSuffix(sel.entry, alternatives, adapter.markers, classify, index) : ""),
+      label: editionTag(sel.info) + (bookNotes ? bookNoteSuffix(sel.entry, alternatives, classify.sourceId, index) : ""),
     };
   });
   return { hits, hidden };
@@ -330,7 +346,7 @@ function selectNested<T>(
   all: readonly T[],
   requested: RulesEdition,
   adapter: CatalogAdapter<T>,
-  classify: Classifier,
+  classify: Classifier<T>,
   index: SourceIndex,
   bookNotes: boolean,
 ): { hits: CatalogHit<T>[]; hidden: number } {
@@ -359,7 +375,7 @@ function selectNested<T>(
     const unit: Unit<T> = {
       entries: [t],
       markers,
-      ruleset: classify.info(markers).ruleset,
+      ruleset: owner ? classify.markersInfo(markers).ruleset : classify.info(t).ruleset,
       twinKey: adapter.twinKey(t),
       groupKey: groupKeyOf(t),
       first: t,
@@ -373,7 +389,7 @@ function selectNested<T>(
     ? definitionTiebreak(a.owner.tiebreak, b.owner.tiebreak)
     : adapter.tiebreak(a.first, b.first));
   const linesOf = (unit: Unit<T>, note: string) => unit.entries.map(entry => {
-    const i = classify.info(adapter.markers(entry));
+    const i = classify.info(entry);
     return { entry, info: i, label: editionTag(i) + note };
   });
   const byTwinKey = (us: Unit<T>[]) => {
@@ -402,7 +418,7 @@ function selectNested<T>(
     const other: RulesEdition = requested === "2024" ? "2014" : "2024";
     const chosen = editions.some(u => u.ruleset === requested) ? requested : other;
     for (const [pick, ...alternatives] of byTwinKey(editions.filter(u => u.ruleset === chosen))) {
-      hits.push(...linesOf(pick, bookNotes ? bookNoteSuffix(pick, alternatives, u => u.markers, classify, index) : ""));
+      hits.push(...linesOf(pick, bookNotes ? bookNoteSuffix(pick, alternatives, u => (u.owner ? classify.markersSourceId(u.markers) : classify.sourceId(u.first)), index) : ""));
     }
     if (chosen === requested) {
       for (const [first] of byTwinKey(editions.filter(u => u.ruleset === other))) hidden += first.entries.length;
@@ -429,7 +445,7 @@ export function lookupCatalog<T>(
   source?: ResolvedSource,
 ): { entry: T; info: EditionInfo; rulesLines: string[] } | null {
   const classify = classifier(all, adapter, index, requested, source);
-  const info = (t: T) => classify.info(adapter.markers(t));
+  const info = classify.info;
   const pool = source ? all.filter(t => inSources(adapter.markers(t), source.ids)) : all;
   const found = lookupByName(pool, query, requested, { name: adapter.name, info, tiebreak: adapter.tiebreak });
   if (!found) return null;
@@ -441,7 +457,7 @@ export function lookupCatalog<T>(
     const note = isEdition(shown.ruleset) ? sourceNote(source.query, shown.ruleset, requested) : null;
     if (note) rulesLines.push(note);
   } else {
-    const choice = bookChoice(found.entry, found.alternatives, adapter.markers, classify, index);
+    const choice = bookChoice(found.entry, found.alternatives, classify.sourceId, index);
     if (choice) rulesLines.push(alsoInLine(choice.others));
   }
   return { entry: found.entry, info: shown, rulesLines };

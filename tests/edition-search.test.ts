@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildSourceIndex, definitionTiebreak, normalizeName, type EditionMarkers } from "../src/edition.js";
+import { buildSourceIndex, definitionTiebreak, normalizeName, twinName, type EditionMarkers } from "../src/edition.js";
 import { resolveSource, sourceLabel } from "../src/source-filter.js";
 import {
   selectCatalog, lookupCatalog, paginateResults, renderSection, plainSection,
@@ -235,6 +235,16 @@ describe("dual-edition entries (adapter.dualEdition, decision 4)", () => {
     // The exception holds under a source too: the Legacy printing carries the 2014 text.
     const inBook = selectCatalog([legacy, robe], "2024", dual(), DMG_INDEX, resolveSource(DMG_INDEX, "basic-rules-2014")!);
     expect(inBook.hits.map(h => `${h.entry.id} ${h.label}`)).toEqual(["4742 [2024]", "11422918 [2014]"]);
+  });
+
+  it("B holds when the adapter's markers return a fresh object each call", () => {
+    const efficient = entry(4628, "Efficient Quiver", [1, 2], { isLegacy: true });
+    const ehlonna = entry(5367, "Quiver of Ehlonna", [146, 148, 3]);
+    const copying = { ...dual(), markers: (e: Entry): EditionMarkers => ({ ...e }), twinKey: (e: Entry) => twinName(e.name) };
+    const sel = selectCatalog([efficient, ehlonna], "2014", copying, DMG_INDEX);
+    expect(sel.hits.map(h => [h.entry, h.label])).toEqual([[efficient, "[2014]"]]);
+    expect(sel.hidden).toBe(1);
+    expect(lookupCatalog([efficient, ehlonna], "Efficient Quiver", "2014", copying, DMG_INDEX)?.entry).toBe(efficient);
   });
 
   it("a book note names a dual pick's book in the requested edition", () => {

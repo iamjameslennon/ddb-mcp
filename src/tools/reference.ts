@@ -565,9 +565,20 @@ interface DdbItem {
 
 let itemCompendium: DdbItem[] | null = null;
 
-/** One entry per definition. An id alone would drop every later item type that reuses it. */
+/**
+ * One entry per definition. An id alone would drop every later item type that
+ * reuses it. Live, every item has a unique definitionKey; without one,
+ * entityTypeId:id; without both, the id with the normalized name and
+ * filterType, so distinct items sharing an id stay apart.
+ */
+function itemKey(i: DdbItem): string {
+  if (i.definitionKey) return i.definitionKey;
+  if (i.entityTypeId != null) return `${i.entityTypeId}:${i.id}`;
+  return `?:${i.id}:${normalizeName(i.name ?? "")}:${(i.filterType ?? "").toLowerCase()}`;
+}
+
 function dedupeItems(items: readonly DdbItem[]): DdbItem[] {
-  return dedupeByKey(items, i => i.definitionKey ?? `${i.entityTypeId}:${i.id}`);
+  return dedupeByKey(items, itemKey);
 }
 
 async function loadItemCompendium(): Promise<DdbItem[]> {

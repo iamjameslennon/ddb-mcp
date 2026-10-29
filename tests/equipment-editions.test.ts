@@ -221,6 +221,16 @@ describe("the item compendium keeps every item type (carry-over (e))", () => {
     expect((await reference.getItem("Crossbow Bolts")).split("\n")[0]).toBe("**Crossbow Bolts** — Ammunition, Common");
   });
 
+  it("without definitionKey or entityTypeId, items sharing an id stay apart by name and type", async () => {
+    installItems([
+      item(3, "Dagger", {}, [148, 1]),
+      item(3, "Studded Leather", { type: "Armor", filterType: "Armor" }, [148, 1]),
+      item(3, "Dagger", {}, [148, 1]),
+    ]);
+    const lines = (await reference.searchItems({})).split("\n").filter(l => l.startsWith("- **"));
+    expect(lines).toEqual(["- **Dagger** [2024] — Common Weapon", "- **Studded Leather** [2024] — Common Armor"]);
+  });
+
   it("dedupes by definitionKey when the payload carries one", async () => {
     installItems([
       shared(1782728300, "Dagger", "Weapon", "1782728300:3"),
@@ -275,6 +285,44 @@ describe("dual-edition items take the requested edition (decision 4)", () => {
     expect(s2014.filter(l => l.startsWith("- **"))).toEqual(["- **Efficient Quiver** [2014] — Uncommon Wondrous item"]);
     expect(s2014.at(-1)).toBe("1 2024 version hidden — omit rules_edition to show it.");
     expect((await reference.getItem("Efficient Quiver")).split("\n")[0]).toBe("**Quiver of Ehlonna** — Wondrous item, Uncommon");
+  });
+
+  // Live 2026-10-23 records, trimmed. The rename table twins the two names.
+  const EFFICIENT = item(4628, "Efficient Quiver",
+    { isLegacy: true, type: "Wondrous item", filterType: "Wondrous item", rarity: "Uncommon", magic: true }, [1, 2]);
+  const EHLONNA = item(5367, "Quiver of Ehlonna",
+    { isLegacy: false, type: "Wondrous item", filterType: "Wondrous item", rarity: "Uncommon", magic: true }, [146, 148, 3, 66, 103, 79]);
+
+  it("B within the book: in a 2014 book without the Legacy twin, the dual item is that book's 2014 version", async () => {
+    installItems([EFFICIENT, EHLONNA]);
+    const lines = (await reference.searchItems({ name: "quiver", rulesEdition: "2014", source: "dmg-2014" })).split("\n");
+    expect(lines.filter(l => l.startsWith("- **"))).toEqual(["- **Quiver of Ehlonna** [2014] — Uncommon Wondrous item"]);
+    const got = (await reference.getItem("Quiver of Ehlonna", "2014", "dmg-2014")).split("\n");
+    expect(got.slice(0, 3)).toEqual(["**Quiver of Ehlonna** — Wondrous item, Uncommon", "Rules: 2014 · Dungeon Master's Guide (2014)", ""]);
+  });
+
+  it("B counts only entries that pass the filters: a Legacy twin the rarity filter rejects leaves the dual item listed", async () => {
+    installItems([
+      item(11422918, "Robe of the Archmagi", { isLegacy: true, rarity: "Legendary", type: "Wondrous item", filterType: "Wondrous item" }, [3, 1]),
+      item(4742, "Robe of the Archmagi", { rarity: "Very Rare", type: "Wondrous item", filterType: "Wondrous item" }, [146, 1, 148]),
+    ]);
+    for (const rulesEdition of ["2014", "2024"] as const) {
+      const lines = (await reference.searchItems({ name: "robe", rarity: "very rare", rulesEdition })).split("\n");
+      expect(lines.filter(l => l.startsWith("- **"))).toEqual([`- **Robe of the Archmagi** [${rulesEdition}] — Very Rare Wondrous item`]);
+      expect(lines.some(l => l.includes("hidden"))).toBe(false);
+    }
+    // Unfiltered, the Legacy twin is the 2014 version, as before.
+    const all2014 = (await reference.searchItems({ name: "robe", rulesEdition: "2014" })).split("\n");
+    expect(all2014.filter(l => l.startsWith("- **"))).toEqual(["- **Robe of the Archmagi** [2014] — Legendary Wondrous item"]);
+    expect(all2014.at(-1)).toBe("1 2024 version hidden — omit rules_edition to show it.");
+  });
+
+  it("ddb_search_site's item section inherits the dual rule", async () => {
+    installItems([LONGSWORD]);
+    const { search } = await import("../src/tools/search.js");
+    const text = await search("longsword", "items", "2014");
+    expect(text).toContain("- **Longsword** [2014] — Common Weapon");
+    expect(text).not.toContain("hidden");
   });
 
   it("a Legacy or homebrew item is not dual", async () => {
