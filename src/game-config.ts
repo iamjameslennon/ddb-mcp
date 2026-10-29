@@ -190,6 +190,16 @@ export function peekSourceIndex(): SourceIndex {
 }
 
 export async function getSourceIndex(): Promise<SourceIndex> {
+  // Callers start this early and may not await it (a failing load returns
+  // first), so it must never reject: any failure degrades to the snapshot.
+  try {
+    return await buildLiveSourceIndex();
+  } catch {
+    return peekSourceIndex();
+  }
+}
+
+async function buildLiveSourceIndex(): Promise<SourceIndex> {
   // Capture before the work, assert before caching: a session change while the
   // index is built must not leave one account's index in the cache.
   const snapshot = captureSession();

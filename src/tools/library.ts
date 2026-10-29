@@ -1,6 +1,6 @@
 import * as cheerio from "cheerio";
 import type { AnyNode } from "domhandler";
-import { sessionFetch, hasValidSession, captureSession, onSessionInvalidated } from "../session-fetch.js";
+import { sessionFetch, hasValidSession, captureSession, assertSessionCurrent, onSessionInvalidated } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
 import { wrapUntrusted, stripHtml } from "../utils.js";
 import { getSourceIndex } from "../game-config.js";
@@ -220,20 +220,50 @@ export function tagLibraryBooks(
 // generation, dropped on any session transition; failures are never cached.
 const LIBRARY_CACHE_TTL_MS = 60_000;
 const libraryCache = new TtlCache<LibraryBook[]>(LIBRARY_CACHE_TTL_MS, 4);
-onSessionInvalidated(() => libraryCache.clear());
+// The one in-flight fetch per generation, shared by concurrent cold callers
+// (modelled on game-config.ts's configPending): cleared by its own settlement
+// only, never joined across generations, dropped by the invalidation hook.
+let libraryPending: { generation: number; promise: Promise<LibraryBook[]> } | null = null;
+onSessionInvalidated(() => {
+  libraryCache.clear();
+  libraryPending = null;
+});
 
 /** Drop the cached library list (ddb_clear_cache). */
 export function clearLibraryCache(): void {
   libraryCache.clear();
+  libraryPending = null;
 }
 
 async function fetchLibraryBooks(): Promise<LibraryBook[]> {
-  const key = String(captureSession().generation);
+  const snapshot = captureSession();
+  const key = String(snapshot.generation);
   const cached = libraryCache.get(key);
   if (cached) return cached;
-  const books = await fetchLibraryBooksUncached();
-  libraryCache.set(key, books);
-  return books;
+  if (libraryPending && libraryPending.generation === snapshot.generation) return libraryPending.promise;
+  const entry = {
+    generation: snapshot.generation,
+    promise: (async () => {
+      const books = await fetchLibraryBooksUncached();
+      // Cache only a non-empty parse (an interstitial or truncated page parses
+      // to []), and only if the account hasn't changed while the page was in flight.
+      if (books.length > 0) {
+        try {
+          assertSessionCurrent(snapshot);
+          libraryCache.set(key, books);
+        } catch {
+          // Session changed mid-fetch: return the result, cache nothing.
+        }
+      }
+      return books;
+    })(),
+  };
+  libraryPending = entry;
+  const release = () => {
+    if (libraryPending === entry) libraryPending = null;
+  };
+  entry.promise.then(release, release);
+  return entry.promise;
 }
 
 async function fetchLibraryBooksUncached(): Promise<LibraryBook[]> {

@@ -432,6 +432,15 @@ describe("getGameConfig shares one in-flight fetch per session generation", () =
   });
 });
 
+describe("getSourceIndex never rejects", () => {
+  it("falls back to the snapshot index when the live step throws", async () => {
+    vi.mocked(captureSession).mockImplementationOnce(() => { throw new Error("session file unreadable"); });
+    const index = await getSourceIndex();
+    expect(index).toBe(peekSourceIndex());
+    expect(index.sources.get(2)?.book).toBe("Player's Handbook (2014)");
+  });
+});
+
 describe("getGameConfig deadline", () => {
   beforeEach(() => { vi.useFakeTimers(); });
   afterEach(() => { vi.useRealTimers(); });
@@ -481,5 +490,44 @@ describe("getGameConfig deadline", () => {
     vi.mocked(sessionFetch).mockImplementation(async () => response({}, 503));
     expect(await getGameConfig()).toBeNull();
     expect(vi.mocked(sessionFetch)).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("the deadline after a session change", () => {
+  let generation = 1;
+  beforeEach(() => {
+    vi.useFakeTimers();
+    generation = 1;
+    vi.mocked(captureSession).mockImplementation(() => ({ generation }) as never);
+    vi.mocked(assertSessionCurrent).mockImplementation((s: unknown) => {
+      if ((s as { generation: number }).generation !== generation) throw new Error("session changed");
+    });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.mocked(captureSession).mockImplementation(() => ({}) as never);
+  });
+
+  it("records nothing and leaves the newer generation's slot alone", async () => {
+    vi.mocked(sessionFetch).mockImplementation(() => new Promise<Response>(() => {}));
+    const old = getGameConfig();
+    await vi.advanceTimersByTimeAsync(5_000);
+    generation = 2;
+    S.hooks.forEach(hook => hook());
+    let fresh: Promise<unknown> = getGameConfig();
+    let freshSettled = false;
+    void fresh.then(() => { freshSettled = true; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sessionFetch).toHaveBeenCalledTimes(2);
+    // The old fetch's deadline (t = 10 s) fires; the new one's (t = 15 s) has not.
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(freshSettled).toBe(false);
+    // The newer slot still holds: a joiner sends no third request.
+    fresh = getGameConfig();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sessionFetch).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await fresh).toBeNull();
+    expect(await old).toBeNull();
   });
 });

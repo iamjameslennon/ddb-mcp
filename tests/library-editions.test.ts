@@ -14,6 +14,9 @@ vi.mock("../src/session-fetch.js", () => ({
   sessionFetch: mocks.sessionFetch,
   hasValidSession: mocks.hasValidSession,
   captureSession: () => ({ generation: mocks.generation.n }),
+  assertSessionCurrent: (snap: { generation: number }) => {
+    if (snap.generation !== mocks.generation.n) throw new Error("session changed");
+  },
   onSessionInvalidated: (cb: () => void) => { mocks.hooks.push(cb); },
 }));
 vi.mock("../src/game-config.js", () => ({ getSourceIndex: mocks.getSourceIndex }));
@@ -131,13 +134,69 @@ describe("library tools", () => {
     await readBook("dnd/old-phb");
     expect(libCalls()).toHaveLength(1);
   });
-  it("a session change drops the library cache", async () => {
+  it("the invalidation hook alone drops the library cache", async () => {
     route([{ name: "Player's Handbook (2014)", relativePath: "/sources/dnd/old-phb", isOwned: true }]);
     await readBook("dnd/old-phb");
+    mocks.hooks.forEach(h => h());
+    await readBook("dnd/old-phb");
+    expect(libCalls()).toHaveLength(2);
+  });
+  it("a new generation alone misses the library cache", async () => {
+    route([{ name: "Player's Handbook (2014)", relativePath: "/sources/dnd/old-phb", isOwned: true }]);
+    await readBook("dnd/old-phb");
+    mocks.generation.n += 1;
+    await readBook("dnd/old-phb");
+    expect(libCalls()).toHaveLength(2);
+    mocks.generation.n -= 1;
+  });
+  it("an empty parse is not cached", async () => {
+    route([]);
+    await expect(readBook("xanathar")).rejects.toThrow(/No book found/);
+    route([{ name: "Xanathar's Guide to Everything", relativePath: "/sources/not-a-source", isOwned: true }]);
+    const out = await readBook("xanathar");
+    expect(out.split("\n")[1]).toBe("Rules: 2014 · Xanathar's Guide to Everything");
+    expect(libCalls()).toHaveLength(2);
+  });
+  it("an account switch while the page is in flight caches nothing under the old key", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(r => { release = r; });
+    const book = { name: "Player's Handbook (2014)", relativePath: "/sources/dnd/old-phb", isOwned: true };
+    mocks.sessionFetch.mockImplementation(async (url: unknown) => {
+      const u = String(url);
+      if (LIBRARY_RE.test(u)) { await gate; return new Response(buildFixture([book]), { status: 200 }); }
+      return new Response("<html><article><p>Text</p></article></html>", { status: 200 });
+    });
+    const inflight = readBook("dnd/old-phb");
+    await new Promise(r => setTimeout(r, 0));
+    mocks.generation.n += 1;
+    release();
+    await inflight;
+    mocks.generation.n -= 1; // back to the old key: it must hold nothing
+    await readBook("dnd/old-phb");
+    expect(libCalls()).toHaveLength(2);
+  });
+  it("concurrent cold reads in one generation share one library fetch", async () => {
+    route([{ name: "Player's Handbook (2014)", relativePath: "/sources/dnd/old-phb", isOwned: true }]);
+    await Promise.all([readBook("dnd/old-phb"), readBook("dnd/old-phb"), readBook("dnd/old-phb")]);
+    expect(libCalls()).toHaveLength(1);
+  });
+  it("a newer generation does not join an older generation's fetch", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(r => { release = r; });
+    const book = { name: "Player's Handbook (2014)", relativePath: "/sources/dnd/old-phb", isOwned: true };
+    mocks.sessionFetch.mockImplementation(async (url: unknown) => {
+      if (LIBRARY_RE.test(String(url))) { if (libCalls().length === 1) await gate; return new Response(buildFixture([book]), { status: 200 }); }
+      return new Response("<html><article><p>Text</p></article></html>", { status: 200 });
+    });
+    const first = readBook("dnd/old-phb");
+    await new Promise(r => setTimeout(r, 0));
     mocks.generation.n += 1;
     mocks.hooks.forEach(h => h());
     await readBook("dnd/old-phb");
     expect(libCalls()).toHaveLength(2);
+    release();
+    await first;
+    mocks.generation.n -= 1;
   });
   it("a failed library fetch is not cached", async () => {
     route([], 500);

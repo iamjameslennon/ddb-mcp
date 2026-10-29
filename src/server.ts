@@ -143,7 +143,7 @@ server.tool(
     cache: z
       .enum(["spells", "characters", "monsters", "all"])
       .default("spells")
-      .describe("Which cache to clear. 'spells' (default) — the spell / equipment / races / classes / feats compendium. 'characters' — character JSON cache. 'monsters' — monster stat-block cache. 'all' — everything, including campaigns and Open5e responses."),
+      .describe("Which cache to clear. 'spells' (default) — the spell / equipment / races / classes / feats compendium. 'characters' — character JSON cache. 'monsters' — monster stat-block cache. 'all' — everything, including the library list, campaigns and Open5e responses."),
   },
   { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   async ({ cache }) => {
