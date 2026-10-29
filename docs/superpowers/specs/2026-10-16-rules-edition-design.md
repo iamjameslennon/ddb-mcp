@@ -248,8 +248,8 @@ A group with no edition entries yields its non-edition entries. A single lookup 
 
 ### Single lookups (`get_*`): the gather algorithm
 
-1. Normalize the query with `twinName`.
-2. **Exact:** if some entry's `twinName` equals it, the target group is that twin key. Because renames map to the 2024 side, "Acid Arrow" reaches the Melf's Acid Arrow group.
+1. Normalize the query with the content kind's namer (`twinNames.<kind>`).
+2. **Exact:** if some entry's twin key (`twinNames.<kind>(name)`) equals it, the target group is that twin key. Because renames map to the 2024 side, "Acid Arrow" reaches the Melf's Acid Arrow group.
 3. **Partial:** otherwise, apply the tool's existing partial-match order across **every entry's name in both editions**. The target group is the group of the first match.
 4. `selectByEdition` within the target group.
 5. Add the rename line when the matched name's normalized form differs from the returned entry's normalized name, and only when the returned entry is 2014/2024 (non-edition picks get no rename line). When no entry carries the queried spelling, the rename table's spelling is shown.
@@ -437,7 +437,7 @@ Later owner rulings (made while executing the plan, 2026-10-21):
 Later owner rulings (final whole-branch review, 2026-10-21; fixed in `e9f4e1a..9c629ba`):
 
 - `getCondition` matches only its own table keys (`Object.hasOwn`), so "constructor" and "__proto__" are not found rather than a TypeError, and a blank or whitespace-only name is not found rather than a partial match on Blinded.
-- **Open5e twin keys fold `-` to a space and drop straight and curly apostrophes** (`o5TwinName`, on both sides of the rename table; owner ruling 2026-10-21, so "will o wisp" finds Will-o'-Wisp, and every Open5e name filter folds the same way; live, no two records of one document collide under the fold), so SRD 5.1's "Adamantine Armor (Chain-Mail)" and SRD 5.2's "Adamantine Armor (Chain Mail)" are one group in gets, searches, species grouping and `o5GetMonsterStats` (live srd-2014 magic items have 19 such hyphen-only names). D&D Beyond's `normalizeName` and `twinName` are unchanged. A punctuation-only difference never prints a rename line, and the rename pair is oriented by the shown entry's edition, since a folded key no longer equals a hyphenated 2024 name.
+- **Open5e twin keys fold `-` to a space and drop straight and curly apostrophes** (each endpoint kind's Open5e namer, `o5TwinNameFor(endpoint)`, on both sides of that kind's rename pairs; owner ruling 2026-10-21, so "will o wisp" finds Will-o'-Wisp, and every Open5e name filter folds the same way; live, no two records of one document collide under the fold), so SRD 5.1's "Adamantine Armor (Chain-Mail)" and SRD 5.2's "Adamantine Armor (Chain Mail)" are one group in gets, searches, species grouping and `o5GetMonsterStats` (live srd-2014 magic items have 19 such hyphen-only names). D&D Beyond's `normalizeName` and `twinNames` namers are unchanged. A punctuation-only difference never prints a rename line, and the rename pair is oriented by the shown entry's edition, since a folded key no longer equals a hyphenated 2024 name.
 - **`rarity` matches exactly on both paths**, case-insensitively: "common" is not "Uncommon". Mundane gear counts as Common: on D&D Beyond an item with no rarity (as it is printed), on Open5e every `items` record. So `rarity: "common"` lists mundane gear plus Common magic items; the `ddb_search_equipment` description says so.
 - Open5e monster and item searches that cap at 20 lines add D&D Beyond's `*Refine your search to see more results.*` after the lines, before the footer.
 - The `ddb_get_rules` `query` jump folds case, curly apostrophes and whitespace on both sides, as the rules search does (a straight "can't" jumps to SRD 5.2's "can’t"); the folded index maps back, so the output keeps the original characters.

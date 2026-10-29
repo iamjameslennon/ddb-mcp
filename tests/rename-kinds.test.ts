@@ -94,12 +94,18 @@ const wizardSpell = (id: number, name: string, isLegacy: boolean, sourceId: numb
   spell(name, 2, { id, isLegacy, sources: [sourceId] });
 
 /** Serves each game-data list by its last path segment; Wizard (class 8) gets the spells. */
-function install(lists: Partial<Record<"races" | "classes" | "backgrounds" | "feats" | "items" | "spells", unknown[]>>) {
+/** `subclasses` answers /subclasses?baseClassId=N; the optional-feature collections are empty. */
+function install(
+  lists: Partial<Record<"races" | "classes" | "backgrounds" | "feats" | "items" | "spells", unknown[]>>,
+  subclasses: Record<string, unknown[]> = {},
+) {
   fetchMock.mockImplementation(async (url: string) => {
     if (url === COBALT_URL) return jsonResponse({ token: makeJwt("99") });
     if (url.startsWith(GAME_DATA)) {
       const u = new URL(url);
-      const endpoint = u.pathname.split("/").pop() as keyof typeof lists;
+      const endpoint = u.pathname.split("/").pop() as keyof typeof lists | "subclasses" | "collection";
+      if (endpoint === "collection") return jsonResponse({ data: { definitionData: [], accessTypes: {} } });
+      if (endpoint === "subclasses") return jsonResponse({ data: subclasses[u.searchParams.get("baseClassId") ?? ""] ?? [] });
       if (endpoint === "spells") return jsonResponse({ data: u.searchParams.get("classId") === "8" ? lists.spells ?? [] : [] });
       return jsonResponse({ data: lists[endpoint] ?? [] });
     }
@@ -186,5 +192,86 @@ describe("catalogs with rename pairs use only their own kind's", () => {
       expect(text).toContain(`**${name2024}**`);
     }
     expectOwnTwinned(text, PAIRS.spell[0]);
+  });
+});
+
+// ── Nested mode: species twin keys, racial-trait owners, class-feature owners ──
+
+/** A species with one trait; `base` makes it a subrace of that base race. */
+const traitRace = (id: number, fullName: string, isLegacy: boolean, sourceId: number, base = "") => ({
+  ...race(id, fullName, isLegacy, sourceId),
+  baseRaceName: base, isSubRace: base !== "",
+  racialTraits: [{ definition: {
+    id: 9000 + id, name: "Grit", description: "<p>Grit description</p>", snippet: "Grit snippet",
+    displayOrder: 1, requiredLevel: null, sources: [{ sourceId }],
+  } }],
+});
+
+describe("species twin keys use no pairs", () => {
+  it("a named search for Tough does not bring in a 2014 Thug species (the name filter)", async () => {
+    install({ races: [race(100, "Thug", true, 1), race(101, "Tough", false, 145)] });
+    const text = await reference.searchRaces({ name: "Tough" });
+    expect(text).toContain("**Tough**");
+    expect(text).not.toContain("**Thug**");
+  });
+
+  it("two 2024 subraces of one base race named Thug and Tough are both listed (the subgroup split)", async () => {
+    install({ races: [race(100, "Folk", false, 145), traitRace(101, "Thug", false, 145, "Folk"), traitRace(102, "Tough", false, 145, "Folk")] });
+    const text = await reference.searchRaces({});
+    expect(text).toContain("**Thug**");
+    expect(text).toContain("**Tough**");
+  });
+});
+
+describe("racial traits pick species with no pairs", () => {
+  it("a 2014 Acolyte species' traits stay beside a 2024 Priest Acolyte's (the edition group)", async () => {
+    install({ races: [traitRace(100, "Acolyte", true, 1), traitRace(101, "Priest Acolyte", false, 145)] });
+    const text = await reference.searchRacialTraits({ name: "grit" });
+    expect(text).toContain("*(Acolyte)*");
+    expect(text).toContain("*(Priest Acolyte)*");
+    expect(text).not.toMatch(/version(s)? hidden/);
+  });
+
+  it("2024 Thug and Tough subraces of one base race both keep their traits (the subgroup split)", async () => {
+    install({ races: [traitRace(101, "Thug", false, 145, "Folk"), traitRace(102, "Tough", false, 145, "Folk")] });
+    const text = await reference.searchRacialTraits({ name: "grit" });
+    expect(text).toContain("*(Thug — subrace of Folk)*");
+    expect(text).toContain("*(Tough — subrace of Folk)*");
+  });
+});
+
+describe("class-feature owners use the subclass pairs only", () => {
+  const feature = (id: number, name: string) => ({ id, name, description: `<p>${name} description</p>`, summary: null, requiredLevel: 3, displayOrder: 1 });
+  const cls = (id: number, name: string, sourceId: number) => ({
+    id, name, description: `<p>${name} description</p>`, hitDice: 8, isHomebrew: false,
+    spellCastingAbilityId: null, subclassDefinition: null, parentClassId: null, sources: [{ sourceId }], classFeatures: [],
+  });
+  const subclass = (id: number, name: string, parentClassId: number, sourceId: number, featureName: string) => ({
+    id, name, parentClassId, isHomebrew: false, sources: [{ sourceId }], classFeatures: [feature(id * 10, featureName)],
+  });
+  const CLASSES = [cls(10, "Fighter", 1), cls(2190879, "Fighter", 145), cls(8, "Wizard", 1), cls(2190886, "Wizard", 145)];
+  const SUBCLASSES = {
+    // A 2014 "Thug" and a 2024 "Tough" subclass (the monster pair): two owners
+    "10": [subclass(900301, "Thug", 10, 1, "Grit")],
+    "2190879": [subclass(900302, "Tough", 2190879, 145, "Grit")],
+    // The subclass pair: one owner, the 2014 one hidden
+    "8": [subclass(26, "School of Evocation", 8, 1, "Sculpt Spells")],
+    "2190886": [subclass(2190998, "Evoker", 2190886, 145, "Sculpt Spells")],
+  };
+
+  it("a 2014 Thug subclass is not the 2024 Tough subclass", async () => {
+    install({ classes: CLASSES }, SUBCLASSES);
+    const text = await reference.searchClassFeatures({ name: "grit" });
+    expect(text).toContain("— Fighter (Thug)");
+    expect(text).toContain("— Fighter (Tough)");
+    expect(text).not.toMatch(/version(s)? hidden/);
+  });
+
+  it("School of Evocation still twins with Evoker", async () => {
+    install({ classes: CLASSES }, SUBCLASSES);
+    const text = await reference.searchClassFeatures({ name: "sculpt" });
+    expect(text).toContain("— Wizard (Evoker)");
+    expect(text).not.toContain("(School of Evocation)");
+    expect(text).toContain(`1 2014 version hidden — rules_edition: "2014" shows it.`);
   });
 });
