@@ -94,3 +94,8 @@ export function withSourceCaveat(o5Result: string, source: string | undefined): 
   if (!source) return o5Result;
   return `${o5Result}\n\n*Note: source filtering is not available via the Open5e SRD fallback — "${source}" was requested but could not be honoured.*`;
 }
+
+/** `source: "homebrew"` is reserved: homebrew entries only. Checked before book resolution. */
+export function isHomebrewSource(source: string | undefined): boolean {
+  return source?.trim().toLowerCase() === "homebrew";
+}

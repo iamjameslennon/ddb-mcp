@@ -18,11 +18,11 @@ import {
   classifyEdition, selectByEdition, lookupByName, groupAndSelect, monsterTiebreak, twinNames, twinAliases,
   normalizeName, dedupeById, isEdition, rulesLine, renameLine, sourceNote, editionTag, searchHeader, searchFooter,
   isLockedReason, lockedLineSuffix, lockedSwapSummary, lockedEntriesNote, availableElsewhereHint,
-  HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO,
+  HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO, homebrewLoginRequired, homebrewUnreachable,
   type EditionInfo, type RulesEdition, type RulesLineReason, type SelectionReason, type SourceIndex,
 } from "../edition.js";
 import {
-  resolveSource, resolveSourceIds, sourceLabel, sourceSlug, unknownSourceError, withSourceCaveat,
+  resolveSource, resolveSourceIds, isHomebrewSource, sourceLabel, sourceSlug, unknownSourceError, withSourceCaveat,
   type ResolvedSource,
 } from "../source-filter.js";
 import { TtlCache } from "../cache.js";
@@ -468,15 +468,11 @@ function formatStatBlock(
 
 // ── Exported tool functions ───────────────────────────────────────────────────
 
-/** `source: "homebrew"` is reserved: homebrew entries only. Checked before book resolution. */
-function isHomebrewSource(source: string | undefined): boolean {
-  return source?.trim().toLowerCase() === "homebrew";
-}
 
 // `source: "homebrew"` never returns official entries, so when D&D Beyond
 // can't be used these replace the Open5e (SRD) fallback, for get and search alike.
-const HOMEBREW_LOGIN_REQUIRED = "Homebrew monster lookup requires login. Run ddb_login first.";
-const HOMEBREW_UNREACHABLE = "Homebrew monsters are unavailable: D&D Beyond could not be reached.";
+const HOMEBREW_LOGIN_REQUIRED = homebrewLoginRequired("monster");
+const HOMEBREW_UNREACHABLE = homebrewUnreachable("monsters");
 
 export interface MonsterSearchParams {
   name?: string;

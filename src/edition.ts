@@ -710,6 +710,23 @@ export const HOMEBREW_SOURCE_BOOK = "homebrew content";
 /** What every entry under source: "homebrew" is labelled. */
 export const HOMEBREW_INFO: EditionInfo = { ruleset: "homebrew", book: null };
 
+/** `source: "homebrew"` never returns official entries, so without a login there is nothing to fall back to. `kind` is singular ("monster", "class feature"). */
+export function homebrewLoginRequired(kind: string): string {
+  return `Homebrew ${kind} lookup requires login. Run ddb_login first.`;
+}
+/** D&D Beyond could not be reached under `source: "homebrew"`: no Open5e substitute. `plural` is the plural kind ("monsters", "classes"). */
+export function homebrewUnreachable(plural: string): string {
+  return `Homebrew ${plural} are unavailable: D&D Beyond could not be reached.`;
+}
+/** A homebrew search or get that matched nothing. */
+export function homebrewNoMatch(plural: string): string {
+  return `No homebrew ${plural} found matching the criteria.`;
+}
+/** A homebrew get that found nothing. `kind` is singular. */
+export function homebrewNotFound(kind: string, name: string): string {
+  return `No homebrew ${kind} found matching "${name}".`;
+}
+
 /** Encounter/treasure: a partial monster name that spans several distinct creatures. */
 export function ambiguityMessage(query: string, candidates: ReadonlyArray<{ name: string; cr: string }>): string {
   const list = candidates.map(c => `${c.name} (CR ${c.cr})`).join(", ");

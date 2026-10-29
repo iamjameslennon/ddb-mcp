@@ -13,18 +13,18 @@
  */
 
 import {
-  beginAuthenticatedSession,
+  beginAuthenticatedSession, hasValidSession,
   captureSession, assertSessionCurrent, onSessionInvalidated, SessionChangedError,
 } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
 import { stripHtml, wrapIfHomebrew } from "../utils.js";
 import {
   twinNames, classOwnerTwinKey, classifyEdition, selectByEdition, definitionTiebreak, isEdition,
-  normalizeName, searchFooter, dedupeByKey,
+  normalizeName, searchFooter, dedupeByKey, homebrewLoginRequired, homebrewUnreachable, homebrewNoMatch, homebrewNotFound,
   type RulesEdition,
 } from "../edition.js";
 import { peekSourceIndex, getSourceIndex } from "../game-config.js";
-import { resolveSource, unknownSourceError, withSourceCaveat, GENERIC_SOURCE_HINT, type ResolvedSource } from "../source-filter.js";
+import { resolveSource, unknownSourceError, withSourceCaveat, isHomebrewSource, GENERIC_SOURCE_HINT, type ResolvedSource } from "../source-filter.js";
 import {
   paginateResults, renderSection, plainSection, selectCatalog, lookupCatalog, lookupCatalogAdapter,
   type CatalogAdapter, type CatalogHit, type LookupAdapter, type SearchSection,
@@ -96,10 +96,22 @@ async function loadGameDataList<T>(cacheKey: string, path: string): Promise<T[]>
  * given, the unknown-source message when it names no book. Without a source
  * no index is fetched here, so the no-source path's requests are unchanged.
  */
-async function resolveSourceParam(source: string | undefined): Promise<ResolvedSource | string | undefined> {
+async function resolveSourceParam(source: string | undefined, kind: HomebrewKind): Promise<ResolvedSource | "homebrew" | SourceReply | undefined> {
   if (!source) return undefined;
+  // `source: "homebrew"` is reserved, as on the monster tools: homebrew
+  // entries only, so a logged-out caller has nothing to fall back to.
+  if (isHomebrewSource(source)) return hasValidSession() ? "homebrew" : { reply: homebrewLoginRequired(kind.kind) };
   const index = await getSourceIndex();
-  return resolveSource(index, source) ?? unknownSourceError(index, source, GENERIC_SOURCE_HINT);
+  return resolveSource(index, source) ?? { reply: unknownSourceError(index, source, GENERIC_SOURCE_HINT) };
+}
+
+/** What the homebrew messages call a catalog's entries: singular for the login text, plural for the rest. */
+interface HomebrewKind { kind: string; plural: string }
+
+/** A `resolveSourceParam` result that is a reply to return (unknown source, login needed), not a source. */
+interface SourceReply { reply: string }
+function isSourceReply(source: ResolvedSource | "homebrew" | SourceReply | undefined): source is SourceReply {
+  return typeof source === "object" && "reply" in source;
 }
 
 /**
@@ -435,8 +447,8 @@ export async function searchSpells(params: SpellSearchParams): Promise<string> {
 }
 
 export async function searchSpellsSection(params: SpellSearchParams): Promise<SearchSection> {
-  const source = await resolveSourceParam(params.source);
-  if (typeof source === "string") return plainSection(source);
+  const source = await resolveSourceParam(params.source, SPELL_KIND);
+  if (isSourceReply(source)) return plainSection(source.reply);
   try {
     const requested = params.rulesEdition ?? "2024";
     const store = await loadSpellCompendium();
@@ -463,9 +475,9 @@ export async function searchSpellsSection(params: SpellSearchParams): Promise<Se
     }
     // An offset past the end is "none found" too, not an empty heading.
     if (hits.slice(offset, offset + limit).length === 0) {
-      return plainSection(source
+      return plainSection(source && source !== "homebrew"
         ? `No spells found matching the criteria in ${source.book}.`
-        : "No spells found matching the criteria.");
+        : source ? homebrewNoMatch("spells") : "No spells found matching the criteria.");
     }
 
     // When the compendium build was incomplete (one or more class-list
@@ -491,6 +503,7 @@ export async function searchSpellsSection(params: SpellSearchParams): Promise<Se
       hidden,
     };
   } catch (err) {
+    if (source === "homebrew") return plainSection(homebrewUnreachable("spells"));
     try {
       return plainSection(withSourceCaveat(await o5SearchSpells(params, "unavailable"), params.source));
     } catch {
@@ -500,14 +513,15 @@ export async function searchSpellsSection(params: SpellSearchParams): Promise<Se
 }
 
 export async function getSpell(spellName: string, rulesEdition: RulesEdition = "2024", source?: string): Promise<string> {
-  const resolved = await resolveSourceParam(source);
-  if (typeof resolved === "string") return resolved;
+  const resolved = await resolveSourceParam(source, SPELL_KIND);
+  if (isSourceReply(resolved)) return resolved.reply;
   try {
     const store = await loadSpellCompendium();
     const index = await getSourceIndex();
     const found = lookupCatalog(spellList(store), spellName, rulesEdition, SPELL_ADAPTER, index, resolved);
 
     if (!found) {
+      if (resolved === "homebrew") return homebrewNotFound("spell", spellName);
       // A book the caller asked for is never swapped for SRD content.
       if (resolved) return `Spell "${spellName}" not found in ${resolved.book}.`;
       const o5Result = await o5GetSpell(spellName, rulesEdition, "not-found").catch(() => null);
@@ -517,6 +531,7 @@ export async function getSpell(spellName: string, rulesEdition: RulesEdition = "
 
     return formatSpell(found.entry, found.rulesLines);
   } catch (err) {
+    if (resolved === "homebrew") return homebrewUnreachable("spells");
     try {
       const o5Result = await o5GetSpell(spellName, rulesEdition, "unavailable");
       if (o5Result) return withSourceCaveat(o5Result, source);
@@ -683,6 +698,7 @@ export async function searchItemsSection(params: ItemSearchParams): Promise<Sear
   return searchCatalogList<DdbItem>(params, {
     load: loadItemCompendium,
     plural: "items",
+    homebrew: ITEM_KIND,
     adapter: lookupCatalogAdapter({
       ...ITEM_ADAPTER,
       nameMatches: nameQuery ? i => normalizeName(i.name).includes(nameQuery) : undefined,
@@ -710,14 +726,15 @@ export async function searchItemsSection(params: ItemSearchParams): Promise<Sear
 }
 
 export async function getItem(itemName: string, rulesEdition: RulesEdition = "2024", source?: string): Promise<string> {
-  const resolved = await resolveSourceParam(source);
-  if (typeof resolved === "string") return resolved;
+  const resolved = await resolveSourceParam(source, ITEM_KIND);
+  if (isSourceReply(resolved)) return resolved.reply;
   try {
     const items = await loadItemCompendium();
     const index = await getSourceIndex();
     const found = lookupCatalog(items, itemName, rulesEdition, ITEM_ADAPTER, index, resolved);
 
     if (!found) {
+      if (resolved === "homebrew") return homebrewNotFound("item", itemName);
       // A book the caller asked for is never swapped for SRD content.
       if (resolved) return `Item "${itemName}" not found in ${resolved.book}.`;
       const result = await o5GetEquipment(itemName, rulesEdition, "not-found").catch(() => null);
@@ -727,6 +744,7 @@ export async function getItem(itemName: string, rulesEdition: RulesEdition = "20
 
     return formatItem(found.entry, found.rulesLines);
   } catch (err) {
+    if (resolved === "homebrew") return homebrewUnreachable("items");
     try {
       const result = await o5GetEquipment(itemName, rulesEdition, "unavailable");
       if (result) return withSourceCaveat(result, source);
@@ -765,6 +783,8 @@ async function searchCatalogList<T>(
   spec: {
     load: () => Promise<T[]>;
     plural: string;
+    /** What the homebrew messages call the entries. */
+    homebrew: HomebrewKind;
     adapter: CatalogAdapter<T>;
     render: (hits: CatalogHit<T>[]) => string;
     notFound: string;
@@ -773,8 +793,8 @@ async function searchCatalogList<T>(
     unavailable?: string;
   },
 ): Promise<SearchSection> {
-  const source = await resolveSourceParam(params.source);
-  if (typeof source === "string") return plainSection(source);
+  const source = await resolveSourceParam(params.source, spec.homebrew);
+  if (isSourceReply(source)) return plainSection(source.reply);
   const requested = params.rulesEdition ?? "2024";
 
   let selection;
@@ -783,6 +803,7 @@ async function searchCatalogList<T>(
     const index = await getSourceIndex();
     selection = selectCatalog(all, requested, spec.adapter, index, source, { bookNotes: params.bookNotes });
   } catch (err) {
+    if (source === "homebrew") return plainSection(homebrewUnreachable(spec.homebrew.plural));
     let text: string;
     try {
       text = await spec.fallback("unavailable");
@@ -795,6 +816,7 @@ async function searchCatalogList<T>(
 
   const { hits, hidden, header, note } = selection;
   if (hits.length === 0) {
+    if (source === "homebrew") return plainSection(homebrewNoMatch(spec.homebrew.plural));
     if (source) return plainSection(`No ${spec.plural} found matching the criteria in ${source.book}.`);
     if (hidden > 0) return hiddenOnlySection(header, `No ${spec.plural} found matching the criteria.`, requested, hidden);
     return plainSection(await spec.fallback("not-found").catch(() => spec.notFound));
@@ -819,6 +841,7 @@ async function searchOptionList<T>(
     cacheKey: string;
     path: string;
     plural: string;
+    homebrew: HomebrewKind;
     heading: string;
     defaultLimit: number;
     adapter: CatalogAdapter<T>;
@@ -837,6 +860,7 @@ async function searchOptionList<T>(
       return spec.usable ? loaded.filter(spec.usable) : loaded;
     },
     plural: spec.plural,
+    homebrew: spec.homebrew,
     adapter: { ...spec.adapter, passes: spec.passes },
     // Homebrew lines (tag and book note included) can be another player's text.
     render: hits => paginateResults(
@@ -897,6 +921,9 @@ const RACE_ADAPTER: CatalogAdapter<DdbRace> = {
   compare: (a, b) => raceName(a).localeCompare(raceName(b)),
 };
 
+const SPELL_KIND: HomebrewKind = { kind: "spell", plural: "spells" };
+const ITEM_KIND: HomebrewKind = { kind: "item", plural: "items" };
+
 export type RaceSearchParams = OptionSearchParams;
 
 export async function searchRaces(params: RaceSearchParams = {}): Promise<string> {
@@ -908,6 +935,7 @@ export async function searchRacesSection(params: RaceSearchParams = {}): Promise
     cacheKey: "game-data:races",
     path: "races",
     plural: "races",
+    homebrew: { kind: "species", plural: "species" },
     heading: "Race",
     defaultLimit: 30,
     adapter: { ...RACE_ADAPTER, nameMatches: nameFilter(params.name, raceName) },
@@ -956,6 +984,7 @@ export async function searchClassesSection(params: ClassSearchParams = {}): Prom
     cacheKey: "game-data:classes",
     path: "classes",
     plural: "classes",
+    homebrew: { kind: "class", plural: "classes" },
     heading: "Class",
     defaultLimit: 30,
     adapter: { ...CLASS_ADAPTER, nameMatches: nameFilter(params.name, c => c.name) },
@@ -1001,6 +1030,7 @@ export async function searchBackgroundsSection(params: BackgroundSearchParams = 
     cacheKey: "game-data:backgrounds",
     path: "backgrounds",
     plural: "backgrounds",
+    homebrew: { kind: "background", plural: "backgrounds" },
     heading: "Background",
     defaultLimit: 30,
     adapter: { ...BACKGROUND_ADAPTER, nameMatches: nameFilter(params.name, b => b.name) },
@@ -1045,6 +1075,7 @@ export async function searchFeatsSection(params: FeatSearchParams = {}): Promise
     cacheKey: "game-data:feats",
     path: "feats",
     plural: "feats",
+    homebrew: { kind: "feat", plural: "feats" },
     heading: "Feat",
     defaultLimit: 30,
     adapter: { ...FEAT_ADAPTER, nameMatches: nameFilter(params.name, f => f.name) },
@@ -1204,6 +1235,7 @@ async function searchOwnedEntries<T>(
   spec: {
     load: () => Promise<CachedBuild<T>>;
     partialNote: string;
+    homebrew: HomebrewKind;
     heading: string;
     adapter: CatalogAdapter<T>;
     format: (entry: T, label: string) => string;
@@ -1211,15 +1243,26 @@ async function searchOwnedEntries<T>(
     noMatch: (searched: number, book: string | undefined) => string;
   },
 ): Promise<SearchSection> {
-  const source = await resolveSourceParam(params.source);
-  if (typeof source === "string") return plainSection(source);
+  const source = await resolveSourceParam(params.source, spec.homebrew);
+  if (isSourceReply(source)) return plainSection(source.reply);
   const requested = params.rulesEdition ?? "2024";
 
-  const build = await spec.load();
+  let build;
+  try {
+    build = await spec.load();
+  } catch (err) {
+    // Homebrew never falls back; otherwise a failed load throws, as before.
+    if (source === "homebrew") return plainSection(homebrewUnreachable(spec.homebrew.plural));
+    throw err;
+  }
   const partial = build.source === "ddb-partial" ? `${spec.partialNote}\n\n` : "";
   const index = await getSourceIndex();
   const { hits, hidden, header, note } = selectCatalog(build.entries, requested, spec.adapter, index, source);
-  if (hits.length === 0) return plainSection(partial + spec.noMatch(build.entries.length, source?.book));
+  if (hits.length === 0) {
+    return plainSection(source === "homebrew"
+      ? partial + homebrewNoMatch(spec.homebrew.plural)
+      : partial + spec.noMatch(build.entries.length, source?.book));
+  }
 
   const results = paginateResults(
     spec.heading,
@@ -1271,6 +1314,7 @@ export async function searchClassFeaturesSection(params: ClassFeatureSearchParam
   return searchOwnedEntries(params, {
     load: loadClassFeatures,
     partialNote: PARTIAL_NOTE_CLASS_FEATURES,
+    homebrew: { kind: "class feature", plural: "class features" },
     heading: "Class Feature",
     adapter: { ...CLASS_FEATURE_ADAPTER, ...classFeatureFilters(params) },
     format: formatClassFeatureLine,
@@ -1349,6 +1393,7 @@ export async function searchRacialTraitsSection(params: RacialTraitSearchParams)
   return searchOwnedEntries(params, {
     load: loadRacialTraits,
     partialNote: PARTIAL_NOTE_RACIAL_TRAITS,
+    homebrew: { kind: "racial trait", plural: "racial traits" },
     heading: "Racial Trait",
     adapter: { ...RACIAL_TRAIT_ADAPTER, ...racialTraitFilters(params) },
     format: formatRacialTraitLine,

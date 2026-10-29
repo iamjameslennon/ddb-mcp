@@ -35,7 +35,7 @@ export const server = new McpServer(
 /** Shared by every tool that can return either rules edition. */
 const RULES_EDITION_PARAM = z.enum(["2024", "2014"]).default("2024").describe("Ruleset: '2024' (default) or '2014'.");
 /** Shared by every catalog tool that takes a book filter (monsters keep their own wording). */
-const SOURCE_PARAM = z.string().optional().describe("Book: slug (phb-2024), short name or title. Lists or picks that book's version, of either edition; wins over rules_edition.");
+const SOURCE_PARAM = z.string().optional().describe("Book: slug (phb-2024), short name or title. Lists or picks that book's version, of either edition; wins over rules_edition. \"homebrew\" lists homebrew entries only.");
 
 const READ_ONLY_NET: ToolAnnotations = { readOnlyHint: true, openWorldHint: true };
 const READ_ONLY_LOCAL: ToolAnnotations = { readOnlyHint: true, openWorldHint: false };

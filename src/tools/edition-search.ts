@@ -29,7 +29,7 @@
 
 import {
   classifyEdition, classifyForEdition, editionSourceId, editionSourceIdFor, editionTag, isDualEdition, isEdition, groupAndSelect, lookupByName, definitionTiebreak,
-  rulesLine, renameLine, sourceNote, searchHeader, bookChoiceNote, alsoInLine,
+  rulesLine, renameLine, sourceNote, searchHeader, bookChoiceNote, alsoInLine, HOMEBREW_INFO, HOMEBREW_SOURCE_BOOK,
   type EditionInfo, type EditionMarkers, type RulesEdition, type SourceIndex, type TiebreakFields, type TwinNamer,
 } from "../edition.js";
 import { inSources, sourceLabel, type ResolvedSource } from "../source-filter.js";
@@ -265,14 +265,24 @@ export function selectCatalog<T>(
   requested: RulesEdition,
   adapter: CatalogAdapter<T>,
   index: SourceIndex,
-  source?: ResolvedSource,
+  source?: ResolvedSource | "homebrew",
   options: SelectOptions = {},
 ): CatalogSelection<T> {
+  const order = (a: T, b: T) => adapter.compare(a, b) || adapter.tiebreak(a, b);
+  if (source === "homebrew") {
+    // Reserved source: homebrew entries only, labelled homebrew whatever their
+    // books say (so no dual-edition rule), no grouping, hiding or source note.
+    const hits = all
+      .filter(t => adapter.markers(t).isHomebrew === true
+        && (adapter.nameMatches?.(t) ?? true) && (adapter.passes?.(t) ?? true))
+      .sort(order)
+      .map(entry => ({ entry, info: HOMEBREW_INFO, label: editionTag(HOMEBREW_INFO) }));
+    return { hits, hidden: 0, header: searchHeader({ sourceBook: HOMEBREW_SOURCE_BOOK }), note: null };
+  }
   const classify = classifier(all, adapter, index, requested, source);
   const info = classify.info;
   // Equal display names (a 2024 entry and a homebrew one, two homebrew
-  // entries) would otherwise keep payload order.
-  const order = (a: T, b: T) => adapter.compare(a, b) || adapter.tiebreak(a, b);
+  // entries) would otherwise keep payload order (`order`, above).
 
   if (source) {
     const hits = all
@@ -458,8 +468,15 @@ export function lookupCatalog<T>(
   requested: RulesEdition,
   adapter: LookupAdapter<T>,
   index: SourceIndex,
-  source?: ResolvedSource,
+  source?: ResolvedSource | "homebrew",
 ): { entry: T; info: EditionInfo; rulesLines: string[] } | null {
+  if (source === "homebrew") {
+    // Homebrew entries only; same-named ones resolve by the adapter's tiebreak.
+    const pool = all.filter(t => adapter.markers(t).isHomebrew === true);
+    const found = lookupByName(pool, query, requested, { name: adapter.name, info: () => HOMEBREW_INFO, tiebreak: adapter.tiebreak, twinName: adapter.twinName });
+    if (!found) return null;
+    return { entry: found.entry, info: HOMEBREW_INFO, rulesLines: rulesLine(HOMEBREW_INFO).split("\n") };
+  }
   const classify = classifier(all, lookupCatalogAdapter(adapter), index, requested, source);
   const info = classify.info;
   const pool = source ? all.filter(t => inSources(adapter.markers(t), source.ids)) : all;
