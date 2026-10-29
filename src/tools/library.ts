@@ -241,9 +241,11 @@ async function fetchLibraryBooks(): Promise<LibraryBook[]> {
   const cached = libraryCache.get(key);
   if (cached) return cached;
   if (libraryPending && libraryPending.generation === snapshot.generation) return libraryPending.promise;
-  const entry: { generation: number; promise: Promise<LibraryBook[]> } = {
+  const entry = {
     generation: snapshot.generation,
-    promise: (async () => {
+    promise: undefined as unknown as Promise<LibraryBook[]>,
+  };
+  entry.promise = (async () => {
       const books = await fetchLibraryBooksUncached();
       // The account changed while the page was in flight: never hand back the
       // old account's list. Throws SessionChangedError to every joiner too.
@@ -253,8 +255,7 @@ async function fetchLibraryBooks(): Promise<LibraryBook[]> {
       // clear or session transition makes it stale, a newer entry supersedes it.
       if (books.length > 0 && libraryPending === entry) libraryCache.set(key, books);
       return books;
-    })(),
-  };
+    })();
   libraryPending = entry;
   const release = () => {
     if (libraryPending === entry) libraryPending = null;
