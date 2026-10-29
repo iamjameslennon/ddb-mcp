@@ -50,6 +50,14 @@ let snapshotIndex: SourceIndex | null = null;
 // A failed fetch costs ~7 s of retries on a 5xx, and spell lookups ask for the
 // index on every call. Remember a failure for this long, per session generation.
 const CONFIG_FAILURE_TTL_MS = 60_000;
+/**
+ * Deadline for the shared fetch. A fetch that stalls without failing would
+ * otherwise hold every caller of its generation until undici's timeouts end it.
+ * At the deadline every caller resolves null, the slot is released and the
+ * failure is remembered like any other; the stalled fetch is aborted, and
+ * whatever it settles with later records nothing.
+ */
+export const CONFIG_FETCH_TIMEOUT_MS = 10_000;
 let configFailure: { until: number; generation: number } | null = null;
 
 // The one in-flight config fetch, shared by every cold caller of the same
@@ -95,41 +103,63 @@ function startConfigFetch(snapshot: SessionSnapshot): PendingConfigFetch {
   // clears the entry (as in session-fetch.ts's startCobaltTokenExchange).
   // A rejection (only the boundary check below can throw past fetchGameConfig's
   // own try) resolves every caller to null, so getGameConfig never rejects.
+  const ctl = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const fetched = Promise.resolve().then(() => fetchGameConfig(snapshot, ctl.signal)).catch(() => null);
+  // Resolves null at the deadline, after aborting the fetch and recording the
+  // failure (only if the session is still the one we started under).
+  const deadline = new Promise<null>(resolve => {
+    timer = setTimeout(() => {
+      ctl.abort();
+      rememberFailure(snapshot);
+      release();
+      resolve(null);
+    }, CONFIG_FETCH_TIMEOUT_MS);
+    timer.unref?.();
+  });
   const entry: PendingConfigFetch = {
     generation: snapshot.generation,
-    promise: Promise.resolve().then(() => fetchGameConfig(snapshot)).catch(() => null),
+    promise: Promise.race([fetched, deadline]).finally(() => clearTimeout(timer)),
   };
   configPending = entry;
   // Clear only our own entry, on either settlement: after an invalidation the
   // slot may hold a newer generation's fetch.
-  const release = () => {
+  function release() {
     if (configPending === entry) configPending = null;
-  };
+  }
   void entry.promise.then(release, release);
   return entry;
 }
 
+/** Remember a failure for this snapshot's generation; records nothing if the session has changed. */
+function rememberFailure(snapshot: SessionSnapshot): void {
+  try {
+    // A late failure from an old session must not suppress the new one's fetch.
+    assertSessionCurrent(snapshot);
+    configFailure = { until: Date.now() + CONFIG_FAILURE_TTL_MS, generation: snapshot.generation };
+  } catch {
+    // Session changed mid-fetch: record nothing.
+  }
+}
+
 /** One config fetch under `snapshot`. A failure resolves null. */
-async function fetchGameConfig(snapshot: SessionSnapshot): Promise<GameConfig | null> {
+async function fetchGameConfig(snapshot: SessionSnapshot, signal: AbortSignal): Promise<GameConfig | null> {
   // The session changed between publishing the entry and this run: send
   // nothing (sessionFetch would otherwise send the request under the new
   // session) and return what a stale fetch returns. captureSession re-reads
   // the session file; a throw from it rejects, which startConfigFetch turns into null.
   if (captureSession().generation !== snapshot.generation) return null;
   const fail = (): null => {
-    try {
-      // A late failure from an old session must not suppress the new one's fetch.
-      assertSessionCurrent(snapshot);
-      configFailure = { until: Date.now() + CONFIG_FAILURE_TTL_MS, generation: snapshot.generation };
-    } catch {
-      // Session changed mid-fetch: record nothing.
-    }
+    // Past the deadline the failure is already remembered (or the session moved on).
+    if (!signal.aborted) rememberFailure(snapshot);
     return null;
   };
   try {
-    const resp = await sessionFetch(CONFIG_URL);
+    const resp = await sessionFetch(CONFIG_URL, { signal });
+    if (signal.aborted) return null;
     if (!resp.ok) return fail();
     const json = await resp.json() as { data?: GameConfig } | GameConfig;
+    if (signal.aborted) return null; // settled after the deadline: record nothing
     const cfg = (json as { data?: GameConfig }).data ?? (json as GameConfig);
     if (cfg.challengeRatings) {
       // Don't cache one account's config into another account's generation.

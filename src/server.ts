@@ -10,7 +10,7 @@ import { getCampaign, listMyCampaigns, invalidateCampaignCache } from "./tools/c
 import { getParty } from "./tools/party.js";
 import { navigate, interact, getCurrentPageContent } from "./tools/navigate.js";
 import { search } from "./tools/search.js";
-import { listLibrary, readBook } from "./tools/library.js";
+import { listLibrary, readBook, clearLibraryCache } from "./tools/library.js";
 import { searchMonsters, getMonster, clearMonsterCache } from "./tools/monster.js";
 import { rateEncounter, targetEncounterCr } from "./tools/encounter.js";
 import type { Difficulty } from "./tools/encounter.js";
@@ -161,9 +161,10 @@ server.tool(
       cleared.push("monsters");
     }
     if (cache === "all") {
+      clearLibraryCache();
       invalidateCampaignCache();
       clearOpen5eCache();
-      cleared.push("campaigns", "Open5e responses");
+      cleared.push("library list", "campaigns", "Open5e responses");
     }
     return { content: [{ type: "text", text: `Cleared: ${cleared.join(", ")}. The next relevant tool call will re-fetch from D&D Beyond.` }] };
   }

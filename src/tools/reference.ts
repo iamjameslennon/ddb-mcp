@@ -450,6 +450,8 @@ export async function searchSpellsSection(params: SpellSearchParams): Promise<Se
   const source = await resolveSourceParam(params.source, SPELL_KIND);
   if (isSourceReply(source)) return plainSection(source.reply);
   const requested = params.rulesEdition ?? "2024";
+  // Started with the load, not after it (getSourceIndex never rejects).
+  const indexPromise = getSourceIndex();
   let store;
   try {
     store = await loadSpellCompendium();
@@ -462,7 +464,7 @@ export async function searchSpellsSection(params: SpellSearchParams): Promise<Se
     }
   }
   {
-    const index = await getSourceIndex();
+    const index = await indexPromise;
     const nameQuery = params.name ? normalizeName(params.name) : "";
     const schoolQuery = params.school?.toLowerCase();
 
@@ -517,6 +519,7 @@ export async function searchSpellsSection(params: SpellSearchParams): Promise<Se
 export async function getSpell(spellName: string, rulesEdition: RulesEdition = "2024", source?: string): Promise<string> {
   const resolved = await resolveSourceParam(source, SPELL_KIND);
   if (isSourceReply(resolved)) return resolved.reply;
+  const indexPromise = getSourceIndex();
   let store;
   try {
     store = await loadSpellCompendium();
@@ -531,7 +534,7 @@ export async function getSpell(spellName: string, rulesEdition: RulesEdition = "
     throw err;
   }
   {
-    const index = await getSourceIndex();
+    const index = await indexPromise;
     const found = lookupCatalog(spellList(store), spellName, rulesEdition, SPELL_ADAPTER, index, resolved);
 
     if (!found) {
@@ -733,6 +736,7 @@ export async function searchItemsSection(params: ItemSearchParams): Promise<Sear
 export async function getItem(itemName: string, rulesEdition: RulesEdition = "2024", source?: string): Promise<string> {
   const resolved = await resolveSourceParam(source, ITEM_KIND);
   if (isSourceReply(resolved)) return resolved.reply;
+  const indexPromise = getSourceIndex();
   let items;
   try {
     items = await loadItemCompendium();
@@ -745,7 +749,7 @@ export async function getItem(itemName: string, rulesEdition: RulesEdition = "20
     throw err;
   }
   {
-    const index = await getSourceIndex();
+    const index = await indexPromise;
     const found = lookupCatalog(items, itemName, rulesEdition, ITEM_ADAPTER, index, resolved);
 
     if (!found) {
@@ -805,6 +809,7 @@ async function searchCatalogList<T>(
   if (isSourceReply(source)) return plainSection(source.reply);
   const requested = params.rulesEdition ?? "2024";
 
+  const indexPromise = getSourceIndex();
   let all: T[];
   try {
     all = await spec.load();
@@ -820,7 +825,7 @@ async function searchCatalogList<T>(
     return plainSection(withSourceCaveat(text, params.source));
   }
 
-  const index = await getSourceIndex();
+  const index = await indexPromise;
   const { hits, hidden, header, note } = selectCatalog(all, requested, spec.adapter, index, source, { bookNotes: params.bookNotes });
   if (hits.length === 0) {
     if (source === "homebrew") return plainSection(homebrewNoMatch(spec.homebrew.plural));
@@ -1258,6 +1263,8 @@ async function searchOwnedEntries<T>(
   if (isSourceReply(source)) return plainSection(source.reply);
   const requested = params.rulesEdition ?? "2024";
 
+  // Homebrew mode never uses the index: don't let a config fetch decide its reply.
+  const indexPromise = source === "homebrew" ? undefined : getSourceIndex();
   let build;
   try {
     build = await spec.load();
@@ -1267,8 +1274,7 @@ async function searchOwnedEntries<T>(
     throw err;
   }
   const partial = build.source === "ddb-partial" ? `${spec.partialNote}\n\n` : "";
-  // Homebrew mode never uses the index: don't let a config fetch decide its reply.
-  const index = source === "homebrew" ? peekSourceIndex() : await getSourceIndex();
+  const index = indexPromise ? await indexPromise : peekSourceIndex();
   const { hits, hidden, header, note } = selectCatalog(build.entries, requested, spec.adapter, index, source);
   if (hits.length === 0) {
     return plainSection(source === "homebrew"

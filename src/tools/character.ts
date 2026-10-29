@@ -101,9 +101,11 @@ export async function parseCharacter(
   characterId: string,
   sections: ParseSection = "full"
 ): Promise<string> {
+  // The index fetch runs alongside the character fetch (getSourceIndex never rejects).
+  const indexPromise = getSourceIndex();
   const { json, notice } = await fetchCharacter(characterId);
   const raw = JSON.parse(json) as Record<string, unknown>;
-  return withNotice(parseCharacterData(raw, sections, await getSourceIndex()), notice);
+  return withNotice(parseCharacterData(raw, sections, await indexPromise), notice);
 }
 
 /** Character JSON, plus a notice when a logged-in fetch had to go out anonymously. */

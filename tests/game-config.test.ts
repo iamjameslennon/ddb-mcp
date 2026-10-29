@@ -25,7 +25,7 @@ vi.mock("../src/source-snapshot.js", () => ({
   ],
 }));
 
-import { getGameConfig, getSourceIndex, peekSourceIndex } from "../src/game-config.js";
+import { getGameConfig, getSourceIndex, peekSourceIndex, CONFIG_FETCH_TIMEOUT_MS } from "../src/game-config.js";
 import { sessionFetch, assertSessionCurrent, captureSession } from "../src/session-fetch.js";
 
 const response = (body: unknown, status = 200) =>
@@ -429,5 +429,57 @@ describe("getGameConfig shares one in-flight fetch per session generation", () =
     expect(c2).toBeNull();
     expect((index as Awaited<ReturnType<typeof getSourceIndex>>).sources.has(300)).toBe(false);
     expect(sessionFetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("getGameConfig deadline", () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  /** A fetch that stays pending until `settle` is called. */
+  function stall() {
+    let settle!: (r: Response) => void;
+    const calls: Array<RequestInit | undefined> = [];
+    vi.mocked(sessionFetch).mockImplementation((_url, init) => {
+      calls.push(init);
+      return new Promise<Response>(resolve => { settle = resolve; });
+    });
+    return { settle: (r: Response) => settle(r), calls };
+  }
+
+  it("a stalled config fetch resolves null at the deadline and frees the slot", async () => {
+    stall();
+    const callers = [getGameConfig(), getGameConfig()];
+    await vi.advanceTimersByTimeAsync(CONFIG_FETCH_TIMEOUT_MS - 1);
+    let settled = false;
+    void Promise.all(callers).then(() => { settled = true; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await Promise.all(callers)).toEqual([null, null]);
+    // Remembered like any failure: no new request inside the failure window.
+    expect(await getGameConfig()).toBeNull();
+    expect(vi.mocked(sessionFetch)).toHaveBeenCalledTimes(1);
+    // Slot released: after the memo expires a new fetch starts and can succeed.
+    await vi.advanceTimersByTimeAsync(60_000);
+    vi.mocked(sessionFetch).mockImplementation(async () => configResponse());
+    expect(await getGameConfig()).not.toBeNull();
+    expect(vi.mocked(sessionFetch)).toHaveBeenCalledTimes(2);
+  });
+
+  it("the stalled fetch's late settlement records nothing", async () => {
+    const { settle, calls } = stall();
+    const first = getGameConfig();
+    await vi.advanceTimersByTimeAsync(CONFIG_FETCH_TIMEOUT_MS);
+    expect(await first).toBeNull();
+    expect((calls[0]?.signal as AbortSignal).aborted).toBe(true);
+    settle(response({ data: LIVE }));
+    await vi.advanceTimersByTimeAsync(0);
+    // The late success is not cached: still inside the failure memo, so null.
+    expect(await getGameConfig()).toBeNull();
+    await vi.advanceTimersByTimeAsync(60_000);
+    vi.mocked(sessionFetch).mockImplementation(async () => response({}, 503));
+    expect(await getGameConfig()).toBeNull();
+    expect(vi.mocked(sessionFetch)).toHaveBeenCalledTimes(2);
   });
 });

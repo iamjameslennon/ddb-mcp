@@ -3,15 +3,20 @@ import { buildSourceIndex } from "../src/edition.js";
 import { INDEX } from "./fixtures/character-edition-helpers.js";
 import { buildFixture } from "./fixtures/library-rsc.js";
 
-const mocks = vi.hoisted(() => ({ sessionFetch: vi.fn(), hasValidSession: vi.fn(() => true) }));
+const mocks = vi.hoisted(() => ({
+  sessionFetch: vi.fn(),
+  hasValidSession: vi.fn(() => true),
+  getSourceIndex: vi.fn(),
+  generation: { n: 1 },
+  hooks: [] as Array<() => void>,
+}));
 vi.mock("../src/session-fetch.js", () => ({
   sessionFetch: mocks.sessionFetch,
   hasValidSession: mocks.hasValidSession,
+  captureSession: () => ({ generation: mocks.generation.n }),
+  onSessionInvalidated: (cb: () => void) => { mocks.hooks.push(cb); },
 }));
-vi.mock("../src/game-config.js", async () => {
-  const { INDEX } = await import("./fixtures/character-edition-helpers.js");
-  return { getSourceIndex: async () => INDEX };
-});
+vi.mock("../src/game-config.js", () => ({ getSourceIndex: mocks.getSourceIndex }));
 
 import { librarySourceId, libraryBookInfo, tagLibraryBooks, listLibrary, readBook } from "../src/tools/library.js";
 
@@ -108,7 +113,39 @@ const PHB = { name: "Player's Handbook (2024)", relativePath: "/sources/dnd/phb-
 const libCalls = () => mocks.sessionFetch.mock.calls.filter(c => LIBRARY_RE.test(String(c[0])));
 
 describe("library tools", () => {
-  beforeEach(() => { mocks.sessionFetch.mockReset(); mocks.hasValidSession.mockReturnValue(true); });
+  beforeEach(() => {
+    mocks.sessionFetch.mockReset();
+    mocks.hasValidSession.mockReturnValue(true);
+    mocks.getSourceIndex.mockReset().mockImplementation(async () => INDEX);
+    mocks.hooks.forEach(h => h());
+  });
+
+  it("readBook resolves a title without tagging the library", async () => {
+    route([{ name: "Xanathar's Guide to Everything", relativePath: "/sources/not-a-source", isOwned: true }]);
+    await readBook("xanathar");
+    expect(mocks.getSourceIndex).toHaveBeenCalledTimes(1);
+  });
+  it("two reads of an unjoined slug fetch the library page once", async () => {
+    route([{ name: "Player's Handbook (2014)", relativePath: "/sources/dnd/old-phb", isOwned: true }]);
+    await readBook("dnd/old-phb");
+    await readBook("dnd/old-phb");
+    expect(libCalls()).toHaveLength(1);
+  });
+  it("a session change drops the library cache", async () => {
+    route([{ name: "Player's Handbook (2014)", relativePath: "/sources/dnd/old-phb", isOwned: true }]);
+    await readBook("dnd/old-phb");
+    mocks.generation.n += 1;
+    mocks.hooks.forEach(h => h());
+    await readBook("dnd/old-phb");
+    expect(libCalls()).toHaveLength(2);
+  });
+  it("a failed library fetch is not cached", async () => {
+    route([], 500);
+    await readBook("dnd/old-phb");
+    route([{ name: "Player's Handbook (2014)", relativePath: "/sources/dnd/old-phb", isOwned: true }]);
+    const out = await readBook("dnd/old-phb");
+    expect(out.split("\n")[1]).toBe("Rules: 2014 · Player's Handbook (2014)");
+  });
 
   it("readBook puts a rules line under the title", async () => {
     route([PHB]);

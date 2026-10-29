@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 import type { AnyNode } from "domhandler";
-import { sessionFetch, hasValidSession } from "../session-fetch.js";
+import { sessionFetch, hasValidSession, captureSession, onSessionInvalidated } from "../session-fetch.js";
+import { TtlCache } from "../cache.js";
 import { wrapUntrusted, stripHtml } from "../utils.js";
 import { getSourceIndex } from "../game-config.js";
 import { classifyEdition, normalizeName, rulesLine, editionTag, type EditionInfo, type SourceIndex } from "../edition.js";
@@ -147,8 +148,8 @@ export function matchBookSlug(
  */
 export async function resolveBookSlug(input: string): Promise<{ slug: string; title: string | null }> {
   if (input.includes("/")) return { slug: input, title: null };
-  const raw = await listLibrary();
-  const { books } = JSON.parse(raw) as { books: Array<{ title: string; slug: string }> };
+  // The untagged list: no source index needed to match a title.
+  const books = await fetchLibraryBooks();
   const slug = matchBookSlug(books, input);
   return { slug, title: books.find(b => b.slug === slug)?.title ?? null };
 }
@@ -214,7 +215,28 @@ export function tagLibraryBooks(
 
 // ── Public tools ─────────────────────────────────────────────────────────────
 
+// The parsed library list, cached briefly: a title read fetches it once to
+// resolve the slug and may need it again for the edition join. Keyed by session
+// generation, dropped on any session transition; failures are never cached.
+const LIBRARY_CACHE_TTL_MS = 60_000;
+const libraryCache = new TtlCache<LibraryBook[]>(LIBRARY_CACHE_TTL_MS, 4);
+onSessionInvalidated(() => libraryCache.clear());
+
+/** Drop the cached library list (ddb_clear_cache). */
+export function clearLibraryCache(): void {
+  libraryCache.clear();
+}
+
 async function fetchLibraryBooks(): Promise<LibraryBook[]> {
+  const key = String(captureSession().generation);
+  const cached = libraryCache.get(key);
+  if (cached) return cached;
+  const books = await fetchLibraryBooksUncached();
+  libraryCache.set(key, books);
+  return books;
+}
+
+async function fetchLibraryBooksUncached(): Promise<LibraryBook[]> {
   const resp = await sessionFetch(LIBRARY_URL);
   if (!resp.ok) {
     throw new Error(`Library fetch failed: ${resp.status} ${resp.statusText}`);

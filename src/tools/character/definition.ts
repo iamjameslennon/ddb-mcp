@@ -280,10 +280,11 @@ export async function getDefinition(
   characterId: string,
   query: string,
 ): Promise<string> {
+  const indexPromise = getSourceIndex();
   const { json, notice } = await fetchCharacter(characterId);
   const raw = JSON.parse(json) as Record<string, unknown>;
   const char = (raw?.data ?? raw) as Record<string, unknown>;
-  const index = await getSourceIndex();
+  const index = await indexPromise;
 
   return withNotice(formatCharacterLookup(char, query, index), notice);
 }
