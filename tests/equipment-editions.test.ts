@@ -93,7 +93,7 @@ function installItems(items: unknown[] = ITEMS) {
   fetchMock.mockImplementation(async (url: string) => {
     if (url === COBALT_URL) return jsonResponse({ token: makeJwt("99") });
     if (url.startsWith(`${GAME_DATA}/items`)) return jsonResponse({ data: items });
-    if (url.includes("api.open5e.com")) return jsonResponse({ count: 0, results: [] });
+    if (url.includes("api.open5e.com")) return jsonResponse({}, 503);
     return jsonResponse({});
   });
 }

@@ -116,6 +116,11 @@ export async function loadO5Document<T extends O5Record>(endpoint: O5Endpoint, e
     const p: Promise<unknown[]> = fetchPages(url)
       .then(records => {
         const kept = (records as T[]).filter(r => docKey(r) === doc);
+        // An empty document is a failure (remembered, never cached): the response ignored the filter or the key changed.
+        if (kept.length === 0) throw new Error(`Open5e returned no ${doc} records: ${new URL(url).pathname}`);
+        return kept;
+      })
+      .then(kept => {
         // A clear while this fetch was in flight dropped its entry: don't repopulate.
         if (o5Pending.get(url) === p) open5eCache.set(url, kept);
         return kept;

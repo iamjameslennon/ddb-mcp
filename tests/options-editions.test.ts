@@ -285,6 +285,16 @@ describe("source and failures", () => {
     );
   });
 
+  it("an empty Open5e document is a failed load, so the reply says both failed", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === COBALT_URL) return jsonResponse({ token: makeJwt("99") });
+      if (url.startsWith(GAME_DATA)) return jsonResponse({}, 403);
+      return jsonResponse({ count: 0, results: [] });
+    });
+    expect(await reference.searchBackgrounds({ name: "acolyte" }))
+      .toBe("Backgrounds unavailable — DnD Beyond and Open5e both failed.");
+  });
+
   it("an empty list is never cached", async () => {
     install({ feats: [] });
     await reference.searchFeats({});

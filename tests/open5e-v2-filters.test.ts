@@ -71,10 +71,12 @@ describe("spells loader", () => {
     await expect(loadO5Document("spells", "2024")).rejects.toThrow("paging loop");
   });
 
-  it("throws when next leaves api.open5e.com, fetching nothing from it, and caches no failure", async () => {
+  it("throws when next leaves api.open5e.com, fetching nothing from it, and remembers the failure", async () => {
     const fetchMock = vi.fn().mockImplementation(async () => json({ count: 2, next: "https://evil.example/v2/spells/?page=2", results: [rec("A")] }));
     vi.stubGlobal("fetch", fetchMock);
     await expect(loadO5Document("spells", "2024")).rejects.toThrow("paging left");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await expect(loadO5Document("spells", "2024")).rejects.toThrow("paging left"); // remembered: no refetch
     expect(fetchMock).toHaveBeenCalledTimes(1);
     clearOpen5eCache(); // a failure is memoized for 60 s; a clear makes the retry real
     await expect(loadO5Document("spells", "2024")).rejects.toThrow("paging left");
@@ -89,13 +91,15 @@ describe("spells loader", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
-  it("throws past 20 pages, and caches no failure", async () => {
+  it("throws past 20 pages, and remembers the failure", async () => {
     const fetchMock = vi.fn().mockImplementation(async (url: string) => {
       const page = Number(new URL(url).searchParams.get("page") ?? 1);
       return json({ count: 99, next: `${spellsUrl}&page=${page + 1}`, results: [rec(`P${page}`)] });
     });
     vi.stubGlobal("fetch", fetchMock);
     await expect(loadO5Document("spells", "2024")).rejects.toThrow("20 pages");
+    expect(fetchMock).toHaveBeenCalledTimes(20);
+    await expect(loadO5Document("spells", "2024")).rejects.toThrow("20 pages"); // remembered: no refetch
     expect(fetchMock).toHaveBeenCalledTimes(20);
     clearOpen5eCache();
     await expect(loadO5Document("spells", "2024")).rejects.toThrow("20 pages");
@@ -259,16 +263,36 @@ describe("failure memo, deadline and response checks", () => {
     await expect(loadO5Document("spells", "2024")).rejects.toThrow("redirected off");
   });
 
-  it("a stalled multi-page load fails at the document deadline", async () => {
+  it("a page of only other-document records fails, is not cached, and the failure is remembered", async () => {
+    const other = { key: "x", name: "X", document: { key: "srd-2014" } };
+    const fetchMock = vi.fn().mockResolvedValue(json({ count: 1, next: null, results: [other] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(loadO5Document("spells", "2024")).rejects.toThrow("no srd-2024 records: /v2/spells/");
+    await expect(loadO5Document("spells", "2024")).rejects.toThrow("no srd-2024 records"); // remembered, not cached as []
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    clearOpen5eCache();
+    fetchMock.mockImplementation(o5FixtureFetch());
+    await expect(loadO5Document("spells", "2024")).resolves.toEqual(o5Fixture("srd-2024", "spells"));
+  });
+
+  it("a fixture whose count exceeds its records fails the load", async () => {
+    vi.stubGlobal("fetch", vi.fn(o5FixtureFetch({}, { "srd-2024/spells": 339 })));
+    await expect(loadO5Document("spells", "2024")).rejects.toThrow(/of 339 records/);
+  });
+
+  it("the document deadline spans pages: page 1 takes 15 s, page 2 stalls, and the load fails at 30 s from the start", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(json({ count: 2, next: `${spellsUrl}&page=2`, results: [rec("A")] }))
+      .mockImplementationOnce(() => new Promise<Response>(res => { setTimeout(() => res(json({ count: 2, next: `${spellsUrl}&page=2`, results: [rec("A")] })), 15_000); }))
       .mockImplementationOnce((_url: string, init: { signal: AbortSignal }) => new Promise((_res, rej) => {
         init.signal.addEventListener("abort", () => rej(init.signal.reason));
       }));
     vi.stubGlobal("fetch", fetchMock);
     const outcome = expect(loadO5Document("spells", "2024")).rejects.toThrow(`passed ${O5_DOCUMENT_DEADLINE_MS} ms`);
-    await vi.advanceTimersByTimeAsync(O5_DOCUMENT_DEADLINE_MS);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // page 2 alone would only hit its own 20 s request timeout at t=35 s; the document deadline fires first, at t=30 s
+    await vi.advanceTimersByTimeAsync(O5_DOCUMENT_DEADLINE_MS - 15_000);
     await outcome;
   });
 });

@@ -25,7 +25,7 @@ export function o5Record<T = O5Record>(doc: Doc, endpoint: O5Endpoint, name: str
 const URL_RE = /^https:\/\/api\.open5e\.com\/v2\/([a-z]+)\/\?document__key__in=(srd-2024|srd-2014)&limit=1000$/;
 
 /** Serves `…/v2/<endpoint>/?document__key__in=<doc>&limit=1000` from the fixtures; anything else is a 404. `overrides` is keyed `"<doc>/<endpoint>"`. */
-export function o5FixtureFetch(overrides: Partial<Record<string, unknown[]>> = {}): (input: unknown) => Promise<Response> {
+export function o5FixtureFetch(overrides: Partial<Record<string, unknown[]>> = {}, counts: Partial<Record<string, number>> = {}): (input: unknown) => Promise<Response> {
   return async (input: unknown) => {
     const m = URL_RE.exec(String(input));
     if (!m) return new Response("not found", { status: 404 });
@@ -38,7 +38,7 @@ export function o5FixtureFetch(overrides: Partial<Record<string, unknown[]>> = {
       return new Response("not found", { status: 404 });
     }
     const results = overrides[`${doc}/${endpoint}`] ?? body.results;
-    const count = results.length;
+    const count = counts[`${doc}/${endpoint}`] ?? results.length;
     return new Response(JSON.stringify({ count, next: null, previous: null, results }), { status: 200, headers: { "Content-Type": "application/json" } });
   };
 }
