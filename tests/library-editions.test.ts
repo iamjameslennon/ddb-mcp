@@ -9,19 +9,23 @@ const mocks = vi.hoisted(() => ({
   getSourceIndex: vi.fn(),
   generation: { n: 1 },
   hooks: [] as Array<() => void>,
+  SessionChangedError: class SessionChangedError extends Error {
+    constructor() { super("Session changed; the previous credentials were revoked."); this.name = "SessionChangedError"; }
+  },
 }));
 vi.mock("../src/session-fetch.js", () => ({
   sessionFetch: mocks.sessionFetch,
   hasValidSession: mocks.hasValidSession,
   captureSession: () => ({ generation: mocks.generation.n }),
   assertSessionCurrent: (snap: { generation: number }) => {
-    if (snap.generation !== mocks.generation.n) throw new Error("session changed");
+    if (snap.generation !== mocks.generation.n) throw new mocks.SessionChangedError();
   },
+  SessionChangedError: mocks.SessionChangedError,
   onSessionInvalidated: (cb: () => void) => { mocks.hooks.push(cb); },
 }));
 vi.mock("../src/game-config.js", () => ({ getSourceIndex: mocks.getSourceIndex }));
 
-import { librarySourceId, libraryBookInfo, tagLibraryBooks, listLibrary, readBook } from "../src/tools/library.js";
+import { librarySourceId, libraryBookInfo, tagLibraryBooks, listLibrary, readBook, clearLibraryCache } from "../src/tools/library.js";
 
 describe("librarySourceId", () => {
   it("joins by the slug's last segment", () => {
@@ -157,7 +161,7 @@ describe("library tools", () => {
     expect(out.split("\n")[1]).toBe("Rules: 2014 · Xanathar's Guide to Everything");
     expect(libCalls()).toHaveLength(2);
   });
-  it("an account switch while the page is in flight caches nothing under the old key", async () => {
+  it("an account switch while the page is in flight throws and caches nothing under the old key", async () => {
     let release!: () => void;
     const gate = new Promise<void>(r => { release = r; });
     const book = { name: "Player's Handbook (2014)", relativePath: "/sources/dnd/old-phb", isOwned: true };
@@ -167,12 +171,70 @@ describe("library tools", () => {
       return new Response("<html><article><p>Text</p></article></html>", { status: 200 });
     });
     const inflight = readBook("dnd/old-phb");
+    const joiner = readBook("dnd/old-phb");
+    const settled = Promise.allSettled([inflight, joiner]);
     await new Promise(r => setTimeout(r, 0));
     mocks.generation.n += 1;
     release();
-    await inflight;
+    const results = await settled;
+    expect(results.map(r => r.status)).toEqual(["rejected", "rejected"]);
+    expect(String((results[0] as PromiseRejectedResult).reason)).toMatch(/session changed/i);
     mocks.generation.n -= 1; // back to the old key: it must hold nothing
     await readBook("dnd/old-phb");
+    expect(libCalls()).toHaveLength(2);
+  });
+  it("an empty parse after a session change also throws", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(r => { release = r; });
+    mocks.sessionFetch.mockImplementation(async () => { await gate; return new Response(buildFixture([]), { status: 200 }); });
+    const inflight = readBook("xanathar");
+    await new Promise(r => setTimeout(r, 0));
+    mocks.generation.n += 1;
+    release();
+    await expect(inflight).rejects.toThrow(/session changed/i);
+    mocks.generation.n -= 1;
+  });
+  it("a clear mid-fetch leaves nothing cached", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(r => { release = r; });
+    const book = { name: "Player's Handbook (2014)", relativePath: "/sources/dnd/old-phb", isOwned: true };
+    mocks.sessionFetch.mockImplementation(async (url: unknown) => {
+      if (LIBRARY_RE.test(String(url))) { await gate; return new Response(buildFixture([book]), { status: 200 }); }
+      return new Response("<html><article><p>Text</p></article></html>", { status: 200 });
+    });
+    const inflight = readBook("dnd/old-phb");
+    await new Promise(r => setTimeout(r, 0));
+    clearLibraryCache();
+    release();
+    await inflight;
+    await readBook("dnd/old-phb");
+    expect(libCalls()).toHaveLength(2);
+  });
+  it("an older entry settling last does not overwrite the newer one", async () => {
+    const gates: Array<() => void> = [];
+    const v = (title: string) => ({ name: title, relativePath: "/sources/dnd/old-phb", isOwned: true });
+    const pages = [[v("Old Title (2014)")], [v("Player's Handbook (2014)")]];
+    let n = 0;
+    mocks.sessionFetch.mockImplementation(async (url: unknown) => {
+      if (LIBRARY_RE.test(String(url))) {
+        const i = n++;
+        await new Promise<void>(r => { gates[i] = r; });
+        return new Response(buildFixture(pages[i]), { status: 200 });
+      }
+      return new Response("<html><article><p>Text</p></article></html>", { status: 200 });
+    });
+    const first = readBook("dnd/old-phb");
+    await new Promise(r => setTimeout(r, 0));
+    clearLibraryCache(); // the first entry is now stale
+    const second = readBook("dnd/old-phb");
+    await new Promise(r => setTimeout(r, 0));
+    gates[1]();
+    await second;
+    gates[0]();
+    await first;
+    // The cache holds the newer page, not the older one that settled last.
+    const out = await readBook("dnd/old-phb");
+    expect(out.split("\n")[1]).toBe("Rules: 2014 · Player's Handbook (2014)");
     expect(libCalls()).toHaveLength(2);
   });
   it("concurrent cold reads in one generation share one library fetch", async () => {
@@ -195,7 +257,7 @@ describe("library tools", () => {
     await readBook("dnd/old-phb");
     expect(libCalls()).toHaveLength(2);
     release();
-    await first;
+    await expect(first).rejects.toThrow(/session/i); // the older fetch finished after the switch
     mocks.generation.n -= 1;
   });
   it("a failed library fetch is not cached", async () => {

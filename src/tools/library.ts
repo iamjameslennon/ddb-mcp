@@ -1,6 +1,6 @@
 import * as cheerio from "cheerio";
 import type { AnyNode } from "domhandler";
-import { sessionFetch, hasValidSession, captureSession, assertSessionCurrent, onSessionInvalidated } from "../session-fetch.js";
+import { sessionFetch, hasValidSession, captureSession, assertSessionCurrent, onSessionInvalidated, SessionChangedError } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
 import { wrapUntrusted, stripHtml } from "../utils.js";
 import { getSourceIndex } from "../game-config.js";
@@ -241,20 +241,17 @@ async function fetchLibraryBooks(): Promise<LibraryBook[]> {
   const cached = libraryCache.get(key);
   if (cached) return cached;
   if (libraryPending && libraryPending.generation === snapshot.generation) return libraryPending.promise;
-  const entry = {
+  const entry: { generation: number; promise: Promise<LibraryBook[]> } = {
     generation: snapshot.generation,
     promise: (async () => {
       const books = await fetchLibraryBooksUncached();
+      // The account changed while the page was in flight: never hand back the
+      // old account's list. Throws SessionChangedError to every joiner too.
+      assertSessionCurrent(snapshot);
       // Cache only a non-empty parse (an interstitial or truncated page parses
-      // to []), and only if the account hasn't changed while the page was in flight.
-      if (books.length > 0) {
-        try {
-          assertSessionCurrent(snapshot);
-          libraryCache.set(key, books);
-        } catch {
-          // Session changed mid-fetch: return the result, cache nothing.
-        }
-      }
+      // to []), and only while this entry is still the authoritative one: a
+      // clear or session transition makes it stale, a newer entry supersedes it.
+      if (books.length > 0 && libraryPending === entry) libraryCache.set(key, books);
       return books;
     })(),
   };
@@ -355,8 +352,10 @@ export async function readBook(
         .sort((a, b) => b.slug.length - a.slug.length)[0];
       const title = match?.title ?? null;
       bookRef = { slug: resolvedSlug, title };
-    } catch {
-      // no title: stays "edition not stated"
+    } catch (err) {
+      // A session change must reach the caller; any other failure just leaves
+      // the book "edition not stated".
+      if (err instanceof SessionChangedError) throw err;
     }
   }
   const rules = rulesLine(libraryBookInfo(bookRef, index));
