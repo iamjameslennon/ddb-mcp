@@ -62,6 +62,73 @@
       }
     },
     {
+      "key": "srd-2024_flame-tongue-greatsword",
+      "name": "Flame Tongue Greatsword",
+      "desc": "While holding this magic weapon, you can take a Bonus Action and use a command word to cause flames to engulf the damage-dealing part of the weapon. These flames shed Bright Light in a 40 foot radius and Dim Light for an additional 40 feet. While the weapon is ablaze, it deals an extra 2d6 Fire damage on a hit. The flames last until you take a Bonus Action to issue the command again or until you drop, stow, or sheathe the weapon.",
+      "category": {
+        "name": "Weapon",
+        "key": "weapon"
+      },
+      "rarity": {
+        "name": "Rare",
+        "key": "rare",
+        "rank": 3
+      },
+      "weapon": {
+        "name": "Greatsword",
+        "key": "srd-2024_greatsword",
+        "damage_type": {
+          "name": "Slashing",
+          "key": "slashing"
+        },
+        "damage_dice": "2d6",
+        "properties": [
+          {
+            "property": {
+              "name": "Graze",
+              "type": "Mastery",
+              "desc": "If your attack roll with this weapon misses a creature, you can deal damage to that creature equal to the ability modifier you used to make the attack roll. This damage is the same type dealt by the weapon, and the damage can be increased only by increasing the ability modifier."
+            },
+            "detail": null
+          },
+          {
+            "property": {
+              "name": "Heavy",
+              "type": null,
+              "desc": "You have Disadvantage on attack rolls with a Heavy weapon if it's a Melee weapon and your Strength score isn't at least 13 or if it's a Ranged weapon and your Dexterity score isn't at least 13."
+            },
+            "detail": null
+          },
+          {
+            "property": {
+              "name": "Two-Handed",
+              "type": null,
+              "desc": "A Two-Handed weapon requires two hands when you attack with it."
+            },
+            "detail": null
+          }
+        ],
+        "is_simple": false,
+        "is_martial": true,
+        "is_improvised": false,
+        "distance_unit": "feet"
+      },
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "6.000",
+      "weight_unit": "lb",
+      "cost": "0.00",
+      "requires_attunement": true,
+      "attunement_detail": null,
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      }
+    },
+    {
       "key": "srd-2024_flame-tongue-longsword",
       "name": "Flame Tongue Longsword",
       "desc": "While holding this magic weapon, you can take a Bonus Action and use a command word to cause flames to engulf the damage-dealing part of the weapon. These flames shed Bright Light in a 40 foot radius and Dim Light for an additional 40 feet. While the weapon is ablaze, it deals an extra 2d6 Fire damage on a hit. The flames last until you take a Bonus Action to issue the command again or until you drop, stow, or sheathe the weapon.",
@@ -114,6 +181,238 @@
       "weight_unit": "lb",
       "cost": "0.00",
       "requires_attunement": true,
+      "attunement_detail": null,
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      }
+    },
+    {
+      "key": "srd-2024_flame-tongue-rapier",
+      "name": "Flame Tongue Rapier",
+      "desc": "While holding this magic weapon, you can take a Bonus Action and use a command word to cause flames to engulf the damage-dealing part of the weapon. These flames shed Bright Light in a 40 foot radius and Dim Light for an additional 40 feet. While the weapon is ablaze, it deals an extra 2d6 Fire damage on a hit. The flames last until you take a Bonus Action to issue the command again or until you drop, stow, or sheathe the weapon.",
+      "category": {
+        "name": "Weapon",
+        "key": "weapon"
+      },
+      "rarity": {
+        "name": "Rare",
+        "key": "rare",
+        "rank": 3
+      },
+      "weapon": {
+        "name": "Rapier",
+        "key": "srd-2024_rapier",
+        "damage_type": {
+          "name": "Piercing",
+          "key": "piercing"
+        },
+        "damage_dice": "1d8",
+        "properties": [
+          {
+            "property": {
+              "name": "Finesse",
+              "type": null,
+              "desc": "When making an attack with a Finesse weapon, use your choice of your Strength or Dexterity modifier for the attack and damage rolls. You must use the same modifier for both rolls."
+            },
+            "detail": null
+          },
+          {
+            "property": {
+              "name": "Vex",
+              "type": "Mastery",
+              "desc": "If you hit a creature with this weapon and deal damage to the creature, you have Advantage on your next attack roll against that creature before the end of your next turn."
+            },
+            "detail": null
+          }
+        ],
+        "is_simple": false,
+        "is_martial": true,
+        "is_improvised": false,
+        "distance_unit": "feet"
+      },
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "2.000",
+      "weight_unit": "lb",
+      "cost": "0.00",
+      "requires_attunement": true,
+      "attunement_detail": null,
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      }
+    },
+    {
+      "key": "srd-2024_flame-tongue-shortsword",
+      "name": "Flame Tongue Shortsword",
+      "desc": "While holding this magic weapon, you can take a Bonus Action and use a command word to cause flames to engulf the damage-dealing part of the weapon. These flames shed Bright Light in a 40 foot radius and Dim Light for an additional 40 feet. While the weapon is ablaze, it deals an extra 2d6 Fire damage on a hit. The flames last until you take a Bonus Action to issue the command again or until you drop, stow, or sheathe the weapon.",
+      "category": {
+        "name": "Weapon",
+        "key": "weapon"
+      },
+      "rarity": {
+        "name": "Rare",
+        "key": "rare",
+        "rank": 3
+      },
+      "weapon": {
+        "name": "Shortsword",
+        "key": "srd-2024_shortsword",
+        "damage_type": {
+          "name": "Piercing",
+          "key": "piercing"
+        },
+        "damage_dice": "1d6",
+        "properties": [
+          {
+            "property": {
+              "name": "Finesse",
+              "type": null,
+              "desc": "When making an attack with a Finesse weapon, use your choice of your Strength or Dexterity modifier for the attack and damage rolls. You must use the same modifier for both rolls."
+            },
+            "detail": null
+          },
+          {
+            "property": {
+              "name": "Light",
+              "type": null,
+              "desc": "When you take the Attack action on your turn and attack with a Light weapon, you can make one extra attack as a Bonus Action later on the same turn. That extra attack must be made with a different Light weapon, and you don't add your ability modifier to the extra attack's damage unless that modifier is negative."
+            },
+            "detail": null
+          },
+          {
+            "property": {
+              "name": "Vex",
+              "type": "Mastery",
+              "desc": "If you hit a creature with this weapon and deal damage to the creature, you have Advantage on your next attack roll against that creature before the end of your next turn."
+            },
+            "detail": null
+          }
+        ],
+        "is_simple": false,
+        "is_martial": true,
+        "is_improvised": false,
+        "distance_unit": "feet"
+      },
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "2.000",
+      "weight_unit": "lb",
+      "cost": "0.00",
+      "requires_attunement": true,
+      "attunement_detail": null,
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      }
+    },
+    {
+      "key": "srd-2024_shield-plus-1",
+      "name": "Shield (+1)",
+      "desc": "While holding this Shield, you have a bonus to Armor Class determined by the Shield's rarity, in addition to the Shield's normal bonus to AC.",
+      "category": {
+        "name": "Armor",
+        "key": "armor"
+      },
+      "rarity": {
+        "name": "Uncommon",
+        "key": "uncommon",
+        "rank": 2
+      },
+      "weapon": null,
+      "armor": {
+        "name": "Shield",
+        "key": "srd-2024_shield",
+        "category": "heavy",
+        "ac_base": 2,
+        "ac_display": "2",
+        "ac_add_dexmod": false,
+        "ac_cap_dexmod": null,
+        "grants_stealth_disadvantage": false,
+        "strength_score_required": null
+      },
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "6.000",
+      "weight_unit": "lb",
+      "cost": "0.00",
+      "requires_attunement": false,
+      "attunement_detail": null,
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      }
+    },
+    {
+      "key": "srd-2024_vicious-light-hammer",
+      "name": "Vicious Light Hammer",
+      "desc": "This magic weapon deals an extra 2d6 damage to any creature it hits. This extra damage is of the same type as the weapon's normal damage.",
+      "category": {
+        "name": "Weapon",
+        "key": "weapon"
+      },
+      "rarity": {
+        "name": "Rare",
+        "key": "rare",
+        "rank": 3
+      },
+      "weapon": {
+        "name": "Light Hammer",
+        "key": "srd-2024_light-hammer",
+        "damage_type": {
+          "name": "Bludgeoning",
+          "key": "bludgeoning"
+        },
+        "damage_dice": "1d4",
+        "properties": [
+          {
+            "property": {
+              "name": "Light",
+              "type": null,
+              "desc": "When you take the Attack action on your turn and attack with a Light weapon, you can make one extra attack as a Bonus Action later on the same turn. That extra attack must be made with a different Light weapon, and you don't add your ability modifier to the extra attack's damage unless that modifier is negative."
+            },
+            "detail": null
+          },
+          {
+            "property": {
+              "name": "Nick",
+              "type": "Mastery",
+              "desc": "When you make the extra attack of the Light property, you can make it as part of the Attack action instead of as a Bonus Action. You can make this extra attack only once per turn."
+            },
+            "detail": null
+          },
+          {
+            "property": {
+              "name": "Thrown",
+              "type": null,
+              "desc": "If a weapon has the Thrown property, you can throw the weapon to make a ranged attack, and you can draw that weapon as part of the attack. If the weapon is a Melee weapon, use the same ability modifier for the attack and damage rolls that you use for a melee attack with that weapon."
+            },
+            "detail": "Range 20/60"
+          }
+        ],
+        "is_simple": true,
+        "is_martial": false,
+        "is_improvised": false,
+        "distance_unit": "feet"
+      },
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "2.000",
+      "weight_unit": "lb",
+      "cost": "0.00",
+      "requires_attunement": false,
       "attunement_detail": null,
       "document": {
         "key": "srd-2024",

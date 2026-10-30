@@ -56,6 +56,58 @@
       "is_improvised": false
     },
     {
+      "key": "srd-2024_hand-crossbow",
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      },
+      "properties": [
+        {
+          "property": {
+            "name": "Ammunition",
+            "type": null,
+            "desc": "You can use a weapon that has the Ammunition property to make a ranged attack only if you have ammunition to fire from it. The type of ammunition required is specified with the weapon's range. Each attack expends one piece of ammunition. Drawing the ammunition is part of the attack (you need a free hand to load a one-handed weapon). After a fight, you can spend 1 minute to recover half the ammunition (round down) you used in the fight; the rest is lost."
+          },
+          "detail": "Range 30/120; Bolt"
+        },
+        {
+          "property": {
+            "name": "Light",
+            "type": null,
+            "desc": "When you take the Attack action on your turn and attack with a Light weapon, you can make one extra attack as a Bonus Action later on the same turn. That extra attack must be made with a different Light weapon, and you don't add your ability modifier to the extra attack's damage unless that modifier is negative."
+          },
+          "detail": null
+        },
+        {
+          "property": {
+            "name": "Loading",
+            "type": null,
+            "desc": "You can fire only one piece of ammunition from a Loading weapon when you use an action, a Bonus Action, or a Reaction to fire it, regardless of the number of attacks you can normally make."
+          },
+          "detail": null
+        },
+        {
+          "property": {
+            "name": "Vex",
+            "type": "Mastery",
+            "desc": "If you hit a creature with this weapon and deal damage to the creature, you have Advantage on your next attack roll against that creature before the end of your next turn."
+          },
+          "detail": null
+        }
+      ],
+      "damage_type": {
+        "name": "Piercing",
+        "key": "piercing"
+      },
+      "distance_unit": "feet",
+      "name": "Hand Crossbow",
+      "damage_dice": "1d6",
+      "range": 30,
+      "long_range": 120,
+      "is_simple": false,
+      "is_improvised": false
+    },
+    {
       "key": "srd-2024_longsword",
       "document": {
         "key": "srd-2024",

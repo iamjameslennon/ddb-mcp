@@ -100,6 +100,28 @@
       }
     },
     {
+      "key": "srd-2024_net",
+      "name": "Net",
+      "desc": "When you take the Attack action, you can replace one of your attacks with throwing a Net. Target a creature you can see within 15 feet of yourself. The target must succeed on a Dexterity saving throw (DC 8 plus your Dexterity modifier and Proficiency Bonus) or have the Restrained condition until it escapes. The target succeeds automatically if it is Huge or larger. To escape, the target or a creature within 5 feet of it must take an action to make a DC 10 Strength (Athletics) check, freeing the Restrained creature on a success. Destroying the Net (AC 10; 5 HP; Immunity to Bludgeoning, Poison, and Psychic damage) also frees the target, ending the effect.",
+      "category": {
+        "name": "Weapon",
+        "key": "weapon"
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "3.000",
+      "weight_unit": "lb",
+      "cost": "1.00",
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      }
+    },
+    {
       "key": "srd-2024_rope",
       "name": "Rope",
       "desc": "As a Utilize action, you can tie a knot with Rope if you succeed on a DC 10 Dexterity (Sleight of Hand) check. The Rope can be burst with a successful DC 20 Strength (Athletics) check. You can bind an unwilling creature with the Rope only if the creature has the Grappled, Incapacitated, or Restrained condition. If the creature's legs are bound, the creature has the Restrained condition until it escapes. Escaping the Rope requires the creature to make a successful DC 15 Dexterity (Acrobatics) check as an action.",
@@ -116,6 +138,28 @@
       "weight": "5.000",
       "weight_unit": "lb",
       "cost": "1.00",
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      }
+    },
+    {
+      "key": "srd-2024_smiths-tools",
+      "name": "Smith's Tools (20 GP)",
+      "desc": "Ability: Strength. Utilize: Pry open a door or container (DC 20). Craft: Any Melee weapon (except Club, Greatclub, Quarterstaff, and Whip), Medium armor (except Hide), Heavy armor, Ball Bearings, Bucket, Caltrops, Chain, Crowbar, Firearm Bullets, Grappling Hook, Iron Pot, Iron Spikes, Sling Bullets",
+      "category": {
+        "name": "Tools",
+        "key": "tools"
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "8.000",
+      "weight_unit": "lb",
+      "cost": "20.00",
       "document": {
         "key": "srd-2024",
         "name": "System Reference Document 5.2"

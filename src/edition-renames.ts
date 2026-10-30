@@ -284,3 +284,24 @@ export const OPEN5E_ARMOUR_RENAMES: ReadonlyArray<RenamePair> = [
   // heavy, "18", STR 15, stealth disadvantage
   ["Plate", "Plate Armor"],
 ];
+
+/**
+ * Open5e-only equipment pairs the M1–M3 key (`o5EquipmentKey` in src/open5e.ts)
+ * cannot join: a new name, or a name whose count moved out of it. Carry-over (r),
+ * decision 6. Only src/open5e.ts reads this list, through its own `item` twin namer.
+ */
+export const OPEN5E_EQUIPMENT_RENAMES: ReadonlyArray<RenamePair> = [
+  // Read from Open5e v2 srd-2014 → srd-2024, live 2026-10-23 (both records' desc).
+  // magicitems, Rare → Rare: same rusty 3-inch iron sphere thrown at a Huge or smaller creature within 60 ft, restrains, DC 20 Strength to break, once per dawn
+  ["Iron Bands of Binding", "Iron Bands"],
+  // magicitems, Artifact → Artifact, both attunement: same etched crystal globe about 10 inches across that grows to 20, DC 15 Charisma to control; the 2014 text calls them "Dragon Orbs"
+  ["Orb of Dragonkind", "Dragon Orb"],
+  // magicitems, Legendary → Legendary: same deck in a box or pouch, 75 percent of decks have 13 cards and the rest 22, the Fool and Jester don't return
+  ["Deck of Many Things", "Mysterious Deck"],
+  // magicitems, Very Rare → Very Rare: same polished obsidian horse that becomes a nightmare for up to 24 hours, unusable for 5 days; the 2024 desc's own heading says "Obsidian Steed", so "Stead" is a typo
+  ["Figurine of Wondrous Power (Obsidian Steed)", "Figurine of Wondrous Power (Obsidian Stead)"],
+  // items, Ammunition → Ammunition: "Bolts to be used in a crossbow" (one bolt, 0.05 gp, 0.08 lb) → "Ammunition for weapons that use bolts. Comes in a pack of 20" (1 gp, 1.5 lb): 20 × 0.05 gp
+  ["Crossbow bolt", "Bolts (20)"],
+  // items, 0.1 gp and 1 lb in both: same flask of oil thrown up to 20 ft (target covered in oil, +5 fire damage if it burns within 1 minute), poured over a 5-foot square that burns 2 rounds for 5 fire damage
+  ["Lamp oil (flask)", "Oil"],
+];

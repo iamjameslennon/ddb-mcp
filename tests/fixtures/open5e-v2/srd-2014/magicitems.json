@@ -70,6 +70,336 @@
         "key": "srd-2014",
         "name": "System Reference Document 5.1"
       }
+    },
+    {
+      "key": "srd_flame-tongue-greatsword",
+      "name": "Flame Tongue (Greatsword)",
+      "desc": "You can use a bonus action to speak this magic sword's command word, causing flames to erupt from the blade. These flames shed bright light in a 40-foot radius and dim light for an additional 40 feet. While the sword is ablaze, it deals an extra 2d6 fire damage to any target it hits. The flames last until you use a bonus action to speak the command word again or until you drop or sheathe the sword.",
+      "category": {
+        "name": "Weapon",
+        "key": "weapon"
+      },
+      "rarity": {
+        "name": "Rare",
+        "key": "rare",
+        "rank": 3
+      },
+      "weapon": {
+        "name": "Greatsword",
+        "key": "srd_greatsword",
+        "damage_type": {
+          "name": "Slashing",
+          "key": "slashing"
+        },
+        "damage_dice": "2d6",
+        "properties": [
+          {
+            "property": {
+              "name": "Two-Handed",
+              "type": null,
+              "desc": "This weapon requires two hands when you attack with it."
+            },
+            "detail": null
+          }
+        ],
+        "is_simple": false,
+        "is_martial": true,
+        "is_improvised": false,
+        "distance_unit": "feet"
+      },
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "0.000",
+      "weight_unit": "lb",
+      "cost": null,
+      "requires_attunement": true,
+      "attunement_detail": null,
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      }
+    },
+    {
+      "key": "srd_flame-tongue-longsword",
+      "name": "Flame Tongue (Longsword)",
+      "desc": "You can use a bonus action to speak this magic sword's command word, causing flames to erupt from the blade. These flames shed bright light in a 40-foot radius and dim light for an additional 40 feet. While the sword is ablaze, it deals an extra 2d6 fire damage to any target it hits. The flames last until you use a bonus action to speak the command word again or until you drop or sheathe the sword.",
+      "category": {
+        "name": "Weapon",
+        "key": "weapon"
+      },
+      "rarity": {
+        "name": "Rare",
+        "key": "rare",
+        "rank": 3
+      },
+      "weapon": {
+        "name": "Longsword",
+        "key": "srd_longsword",
+        "damage_type": {
+          "name": "Slashing",
+          "key": "slashing"
+        },
+        "damage_dice": "1d8",
+        "properties": [
+          {
+            "property": {
+              "name": "Versatile",
+              "type": null,
+              "desc": "This weapon can be used with one or two hands. A damage value in parentheses appears with the property—the damage when the weapon is used with two hands to make a melee attack."
+            },
+            "detail": "1d10"
+          }
+        ],
+        "is_simple": false,
+        "is_martial": true,
+        "is_improvised": false,
+        "distance_unit": "feet"
+      },
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "3.000",
+      "weight_unit": "lb",
+      "cost": null,
+      "requires_attunement": true,
+      "attunement_detail": null,
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      }
+    },
+    {
+      "key": "srd_flame-tongue-rapier",
+      "name": "Flame Tongue (Rapier)",
+      "desc": "You can use a bonus action to speak this magic sword's command word, causing flames to erupt from the blade. These flames shed bright light in a 40-foot radius and dim light for an additional 40 feet. While the sword is ablaze, it deals an extra 2d6 fire damage to any target it hits. The flames last until you use a bonus action to speak the command word again or until you drop or sheathe the sword.",
+      "category": {
+        "name": "Weapon",
+        "key": "weapon"
+      },
+      "rarity": {
+        "name": "Rare",
+        "key": "rare",
+        "rank": 3
+      },
+      "weapon": {
+        "name": "Rapier",
+        "key": "srd_rapier",
+        "damage_type": {
+          "name": "Piercing",
+          "key": "piercing"
+        },
+        "damage_dice": "1d8",
+        "properties": [
+          {
+            "property": {
+              "name": "Finesse",
+              "type": null,
+              "desc": "When making an attack with a finesse weapon, you use your choice of your Strength or Dexterity modifier for the attack and damage rolls. You must use the same modifier for both rolls."
+            },
+            "detail": null
+          }
+        ],
+        "is_simple": false,
+        "is_martial": true,
+        "is_improvised": false,
+        "distance_unit": "feet"
+      },
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "2.000",
+      "weight_unit": "lb",
+      "cost": null,
+      "requires_attunement": true,
+      "attunement_detail": null,
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      }
+    },
+    {
+      "key": "srd_flame-tongue-shortsword",
+      "name": "Flame Tongue (Shortsword)",
+      "desc": "You can use a bonus action to speak this magic sword's command word, causing flames to erupt from the blade. These flames shed bright light in a 40-foot radius and dim light for an additional 40 feet. While the sword is ablaze, it deals an extra 2d6 fire damage to any target it hits. The flames last until you use a bonus action to speak the command word again or until you drop or sheathe the sword.",
+      "category": {
+        "name": "Weapon",
+        "key": "weapon"
+      },
+      "rarity": {
+        "name": "Rare",
+        "key": "rare",
+        "rank": 3
+      },
+      "weapon": {
+        "name": "Shortsword",
+        "key": "srd_shortsword",
+        "damage_type": {
+          "name": "Slashing",
+          "key": "slashing"
+        },
+        "damage_dice": "1d6",
+        "properties": [
+          {
+            "property": {
+              "name": "Finesse",
+              "type": null,
+              "desc": "When making an attack with a finesse weapon, you use your choice of your Strength or Dexterity modifier for the attack and damage rolls. You must use the same modifier for both rolls."
+            },
+            "detail": null
+          },
+          {
+            "property": {
+              "name": "Light",
+              "type": null,
+              "desc": "A light weapon is small and easy to handle, making it ideal for use when fighting with two weapons."
+            },
+            "detail": null
+          }
+        ],
+        "is_simple": false,
+        "is_martial": true,
+        "is_improvised": false,
+        "distance_unit": "feet"
+      },
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "2.000",
+      "weight_unit": "lb",
+      "cost": null,
+      "requires_attunement": true,
+      "attunement_detail": null,
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      }
+    },
+    {
+      "key": "srd_net-1",
+      "name": "Net (+1)",
+      "desc": "You have a bonus to attack and damage rolls made with this magic weapon. The bonus is determined by the weapon's rarity.",
+      "category": {
+        "name": "Weapon",
+        "key": "weapon"
+      },
+      "rarity": {
+        "name": "Uncommon",
+        "key": "uncommon",
+        "rank": 2
+      },
+      "weapon": {
+        "name": "Net",
+        "key": "srd_net",
+        "damage_type": {
+          "name": "Bludgeoning",
+          "key": "bludgeoning"
+        },
+        "damage_dice": "0",
+        "properties": [
+          {
+            "property": {
+              "name": "Special (Net)",
+              "type": null,
+              "desc": "A Large or smaller creature hit by a net is restrained until it is freed. A net has no effect on creatures that are formless, or creatures that are Huge or larger. A creature can use its action to make a DC 10 Strength check, freeing itself or another creature within its reach on a success. Dealing 5 slashing damage to the net (AC 10) also frees the creature without harming it, ending the effect and destroying the net.\n\nWhen you use an action, bonus action, or reaction to attack with a net, you can make only one attack regardless of the number of attacks you can normally make."
+            },
+            "detail": null
+          },
+          {
+            "property": {
+              "name": "Thrown",
+              "type": null,
+              "desc": "If a weapon has the thrown property, you can throw the weapon to make a ranged attack. If the weapon is a melee weapon, you use the same ability modifier for that attack roll and damage roll that you would use for a melee attack with the weapon. For example, if you throw a handaxe, you use your Strength, but if you throw a dagger, you can use either your Strength or your Dexterity, since the dagger has the finesse property."
+            },
+            "detail": "range 5/15"
+          }
+        ],
+        "is_simple": false,
+        "is_martial": true,
+        "is_improvised": false,
+        "distance_unit": "feet"
+      },
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "0.000",
+      "weight_unit": "lb",
+      "cost": null,
+      "requires_attunement": false,
+      "attunement_detail": null,
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      }
+    },
+    {
+      "key": "srd_vicious-weapon-light-hammer",
+      "name": "Vicious Weapon (Light-Hammer)",
+      "desc": "When you roll a 20 on your attack roll with this magic weapon, your critical hit deals an extra 2d6 damage of the weapon's type.",
+      "category": {
+        "name": "Weapon",
+        "key": "weapon"
+      },
+      "rarity": {
+        "name": "Rare",
+        "key": "rare",
+        "rank": 3
+      },
+      "weapon": {
+        "name": "Light hammer",
+        "key": "srd_light-hammer",
+        "damage_type": {
+          "name": "Bludgeoning",
+          "key": "bludgeoning"
+        },
+        "damage_dice": "1d4",
+        "properties": [
+          {
+            "property": {
+              "name": "Light",
+              "type": null,
+              "desc": "A light weapon is small and easy to handle, making it ideal for use when fighting with two weapons."
+            },
+            "detail": null
+          },
+          {
+            "property": {
+              "name": "Thrown",
+              "type": null,
+              "desc": "If a weapon has the thrown property, you can throw the weapon to make a ranged attack. If the weapon is a melee weapon, you use the same ability modifier for that attack roll and damage roll that you would use for a melee attack with the weapon. For example, if you throw a handaxe, you use your Strength, but if you throw a dagger, you can use either your Strength or your Dexterity, since the dagger has the finesse property."
+            },
+            "detail": "range 20/60"
+          }
+        ],
+        "is_simple": true,
+        "is_martial": false,
+        "is_improvised": false,
+        "distance_unit": "feet"
+      },
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "2.000",
+      "weight_unit": "lb",
+      "cost": null,
+      "requires_attunement": false,
+      "attunement_detail": null,
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      }
     }
   ]
 }

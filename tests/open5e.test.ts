@@ -6,14 +6,16 @@ vi.mock("../src/session-fetch.js", async (orig) => ({
   ...(await orig<typeof import("../src/session-fetch.js")>()),
   hasValidSession: sessionMocks.hasValidSession,
 }));
-import { open5eSearchHeader, twinNames } from "../src/edition.js";
+import { readFileSync } from "node:fs";
+import { createTwinNamer, open5eSearchHeader, twinNames } from "../src/edition.js";
+import { EDITION_RENAMES, OPEN5E_ARMOUR_RENAMES, OPEN5E_EQUIPMENT_RENAMES } from "../src/edition-renames.js";
 import { o5Fixture, o5FixtureFetch, o5Record } from "./fixtures/open5e-v2.js";
 import {
   clearOpen5eCache,
   o5GetSpell, o5GetMonster, o5GetEquipment,
   o5SearchSpells, o5SearchMonsters, o5SearchItems,
   o5SearchRaces, o5SearchClasses, o5SearchBackgrounds, o5SearchFeats,
-  o5SearchRules, o5GetRule, o5GetMonsterStats, crText, castingTime, humanize, o5TwinNameFor,
+  o5SearchRules, o5GetRule, o5GetMonsterStats, crText, castingTime, humanize, o5TwinNameFor, o5EquipmentKey,
 } from "../src/open5e.js";
 import { getMonsterStats } from "../src/tools/monster.js";
 import { rateEncounter } from "../src/tools/encounter.js";
@@ -699,9 +701,10 @@ describe("Open5e twin names by endpoint kind", () => {
   });
 
   it("items, magic items, weapons and armour use the item pairs plus the armour pairs", () => {
+    // Their twin key is o5EquipmentKey: the item pairs' key with its words sorted (M1).
     for (const endpoint of ["items", "magicitems", "weapons", "armor"] as const) {
-      expect(o5TwinNameFor(endpoint)("Efficient Quiver")).toBe("quiver of ehlonna");
-      expect(o5TwinNameFor(endpoint)("Leather")).toBe("leather armor");
+      expect(o5TwinNameFor(endpoint)("Efficient Quiver")).toBe("ehlonna of quiver");
+      expect(o5TwinNameFor(endpoint)("Leather")).toBe("armor leather");
       expect(o5TwinNameFor(endpoint)("Thug")).toBe("thug");
     }
     expect(o5TwinNameFor("creatures")("Donkey (or Mule)")).toBe("donkey (or mule)");
@@ -890,4 +893,262 @@ describe("Open5e spell Duration is capitalized", () => {
     stubFetch(o5FixtureFetch({ "srd-2024/spells": [sleep] }));
     expect(await o5GetSpell("Sleep", "2024", "unavailable")).toMatch(/^Duration: Concentration, up to 1 minute$/m);
   });
+});
+
+// Carry-over (r), decision 6: Open5e equipment twin keys fold word order, weapon words and price or count parts (M1–M3), plus six verified pairs.
+describe("Open5e equipment twin keys (M1–M3 and six verified pairs)", () => {
+  const lines = async (name: string, ed: "2024" | "2014") => (await o5GetEquipment(name, ed, "unavailable"))!.split("\n");
+  const bullets = (out: string) => out.split("\n").filter(l => l.startsWith("• "));
+
+  it("Hand Crossbow under 2014 shows SRD 5.1 Crossbow, hand with a rename line", async () => {
+    const LINE = "(2014 name: Crossbow, hand · 2024 name: Hand Crossbow)";
+    expect((await lines("Hand Crossbow", "2014")).slice(0, 3)).toEqual(["Crossbow, hand (Martial Weapon)", U14, LINE]);
+    expect((await lines("Crossbow, hand", "2024")).slice(0, 3)).toEqual(["Hand Crossbow (Martial Weapon)", U24, LINE]);
+    expect((await lines("Hand Crossbow", "2024")).slice(0, 3)).toEqual(["Hand Crossbow (Martial Weapon)", U24, "Damage: 1d6 Piercing"]);
+  });
+
+  it("a 2024 flame tongue search hides the 4 SRD 5.1 Flame Tongues and counts them", async () => {
+    const out = await o5SearchItems({ name: "flame tongue", rulesEdition: "2024" }, "unavailable");
+    expect(bullets(out)).toEqual([
+      "• Flame Tongue Greatsword [2024] (Weapon, Rare)", "• Flame Tongue Longsword [2024] (Weapon, Rare)",
+      "• Flame Tongue Rapier [2024] (Weapon, Rare)", "• Flame Tongue Shortsword [2024] (Weapon, Rare)",
+    ]);
+    expect(out.split("\n").at(-1)).toBe('4 2014 versions hidden — rules_edition: "2014" shows them.');
+    expect(bullets(await o5SearchItems({ name: "flame tongue", rulesEdition: "2014" }, "unavailable"))).toEqual([
+      "• Flame Tongue (Greatsword) [2014] (Weapon, Rare)", "• Flame Tongue (Longsword) [2014] (Weapon, Rare)",
+      "• Flame Tongue (Rapier) [2014] (Weapon, Rare)", "• Flame Tongue (Shortsword) [2014] (Weapon, Rare)",
+    ]);
+  });
+
+  it("Vicious Weapon (Light-Hammer) twins Vicious Light Hammer", async () => {
+    expect(o5EquipmentKey("Vicious Weapon (Light-Hammer)")).toBe(o5EquipmentKey("Vicious Light Hammer"));
+    const LINE = "(2014 name: Vicious Weapon (Light-Hammer) · 2024 name: Vicious Light Hammer)";
+    expect((await lines("Vicious Weapon (Light-Hammer)", "2024")).slice(0, 3)).toEqual(["Vicious Light Hammer (Weapon, Rare)", U24, LINE]);
+    expect((await lines("Vicious Light Hammer", "2014")).slice(0, 3)).toEqual(["Vicious Weapon (Light-Hammer) (Weapon, Rare)", U14, LINE]);
+  });
+
+  it("Smith's tools twins Smith's Tools (20 GP)", async () => {
+    expect(o5EquipmentKey("Smith's tools")).toBe(o5EquipmentKey("Smith's Tools (20 GP)"));
+    const got = await lines("Smith's Tools (20 GP)", "2014");
+    expect(got.slice(0, 4)).toEqual(["Smith's tools (Tools)", U14, "(2014 name: Smith's tools · 2024 name: Smith's Tools (20 GP))", "Cost: 20 gp | Weight: 8 lb"]);
+    const out = await o5SearchItems({ name: "smith", rulesEdition: "2024" }, "unavailable");
+    expect(bullets(out)).toEqual(["• Smith's Tools (20 GP) [2024] (Tools)"]);
+    expect(out.split("\n").at(-1)).toBe('1 2014 version hidden — rules_edition: "2014" shows it.');
+  });
+
+  it("Net (+1) does not twin mundane Net, and Shield (+1) does not twin Shield", async () => {
+    expect(o5EquipmentKey("Net (+1)")).not.toBe(o5EquipmentKey("Net"));
+    expect(o5EquipmentKey("Shield (+1)")).not.toBe(o5EquipmentKey("Shield"));
+    expect((await lines("Net (+1)", "2024")).slice(0, 3)).toEqual(["Net (+1) (Weapon, Uncommon)", U14, "(no 2024 version found — 2014 text shown)"]);
+    const nets = await o5SearchItems({ name: "net", rulesEdition: "2024" }, "unavailable");
+    expect(bullets(nets)).toEqual(["• Net [2024] (Weapon)", "• Net (+1) [2014] (Weapon, Uncommon)"]);
+    expect(nets.split("\n").at(-1)).toBe('1 2014 version hidden — rules_edition: "2014" shows it.');
+    // Live srd-2014 items, 2026-10-21: category "Shield", armor null, 10 gp / 6 lb.
+    const shield = { ...o5Record<Record<string, unknown>>("srd-2014", "items", "Abacus"), key: "srd_shield", name: "Shield", category: { name: "Shield", key: "shield" },
+      cost: "10.00", weight: "6.000", desc: "A shield is made from wood or metal and is carried in one hand. Wielding a shield increases your Armor Class by 2." };
+    clearOpen5eCache();
+    stubFetch(o5FixtureFetch({ "srd-2014/items": [...o5Fixture("srd-2014", "items"), shield] }));
+    expect((await lines("Shield (+1)", "2014")).slice(0, 3)).toEqual(["Shield (+1) (Armor, Uncommon)", U24, "(no 2014 version found — 2024 text shown)"]);
+    expect((await lines("Shield", "2014")).slice(0, 2)).toEqual(["Shield (Shield)", U14]);
+  });
+
+  it("a query that differs only in word order or hyphens gets no rename line", async () => {
+    expect((await lines("light hammer vicious", "2024")).slice(0, 3)).toEqual(["Vicious Light Hammer (Weapon, Rare)", U24, ""]);
+    expect((await lines("Vicious Light-Hammer", "2024")).slice(0, 3)).toEqual(["Vicious Light Hammer (Weapon, Rare)", U24, ""]);
+  });
+
+  it("M1–M3 fold signs, punctuation, word order, weapon words, prices, counts, category prefixes and plurals", () => {
+    const same = (a: string, b: string) => expect(o5EquipmentKey(a)).toBe(o5EquipmentKey(b));
+    same("Wand of the War Mage (+1)", "Wand of the War Mage +1");
+    same("Belt of Fire Giant Strength", "Belt of Giant Strength (Fire)");
+    same("Sword of Sharpness (Scimitar)", "Scimitar of Sharpness");
+    same("Arrow (bow)", "Arrows (20)");
+    same("Ball Bearings (bag of 1000)", "Ball Bearings");
+    same("Bagpipes", "Musical Instrument, Bagpipes");
+    same("Amulet", "Holy Symbol, Amulet)");
+    same("Playing card set", "Gaming Set, Playing Cards");
+    expect(o5EquipmentKey("Wand of the War Mage (+1)")).not.toBe(o5EquipmentKey("Wand of the War Mage (+2)"));
+  });
+
+  it("the six verified pairs join their twins", () => {
+    for (const [name2014, name2024] of OPEN5E_EQUIPMENT_RENAMES) expect(o5EquipmentKey(name2014)).toBe(o5EquipmentKey(name2024));
+    expect(OPEN5E_EQUIPMENT_RENAMES).toHaveLength(6);
+  });
+
+  describe("the whole-document pairing count", () => {
+    // Every equipment record name of both SRD documents (live 2026-10-23).
+    type Names = Record<"items" | "magicitems" | "weapons" | "armor", string[]>;
+    const recorded = JSON.parse(readFileSync(new URL("./fixtures/open5e-v2/equipment-names.json", import.meta.url), "utf8")) as Record<"srd-2014" | "srd-2024", Names>;
+    const names = (doc: "srd-2014" | "srd-2024") => [...new Set(Object.values(recorded[doc]).flat())];
+    // The twin key before M1–M3: the rename table alone, hyphens and apostrophes folded.
+    const fold = (n: string) => n.replace(/-/g, " ").replace(/['‘’]/g, "");
+    const table = createTwinNamer([...EDITION_RENAMES.item, ...OPEN5E_ARMOUR_RENAMES].map(([a, b]) => [fold(a), fold(b)] as const));
+    const tableKey = (n: string) => table(fold(n));
+    /** Both documents' names grouped by o5EquipmentKey. */
+    const grouped = () => {
+      const groups = new Map<string, { n14: string[]; n24: string[] }>();
+      for (const [doc, side] of [["srd-2014", "n14"], ["srd-2024", "n24"]] as const) {
+        for (const n of names(doc)) {
+          const k = o5EquipmentKey(n);
+          if (!groups.has(k)) groups.set(k, { n14: [], n24: [] });
+          groups.get(k)![side].push(n);
+        }
+      }
+      return [...groups.values()];
+    };
+
+    it("joins 126 new pairs, each one SRD 5.1 name to one SRD 5.2 name, exactly the hand-checked list", () => {
+      const keys24 = new Set(names("srd-2024").map(tableKey));
+      // A new pair: a group with both documents that the rename table alone did not join.
+      const added = grouped().filter(g => g.n14.length && g.n24.length && !g.n14.some(n => keys24.has(tableKey(n))));
+      expect(added.every(g => g.n14.length === 1 && g.n24.length === 1)).toBe(true);
+      const pairs = added.map(g => `${g.n14[0]} <=> ${g.n24[0]}`).sort();
+      expect(pairs).toHaveLength(126);
+      expect(pairs).toEqual(EXPECTED_PAIRS);
+    });
+
+    it("lists none of the known false pairs", () => {
+      const twinned = (a: string, b: string) => o5EquipmentKey(a) === o5EquipmentKey(b);
+      for (const [a, b] of [["Net", "Net (+1)"], ["Shield", "Shield (+1)"], ["Light hammer", "Light Hammer (+1)"],
+        ["Defender", "Defender (Hand Crossbow)"], ["Wand of the War Mage (+1)", "Wand of the War Mage +2"], ["Rope, hempen (50 feet)", "Rope"]]) {
+        expect(twinned(a, b), `${a} / ${b}`).toBe(false);
+      }
+    });
+
+    it("joins no two names of one document beyond what the rename table did, except Potion of Healing and its plural", () => {
+      const within = grouped().flatMap(g => [g.n14, g.n24])
+        .filter(l => new Set(l.map(tableKey)).size > 1)
+        .map(l => [...l].sort().join(" | "));
+      expect(within).toEqual(["Potion of Healing | Potions of Healing"]);
+    });
+  });
+
+  const EXPECTED_PAIRS = [
+      "Alchemist's Supplies <=> Alchemist's Supplies (50 GP)",
+      "Amulet <=> Holy Symbol, Amulet)",
+      "Antitoxin (Vial) <=> Antitoxin",
+      "Armor of Resistance (Hide) <=> Armor of Resistance (Hide Armor)",
+      "Armor of Resistance (Leather) <=> Armor of Resistance (Leather Armor)",
+      "Arrow (bow) <=> Arrows (20)",
+      "Bagpipes <=> Musical Instrument, Bagpipes",
+      "Ball Bearings (bag of 1000) <=> Ball Bearings",
+      "Belt of Cloud Giant Strength <=> Belt of Giant Strength (Cloud)",
+      "Belt of Fire Giant Strength <=> Belt of Giant Strength (Fire)",
+      "Belt of Hill Giant Strength <=> Belt of Giant Strength (Hill)",
+      "Belt of Storm Giant Strength <=> Belt of Giant Strength (Storm)",
+      "Blowgun needles <=> Needles (50)",
+      "Brewer's Supplies <=> Brewer's Supplies (20 GP)",
+      "Calligrapher's supplies <=> Calligrapher's Supplies (10 GP)",
+      "Carpenter's Tools <=> Carpenter's Tools (8 GP)",
+      "Cartographer's Tools <=> Cartographer's Tools (15 GP)",
+      "Cobbler's Tools <=> Cobbler's Tools (5 GP)",
+      "Cook's utensils <=> Cook's Utensils (1 GP)",
+      "Crossbow bolt <=> Bolts (20)",
+      "Crossbow-Hand (+1) <=> Hand Crossbow (+1)",
+      "Crossbow-Hand (+2) <=> Hand Crossbow (+2)",
+      "Crossbow-Hand (+3) <=> Hand Crossbow (+3)",
+      "Crossbow-Heavy (+1) <=> Heavy Crossbow (+1)",
+      "Crossbow-Heavy (+2) <=> Heavy Crossbow (+2)",
+      "Crossbow-Heavy (+3) <=> Heavy Crossbow (+3)",
+      "Crossbow-Light (+1) <=> Light Crossbow (+1)",
+      "Crossbow-Light (+2) <=> Light Crossbow (+2)",
+      "Crossbow-Light (+3) <=> Light Crossbow (+3)",
+      "Crossbow, hand <=> Hand Crossbow",
+      "Crossbow, heavy <=> Heavy Crossbow",
+      "Crossbow, light <=> Light Crossbow",
+      "Dancing Sword (Greatsword) <=> Dancing Greatsword",
+      "Dancing Sword (Longsword) <=> Dancing Longsword",
+      "Dancing Sword (Rapier) <=> Dancing Rapier",
+      "Dancing Sword (Shortsword) <=> Dancing Shortsword",
+      "Deck of Many Things <=> Mysterious Deck",
+      "Dice set <=> Gaming Set, Dice",
+      "Drum <=> Musical Instrument, Drum",
+      "Dulcimer <=> Musical Instrument, Dulcimer",
+      "Emblem <=> Holy Symbol, Emblem)",
+      "Figurine of Wondrous Power (Obsidian Steed) <=> Figurine of Wondrous Power (Obsidian Stead)",
+      "Flame Tongue (Greatsword) <=> Flame Tongue Greatsword",
+      "Flame Tongue (Longsword) <=> Flame Tongue Longsword",
+      "Flame Tongue (Rapier) <=> Flame Tongue Rapier",
+      "Flame Tongue (Shortsword) <=> Flame Tongue Shortsword",
+      "Flute <=> Musical Instrument, Flute",
+      "Glassblower's Tools <=> Glassblower's Tools (30 GP)",
+      "Horn <=> Musical Instrument, Horn",
+      "Iron Bands of Binding <=> Iron Bands",
+      "Jeweler's Tools <=> Jeweler's Tools (25 GP)",
+      "Lamp oil (flask) <=> Oil",
+      "Leatherworker's Tools <=> Leatherworker's Tools (5 GP)",
+      "Lute <=> Musical Instrument, Lute",
+      "Lyre <=> Musical Instrument, Lyre",
+      "Mason's Tools <=> Mason's Tools (10 GP)",
+      "Orb of Dragonkind <=> Dragon Orb",
+      "Painter's Supplies <=> Painter's Supplies (10 GP)",
+      "Pan flute <=> Musical Instrument, Pan Flute",
+      "Playing card set <=> Gaming Set, Playing Cards",
+      "Potter's tools <=> Potter's Tools (10 GP)",
+      "Reliquary <=> Holy Symbol, Reliquary",
+      "Shawm <=> Musical Instrument, Shawm",
+      "Sling bullets <=> Bullets, Sling (20)",
+      "Smith's tools <=> Smith's Tools (20 GP)",
+      "Spike, iron <=> Spikes, Iron",
+      "Sprig of mistletoe <=> Druidic Focus, Sprig of Mistletoe",
+      "Sword of Life Stealing (Greatsword) <=> Greatsword of Life Stealing",
+      "Sword of Life Stealing (Longsword) <=> Longsword of Life Stealing",
+      "Sword of Life Stealing (Rapier) <=> Rapier of Life Stealing",
+      "Sword of Life Stealing (Shortsword) <=> Shortsword of Life Stealing",
+      "Sword of Sharpness (Greatsword) <=> Greatsword of Sharpness",
+      "Sword of Sharpness (Longsword) <=> Longsword of Sharpness",
+      "Sword of Sharpness (Scimitar) <=> Scimitar of Sharpness",
+      "Sword of Wounding (Greatsword) <=> Greatsword of Wounding",
+      "Sword of Wounding (Longsword) <=> Longsword of Wounding",
+      "Sword of Wounding (Rapier) <=> Rapier of Wounding",
+      "Sword of Wounding (Shortsword) <=> Shortsword of Wounding",
+      "Tinker's tools <=> Tinker's Tools (50 GP)",
+      "Vicious Weapon (Battleaxe) <=> Vicious Battleaxe",
+      "Vicious Weapon (Blowgun) <=> Vicious Blowgun",
+      "Vicious Weapon (Club) <=> Vicious Club",
+      "Vicious Weapon (Crossbow-Hand) <=> Vicious Hand Crossbow",
+      "Vicious Weapon (Crossbow-Heavy) <=> Vicious Heavy Crossbow",
+      "Vicious Weapon (Crossbow-Light) <=> Vicious Light Crossbow",
+      "Vicious Weapon (Dagger) <=> Vicious Dagger",
+      "Vicious Weapon (Dart) <=> Vicious Dart",
+      "Vicious Weapon (Flail) <=> Vicious Flail",
+      "Vicious Weapon (Glaive) <=> Vicious Glaive",
+      "Vicious Weapon (Greataxe) <=> Vicious Greataxe",
+      "Vicious Weapon (Greatclub) <=> Vicious Greatclub",
+      "Vicious Weapon (Greatsword) <=> Vicious Greatsword",
+      "Vicious Weapon (Halberd) <=> Vicious Halberd",
+      "Vicious Weapon (Handaxe) <=> Vicious Handaxe",
+      "Vicious Weapon (Javelin) <=> Vicious Javelin",
+      "Vicious Weapon (Lance) <=> Vicious Lance",
+      "Vicious Weapon (Light-Hammer) <=> Vicious Light Hammer",
+      "Vicious Weapon (Longbow) <=> Vicious Longbow",
+      "Vicious Weapon (Longsword) <=> Vicious Longsword",
+      "Vicious Weapon (Mace) <=> Vicious Mace",
+      "Vicious Weapon (Maul) <=> Vicious Maul",
+      "Vicious Weapon (Morningstar) <=> Vicious Morningstar",
+      "Vicious Weapon (Pike) <=> Vicious Pike",
+      "Vicious Weapon (Quarterstaff) <=> Vicious Quarterstaff",
+      "Vicious Weapon (Rapier) <=> Vicious Rapier",
+      "Vicious Weapon (Scimitar) <=> Vicious Scimitar",
+      "Vicious Weapon (Shortbow) <=> Vicious Shortbow",
+      "Vicious Weapon (Shortsword) <=> Vicious Shortsword",
+      "Vicious Weapon (Sickle) <=> Vicious Sickle",
+      "Vicious Weapon (Sling) <=> Vicious Sling",
+      "Vicious Weapon (Spear) <=> Vicious Spear",
+      "Vicious Weapon (Trident) <=> Vicious Trident",
+      "Vicious Weapon (War-Pick) <=> Vicious War Pick",
+      "Vicious Weapon (Warhammer) <=> Vicious Warhammer",
+      "Vicious Weapon (Whip) <=> Vicious Whip",
+      "Viol <=> Musical Instrument, Viol",
+      "Vorpal Sword (Greatsword) <=> Vorpal Greatsword",
+      "Vorpal Sword (Longsword) <=> Vorpal Longsword",
+      "Vorpal Sword (Scimitar) <=> Vorpal Scimitar",
+      "Wand of the War Mage (+1) <=> Wand of the War Mage +1",
+      "Wand of the War Mage (+2) <=> Wand of the War Mage +2",
+      "Wand of the War Mage (+3) <=> Wand of the War Mage +3",
+      "Weaver's tools <=> Weaver's Tools (1 GP)",
+      "Woodcarver's tools <=> Woodcarver's Tools (1 GP)",
+      "Wooden staff <=> Druidic Focus, Wooden Staff",
+      "Yew wand <=> Druidic Focus, Yew Wand",
+  ].sort();
 });

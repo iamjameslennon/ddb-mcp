@@ -31,9 +31,18 @@ const NAMES: Record<Endpoint, Names> = {
     both: ["Aboleth", "Wolf", "Zombie", "Red Dragon Wyrmling", "Young Red Dragon", "Adult Red Dragon", "Ancient Red Dragon"],
     only2024: ["Goblin Warrior", "Goblin Boss", "Allosaurus", "Tough"], only2014: ["Goblin", "Thug", "Orc", "Half-Red Dragon Veteran"],
   },
-  items: { both: ["Longsword"], only2024: ["Rope", "Antitoxin", "Alchemist's Fire"], only2014: ["Abacus", "Rope, hempen (50 feet)"] },
-  magicitems: { both: ["Bag of Holding"], only2024: ["Ammunition (+1)", "Flame Tongue Longsword"], only2014: ["Armor of Resistance (Hide)"] },
-  weapons: { both: ["Longsword", "Dagger"], only2024: ["Musket"], only2014: ["Net"] },
+  items: {
+    both: ["Longsword", "Net"], only2024: ["Rope", "Antitoxin", "Alchemist's Fire", "Smith's Tools (20 GP)"],
+    only2014: ["Abacus", "Rope, hempen (50 feet)", "Smith's tools"],
+  },
+  // The Flame Tongues, Vicious Light Hammer and Smith's tools pair across the documents by o5EquipmentKey
+  // (carry-over (r)); Net (+1) and Shield (+1) must not pair with Net and Shield.
+  magicitems: {
+    both: ["Bag of Holding"],
+    only2024: ["Ammunition (+1)", "Flame Tongue Greatsword", "Flame Tongue Longsword", "Flame Tongue Rapier", "Flame Tongue Shortsword", "Vicious Light Hammer", "Shield (+1)"],
+    only2014: ["Armor of Resistance (Hide)", "Flame Tongue (Greatsword)", "Flame Tongue (Longsword)", "Flame Tongue (Rapier)", "Flame Tongue (Shortsword)", "Vicious Weapon (Light-Hammer)", "Net (+1)"],
+  },
+  weapons: { both: ["Longsword", "Dagger"], only2024: ["Musket", "Hand Crossbow"], only2014: ["Net", "Crossbow, hand"] },
   armor: { both: [], only2024: ["Chain Mail", "Hide Armor", "Shield"], only2014: ["Chain mail", "Hide"] },
   species: { both: ["Dwarf", "Elf", "Human"], only2024: ["Goliath"], only2014: ["High Elf"] },
   classes: { both: ["Fighter", "Champion", "Wizard", "Warlock", "Druid"], only2024: ["Evoker"], only2014: ["School of Evocation"] },
@@ -138,3 +147,15 @@ for (const doc of DOCS) {
     console.log(`ok ${doc}/${endpoint}: ${kept.length} of ${count} records kept`);
   }
 }
+
+// Every equipment record name of both documents, for the whole-document pairing test of o5EquipmentKey
+// (tests/open5e.test.ts). A re-record that changes the pairing count fails that test: re-check the pairs.
+const equipmentNames: Record<string, unknown> = {
+  note: `Every record name of the four Open5e v2 equipment endpoints, per SRD document (live ${new Date().toISOString().slice(0, 10)}). Written by scripts/record-open5e-fixtures.mts.`,
+};
+for (const doc of DOCS) {
+  equipmentNames[doc] = Object.fromEntries(EQUIPMENT.map(endpoint =>
+    [endpoint, live.get(`${doc}/${endpoint}`)!.results.map(r => r.name).sort((a, b) => a.localeCompare(b))]));
+}
+writeFileSync(`${OUT_DIR}equipment-names.json`, JSON.stringify(equipmentNames, null, 1) + "\n");
+console.log("ok equipment-names.json");

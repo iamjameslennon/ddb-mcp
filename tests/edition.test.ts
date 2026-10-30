@@ -10,7 +10,7 @@ import {
   type CategoryRecord, type CharacterEditionEntry, type CharacterEntryKind,
   type EditionInfo, type EditionMarkers, type Ruleset, type SourceRecord,
 } from "../src/edition.js";
-import { ALL_EDITION_RENAMES, EDITION_RENAMES, type RenameKind } from "../src/edition-renames.js";
+import { ALL_EDITION_RENAMES, EDITION_RENAMES, OPEN5E_ARMOUR_RENAMES, OPEN5E_EQUIPMENT_RENAMES, type RenameKind } from "../src/edition-renames.js";
 import { SNAPSHOT_CATEGORIES, SNAPSHOT_DATE, SNAPSHOT_SOURCES } from "../src/source-snapshot.js";
 
 // ── Fixture source index ──────────────────────────────────────────────────────
@@ -332,6 +332,22 @@ describe("EDITION_RENAMES table", () => {
 
   for (const kind of Object.keys(EDITION_RENAMES) as RenameKind[]) check(kind, EDITION_RENAMES[kind]);
   check("the flat list", ALL_EDITION_RENAMES);
+  check("Open5e armour pairs", OPEN5E_ARMOUR_RENAMES);
+  check("Open5e equipment pairs", OPEN5E_EQUIPMENT_RENAMES);
+
+  // src/open5e.ts builds its item namer from all three lists.
+  it("the Open5e item namer's pairs: each 2014 name once, no self-maps or chains; only Oil has two 2014 names", () => {
+    const pairs = [...EDITION_RENAMES.item, ...OPEN5E_ARMOUR_RENAMES, ...OPEN5E_EQUIPMENT_RENAMES].map(([a, b]) => [normalizeName(a), normalizeName(b)] as const);
+    const olds = new Set(pairs.map(([a]) => a));
+    expect(olds.size).toBe(pairs.length);
+    for (const [a, b] of pairs) {
+      expect(a).not.toBe(b);
+      expect(olds.has(b)).toBe(false);
+    }
+    // D&D Beyond's "Oil (flask)" and SRD 5.1's "Lamp oil (flask)" are both the 2024 "Oil": one twin group, no conflict.
+    const shared = [...new Set(pairs.map(([, b]) => b))].filter(b => pairs.filter(([, x]) => x === b).length > 1);
+    expect(shared).toEqual(["oil"]);
+  });
 
   it("the flat list is every kind's pairs", () => {
     expect(ALL_EDITION_RENAMES).toEqual(Object.values(EDITION_RENAMES).flat());

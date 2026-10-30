@@ -70,6 +70,58 @@
       }
     },
     {
+      "key": "srd_net",
+      "name": "Net",
+      "desc": "A net.\r\n\r\nA Large or smaller creature hit by a net is restrained until it is freed. A net has no effect on creatures that are formless, or creatures that are Huge or larger. A creature can use its action to make a DC 10 Strength check, freeing itself or another creature within its reach on a success. Dealing 5 slashing damage to the net (AC 10) also frees the creature without harming it, ending the effect and destroying the net.\r\n\r\nWhen you use an action, bonus action, or reaction to attack with a net, you can make only one attack regardless of the number of attacks you can normally make.",
+      "category": {
+        "name": "Weapon",
+        "key": "weapon"
+      },
+      "weapon": {
+        "name": "Net",
+        "key": "srd_net",
+        "damage_type": {
+          "name": "Bludgeoning",
+          "key": "bludgeoning"
+        },
+        "damage_dice": "0",
+        "properties": [
+          {
+            "property": {
+              "name": "Special (Net)",
+              "type": null,
+              "desc": "A Large or smaller creature hit by a net is restrained until it is freed. A net has no effect on creatures that are formless, or creatures that are Huge or larger. A creature can use its action to make a DC 10 Strength check, freeing itself or another creature within its reach on a success. Dealing 5 slashing damage to the net (AC 10) also frees the creature without harming it, ending the effect and destroying the net.\n\nWhen you use an action, bonus action, or reaction to attack with a net, you can make only one attack regardless of the number of attacks you can normally make."
+            },
+            "detail": null
+          },
+          {
+            "property": {
+              "name": "Thrown",
+              "type": null,
+              "desc": "If a weapon has the thrown property, you can throw the weapon to make a ranged attack. If the weapon is a melee weapon, you use the same ability modifier for that attack roll and damage roll that you would use for a melee attack with the weapon. For example, if you throw a handaxe, you use your Strength, but if you throw a dagger, you can use either your Strength or your Dexterity, since the dagger has the finesse property."
+            },
+            "detail": "range 5/15"
+          }
+        ],
+        "is_simple": false,
+        "is_martial": true,
+        "is_improvised": false,
+        "distance_unit": "feet"
+      },
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "3.000",
+      "weight_unit": "lb",
+      "cost": "1.00",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      }
+    },
+    {
       "key": "srd_rope-hempen-50-feet",
       "name": "Rope, hempen (50 feet)",
       "desc": "Rope, whether made of hemp or silk, has 2 hit points and can be burst with a DC 17 Strength check.",
@@ -86,6 +138,28 @@
       "weight": "10.000",
       "weight_unit": "lb",
       "cost": "1.00",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      }
+    },
+    {
+      "key": "srd_smiths-tools",
+      "name": "Smith's tools",
+      "desc": "These special tools include the items needed to pursue a craft or trade.\\n\\n\r\nProficiency with a set of artisan’s tools lets you add your proficiency bonus to any ability checks you make using the tools in your craft. Each type of artisan’s tools requires a separate proficiency.",
+      "category": {
+        "name": "Tools",
+        "key": "tools"
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "8.000",
+      "weight_unit": "lb",
+      "cost": "20.00",
       "document": {
         "key": "srd-2014",
         "name": "System Reference Document 5.1"

@@ -4,6 +4,50 @@
   "previous": null,
   "results": [
     {
+      "key": "srd_crossbow-hand",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      },
+      "properties": [
+        {
+          "property": {
+            "name": "Ammunition",
+            "type": null,
+            "desc": "You can use a weapon that has the ammunition property to make a ranged attack only if you have ammunition to fire from the weapon. Each time you attack with the weapon, you expend one piece of ammunition. Drawing the ammunition from a quiver, case, or other container is part of the attack (you need a free hand to load a one-­‐‑handed weapon). At the end of the battle, you can recover half your expended ammunition by taking a minute to search the battlefield.\n\nIf you use a weapon that has the ammunition property to make a melee attack, you treat the weapon as an improvised weapon (see “Improvised Weapons” later in the section). A sling must be loaded to deal any damage when used in this way."
+          },
+          "detail": "range 30/120"
+        },
+        {
+          "property": {
+            "name": "Light",
+            "type": null,
+            "desc": "A light weapon is small and easy to handle, making it ideal for use when fighting with two weapons."
+          },
+          "detail": null
+        },
+        {
+          "property": {
+            "name": "Loading",
+            "type": null,
+            "desc": "Because of the time required to load this weapon, you can fire only one piece of ammunition from it when you use an action, bonus action, or reaction to fire it, regardless of the number of attacks you can normally make."
+          },
+          "detail": null
+        }
+      ],
+      "damage_type": {
+        "name": "Piercing",
+        "key": "piercing"
+      },
+      "distance_unit": "feet",
+      "name": "Crossbow, hand",
+      "damage_dice": "1d6",
+      "range": 30,
+      "long_range": 120,
+      "is_simple": false,
+      "is_improvised": false
+    },
+    {
       "key": "srd_dagger",
       "document": {
         "key": "srd-2014",
