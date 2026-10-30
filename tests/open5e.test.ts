@@ -7,7 +7,7 @@ vi.mock("../src/session-fetch.js", async (orig) => ({
   hasValidSession: sessionMocks.hasValidSession,
 }));
 import { readFileSync } from "node:fs";
-import { createTwinNamer, open5eSearchHeader, twinNames } from "../src/edition.js";
+import { createTwinNamer, open5eSearchHeader, twinNames, type RulesEdition } from "../src/edition.js";
 import { EDITION_RENAMES, OPEN5E_ARMOUR_RENAMES, OPEN5E_EQUIPMENT_RENAMES } from "../src/edition-renames.js";
 import { o5Fixture, o5FixtureFetch, o5Record } from "./fixtures/open5e-v2.js";
 import {
@@ -15,7 +15,7 @@ import {
   o5GetSpell, o5GetMonster, o5GetEquipment,
   o5SearchSpells, o5SearchMonsters, o5SearchItems,
   o5SearchRaces, o5SearchClasses, o5SearchBackgrounds, o5SearchFeats,
-  o5SearchRules, o5GetRule, o5GetMonsterStats, crText, castingTime, humanize, o5TwinNameFor, o5EquipmentKey,
+  o5SearchRules, o5GetRule, o5GetMonsterStats, crText, castingTime, humanize, o5TwinNameFor, o5EquipmentKey, o5EquipmentGroupKey,
 } from "../src/open5e.js";
 import { getMonsterStats } from "../src/tools/monster.js";
 import { rateEncounter } from "../src/tools/encounter.js";
@@ -614,32 +614,34 @@ describe("Open5e twin keys fold hyphens", () => {
   });
 
   it("a real rename whose names carry hyphens keeps its line, the right way round", async () => {
-    const ante14 = { ...o5Record<Record<string, unknown>>("srd-2014", "items", "Abacus"), key: "srd_three-dragon-ante-set", name: "Three-Dragon Ante Set" };
-    const ante24 = { ...o5Record<Record<string, unknown>>("srd-2024", "items", "Rope"), key: "srd-2024_three-dragon-ante", name: "Three-Dragon Ante" };
+    const tent14 = { ...o5Record<Record<string, unknown>>("srd-2014", "items", "Abacus"), key: "srd_tent-two-person", name: "Tent, Two-Person" };
+    const tent24 = { ...o5Record<Record<string, unknown>>("srd-2024", "items", "Rope"), key: "srd-2024_tent", name: "Tent" };
     stubFetch(o5FixtureFetch({
-      "srd-2014/items": [...o5Fixture("srd-2014", "items"), ante14],
-      "srd-2024/items": [...o5Fixture("srd-2024", "items"), ante24],
+      "srd-2014/items": [...o5Fixture("srd-2014", "items"), tent14],
+      "srd-2024/items": [...o5Fixture("srd-2024", "items"), tent24],
     }));
-    const out = (await o5GetEquipment("Three-Dragon Ante Set", "2024", "unavailable"))!.split("\n");
-    expect(out.slice(0, 3)).toEqual(["Three-Dragon Ante (Adventuring Gear)", U24, "(2014 name: Three-Dragon Ante Set · 2024 name: Three-Dragon Ante)"]);
-    const back = (await o5GetEquipment("Three-Dragon Ante", "2014", "unavailable"))!.split("\n");
-    expect(back.slice(0, 3)).toEqual(["Three-Dragon Ante Set (Adventuring Gear)", U14, "(2014 name: Three-Dragon Ante Set · 2024 name: Three-Dragon Ante)"]);
+    const out = (await o5GetEquipment("Tent, Two-Person", "2024", "unavailable"))!.split("\n");
+    expect(out.slice(0, 3)).toEqual(["Tent (Adventuring Gear)", U24, "(2014 name: Tent, Two-Person · 2024 name: Tent)"]);
+    const back = (await o5GetEquipment("Tent", "2014", "unavailable"))!.split("\n");
+    expect(back.slice(0, 3)).toEqual(["Tent, Two-Person (Adventuring Gear)", U14, "(2014 name: Tent, Two-Person · 2024 name: Tent)"]);
   });
 
   describe("hyphen-less queries", () => {
     const ante14 = { ...o5Record<Record<string, unknown>>("srd-2014", "items", "Abacus"), key: "srd_three-dragon-ante-set", name: "Three-Dragon Ante Set" };
     const ante24 = { ...o5Record<Record<string, unknown>>("srd-2024", "items", "Rope"), key: "srd-2024_three-dragon-ante", name: "Three-Dragon Ante" };
-    const LINE = "(2014 name: Three-Dragon Ante Set · 2024 name: Three-Dragon Ante)";
+    const tent14 = { ...o5Record<Record<string, unknown>>("srd-2014", "items", "Abacus"), key: "srd_tent-two-person", name: "Tent, Two-Person" };
+    const tent24 = { ...o5Record<Record<string, unknown>>("srd-2024", "items", "Rope"), key: "srd-2024_tent", name: "Tent" };
+    const LINE = "(2014 name: Tent, Two-Person · 2024 name: Tent)";
     const withAnte = (only?: "srd-2014" | "srd-2024") => stubFetch(o5FixtureFetch({
-      "srd-2014/items": [...o5Fixture("srd-2014", "items"), ...(only === "srd-2024" ? [] : [ante14])],
-      "srd-2024/items": [...o5Fixture("srd-2024", "items"), ...(only === "srd-2014" ? [] : [ante24])],
+      "srd-2014/items": [...o5Fixture("srd-2014", "items"), ...(only === "srd-2024" ? [] : [ante14, tent14])],
+      "srd-2024/items": [...o5Fixture("srd-2024", "items"), ...(only === "srd-2014" ? [] : [ante24, tent24])],
     }));
 
     it.each([
-      ["Three-Dragon Ante Set", "2024", "Three-Dragon Ante"],
-      ["Three-Dragon Ante", "2014", "Three-Dragon Ante Set"],
-      ["three dragon ante set", "2024", "Three-Dragon Ante"],
-      ["three dragon ante", "2014", "Three-Dragon Ante Set"],
+      ["Tent, Two-Person", "2024", "Tent"],
+      ["Tent", "2014", "Tent, Two-Person"],
+      ["tent, two person", "2024", "Tent"],
+      ["tent", "2014", "Tent, Two-Person"],
     ] as const)("%s under %s shows the SRD's own spellings on both sides of the rename line", async (query, edition, shown) => {
       withAnte();
       const out = (await o5GetEquipment(query, edition, "unavailable"))!.split("\n");
@@ -649,9 +651,18 @@ describe("Open5e twin keys fold hyphens", () => {
 
     it("with only the shown edition loaded, the other side is the table's spelling, not the typed text", async () => {
       withAnte("srd-2024");
-      const out = (await o5GetEquipment("three dragon ante set", "2024", "unavailable"))!.split("\n");
-      expect(out[0]).toBe("Three-Dragon Ante (Adventuring Gear)");
+      const out = (await o5GetEquipment("tent, two person", "2024", "unavailable"))!.split("\n");
+      expect(out[0]).toBe("Tent (Adventuring Gear)");
       expect(out).toContain(LINE);
+    });
+
+    it("a pair that differs only by the word \"set\" (Three-Dragon Ante) gets no rename line, hyphens or not", async () => {
+      withAnte();
+      for (const [query, edition, shown] of [["Three-Dragon Ante Set", "2024", "Three-Dragon Ante"], ["three dragon ante", "2014", "Three-Dragon Ante Set"]] as const) {
+        const out = (await o5GetEquipment(query, edition, "unavailable"))!.split("\n");
+        expect(out[0]).toBe(`${shown} (Adventuring Gear)`);
+        expect(out.some(l => l.includes("2014 name:"))).toBe(false);
+      }
     });
 
     it("a hyphen-less search finds a hyphenated name", async () => {
@@ -930,7 +941,8 @@ describe("Open5e equipment twin keys (M1–M3 and six verified pairs)", () => {
   it("Smith's tools twins Smith's Tools (20 GP)", async () => {
     expect(o5EquipmentKey("Smith's tools")).toBe(o5EquipmentKey("Smith's Tools (20 GP)"));
     const got = await lines("Smith's Tools (20 GP)", "2014");
-    expect(got.slice(0, 4)).toEqual(["Smith's tools (Tools)", U14, "(2014 name: Smith's tools · 2024 name: Smith's Tools (20 GP))", "Cost: 20 gp | Weight: 8 lb"]);
+    // Owner ruling (fix round 1): names that differ only by a stripped part (here a price) get no rename line.
+    expect(got.slice(0, 3)).toEqual(["Smith's tools (Tools)", U14, "Cost: 20 gp | Weight: 8 lb"]);
     const out = await o5SearchItems({ name: "smith", rulesEdition: "2024" }, "unavailable");
     expect(bullets(out)).toEqual(["• Smith's Tools (20 GP) [2024] (Tools)"]);
     expect(out.split("\n").at(-1)).toBe('1 2014 version hidden — rules_edition: "2014" shows it.');
@@ -1012,6 +1024,28 @@ describe("Open5e equipment twin keys (M1–M3 and six verified pairs)", () => {
       for (const [a, b] of [["Net", "Net (+1)"], ["Shield", "Shield (+1)"], ["Light hammer", "Light Hammer (+1)"],
         ["Defender", "Defender (Hand Crossbow)"], ["Wand of the War Mage (+1)", "Wand of the War Mage +2"], ["Rope, hempen (50 feet)", "Rope"]]) {
         expect(twinned(a, b), `${a} / ${b}`).toBe(false);
+      }
+    });
+
+    it("the same-document guard keeps the 126 pairs and parts only Potion of Healing from Potions of Healing", () => {
+      const records = (["srd-2014", "srd-2024"] as const).flatMap(doc =>
+        names(doc).map(name => ({ name, edition: (doc === "srd-2014" ? "2014" : "2024") as RulesEdition })));
+      const key = o5EquipmentGroupKey(records);
+      const guarded = new Map<string, { n14: string[]; n24: string[] }>();
+      for (const r of records) {
+        const k = key(r.name);
+        if (!guarded.has(k)) guarded.set(k, { n14: [], n24: [] });
+        guarded.get(k)![r.edition === "2014" ? "n14" : "n24"].push(r.name);
+      }
+      // Every group: within a document, one rename-table key only.
+      for (const g of guarded.values()) for (const l of [g.n14, g.n24]) expect(new Set(l.map(tableKey)).size, l.join(" | ")).toBeLessThanOrEqual(1);
+      const changed = [...guarded.values()].filter(g => g.n14.length + g.n24.length > 0
+        && grouped().every(u => u.n14.join() !== g.n14.join() || u.n24.join() !== g.n24.join()))
+        .map(g => `${g.n14.join(" | ")} <=> ${g.n24.join(" | ")}`).sort();
+      expect(changed).toEqual([" <=> Potions of Healing", "Potion of Healing <=> Potion of Healing"]);
+      // Cross-document plural pairs still join.
+      for (const [a, b] of [["Arrow (bow)", "Arrows (20)"], ["Spike, iron", "Spikes, Iron"], ["Playing card set", "Gaming Set, Playing Cards"]]) {
+        expect(key(a), `${a} / ${b}`).toBe(key(b));
       }
     });
 
@@ -1151,4 +1185,45 @@ describe("Open5e equipment twin keys (M1–M3 and six verified pairs)", () => {
       "Wooden staff <=> Druidic Focus, Wooden Staff",
       "Yew wand <=> Druidic Focus, Yew Wand",
   ].sort();
+});
+
+// Task 10 fix round 1 (owner rulings 2026-10-30).
+describe("Open5e equipment rename lines and the same-document guard", () => {
+  const lines = async (name: string, ed: "2024" | "2014") => (await o5GetEquipment(name, ed, "unavailable"))!.split("\n");
+  const bullets = (out: string) => out.split("\n").filter(l => l.startsWith("• "));
+
+  it("no rename line when only a stripped part differs: a container, a category prefix, a measure", async () => {
+    expect((await lines("Antitoxin (Vial)", "2024")).slice(0, 3)).toEqual(["Antitoxin (Potion)", U24, "Cost: 50 gp | Weight: —"]);
+    expect((await lines("Antitoxin", "2014")).slice(0, 3)).toEqual(["Antitoxin (Vial) (Adventuring Gear)", U14, "Cost: 50 gp | Weight: —"]);
+    expect((await lines("Bagpipes", "2024")).slice(0, 3)).toEqual(["Musical Instrument, Bagpipes (Tools)", U24, "Cost: 30 gp | Weight: 6 lb"]);
+    expect((await lines("Musical Instrument, Bagpipes", "2014")).slice(0, 3)).toEqual(["Bagpipes (Tools)", U14, "Cost: 30 gp | Weight: 6 lb"]);
+    expect((await lines("Chain (10 feet)", "2024")).slice(0, 2)).toEqual(["Chain (Adventuring Gear)", U24]);
+    expect((await lines("Chain (10 feet)", "2024"))[2]).toMatch(/^Cost: /);
+    // A rename-table pair too: D&D Beyond's "Acid (vial)" → "Acid".
+    expect((await lines("Acid (vial)", "2024"))[2]).toMatch(/^Cost: /);
+  });
+
+  it("a comma or a plural is no stripped part: Crossbow and Arrow keep their rename lines", async () => {
+    expect((await lines("Hand Crossbow", "2014"))[2]).toBe("(2014 name: Crossbow, hand · 2024 name: Hand Crossbow)");
+    expect((await lines("Arrows (20)", "2014")).slice(0, 3)).toEqual(["Arrow (bow) (Ammunition)", U14, "(2014 name: Arrow (bow) · 2024 name: Arrows (20))"]);
+    expect((await lines("Arrow (bow)", "2024")).slice(0, 3)).toEqual(["Arrows (20) (Ammunition)", U24, "(2014 name: Arrow (bow) · 2024 name: Arrows (20))"]);
+  });
+
+  it("a search lists the group's record whose name is the exact query, as a get picks it", async () => {
+    // SRD 5.1 files both "Acid" and "Acid (vial)"; the rename table puts them in one group.
+    expect(bullets(await o5SearchItems({ name: "acid (vial)", rulesEdition: "2014" }, "unavailable"))).toEqual(["• Acid (vial) [2014] (Adventuring Gear)"]);
+    expect(bullets(await o5SearchItems({ name: "acid", rulesEdition: "2014" }, "unavailable"))).toEqual(["• Acid [2014] (Adventuring Gear)"]);
+  });
+
+  it("SRD 5.2's Potion of Healing and Potions of Healing stay apart", async () => {
+    const healing = await o5SearchItems({ name: "healing", rulesEdition: "2024" }, "unavailable");
+    expect(bullets(healing)).toEqual(["• Potion of Healing [2024] (Potion)", "• Potions of Healing [2024] (Potion)"]);
+    expect(healing.split("\n").at(-1)).toBe('1 2014 version hidden — rules_edition: "2014" shows it.');
+    expect(bullets(await o5SearchItems({ name: "potions of healing", rulesEdition: "2024" }, "unavailable")))
+      .toEqual(["• Potions of Healing [2024] (Potion)"]);
+    expect(bullets(await o5SearchItems({ name: "healing", rulesEdition: "2014" }, "unavailable")))
+      .toEqual(["• Potion of Healing [2014] (Potion, Common)", "• Potions of Healing [2024] (Potion)"]);
+    expect((await lines("Potions of Healing", "2014")).slice(0, 3)).toEqual(["Potions of Healing (Potion)", U24, "(no 2014 version found — 2024 text shown)"]);
+    expect((await lines("Potion of Healing", "2014")).slice(0, 2)).toEqual(["Potion of Healing (Potion, Common)", U14]);
+  });
 });

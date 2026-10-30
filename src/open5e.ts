@@ -177,8 +177,12 @@ interface O5Namer {
   /** The twin key: the rename-table key, folded further for equipment (o5EquipmentKey). */
   twin: TwinNamer;
   pairs: ReadonlyArray<readonly [name2014: string, name2024: string]>;
+  /** The rename-table key alone: normalized, hyphens and apostrophes folded, a 2014 name mapped to its 2024 name. */
+  tableKey: (name: string) => string;
   /** Which side of a rename pair the name spells, if any: "2014" for a 2014 name, "2024" for a 2024 name. */
   tableSide: (name: string) => RulesEdition | undefined;
+  /** The name's words as a rename line compares them (sameWords): o5Folded, for equipment with the M3 parts stripped. */
+  words: (name: string) => string;
 }
 
 /**
@@ -189,7 +193,11 @@ interface O5Namer {
  * table key (equipment: foldEquipmentKey). `spell` keeps the table's own
  * spelling, found by its folded form so a hyphen-less query still gets it.
  */
-function createO5Namer(pairs: O5Namer["pairs"], fold: (key: string) => string = key => key): O5Namer {
+function createO5Namer(
+  pairs: O5Namer["pairs"],
+  fold: (key: string) => string = key => key,
+  strip: (folded: string) => string = folded => folded,
+): O5Namer {
   const renamer = createTwinNamer(pairs.map(([name2014, name2024]) => [foldPunctuation(name2014), foldPunctuation(name2024)] as const));
   const tableKey = (name: string): string => renamer(foldPunctuation(name));
   const spellings = new Map(pairs.flatMap(pair => pair.map(spelling => [o5Folded(spelling), spelling] as const)));
@@ -197,7 +205,8 @@ function createO5Namer(pairs: O5Namer["pairs"], fold: (key: string) => string = 
   const twin: TwinNamer = Object.assign((name: string) => fold(tableKey(name)), { spell: (normalized: string) => spellings.get(o5Folded(normalized)) });
   const tableSide = (name: string): RulesEdition | undefined =>
     tableKey(name) !== o5Folded(name) ? "2014" : names2024.has(o5Folded(name)) ? "2024" : undefined;
-  return { twin, pairs, tableSide };
+  const words = (name: string): string => strip(o5Folded(name)).split(/\s+/).filter(Boolean).sort().join(" ");
+  return { twin, pairs, tableKey, tableSide, words };
 }
 
 /** M3: a price, count or measure in parentheses (anywhere, as the probe that counted the pairs strips them). */
@@ -206,6 +215,11 @@ const EQUIPMENT_QUANTITY = /\s*\((?:\d+ gp|\d+|\d+ feet|per day|vial|flask|bow|1
 const EQUIPMENT_PREFIX = /^(?:musical instrument|gaming set|druidic focus|holy symbol),\s*/;
 /** M2: words SRD 5.1 adds to a weapon's name ("Vicious Weapon (Rapier)", "Dancing Sword (Rapier)"). */
 const EQUIPMENT_WEAPON_WORDS = new Set(["sword", "weapon"]);
+
+/** M3's strip: a price, count or measure in parentheses, a stray trailing ")", a category prefix and the word "set". Commas stay. */
+function stripEquipment(folded: string): string {
+  return folded.replace(EQUIPMENT_QUANTITY, " ").replace(/\)$/, "").replace(EQUIPMENT_PREFIX, "").replace(/\bset\b/g, "");
+}
 
 /**
  * M1–M3 over an equipment rename-table key (lowercase, hyphens and apostrophes
@@ -220,14 +234,14 @@ const EQUIPMENT_WEAPON_WORDS = new Set(["sword", "weapon"]);
  * "Smith's Tools (20 GP)". "(+1)" is no quantity: "Net (+1)" stays apart from "Net".
  */
 function foldEquipmentKey(key: string): string {
-  const stripped = key.replace(EQUIPMENT_QUANTITY, " ").replace(/\)$/, "").replace(EQUIPMENT_PREFIX, "").replace(/\bset\b/g, "");
+  const stripped = stripEquipment(key);
   const words = [...new Set(stripped.replace(/\+(\d)/g, " plus$1 ").replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean))].sort();
   return words.filter(word => !EQUIPMENT_WEAPON_WORDS.has(word)).map(word => word.replace(/s$/, "")).join(" ");
 }
 
 const O5_NAMERS: Readonly<Record<RenameKind | "none", O5Namer>> = {
   spell: createO5Namer(EDITION_RENAMES.spell),
-  item: createO5Namer([...EDITION_RENAMES.item, ...OPEN5E_ARMOUR_RENAMES, ...OPEN5E_EQUIPMENT_RENAMES], foldEquipmentKey),
+  item: createO5Namer([...EDITION_RENAMES.item, ...OPEN5E_ARMOUR_RENAMES, ...OPEN5E_EQUIPMENT_RENAMES], foldEquipmentKey, stripEquipment),
   monster: createO5Namer(EDITION_RENAMES.monster),
   subclass: createO5Namer(EDITION_RENAMES.subclass),
   background: createO5Namer(EDITION_RENAMES.background),
@@ -252,13 +266,48 @@ export function o5EquipmentKey(name: string): string {
 }
 
 /**
- * Two names of one twin group that differ only by punctuation or word order:
- * the same twin key and the same words of their folded forms (o5Folded keeps
- * commas and parentheses, so "Crossbow, hand" and "Hand Crossbow" differ).
+ * The twin key over one call's records, with the same-document guard: two
+ * records of one SRD document never share a twin group through the equipment
+ * folds alone. Where a document holds two rename-table keys under one twin key,
+ * that key splits by rename-table key, so SRD 5.2's "Potion of Healing" (one
+ * potion) and "Potions of Healing" (the rarity table) stay two entries, and
+ * SRD 5.1's "Potion of Healing" joins the first. Live 2026-10-23 that is the
+ * only such key; a query takes the split key the same way. Kinds whose twin key
+ * is the rename-table key never split.
+ */
+function guardedNamer(namer: O5Namer, records: ReadonlyArray<{ name: string; edition: RulesEdition }>): O5Namer {
+  const tableKeys = new Map<string, Set<string>>();
+  const split = new Set<string>();
+  for (const { name, edition } of records) {
+    const key = namer.twin(name);
+    const at = `${edition}\n${key}`;
+    const seen = tableKeys.get(at) ?? new Set<string>();
+    seen.add(namer.tableKey(name));
+    tableKeys.set(at, seen);
+    if (seen.size > 1) split.add(key);
+  }
+  if (split.size === 0) return namer;
+  const twin: TwinNamer = Object.assign((name: string) => {
+    const key = namer.twin(name);
+    return split.has(key) ? `${key}\n${namer.tableKey(name)}` : key;
+  }, { spell: namer.twin.spell });
+  return { ...namer, twin };
+}
+
+/** The equipment twin key over a set of records (each with its document's edition), with the same-document guard. */
+export function o5EquipmentGroupKey(records: ReadonlyArray<{ name: string; edition: RulesEdition }>): (name: string) => string {
+  return guardedNamer(O5_NAMERS.item, records).twin;
+}
+
+/**
+ * Two names of one twin group that differ only by punctuation, word order or
+ * the M3-stripped parts (a price, count, measure, category prefix or "set"):
+ * the same twin key and the same words (O5Namer.words). Commas, parentheses
+ * and plurals count, so "Crossbow, hand" and "Hand Crossbow" differ, and so do
+ * "Arrow (bow)" and "Arrows (20)"; "Smith's tools" and "Smith's Tools (20 GP)" don't.
  */
 function sameWords(a: string, b: string, namer: O5Namer): boolean {
-  const words = (name: string): string => o5Folded(name).split(" ").sort().join(" ");
-  return namer.twin(a) === namer.twin(b) && words(a) === words(b);
+  return namer.twin(a) === namer.twin(b) && namer.words(a) === namer.words(b);
 }
 
 /** Endpoint order (as given), then record key. */
@@ -277,7 +326,7 @@ async function o5Entries<T extends O5Record>(endpoints: readonly O5Endpoint[], r
 /** A single lookup: exact twin name across both documents, else a partial match, then the requested edition's entry of that group. */
 async function o5Lookup<T extends O5Record>(endpoints: readonly O5Endpoint[], name: string, requested: RulesEdition): Promise<O5Hit<T> | null> {
   const entries = await o5Entries<T>(endpoints, requested);
-  const namer = o5NamerFor(endpoints);
+  const namer = guardedNamer(o5NamerFor(endpoints), entries.map(e => ({ name: e.record.name, edition: e.edition })));
   const query = o5Folded(name);
   const byEndpoint = o5Tiebreak<T>(endpoints);
   const found = lookupByName(entries, name, requested, {
@@ -308,7 +357,7 @@ async function o5Lookup<T extends O5Record>(endpoints: readonly O5Endpoint[], na
  * The rename line's names, or undefined when it would be false. SRD 5.2 keeps
  * some 2014-era names (Arcane Hand): no rename line when the shown entry
  * carries the other edition's spelling of a rename pair. Nor when the names
- * differ only by punctuation or word order (sameWords), or when the other
+ * differ only by punctuation, word order or an M3-stripped part (sameWords), or when the other
  * document files the shown name too. The shown entry's edition orients the
  * pair, because a folded key no longer equals a 2024 name's normalized form.
  * The other side is the SRD record's own name when the other document has one
@@ -342,12 +391,16 @@ async function o5Select<T extends O5Record>(
   opts: { name?: string; passes?: (e: O5Entry<T>) => boolean },
 ): Promise<{ selected: Array<{ entry: O5Entry<T>; reason?: SelectionReason }>; hidden: number }> {
   const entries = await o5Entries<T>(endpoints, requested);
-  const namer = o5NamerFor(endpoints);
+  const namer = guardedNamer(o5NamerFor(endpoints), entries.map(e => ({ name: e.record.name, edition: e.edition })));
   const query = opts.name ? o5Folded(opts.name) : "";
+  const byEndpoint = o5Tiebreak<T>(endpoints);
   const { selected, hidden } = groupAndSelect(entries, requested, {
     info: o5Info,
     twinKey: e => namer.twin(e.record.name),
-    tiebreak: o5Tiebreak<T>(endpoints),
+    // Within the picked edition the exact query name comes first, as in o5Lookup: a search for
+    // SRD 5.1's "Acid (vial)" lists it, not its same-group "Acid".
+    tiebreak: (a, b) => (query && o5Folded(a.record.name) === query ? 0 : 1) - (query && o5Folded(b.record.name) === query ? 0 : 1)
+      || byEndpoint(a, b),
     nameMatches: query ? e => o5Folded(e.record.name).includes(query) : undefined,
     passes: opts.passes,
     countFilteredPicks: true,

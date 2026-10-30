@@ -543,6 +543,18 @@ describe("lookupByName", () => {
     expect(picked).not.toHaveProperty("renamed");
   });
 
+  it("orients the rename by the records' editions, even when the key is no record's name", () => {
+    // A key that sorts words (Open5e's equipment key) equals neither name, so the key can't tell the 2024 side.
+    const sorted = (n: string) => normalizeName(n).split(/[^a-z]+/).filter(Boolean).sort().join(" ");
+    const pair = [e(31, "Crossbow, hand", "2014"), e(32, "Hand Crossbow", "2024")];
+    const RENAMED = { name2014: "Crossbow, hand", name2024: "Hand Crossbow" };
+    expect(lookupByName(pair, "Crossbow, hand", "2024", { ...opts, twinName: sorted })).toEqual({ entry: pair[1], renamed: RENAMED });
+    expect(lookupByName(pair, "Hand Crossbow", "2014", { ...opts, twinName: sorted })).toEqual({ entry: pair[0], renamed: RENAMED });
+    // With no record of the typed name, the returned record's edition orients it.
+    expect(lookupByName([pair[1]], "crossbow, hand", "2024", { ...opts, twinName: sorted }))
+      .toEqual({ entry: pair[1], renamed: { name2014: "crossbow, hand", name2024: "Hand Crossbow" } });
+  });
+
   it("an empty or unmatched query yields null", () => {
     expect(find("")).toBeNull();
     expect(find("   ")).toBeNull();

@@ -437,11 +437,16 @@ export function lookupByName<T>(
   const returnedName = opts.name(picked.entry);
   if (normalizeName(matchedName) === normalizeName(returnedName)) return picked;
   // Non-edition entries are never twins, so they never get a rename line.
-  if (!isEdition(opts.info(picked.entry).ruleset)) return picked;
-  // The 2024 name is the twin key itself; the other is the 2014 alias.
-  const [name2024, name2014] = normalizeName(returnedName) === key
-    ? [returnedName, matchedName]
-    : [matchedName, returnedName];
+  const returnedEdition = opts.info(picked.entry).ruleset;
+  if (!isEdition(returnedEdition)) return picked;
+  // The returned record's edition orients the pair when the matched name is the other edition's
+  // (a record of it, or a typed name no record carries): name2014 is always the 2014 side. A twin
+  // key need not be either name (Open5e's equipment key sorts words). A same-edition match keeps
+  // the old reading: the 2024 name is the twin key itself.
+  const matchedEdition = matched ? opts.info(matched).ruleset : undefined;
+  const byEdition = matchedEdition === undefined || (isEdition(matchedEdition) && matchedEdition !== returnedEdition);
+  const returnedIs2024 = byEdition ? returnedEdition === "2024" : normalizeName(returnedName) === key;
+  const [name2024, name2014] = returnedIs2024 ? [returnedName, matchedName] : [matchedName, returnedName];
   return { ...picked, renamed: { name2014, name2024 } };
 }
 

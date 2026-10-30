@@ -32,15 +32,16 @@ const NAMES: Record<Endpoint, Names> = {
     only2024: ["Goblin Warrior", "Goblin Boss", "Allosaurus", "Tough"], only2014: ["Goblin", "Thug", "Orc", "Half-Red Dragon Veteran"],
   },
   items: {
-    both: ["Longsword", "Net"], only2024: ["Rope", "Antitoxin", "Alchemist's Fire", "Smith's Tools (20 GP)"],
-    only2014: ["Abacus", "Rope, hempen (50 feet)", "Smith's tools"],
+    both: ["Longsword", "Net", "Acid"],
+    only2024: ["Rope", "Antitoxin", "Alchemist's Fire", "Smith's Tools (20 GP)", "Arrows (20)", "Musical Instrument, Bagpipes", "Chain", "Potion of Healing", "Potions of Healing"],
+    only2014: ["Abacus", "Rope, hempen (50 feet)", "Smith's tools", "Acid (vial)", "Antitoxin (Vial)", "Arrow (bow)", "Bagpipes", "Chain (10 feet)"],
   },
   // The Flame Tongues, Vicious Light Hammer and Smith's tools pair across the documents by o5EquipmentKey
   // (carry-over (r)); Net (+1) and Shield (+1) must not pair with Net and Shield.
   magicitems: {
     both: ["Bag of Holding"],
     only2024: ["Ammunition (+1)", "Flame Tongue Greatsword", "Flame Tongue Longsword", "Flame Tongue Rapier", "Flame Tongue Shortsword", "Vicious Light Hammer", "Shield (+1)"],
-    only2014: ["Armor of Resistance (Hide)", "Flame Tongue (Greatsword)", "Flame Tongue (Longsword)", "Flame Tongue (Rapier)", "Flame Tongue (Shortsword)", "Vicious Weapon (Light-Hammer)", "Net (+1)"],
+    only2014: ["Armor of Resistance (Hide)", "Flame Tongue (Greatsword)", "Flame Tongue (Longsword)", "Flame Tongue (Rapier)", "Flame Tongue (Shortsword)", "Vicious Weapon (Light-Hammer)", "Net (+1)", "Potion of Healing"],
   },
   weapons: { both: ["Longsword", "Dagger"], only2024: ["Musket", "Hand Crossbow"], only2014: ["Net", "Crossbow, hand"] },
   armor: { both: [], only2024: ["Chain Mail", "Hide Armor", "Shield"], only2014: ["Chain mail", "Hide"] },
@@ -54,7 +55,8 @@ const NAMES: Record<Endpoint, Names> = {
 // only but also in 2024 items; neither is an equipment fallback case. Hide
 // Armor and Shield are 2024 armor, but srd-2014 items has both (live
 // 2026-10-21; srd-2014 armor has only "Hide" and "Chain mail").
-const CROSS_CHECK_SKIP = new Set(["Net", "Musket", "Hide Armor", "Shield"]);
+// Potion of Healing is srd-2014 magicitems and srd-2024 items (live 2026-10-23).
+const CROSS_CHECK_SKIP = new Set(["Net", "Musket", "Hide Armor", "Shield", "Potion of Healing"]);
 
 type Rec = { name: string; document: { key: string; name?: string } | string; [k: string]: unknown };
 const docKey = (r: Rec): string => (typeof r.document === "string" ? r.document : r.document.key);

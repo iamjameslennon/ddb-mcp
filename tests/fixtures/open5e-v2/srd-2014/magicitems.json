@@ -343,6 +343,35 @@
       }
     },
     {
+      "key": "srd_potion-of-healing",
+      "name": "Potion of Healing",
+      "desc": "You regain hit points when you drink this potion. The number of hit points depends on the potion's rarity, as shown in the Potions of Healing table. Whatever its potency, the potion's red liquid glimmers when agitated.\\n\\n**Potions of Healing (table)**\\n\\n| Potion of ...    | Rarity    | HP Regained |\\n|------------------|-----------|-------------|\\n| Healing          | Common    | 2d4 + 2     |\\n| Greater healing  | Uncommon  | 4d4 + 4     |\\n| Superior healing | Rare      | 8d4 + 8     |\\n| Supreme healing  | Very rare | 10d4 + 20   |",
+      "category": {
+        "name": "Potion",
+        "key": "potion"
+      },
+      "rarity": {
+        "name": "Common",
+        "key": "common",
+        "rank": 1
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "0.500",
+      "weight_unit": "lb",
+      "cost": "50.00",
+      "requires_attunement": false,
+      "attunement_detail": null,
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      }
+    },
+    {
       "key": "srd_vicious-weapon-light-hammer",
       "name": "Vicious Weapon (Light-Hammer)",
       "desc": "When you roll a 20 on your attack roll with this magic weapon, your critical hit deals an extra 2d6 damage of the weapon's type.",

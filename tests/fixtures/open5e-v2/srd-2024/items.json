@@ -4,6 +4,28 @@
   "previous": null,
   "results": [
     {
+      "key": "srd-2024_acid",
+      "name": "Acid",
+      "desc": "When you take the Attack action, you can replace one of your attacks with throwing a vial of Acid. Target one creature or object you can see within 20 feet of yourself. The target must succeed on a Dexterity saving throw (DC 8 plus your Dexterity modifier and Proficiency Bonus) or take 2d6 Acid damage.",
+      "category": {
+        "name": "Weapon",
+        "key": "weapon"
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "1.000",
+      "weight_unit": "lb",
+      "cost": "25.00",
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      }
+    },
+    {
       "key": "srd-2024_alchemists-fire",
       "name": "Alchemist's Fire",
       "desc": "When you take the Attack action, you can replace one of your attacks with throwing a flask of Alchemist's Fire. Target one creature or object you can see within 20 feet of yourself. The target must succeed on a Dexterity saving throw (DC 8 plus your Dexterity modifier and Proficiency Bonus) or take 1d4 Fire damage and start burning (see \"Rules Glossary\").",
@@ -42,6 +64,50 @@
       "weight": "0.000",
       "weight_unit": "lb",
       "cost": "50.00",
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      }
+    },
+    {
+      "key": "srd-2024_arrows-20",
+      "name": "Arrows (20)",
+      "desc": "Ammunition for weapons that use arrows. Comes in a pack of 20. Typically stored in a quiver.",
+      "category": {
+        "name": "Ammunition",
+        "key": "ammunition"
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "1.000",
+      "weight_unit": "lb",
+      "cost": "1.00",
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      }
+    },
+    {
+      "key": "srd-2024_chain",
+      "name": "Chain",
+      "desc": "As a Utilize action, you can wrap a Chain around an unwilling creature within 5 feet of yourself that has the Grappled, Incapacitated, or Restrained condition if you succeed on a DC 13 Strength (Athletics) check. If the creature's legs are bound, the creature has the Restrained condition until it escapes. Escaping the Chain requires the creature to make a successful DC 18 Dexterity (Acrobatics) check as an action. Bursting the Chain requires a successful DC 20 Strength (Athletics) check as an action.",
+      "category": {
+        "name": "Adventuring Gear",
+        "key": "adventuring-gear"
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "10.000",
+      "weight_unit": "lb",
+      "cost": "5.00",
       "document": {
         "key": "srd-2024",
         "name": "System Reference Document 5.2"
@@ -100,6 +166,28 @@
       }
     },
     {
+      "key": "srd-2024_musical-instrument-bagpipes",
+      "name": "Musical Instrument, Bagpipes",
+      "desc": "Ability: Charisma. Utilize: Identify a musical piece (DC 15)",
+      "category": {
+        "name": "Tools",
+        "key": "tools"
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "6.000",
+      "weight_unit": "lb",
+      "cost": "30.00",
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      }
+    },
+    {
       "key": "srd-2024_net",
       "name": "Net",
       "desc": "When you take the Attack action, you can replace one of your attacks with throwing a Net. Target a creature you can see within 15 feet of yourself. The target must succeed on a Dexterity saving throw (DC 8 plus your Dexterity modifier and Proficiency Bonus) or have the Restrained condition until it escapes. The target succeeds automatically if it is Huge or larger. To escape, the target or a creature within 5 feet of it must take an action to make a DC 10 Strength (Athletics) check, freeing the Restrained creature on a success. Destroying the Net (AC 10; 5 HP; Immunity to Bludgeoning, Poison, and Psychic damage) also frees the target, ending the effect.",
@@ -116,6 +204,50 @@
       "weight": "3.000",
       "weight_unit": "lb",
       "cost": "1.00",
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      }
+    },
+    {
+      "key": "srd-2024_potion-of-healing",
+      "name": "Potion of Healing",
+      "desc": "This potion is a magic item. As a Bonus Action, you can drink it or administer it to another creature within 5 feet of yourself. The creature that drinks the magical red fluid in this vial regains 2d4 + 2 Hit Points.",
+      "category": {
+        "name": "Potion",
+        "key": "potion"
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "0.500",
+      "weight_unit": "lb",
+      "cost": "50.00",
+      "document": {
+        "key": "srd-2024",
+        "name": "System Reference Document 5.2"
+      }
+    },
+    {
+      "key": "srd-2024_potions-of-healing",
+      "name": "Potions of Healing",
+      "desc": "You regain Hit Points when you drink this potion. The number of Hit Points depends on the potion's rarity, as shown in the table below.\n\nWhatever its potency, the potion's red liquid glimmers when agitated.\n\n| Potion                       | HP Regained | Rarity    |\n|------------------------------|-------------|-----------|\n| Potion of Healing            | 2d4 + 2     | Common    |\n| Potion of Healing (greater)  | 4d4 + 4     | Uncommon  |\n| Potion of Healing (superior) | 8d4 + 8     | Rare      |\n| Potion of Healing (supreme)  | 10d4 + 20   | Very Rare |",
+      "category": {
+        "name": "Potion",
+        "key": "potion"
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "0.000",
+      "weight_unit": "lb",
+      "cost": "0.00",
       "document": {
         "key": "srd-2024",
         "name": "System Reference Document 5.2"

@@ -26,6 +26,138 @@
       }
     },
     {
+      "key": "srd_acid",
+      "name": "Acid",
+      "desc": "As an action, you can splash the contents of this vial onto a creature within 5 feet of you or throw the vial up to 20 feet, shattering it on impact. In either case, make a ranged attack against a creature or object, treating the acid as an improvised weapon. On a hit, the target takes 2d6 acid damage.",
+      "category": {
+        "name": "Adventuring Gear",
+        "key": "adventuring-gear"
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "0.000",
+      "weight_unit": "lb",
+      "cost": "0.00",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      }
+    },
+    {
+      "key": "srd_acid-vial",
+      "name": "Acid (vial)",
+      "desc": "As an action, you can splash the contents of this vial onto a creature within 5 feet of you or throw the vial up to 20 feet, shattering it on impact. In either case, make a ranged attack against a creature or object, treating the acid as an improvised weapon. On a hit, the target takes 2d6 acid damage.",
+      "category": {
+        "name": "Adventuring Gear",
+        "key": "adventuring-gear"
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "1.000",
+      "weight_unit": "lb",
+      "cost": "25.00",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      }
+    },
+    {
+      "key": "srd_antitoxin-vial",
+      "name": "Antitoxin (Vial)",
+      "desc": "A creature that drinks this vial of liquid gains advantage on saving throws against poison for 1 hour. It confers no benefit to undead or constructs.",
+      "category": {
+        "name": "Adventuring Gear",
+        "key": "adventuring-gear"
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "0.000",
+      "weight_unit": "lb",
+      "cost": "50.00",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      }
+    },
+    {
+      "key": "srd_arrow-bow",
+      "name": "Arrow (bow)",
+      "desc": "An arrow for a bow.",
+      "category": {
+        "name": "Ammunition",
+        "key": "ammunition"
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "0.050",
+      "weight_unit": "lb",
+      "cost": "0.05",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      }
+    },
+    {
+      "key": "srd_bagpipes",
+      "name": "Bagpipes",
+      "desc": "Several of the most common types of musical instruments are shown on the table as examples. If you have proficiency with a given musical instrument, you can add your proficiency bonus to any ability checks you make to play music with the instrument. A bard can use a musical instrument as a spellcasting focus. Each type of musical instrument requires a separate proficiency.",
+      "category": {
+        "name": "Tools",
+        "key": "tools"
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "6.000",
+      "weight_unit": "lb",
+      "cost": "30.00",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      }
+    },
+    {
+      "key": "srd_chain-10-feet",
+      "name": "Chain (10 feet)",
+      "desc": "A chain has 10 hit points. It can be burst with a successful DC 20 Strength check.",
+      "category": {
+        "name": "Adventuring Gear",
+        "key": "adventuring-gear"
+      },
+      "weapon": null,
+      "armor": null,
+      "size": {
+        "name": "Tiny",
+        "key": "tiny"
+      },
+      "weight": "10.000",
+      "weight_unit": "lb",
+      "cost": "5.00",
+      "document": {
+        "key": "srd-2014",
+        "name": "System Reference Document 5.1"
+      }
+    },
+    {
       "key": "srd_longsword",
       "name": "Longsword",
       "desc": "A longsword",
