@@ -17,7 +17,7 @@
 
 import { TtlCache } from "./cache.js";
 import {
-  createTwinNamer, editionTag, groupAndSelect, lookupByName, normalizeName, open5eSearchHeader, reasonLine, renameLine, rulesLine, searchFooter,
+  createTwinNamer, editionTag, groupAndSelect, LEGENDARY_USES_NOTE, lookupByName, normalizeName, open5eSearchHeader, reasonLine, renameLine, rulesLine, searchFooter,
   searchHeader, selectByEdition,
   type EditionInfo, type Open5eOrigin, type RulesEdition, type SelectionReason, type TwinNamer,
 } from "./edition.js";
@@ -451,8 +451,11 @@ export function crText(cr: number): string {
   return String(cr);
 }
 
-const lowerEq = (query: string, ...values: Array<string | null | undefined>): boolean =>
-  values.some(v => v != null && v.toLowerCase() === query.toLowerCase());
+/** school, type and size match part of a word, as on D&D Beyond (rarity stays exact). */
+const lowerHas = (query: string, ...values: Array<string | null | undefined>): boolean => {
+  const q = query.trim().toLowerCase();
+  return values.some(v => v != null && v.toLowerCase().includes(q));
+};
 
 // ── SPELLS ────────────────────────────────────────────────────────────────────
 
@@ -531,7 +534,7 @@ export async function o5SearchSpells(params: {
     name: params.name,
     passes: ({ record: s }) =>
       (params.level === undefined || s.level === params.level)
-      && (!params.school || lowerEq(params.school, s.school.key, s.school.name))
+      && (!params.school || lowerHas(params.school, s.school.key, s.school.name))
       && (params.concentration === undefined || s.concentration === params.concentration)
       && (params.ritual === undefined || s.ritual === params.ritual),
   });
@@ -707,6 +710,7 @@ function formatO5Monster(hit: O5Hit<O5Creature>, origin: Open5eOrigin): string {
       .sort((a, b) => (a.order_in_statblock ?? 0) - (b.order_in_statblock ?? 0));
     if (!actions.length) continue;
     lines.push(``, heading);
+    if (type === "LEGENDARY_ACTION") lines.push(LEGENDARY_USES_NOTE);
     for (const a of actions) lines.push(`  ${actionName(a)}. ${a.desc}`);
   }
 
@@ -725,8 +729,8 @@ export async function o5SearchMonsters(params: {
     name: params.name,
     passes: ({ record: m }) =>
       (params.cr === undefined || m.challenge_rating === params.cr)
-      && (!params.type || lowerEq(params.type, m.type?.key, m.type?.name))
-      && (!params.size || lowerEq(params.size, m.size?.key, m.size?.name)),
+      && (!params.type || lowerHas(params.type, m.type?.key, m.type?.name))
+      && (!params.size || lowerHas(params.size, m.size?.key, m.size?.name)),
   });
 
   const lines = selected.slice(0, SEARCH_CAP + 1).map(({ entry }) => {
@@ -750,8 +754,8 @@ export async function o5GetMonster(name: string, rulesEdition: RulesEdition, ori
 
 interface O5MagicItem extends O5Record {
   desc: string;
-  category: { name: string };
-  rarity: { name: string };
+  category?: { name?: string | null } | null;
+  rarity?: { name?: string | null } | null;
   requires_attunement?: boolean;
   attunement_detail?: string | null;
 }
@@ -759,7 +763,7 @@ interface O5MagicItem extends O5Record {
 /** A mundane item (v2 `items`): adventuring gear, and the cost and weight of weapons and armour. */
 interface O5Item extends O5Record {
   desc: string;
-  category: { name: string };
+  category?: { name?: string | null } | null;
   cost?: string | null;
   weight?: string | null;
   weight_unit?: string | null;
@@ -795,7 +799,8 @@ export const humanize = (value: string): string => value.split(/[_\s]+/).filter(
 function formatO5MagicItem(hit: O5Hit<O5MagicItem>, origin: Open5eOrigin): string {
   const i = hit.entry.record;
   const attune = i.requires_attunement ? ` | Requires attunement${i.attunement_detail ? ` (${i.attunement_detail})` : ""}` : "";
-  return [`${i.name} (${i.category.name}, ${i.rarity.name}${attune})`, o5Label(hit.entry.edition, origin, hit), ``, stripTags(i.desc)].join("\n");
+  const kind = [i.category?.name, i.rarity?.name].filter(Boolean).join(", ");
+  return [`${i.name} (${kind}${attune})`, o5Label(hit.entry.edition, origin, hit), ``, stripTags(i.desc)].join("\n");
 }
 
 /** An items record's cost and weight; a zero or missing part prints a dash. */
@@ -810,7 +815,7 @@ function formatO5Item(hit: O5Hit<O5Item>, origin: Open5eOrigin): string {
   // srd-2014 has no armour Shield, and its items record carries no AC value (armor is null), only the
   // prose "increases your Armor Class by 2": the SRD's +2, as the armour formatter prints it for 2024.
   const ac = O5_NAMERS.item.twin(i.name) === "shield" ? [`AC: +2`] : [];
-  const lines = [`${i.name} (${i.category.name})`, o5Label(hit.entry.edition, origin, hit), ...ac, costWeightLine(i)];
+  const lines = [`${i.name} (${i.category?.name ?? ""})`, o5Label(hit.entry.edition, origin, hit), ...ac, costWeightLine(i)];
   const desc = stripTags(i.desc);
   if (desc) lines.push(``, desc);
   return lines.join("\n");
@@ -873,14 +878,14 @@ export async function o5SearchItems(params: {
     // Rarity matches exactly ("common" is not "Uncommon"). Mundane items have
     // none and count as Common, so "common" lists mundane gear, as on D&D Beyond.
     passes: ({ record: i, endpoint }) =>
-      (!rarity || (endpoint === "magicitems" ? (i as O5MagicItem).rarity.name : "Common").toLowerCase() === rarity)
-      && (!type || i.category.name.toLowerCase().includes(type)),
+      (!rarity || (endpoint === "magicitems" ? ((i as O5MagicItem).rarity?.name ?? "") : "Common").toLowerCase() === rarity)
+      && (!type || (i.category?.name ?? "").toLowerCase().includes(type)),
   });
 
   const lines = selected.slice(0, SEARCH_CAP + 1).map(({ entry }) => {
     const i = entry.record;
-    const rarityName = entry.endpoint === "magicitems" ? `, ${(i as O5MagicItem).rarity.name}` : "";
-    return `• ${i.name} ${editionTag(o5Info(entry))} (${i.category.name}${rarityName})`;
+    const kind = [i.category?.name, entry.endpoint === "magicitems" ? (i as O5MagicItem).rarity?.name : null].filter(Boolean).join(", ");
+    return `• ${i.name} ${editionTag(o5Info(entry))} (${kind})`;
   });
   return o5SearchReply(
     requested, origin,
@@ -1316,31 +1321,33 @@ export type MonsterStatsResult =
  * finds them: the exact twin name first, else the partial matches grouped by
  * twin name. One group is found, picked by edition; several are ambiguous, one
  * candidate per group, by CR then name. Never a guess. The edition comes from
- * the document the pick is in. A record with an unknown CR is skipped; any
+ * the document the pick is in. A picked record with an unknown CR is not-found (or dropped from the candidates); any
  * Open5e failure is not-found.
  */
 export async function o5GetMonsterStats(name: string, rulesEdition: RulesEdition): Promise<MonsterStatsResult> {
   try {
-    const known = (await o5Entries<O5Creature>(["creatures"], rulesEdition))
-      .filter(e => CR_XP_O5[crText(e.record.challenge_rating)] !== undefined);
+    const all = await o5Entries<O5Creature>(["creatures"], rulesEdition);
+    const hasXp = (e: O5Entry<O5Creature>) => CR_XP_O5[crText(e.record.challenge_rating)] !== undefined;
     const tiebreak = o5Tiebreak<O5Creature>(["creatures"]);
     const stats = (e: O5Entry<O5Creature>) => ({
       name: e.record.name, crValue: e.record.challenge_rating, xp: CR_XP_O5[crText(e.record.challenge_rating)],
     });
+    // The edition is picked over every name match first; a picked record with an
+    // unknown CR is never replaced by its other-edition twin (fail closed).
     const found = (group: Array<O5Entry<O5Creature>>): MonsterStatsResult | null => {
       const picked = selectByEdition(group, rulesEdition, o5Info, tiebreak);
-      return picked ? { status: "found", ...stats(picked.entry), info: o5Info(picked.entry) } : null;
+      return picked && hasXp(picked.entry) ? { status: "found", ...stats(picked.entry), info: o5Info(picked.entry) } : null;
     };
 
     const twin = o5TwinNameFor("creatures");
     const key = twin(name);
-    const exact = known.filter(e => twin(e.record.name) === key);
+    const exact = all.filter(e => twin(e.record.name) === key);
     if (exact.length) return found(exact) ?? { status: "not-found" };
 
     const query = o5Folded(name);
     if (!query) return { status: "not-found" };
     const groups = new Map<string, Array<O5Entry<O5Creature>>>();
-    for (const e of known) {
+    for (const e of all) {
       if (!o5Folded(e.record.name).includes(query)) continue;
       const k = twin(e.record.name);
       groups.set(k, [...(groups.get(k) ?? []), e]);
@@ -1350,6 +1357,7 @@ export async function o5GetMonsterStats(name: string, rulesEdition: RulesEdition
       const candidates = [...groups.values()]
         .map(group => selectByEdition(group, rulesEdition, o5Info, tiebreak))
         .filter(picked => picked !== null)
+        .filter(picked => hasXp(picked.entry))
         .map(picked => stats(picked.entry))
         .sort((a, b) => a.crValue - b.crValue || a.name.localeCompare(b.name));
       return { status: "ambiguous", candidates };

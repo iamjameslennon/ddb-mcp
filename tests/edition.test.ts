@@ -751,6 +751,15 @@ describe("other single-lookup lines", () => {
     expect(sourceNote("mm-2014", "2014", "2014")).toBeNull();
   });
 
+  it("ambiguityMessage lists at most 20 and counts the rest", () => {
+    const many = Array.from({ length: 25 }, (_, i) => ({ name: `Creature ${i + 1}`, cr: String(i) }));
+    const out = ambiguityMessage("e", many);
+    expect(out.match(/Creature \d+/g)).toHaveLength(20);
+    expect(out).toContain("Creature 20 (CR 19), and 5 more — use the full name.");
+    expect(out).not.toContain("Creature 21");
+    expect(ambiguityMessage("e", many.slice(0, 20))).toMatch(/\(CR 19\) — use the full name\.$/);
+  });
+
   it("ambiguityMessage", () => {
     expect(ambiguityMessage("Red Dragon", [
       { name: "Red Dragon Wyrmling", cr: "4" },

@@ -98,8 +98,10 @@ describe("Open5e labels", () => {
   it("a get keeps the query jump and the max_chars note", async () => {
     const out = (await o5GetRule("Damage and Healing", "2024", 500, "resting"))!;
     expect(out).toContain("*(Showing first 500 of ");
-    const body = out.split("\n").slice(3).join("\n");
-    expect(body.startsWith("…")).toBe(true);
+    const lines = out.split("\n");
+    const jump = lines.findIndex(l => l.startsWith("…"));
+    expect(jump).toBeGreaterThan(0);
+    const body = lines.slice(jump).join("\n");
     expect(body.slice(0, 300).toLowerCase()).toContain("resting");
   });
   it("a search lists the requested document's chapters, tagged", async () => {
@@ -1225,5 +1227,47 @@ describe("Open5e equipment rename lines and the same-document guard", () => {
       .toEqual(["• Potion of Healing [2014] (Potion, Common)", "• Potions of Healing [2024] (Potion)"]);
     expect((await lines("Potions of Healing", "2014")).slice(0, 3)).toEqual(["Potions of Healing (Potion)", U24, "(no 2014 version found — 2024 text shown)"]);
     expect((await lines("Potion of Healing", "2014")).slice(0, 2)).toEqual(["Potion of Healing (Potion, Common)", U14]);
+  });
+});
+
+describe("Open5e monster, filter and item fixes (Task 11)", () => {
+  const wolf = () => o5Record<Record<string, unknown>>("srd-2024", "creatures", "Wolf");
+
+  it("a 2024 creature with an unrecognised CR is not-found, not its 2014 twin (#8)", async () => {
+    const odd = { ...o5Record<Record<string, unknown>>("srd-2024", "creatures", "Goblin Warrior"), challenge_rating: 0.3 };
+    stubFetch(o5FixtureFetch({ "srd-2024/creatures": [odd] }));
+    expect(await o5GetMonsterStats("Goblin Warrior", "2024")).toEqual({ status: "not-found" });
+  });
+
+  it("matches school, type and size by part of a word", async () => {
+    expect(await o5SearchMonsters({ size: "med" }, "unavailable")).toContain("Wolf");
+    expect(await o5SearchMonsters({ type: "drag" }, "unavailable")).toContain("Adult Red Dragon");
+    const spells = await o5SearchSpells({ school: "evoc" }, "unavailable");
+    expect(spells).toContain("Fireball");
+    expect(spells).not.toContain("Sleep");
+  });
+
+  it("a legendary creature's block carries the per-round note (#10)", async () => {
+    const lines = (await o5GetMonster("Adult Red Dragon", "2014", "unavailable"))!.split("\n");
+    const i = lines.indexOf("LEGENDARY ACTIONS");
+    expect(i).toBeGreaterThan(0);
+    expect(lines[i + 1]).toBe("(Uses per round aren't in the Open5e SRD data — usually 3.)");
+    expect((await o5GetMonster("Wolf", "2024", "unavailable"))!).not.toContain("Uses per round");
+  });
+
+  it("a hovering creature prints (hover) after fly (u)", async () => {
+    const f = { ...wolf(), key: "srd-2024_flyer", name: "Flyer", speed: { walk: 10, fly: 30, hover: true, unit: "feet" } };
+    stubFetch(o5FixtureFetch({ "srd-2024/creatures": [f] }));
+    expect(await o5GetMonster("Flyer", "2024", "unavailable")).toContain("Speed: walk 10 ft., fly 30 ft. (hover)");
+  });
+
+  it("an item record with a null rarity or category doesn't break the search (#9)", async () => {
+    const base = o5Fixture<Record<string, unknown>>("srd-2024", "magicitems")[0];
+    const bad = { ...base, key: "srd-2024_nullish", name: "Nullish Trinket", rarity: null, category: null };
+    stubFetch(o5FixtureFetch({ "srd-2024/magicitems": [bad] }));
+    const out = await o5SearchItems({ name: "Nullish" }, "unavailable");
+    expect(out).toContain("Nullish Trinket");
+    expect(out).not.toContain("undefined");
+    expect(await o5SearchItems({ rarity: "rare" }, "unavailable")).not.toContain("Nullish");
   });
 });

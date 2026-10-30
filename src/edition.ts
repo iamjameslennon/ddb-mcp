@@ -732,9 +732,17 @@ export function homebrewNotFound(kind: string, name: string): string {
   return `No homebrew ${kind} found matching "${name}".`;
 }
 
-/** Encounter/treasure: a partial monster name that spans several distinct creatures. */
+/** Open5e v2 has no legendary-actions-per-round field; printed on the line after LEGENDARY ACTIONS (QA #10). */
+export const LEGENDARY_USES_NOTE = "(Uses per round aren't in the Open5e SRD data — usually 3.)";
+
+/** The most candidates an ambiguity reply names (QA #7); the rest are counted. */
+export const AMBIGUITY_LIST_CAP = 20;
+
+/** Encounter/treasure: a partial monster name that spans several distinct creatures. At most 20 are named, then "and N more". */
 export function ambiguityMessage(query: string, candidates: ReadonlyArray<{ name: string; cr: string }>): string {
-  const list = candidates.map(c => `${c.name} (CR ${c.cr})`).join(", ");
+  const shown = candidates.slice(0, AMBIGUITY_LIST_CAP).map(c => `${c.name} (CR ${c.cr})`).join(", ");
+  const more = candidates.length - AMBIGUITY_LIST_CAP;
+  const list = more > 0 ? `${shown}, and ${more} more` : shown;
   return `Ambiguous: "${query}" could be ${list} — use the full name.`;
 }
 
