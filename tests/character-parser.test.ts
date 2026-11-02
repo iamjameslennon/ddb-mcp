@@ -1283,6 +1283,32 @@ describe("parseCharacterData — cross-source spell deduplication", () => {
     expect(out).toMatch(/From Class Feature: Speak with Animals.* \(L1\)/);
   });
 
+  it.each([
+    ["prepared", { prepared: true }],
+    ["ritual (unprepared)", { prepared: false, ritual: true }],
+  ])("a duplicate warning still names a %s Wizard spell the SPELLS section prints", (_label, flags) => {
+    const out = parseCharacterData({
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        classes: [{
+          id: 1, level: 5, hitDiceUsed: 0,
+          definition: { name: "Wizard", hitDice: 6, canCastSpells: true, spellCastingAbilityId: 4, spellRules: {} },
+          subclassDefinition: null, classFeatures: [],
+        }],
+        classSpells: [{
+          characterClassId: 1,
+          spells: [{ ...flags, definition: { id: 123, name: "Speak with Animals", level: 1, ritual: "ritual" in flags, sources: [{ sourceId: 145 }] } }],
+        }],
+        spells: {
+          class: [makeSpell(123, "Speak with Animals", 1)],
+          race: [], background: [], feat: [], item: [],
+        },
+      },
+    }, "spells");
+    expect(out).toContain("⚠ Duplicate spell grants detected");
+    expect(out).toMatch(/Speak with Animals.* \(L1\).* — already granted by Spells, also in Class Feature/);
+  });
+
   it("warns when classSpells and char.spells.class share the same spell ID", () => {
     // Speak with Animals (id 123) prepared via classSpells AND auto-granted via class feature
     const out = parseCharacterData({

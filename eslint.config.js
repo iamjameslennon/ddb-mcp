@@ -31,10 +31,12 @@ export default [
   },
 
   // Tests, .mts helper scripts, and root-level TS config. tsconfig.json sets
-  // rootDir "src" and include ["src/**/*"], so none of these are part of the
-  // TS project and type-aware linting cannot resolve them. The recommended
-  // ruleset needs no type information, so lint them without `project` rather
-  // than widen tsconfig — which would pull tests into the published build.
+  // rootDir "src" and include ["src/**/*"], so none of these are in the
+  // published-build project (tests are type-checked separately by
+  // tsconfig.test.json, which nothing here uses for linting). The recommended
+  // ruleset needs no type information, so lint them without `project`;
+  // type-aware linting of tests is possible via tsconfig.test.json but is not
+  // enabled.
   {
     files: ["tests/**/*.ts", "scripts/**/*.mts", "*.ts"],
     languageOptions: {

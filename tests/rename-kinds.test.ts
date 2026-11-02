@@ -232,6 +232,13 @@ describe("racial traits pick species with no pairs", () => {
     expect(text).not.toMatch(/version(s)? hidden/);
   });
 
+  it("2024 Criminal / Spy and Criminal subraces of one base race both keep their traits (the background pair is not a species pair)", async () => {
+    install({ races: [traitRace(100, "Criminal / Spy", false, 145, "Folk"), traitRace(101, "Criminal", false, 145, "Folk")] });
+    const text = await reference.searchRacialTraits({ name: "grit" });
+    expect(text).toContain("*(Criminal / Spy — subrace of Folk)*");
+    expect(text).toContain("*(Criminal — subrace of Folk)*");
+  });
+
   it("2024 Thug and Tough subraces of one base race both keep their traits (the subgroup split)", async () => {
     install({ races: [traitRace(101, "Thug", false, 145, "Folk"), traitRace(102, "Tough", false, 145, "Folk")] });
     const text = await reference.searchRacialTraits({ name: "grit" });

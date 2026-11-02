@@ -47,7 +47,8 @@ jobs:
       # `prepare` is `npm run build`, and npm runs `prepare` as part of `npm ci`
       # -- so this step already compiles dist/ and fails the job on a broken
       # build. A separate `npm run build` step just ran tsc a second time
-      # (`npm run typecheck` is the same compiler with --noEmit).
+      # (`npm run typecheck` runs the same compiler with --noEmit, plus the
+      # tests/ and release-history project checks).
       - name: Install dependencies (runs the build via `prepare`)
         run: npm ci
 

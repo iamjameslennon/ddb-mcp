@@ -18,6 +18,11 @@
 
 import { execFileSync } from "node:child_process";
 
+// Each export is checked against the hand-written release-history.d.mts by
+// `npm run typecheck` (tsconfig.release-history.json). "./release-history.mjs"
+// resolves to the .d.mts sibling, so the JSDoc @type is the declared contract
+// and the implementation must be assignable to it.
+/** @type {typeof import("./release-history.mjs").runGit} */
 export function runGit(args) {
   return execFileSync("git", args, {
     encoding: "utf8",
@@ -26,6 +31,7 @@ export function runGit(args) {
   }).trim();
 }
 
+/** @type {typeof import("./release-history.mjs").resolveReleaseCommit} */
 export function resolveReleaseCommit(tag, git = runGit) {
   const oid = git(["rev-parse", "--verify", "--end-of-options", `${tag}^{commit}`]);
   if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(oid)) {
@@ -39,6 +45,8 @@ export function resolveReleaseCommit(tag, git = runGit) {
  * silently picking one when the repo has multiple roots (e.g. an
  * unrelated-histories merge) — a multi-line result must never be
  * interpolated into a revision range.
+ *
+ * @param {(args: string[]) => string} git
  */
 function resolveRootCommit(git) {
   const roots = git(["rev-list", "--max-parents=0", "HEAD"])
@@ -68,6 +76,7 @@ function resolveRootCommit(git) {
  *   defaults to `runGit`. Tests inject a stub to assert the exact argv each
  *   call receives without touching a real shell.
  * @returns {{ gitLog: string, diffStat: string }}
+ * @type {typeof import("./release-history.mjs").collectReleaseHistory}
  */
 export function collectReleaseHistory(tag, git = runGit) {
   let gitLog;

@@ -102,7 +102,6 @@ export async function getGameConfig(): Promise<GameConfig | null> {
   return pending.promise;
 }
 
-/** Start the shared fetch for `snapshot`'s generation and publish it as the pending entry. */
 /**
  * Drop the session-bound config, the index built from it, the failure memo and
  * any fetch in flight (ddb_clear_cache), so the next call fetches at once. A
@@ -116,6 +115,7 @@ export function clearGameConfig(): void {
   configPending = null;
 }
 
+/** Start the shared fetch for `snapshot`'s generation and publish it as the pending entry. */
 function startConfigFetch(snapshot: SessionSnapshot): PendingConfigFetch {
   // Deferred one microtask so the fetch runs only after the entry is stored: if
   // its first authority check fires the invalidation hook, the hook finds and
@@ -132,7 +132,6 @@ function startConfigFetch(snapshot: SessionSnapshot): PendingConfigFetch {
     timer = setTimeout(() => {
       ctl.abort();
       rememberFailure(snapshot, epoch);
-      release();
       resolve(null);
     }, CONFIG_FETCH_TIMEOUT_MS);
     timer.unref?.();
@@ -143,7 +142,8 @@ function startConfigFetch(snapshot: SessionSnapshot): PendingConfigFetch {
   };
   configPending = entry;
   // Clear only our own entry, on either settlement: after an invalidation the
-  // slot may hold a newer generation's fetch.
+  // slot may hold a newer generation's fetch. The deadline settles the race
+  // too, so this one handler also frees the slot on a timeout.
   function release() {
     if (configPending === entry) configPending = null;
   }

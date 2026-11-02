@@ -273,7 +273,10 @@ export function o5EquipmentKey(name: string): string {
  * potion) and "Potions of Healing" (the rarity table) stay two entries, and
  * SRD 5.1's "Potion of Healing" joins the first. Live 2026-10-23 that is the
  * only such key; a query takes the split key the same way. Kinds whose twin key
- * is the rename-table key never split.
+ * is the rename-table key never split. The guard covers only keys the equipment
+ * folds create: names the rename table maps together inside one document
+ * (Acid and Acid (vial), Chain and Chain (10 feet)) still share a group by
+ * design.
  */
 function guardedNamer(namer: O5Namer, records: ReadonlyArray<{ name: string; edition: RulesEdition }>): O5Namer {
   const tableKeys = new Map<string, Set<string>>();

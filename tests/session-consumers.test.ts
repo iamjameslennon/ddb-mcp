@@ -46,6 +46,16 @@ const COBALT_URL = "https://auth-service.dndbeyond.com/v1/cobalt-token";
 const CHAR_SERVICE = "https://character-service.dndbeyond.com";
 const MONSTER_SERVICE = "https://monster-service.dndbeyond.com";
 
+/** The error a promise rejects with; fails the test if it resolves instead. */
+async function rejection(p: Promise<unknown>): Promise<Error> {
+  try {
+    await p;
+  } catch (e) {
+    return e as Error;
+  }
+  throw new Error("expected the promise to reject, but it resolved");
+}
+
 function makeCookie(value: string) {
   return {
     name: "CobaltSession",
@@ -363,7 +373,7 @@ describe("character fetch authenticates with a snapshot-bound Bearer token", () 
       return jsonResponse({});
     });
 
-    const err = (await character.getCharacter("77").catch((e) => e)) as Error;
+    const err = await rejection(character.getCharacter("77"));
     expect(err.message).toMatch(/rejected the saved session \(cobalt-token request failed: 401\).*run ddb_login again/);
     expect(err.message).not.toMatch(/is private/);
   });
@@ -376,7 +386,7 @@ describe("character fetch authenticates with a snapshot-bound Bearer token", () 
       return jsonResponse({});
     });
 
-    const err = (await character.getCharacter("77").catch((e) => e)) as Error;
+    const err = await rejection(character.getCharacter("77"));
     expect(err.message).toMatch(/auth service could not be reached \(fetch failed\).*Try again in a moment/);
     expect(err.message).not.toMatch(/ddb_login/);
   });
@@ -390,7 +400,7 @@ describe("character fetch authenticates with a snapshot-bound Bearer token", () 
       return jsonResponse({});
     });
 
-    const pending = character.getCharacter("77").catch((e) => e as Error) as Promise<Error>;
+    const pending = rejection(character.getCharacter("77"));
     await vi.runAllTimersAsync(); // skip fetchWithRetry's backoff sleeps
     const err = await pending;
     expect(fetchMock.mock.calls.filter((c) => c[0] === COBALT_URL)).toHaveLength(4);
@@ -539,7 +549,7 @@ describe("character fetch authenticates with a snapshot-bound Bearer token", () 
       return jsonResponse({});
     });
 
-    const err = (await character.getCharacter("77").catch((e) => e)) as Error;
+    const err = await rejection(character.getCharacter("77"));
     expect(err.message).toMatch(/returned an unusable sign-in token/);
     expect(err.message).not.toMatch(/could not be reached/);
   });

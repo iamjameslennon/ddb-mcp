@@ -868,6 +868,14 @@ const KIND_PLURAL: Record<CharacterEntryKind, string> = {
 const HOMEBREW_KIND_ORDER = Object.keys(KIND_PLURAL) as CharacterEntryKind[];
 const kindPlural = (kind: CharacterEntryKind) => KIND_PLURAL[kind];
 
+/** "3 spells" / "1 item" for each given kind that has entries, in the order given. */
+function kindCounts(entries: readonly CharacterEditionEntry[], kinds: readonly CharacterEntryKind[]): string[] {
+  return kinds.flatMap(kind => {
+    const n = entries.filter(e => e.kind === kind).length;
+    return n ? [`${n} ${n === 1 ? kind : kindPlural(kind)}`] : [];
+  });
+}
+
 /**
  * "Rules: 2024 · 2014 content: Criminal / Spy (background)", or for a
  * mixed-edition multiclass "Rules: mixed — 2024: Bard 5 · 2014: Ranger 3 · …".
@@ -903,18 +911,12 @@ export function characterRulesLine(entries: readonly CharacterEditionEntry[]): s
     const inGroup = rest.filter(e => e.info.ruleset === ruleset);
     // Homebrew is other players' free text: count every kind, never name one.
     const items = ruleset === "homebrew"
-      ? HOMEBREW_KIND_ORDER.flatMap(kind => {
-          const n = inGroup.filter(e => e.kind === kind).length;
-          return n ? [`${n} ${n === 1 ? kind : kindPlural(kind)}`] : [];
-        })
+      ? kindCounts(inGroup, HOMEBREW_KIND_ORDER)
       : [
           ...inGroup
             .filter(e => e.kind !== "spell" && e.kind !== "item")
             .map(e => `${e.kind === "class" ? classLabel(e) : e.name} (${e.kind})`),
-          ...(["spell", "item"] as const).flatMap(kind => {
-            const n = inGroup.filter(e => e.kind === kind).length;
-            return n ? [`${n} ${n === 1 ? kind : kindPlural(kind)}`] : [];
-          }),
+          ...kindCounts(inGroup, ["spell", "item"]),
         ];
     if (items.length) groups.push(`${label}: ${items.join(", ")}`);
   }

@@ -118,7 +118,7 @@ function findMatchingBracket(s: string, openIdx: number): number {
  *   3. Error with available options
  */
 export function matchBookSlug(
-  books: Array<{ title: string; slug: string }>,
+  books: ReadonlyArray<{ title: string; slug: string }>,
   input: string
 ): string {
   const lower = input.toLowerCase();
@@ -219,11 +219,11 @@ export function tagLibraryBooks(
 // resolve the slug and may need it again for the edition join. Keyed by session
 // generation, dropped on any session transition; failures are never cached.
 const LIBRARY_CACHE_TTL_MS = 60_000;
-const libraryCache = new TtlCache<LibraryBook[]>(LIBRARY_CACHE_TTL_MS, 4);
+const libraryCache = new TtlCache<readonly LibraryBook[]>(LIBRARY_CACHE_TTL_MS, 4);
 // The one in-flight fetch per generation, shared by concurrent cold callers
 // (modelled on game-config.ts's configPending): cleared by its own settlement
 // only, never joined across generations, dropped by the invalidation hook.
-let libraryPending: { generation: number; promise: Promise<LibraryBook[]> } | null = null;
+let libraryPending: { generation: number; promise: Promise<readonly LibraryBook[]> } | null = null;
 onSessionInvalidated(() => {
   libraryCache.clear();
   libraryPending = null;
@@ -235,27 +235,28 @@ export function clearLibraryCache(): void {
   libraryPending = null;
 }
 
-async function fetchLibraryBooks(): Promise<LibraryBook[]> {
+async function fetchLibraryBooks(): Promise<readonly LibraryBook[]> {
   const snapshot = captureSession();
   const key = String(snapshot.generation);
   const cached = libraryCache.get(key);
   if (cached) return cached;
   if (libraryPending && libraryPending.generation === snapshot.generation) return libraryPending.promise;
-  const entry = {
-    generation: snapshot.generation,
-    promise: undefined as unknown as Promise<LibraryBook[]>,
+  const run = async (): Promise<readonly LibraryBook[]> => {
+    const books = await fetchLibraryBooksUncached();
+    // The account changed while the page was in flight: never hand back the
+    // old account's list. Throws SessionChangedError to every joiner too.
+    assertSessionCurrent(snapshot);
+    // The list is shared by every caller of this generation: freeze it so one
+    // can't mutate what the others (and the cache) see.
+    Object.freeze(books);
+    // Cache only a non-empty parse (an interstitial or truncated page parses
+    // to []), and only while this entry is still the authoritative one: a
+    // clear or session transition makes it stale, a newer entry supersedes it.
+    // `entry` is read after the first await, so it is initialised by then.
+    if (books.length > 0 && libraryPending === entry) libraryCache.set(key, books);
+    return books;
   };
-  entry.promise = (async () => {
-      const books = await fetchLibraryBooksUncached();
-      // The account changed while the page was in flight: never hand back the
-      // old account's list. Throws SessionChangedError to every joiner too.
-      assertSessionCurrent(snapshot);
-      // Cache only a non-empty parse (an interstitial or truncated page parses
-      // to []), and only while this entry is still the authoritative one: a
-      // clear or session transition makes it stale, a newer entry supersedes it.
-      if (books.length > 0 && libraryPending === entry) libraryCache.set(key, books);
-      return books;
-    })();
+  const entry = { generation: snapshot.generation, promise: run() };
   libraryPending = entry;
   const release = () => {
     if (libraryPending === entry) libraryPending = null;

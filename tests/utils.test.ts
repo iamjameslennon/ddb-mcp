@@ -40,6 +40,11 @@ describe("stripHtml entities", () => {
     expect(stripHtml("Player&rsquo;s &lsquo;x&rsquo; &ldquo;y&rdquo;")).toBe("Player\u2019s \u2018x\u2019 \u201cy\u201d");
     expect(stripHtml("a&#x2019;b &#X41;")).toBe("a\u2019b A");
   });
+  it("leaves invalid hex entities literal and decodes an astral one", () => {
+    expect(stripHtml("a&#x0;b")).toBe("a&#x0;b");
+    expect(stripHtml("a&#x110000;b")).toBe("a&#x110000;b");
+    expect(stripHtml("a&#x1F600;b")).toBe("a\u{1F600}b");
+  });
   it("keeps the existing decimal and &amp; handling", () => {
     expect(stripHtml("A &amp; B &#39;q&#39; &#8217; <b>x</b>")).toBe("A & B 'q' \u2019 x");
     expect(stripHtml("&amp;rsquo;")).toBe("&rsquo;");

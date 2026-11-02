@@ -463,57 +463,55 @@ export async function searchSpellsSection(params: SpellSearchParams): Promise<Se
       throw err;
     }
   }
-  {
-    const index = await indexPromise;
-    const nameQuery = params.name ? normalizeName(params.name) : "";
-    const schoolQuery = params.school?.toLowerCase();
+  const index = await indexPromise;
+  const nameQuery = params.name ? normalizeName(params.name) : "";
+  const schoolQuery = params.school?.toLowerCase();
 
-    const { hits, hidden, header, note } = selectCatalog(spellList(store), requested, lookupCatalogAdapter({
-      ...SPELL_ADAPTER,
-      nameMatches: nameQuery ? s => normalizeName(s.definition.name).includes(nameQuery) : undefined,
-      passes: s => {
-        const d = s.definition;
-        return (params.level === undefined || d.level === params.level)
-          && (!schoolQuery || d.school.toLowerCase().includes(schoolQuery))
-          && (params.concentration === undefined || d.concentration === params.concentration)
-          && (params.ritual === undefined || d.ritual === params.ritual);
-      },
-    }), index, source, { bookNotes: params.bookNotes });
+  const { hits, hidden, header, note } = selectCatalog(spellList(store), requested, lookupCatalogAdapter({
+    ...SPELL_ADAPTER,
+    nameMatches: nameQuery ? s => normalizeName(s.definition.name).includes(nameQuery) : undefined,
+    passes: s => {
+      const d = s.definition;
+      return (params.level === undefined || d.level === params.level)
+        && (!schoolQuery || d.school.toLowerCase().includes(schoolQuery))
+        && (params.concentration === undefined || d.concentration === params.concentration)
+        && (params.ritual === undefined || d.ritual === params.ritual);
+    },
+  }), index, source, { bookNotes: params.bookNotes });
 
-    const limit = params.limit ?? 20;
-    const offset = params.offset ?? 0;
-    if (hits.length === 0 && hidden > 0) {
-      return hiddenOnlySection(header, "No spells found matching the criteria.", requested, hidden);
-    }
-    if (hits.length === 0) {
-      return plainSection(source && source !== "homebrew"
-        ? `No spells found matching the criteria in ${source.book}.`
-        : source ? homebrewNoMatch("spells") : "No spells found matching the criteria.");
-    }
-
-    // When the compendium build was incomplete (one or more class-list
-    // requests failed), tell the caller so they can re-run `ddb_login` and
-    // `ddb_clear_cache` to retry.
-    const provenanceNote = compendiumSource === "ddb-partial"
-      ? "\n> ⚠ Compendium build was incomplete — one or more class spell-list requests to D&D Beyond failed, so spells from those classes may be missing. If you've just re-logged in, run `ddb_clear_cache` to retry.\n"
-      : "";
-
-    const results = paginateResults("Spell", hits, hit => {
-      const d = hit.entry.definition;
-      const level = d.level === 0 ? "Cantrip" : `Level ${d.level}`;
-      const tags: string[] = [];
-      if (d.concentration) tags.push("Conc.");
-      if (d.ritual) tags.push("Ritual");
-      const tagStr = tags.length ? ` (${tags.join(", ")})` : "";
-      return wrapIfHomebrew(`- **${d.name}** ${hit.label} — ${level} ${d.school}${tagStr}`, d.isHomebrew);
-    }, limit, offset, provenanceNote);
-    return {
-      header,
-      body: note ? `${note}\n${results}` : results,
-      footer: searchFooter(requested, hidden),
-      hidden,
-    };
+  const limit = params.limit ?? 20;
+  const offset = params.offset ?? 0;
+  if (hits.length === 0 && hidden > 0) {
+    return hiddenOnlySection(header, "No spells found matching the criteria.", requested, hidden);
   }
+  if (hits.length === 0) {
+    return plainSection(source && source !== "homebrew"
+      ? `No spells found matching the criteria in ${source.book}.`
+      : source ? homebrewNoMatch("spells") : "No spells found matching the criteria.");
+  }
+
+  // When the compendium build was incomplete (one or more class-list
+  // requests failed), tell the caller so they can re-run `ddb_login` and
+  // `ddb_clear_cache` to retry.
+  const provenanceNote = compendiumSource === "ddb-partial"
+    ? "\n> ⚠ Compendium build was incomplete — one or more class spell-list requests to D&D Beyond failed, so spells from those classes may be missing. If you've just re-logged in, run `ddb_clear_cache` to retry.\n"
+    : "";
+
+  const results = paginateResults("Spell", hits, hit => {
+    const d = hit.entry.definition;
+    const level = d.level === 0 ? "Cantrip" : `Level ${d.level}`;
+    const tags: string[] = [];
+    if (d.concentration) tags.push("Conc.");
+    if (d.ritual) tags.push("Ritual");
+    const tagStr = tags.length ? ` (${tags.join(", ")})` : "";
+    return wrapIfHomebrew(`- **${d.name}** ${hit.label} — ${level} ${d.school}${tagStr}`, d.isHomebrew);
+  }, limit, offset, provenanceNote);
+  return {
+    header,
+    body: note ? `${note}\n${results}` : results,
+    footer: searchFooter(requested, hidden),
+    hidden,
+  };
 }
 
 export async function getSpell(spellName: string, rulesEdition: RulesEdition = "2024", source?: string): Promise<string> {
@@ -533,21 +531,19 @@ export async function getSpell(spellName: string, rulesEdition: RulesEdition = "
     }
     throw err;
   }
-  {
-    const index = await indexPromise;
-    const found = lookupCatalog(spellList(store), spellName, rulesEdition, SPELL_ADAPTER, index, resolved);
+  const index = await indexPromise;
+  const found = lookupCatalog(spellList(store), spellName, rulesEdition, SPELL_ADAPTER, index, resolved);
 
-    if (!found) {
-      if (resolved === "homebrew") return homebrewNotFound("spell", spellName);
-      // A book the caller asked for is never swapped for SRD content.
-      if (resolved) return `Spell "${spellName}" not found in ${resolved.book}.`;
-      const o5Result = await o5GetSpell(spellName, rulesEdition, "not-found").catch(() => null);
-      if (o5Result) return o5Result;
-      return `Spell "${spellName}" not found in the compendium. Try ddb_search_spells with a partial name.`;
-    }
-
-    return formatSpell(found.entry, found.rulesLines);
+  if (!found) {
+    if (resolved === "homebrew") return homebrewNotFound("spell", spellName);
+    // A book the caller asked for is never swapped for SRD content.
+    if (resolved) return `Spell "${spellName}" not found in ${resolved.book}.`;
+    const o5Result = await o5GetSpell(spellName, rulesEdition, "not-found").catch(() => null);
+    if (o5Result) return o5Result;
+    return `Spell "${spellName}" not found in the compendium. Try ddb_search_spells with a partial name.`;
   }
+
+  return formatSpell(found.entry, found.rulesLines);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -748,21 +744,19 @@ export async function getItem(itemName: string, rulesEdition: RulesEdition = "20
     } catch { /* fall through to the compendium's error */ }
     throw err;
   }
-  {
-    const index = await indexPromise;
-    const found = lookupCatalog(items, itemName, rulesEdition, ITEM_ADAPTER, index, resolved);
+  const index = await indexPromise;
+  const found = lookupCatalog(items, itemName, rulesEdition, ITEM_ADAPTER, index, resolved);
 
-    if (!found) {
-      if (resolved === "homebrew") return homebrewNotFound("item", itemName);
-      // A book the caller asked for is never swapped for SRD content.
-      if (resolved) return `Item "${itemName}" not found in ${resolved.book}.`;
-      const result = await o5GetEquipment(itemName, rulesEdition, "not-found").catch(() => null);
-      if (result) return result;
-      return `Item "${itemName}" not found. Try ddb_search_equipment with a partial name.`;
-    }
-
-    return formatItem(found.entry, found.rulesLines);
+  if (!found) {
+    if (resolved === "homebrew") return homebrewNotFound("item", itemName);
+    // A book the caller asked for is never swapped for SRD content.
+    if (resolved) return `Item "${itemName}" not found in ${resolved.book}.`;
+    const result = await o5GetEquipment(itemName, rulesEdition, "not-found").catch(() => null);
+    if (result) return result;
+    return `Item "${itemName}" not found. Try ddb_search_equipment with a partial name.`;
   }
+
+  return formatItem(found.entry, found.rulesLines);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -925,9 +919,10 @@ const raceName = (r: DdbRace) => r.fullName || r.baseName;
  * grouped by base race (nested mode), so the 2024 Elf replaces the 2014 High
  * Elf and Wood Elf by default.
  */
-const RACE_ADAPTER: CatalogAdapter<DdbRace> = {
+const RACE_ADAPTER = lookupCatalogAdapter<DdbRace>({
   markers: r => r,
-  twinKey: r => twinNames.none(raceName(r)),
+  name: raceName,
+  twinName: twinNames.none,
   groupKey: r => twinNames.none(r.baseRaceName || r.baseName || raceName(r)),
   // entityRaceId repeats across entityRaceTypeId, so the type id ends the order.
   tiebreak: (a, b) => definitionTiebreak(
@@ -935,7 +930,7 @@ const RACE_ADAPTER: CatalogAdapter<DdbRace> = {
     { id: b.entityRaceId, isHomebrew: b.isHomebrew, isLegacy: b.isLegacy },
   ) || a.entityRaceTypeId - b.entityRaceTypeId,
   compare: (a, b) => raceName(a).localeCompare(raceName(b)),
-};
+});
 
 const SPELL_KIND: HomebrewKind = { kind: "spell", plural: "spells" };
 const ITEM_KIND: HomebrewKind = { kind: "item", plural: "items" };
@@ -982,12 +977,13 @@ interface DdbClass {
   sources: Array<{ sourceId: number }>;
 }
 
-const CLASS_ADAPTER: CatalogAdapter<DdbClass> = {
+const CLASS_ADAPTER = lookupCatalogAdapter<DdbClass>({
   markers: c => c,
-  twinKey: c => twinNames.none(c.name),
+  name: c => c.name,
+  twinName: twinNames.none,
   tiebreak: definitionTiebreak,
   compare: (a, b) => a.name.localeCompare(b.name),
-};
+});
 
 export type ClassSearchParams = OptionSearchParams;
 
@@ -1028,12 +1024,13 @@ interface DdbBackground {
   sources: Array<{ sourceId: number }>;
 }
 
-const BACKGROUND_ADAPTER: CatalogAdapter<DdbBackground> = {
+const BACKGROUND_ADAPTER = lookupCatalogAdapter<DdbBackground>({
   markers: b => b,
-  twinKey: b => twinNames.background(b.name),
+  name: b => b.name,
+  twinName: twinNames.background,
   tiebreak: definitionTiebreak,
   compare: (a, b) => a.name.localeCompare(b.name),
-};
+});
 
 export type BackgroundSearchParams = OptionSearchParams;
 
@@ -1072,12 +1069,13 @@ interface DdbFeat {
   sources: Array<{ sourceId: number }>;
 }
 
-const FEAT_ADAPTER: CatalogAdapter<DdbFeat> = {
+const FEAT_ADAPTER = lookupCatalogAdapter<DdbFeat>({
   markers: f => f,
-  twinKey: f => twinNames.none(f.name),
+  name: f => f.name,
+  twinName: twinNames.none,
   tiebreak: definitionTiebreak,
   compare: (a, b) => a.name.localeCompare(b.name),
-};
+});
 
 export interface FeatSearchParams extends OptionSearchParams { prerequisite?: string }
 

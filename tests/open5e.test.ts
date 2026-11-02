@@ -776,7 +776,7 @@ describe("Open5e searches capped at 20 lines", () => {
   });
 
   it("a capped item search adds the refine hint; an uncapped one does not", async () => {
-    stubFetch(o5FixtureFetch({ "srd-2024/items": many("srd-2024", "items", "Rope", 21), "srd-2014/items": o5Fixture("srd-2014", "items").slice(0, 1) }));
+    stubFetch(o5FixtureFetch({ "srd-2024/items": many("srd-2024", "items", "Rope", 21), "srd-2014/items": [o5Record("srd-2014", "items", "Abacus")] }));
     const out = (await o5SearchItems({ name: "rope", rulesEdition: "2024" }, "unavailable")).split("\n");
     expect(out.filter(l => l.startsWith("• "))).toHaveLength(20);
     expect(out.slice(-2)).toEqual(["", REFINE]);
@@ -1291,6 +1291,12 @@ describe("Open5e monster, filter and item fixes (Task 11)", () => {
       expect(await o5GetMonsterStats("oblin", "2024")).toEqual({ status: "not-found" });
       stubFetch(o5FixtureFetch({ "srd-2024/creatures": [gob("Goblin Boss", 1.5), gob("Goblin Warrior", 0.3)] }));
       expect(await o5GetMonsterStats("Goblin Boss", "2024")).toEqual({ status: "not-found" });
+    });
+
+    it("a partial name matching one group with an unknown CR is not-found; with a known CR it is found", async () => {
+      stubFetch(o5FixtureFetch({ "srd-2024/creatures": [gob("Goblin Boss", 1.5), gob("Hobgoblin", 1)] }));
+      expect(await o5GetMonsterStats("Boss", "2024")).toEqual({ status: "not-found" });
+      expect(await o5GetMonsterStats("Hobgob", "2024")).toMatchObject({ status: "found", name: "Hobgoblin", crValue: 1 });
     });
 
     it("rateEncounter names exactly 20 candidates, CR then name, and counts the rest", async () => {
