@@ -26,7 +26,7 @@ import {
 import { peekSourceIndex, getSourceIndex } from "../game-config.js";
 import { resolveSource, unknownSourceError, withSourceCaveat, isHomebrewSource, GENERIC_SOURCE_HINT, type ResolvedSource } from "../source-filter.js";
 import {
-  paginateResults, renderSection, plainSection, selectCatalog, lookupCatalog, lookupCatalogAdapter,
+  paginateResults, renderSection, plainSection, withSourceCaveatSection, selectCatalog, lookupCatalog, lookupCatalogAdapter,
   type CatalogAdapter, type CatalogHit, type LookupAdapter, type SearchSection,
 } from "./edition-search.js";
 import { createSpellStore, addSpells, spellList, type DdbSpell, type SpellStore } from "./spell-store.js";
@@ -36,9 +36,9 @@ import {
   type ClassFeatureEntry, type RacialTraitEntry, type OptionalCollection,
 } from "./features-traits.js";
 import {
-  o5SearchSpells, o5GetSpell,
-  o5SearchItems, o5GetEquipment,
-  o5SearchRaces, o5SearchClasses, o5SearchBackgrounds, o5SearchFeats,
+  o5SearchSpellsSection, o5GetSpell,
+  o5SearchItemsSection, o5GetEquipment,
+  o5SearchRacesSection, o5SearchClassesSection, o5SearchBackgroundsSection, o5SearchFeatsSection,
   o5SearchRules, o5GetRule,
 } from "../open5e.js";
 
@@ -458,7 +458,7 @@ export async function searchSpellsSection(params: SpellSearchParams): Promise<Se
   } catch (err) {
     if (source === "homebrew") return plainSection(homebrewUnreachable("spells"));
     try {
-      return plainSection(withSourceCaveat(await o5SearchSpells(params, "unavailable"), params.source));
+      return withSourceCaveatSection(await o5SearchSpellsSection(params, "unavailable"), params.source);
     } catch {
       throw err;
     }
@@ -728,7 +728,7 @@ export async function searchItemsSection(params: ItemSearchParams): Promise<Sear
       return lines.join("\n");
     },
     notFound: "No items found matching the criteria.",
-    fallback: kind => o5SearchItems(params, kind),
+    fallback: kind => o5SearchItemsSection(params, kind),
     // No `unavailable`: when Open5e fails too, the compendium's own error is thrown.
   });
 }
@@ -800,7 +800,7 @@ async function searchCatalogList<T>(
     adapter: CatalogAdapter<T>;
     render: (hits: CatalogHit<T>[]) => string;
     notFound: string;
-    fallback: (kind: "not-found" | "unavailable") => Promise<string>;
+    fallback: (kind: "not-found" | "unavailable") => Promise<SearchSection>;
     /** The reply when the load and Open5e both fail; omitted, the load error is rethrown. */
     unavailable?: string;
   },
@@ -815,14 +815,14 @@ async function searchCatalogList<T>(
     all = await spec.load();
   } catch (err) {
     if (source === "homebrew") return plainSection(homebrewUnreachable(spec.homebrew.plural));
-    let text: string;
+    let fallback: SearchSection;
     try {
-      text = await spec.fallback("unavailable");
+      fallback = await spec.fallback("unavailable");
     } catch {
       if (spec.unavailable === undefined) throw err;
-      text = spec.unavailable;
+      fallback = plainSection(spec.unavailable);
     }
-    return plainSection(withSourceCaveat(text, params.source));
+    return withSourceCaveatSection(fallback, params.source);
   }
 
   const index = await indexPromise;
@@ -831,7 +831,7 @@ async function searchCatalogList<T>(
     if (source === "homebrew") return plainSection(homebrewNoMatch(spec.homebrew.plural));
     if (source) return plainSection(`No ${spec.plural} found matching the criteria in ${source.book}.`);
     if (hidden > 0) return hiddenOnlySection(header, `No ${spec.plural} found matching the criteria.`, requested, hidden);
-    return plainSection(await spec.fallback("not-found").catch(() => spec.notFound));
+    return await spec.fallback("not-found").catch(() => plainSection(spec.notFound));
   }
 
   const results = spec.render(hits);
@@ -863,7 +863,7 @@ async function searchOptionList<T>(
     format: (hit: { entry: T; label: string }) => string;
     /** The text for "no match" (Open5e fallback first). */
     notFound: string;
-    fallback: (kind: "not-found" | "unavailable") => Promise<string>;
+    fallback: (kind: "not-found" | "unavailable") => Promise<SearchSection>;
   },
 ): Promise<SearchSection> {
   return searchCatalogList<T>(params, {
@@ -961,7 +961,7 @@ export async function searchRacesSection(params: RaceSearchParams = {}): Promise
       return `- **${raceName(race)}** ${label}${race.isSubRace ? " *(Subrace)*" : ""}${desc ? ` — ${desc}` : ""}`;
     },
     notFound: `No races found ${matching(params.name)}.`,
-    fallback: kind => o5SearchRaces({ name: params.name, rulesEdition: params.rulesEdition }, kind),
+    fallback: kind => o5SearchRacesSection({ name: params.name, rulesEdition: params.rulesEdition }, kind),
   });
 }
 
@@ -1013,7 +1013,7 @@ export async function searchClassesSection(params: ClassSearchParams = {}): Prom
       return `- **${cls.name}** ${label} — Hit Die: ${hitDie}${spellcasting}${desc ? `\n  ${desc}` : ""}`;
     },
     notFound: `No classes found ${matching(params.name)}.`,
-    fallback: kind => o5SearchClasses({ name: params.name, rulesEdition: params.rulesEdition }, kind),
+    fallback: kind => o5SearchClassesSection({ name: params.name, rulesEdition: params.rulesEdition }, kind),
   });
 }
 
@@ -1055,7 +1055,7 @@ export async function searchBackgroundsSection(params: BackgroundSearchParams = 
       return `- **${bg.name}** ${label}${desc ? ` — ${desc}` : ""}`;
     },
     notFound: `No backgrounds found ${matching(params.name)}.`,
-    fallback: kind => o5SearchBackgrounds({ name: params.name, rulesEdition: params.rulesEdition }, kind),
+    fallback: kind => o5SearchBackgroundsSection({ name: params.name, rulesEdition: params.rulesEdition }, kind),
   });
 }
 
@@ -1102,7 +1102,7 @@ export async function searchFeatsSection(params: FeatSearchParams = {}): Promise
       return `- **${feat.name}** ${label}${prereq}${desc ? ` — ${desc}` : ""}`;
     },
     notFound: "No feats found matching the search criteria.",
-    fallback: kind => o5SearchFeats({ name: params.name, rulesEdition: params.rulesEdition }, kind),
+    fallback: kind => o5SearchFeatsSection({ name: params.name, rulesEdition: params.rulesEdition }, kind),
   });
 }
 

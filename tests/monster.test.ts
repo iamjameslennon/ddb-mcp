@@ -16,7 +16,7 @@ vi.mock("../src/session-fetch.js", () => {
 });
 
 vi.mock("../src/open5e.js", () => ({
-  o5SearchMonsters: vi.fn(async () => "O5 SEARCH RESULT"),
+  o5SearchMonstersSection: vi.fn(async () => ({ header: null, body: "O5 SEARCH RESULT", footer: null, hidden: 0, open5e: true })),
   o5GetMonster: vi.fn(async () => "O5 MONSTER RESULT"),
   o5GetMonsterStats: vi.fn(async () => ({ status: "not-found" })),
 }));
@@ -24,7 +24,7 @@ vi.mock("../src/open5e.js", () => ({
 import { getMonster, searchMonsters, getMonsterStats, clearMonsterCache } from "../src/tools/monster.js";
 import { rateEncounter } from "../src/tools/encounter.js";
 import { sessionFetch, hasValidSession, onSessionInvalidated } from "../src/session-fetch.js";
-import { o5SearchMonsters, o5GetMonster, o5GetMonsterStats } from "../src/open5e.js";
+import { o5SearchMonstersSection, o5GetMonster, o5GetMonsterStats } from "../src/open5e.js";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 // IDs, source attribution, and categories mirror live monster-service / game
@@ -616,14 +616,14 @@ describe("searchMonsters", () => {
     expect(result).toContain("No monsters matching the search criteria in Curse of Strahd [cos]");
     expect(result).toContain('"Wolf" appears in:');
     expect(result).toContain("Monster Manual [mm-2024]");
-    expect(o5SearchMonsters).not.toHaveBeenCalled();
+    expect(o5SearchMonstersSection).not.toHaveBeenCalled();
   });
 
   it("an unknown source errors instead of returning unfiltered results", async () => {
     const result = await searchMonsters({ name: "Wolf", source: "nope-1999" });
     expect(result).toContain('Unknown source "nope-1999"');
     expect(result).not.toContain("**Wolf**");
-    expect(o5SearchMonsters).not.toHaveBeenCalled();
+    expect(o5SearchMonstersSection).not.toHaveBeenCalled();
   });
 
   it("labels a reprint with the requested book when its primary source differs", async () => {
@@ -647,7 +647,7 @@ describe("searchMonsters", () => {
     const result = await searchMonsters({ source: "mm-2024", cr: 21 });
     expect(result).toContain("No monsters matching the search criteria in Monster Manual [mm-2024]");
     expect(result).toMatch(/checked the first 600 of \d+ entries/);
-    expect(o5SearchMonsters).not.toHaveBeenCalled();
+    expect(o5SearchMonstersSection).not.toHaveBeenCalled();
   });
 
   it("flags a partial scan in the header when some entries matched", async () => {
@@ -661,7 +661,7 @@ describe("searchMonsters", () => {
     const result = await searchMonsters({ source: "cos" });
     expect(result).toContain("Strahd Zombie");
     expect(listUrls[0]).toContain("sources=6");
-    expect(o5SearchMonsters).not.toHaveBeenCalled();
+    expect(o5SearchMonstersSection).not.toHaveBeenCalled();
   });
 
   it("without a source, an empty DDB result still falls back to Open5e", async () => {
@@ -1210,7 +1210,7 @@ describe("searchMonsters result lines", () => {
     extraMonsters = [monster({ id: 8_000_511, name: "Tough", typeId: 8, sourceId: 147, sources: sources(147) })];
     failSearchTerms.add("thug");
     expect(await searchMonsters({ name: "Tough" })).toContain("- **Tough** [2024]");
-    expect(o5SearchMonsters).not.toHaveBeenCalled();
+    expect(o5SearchMonstersSection).not.toHaveBeenCalled();
     expect(await searchMonsters({ name: "Thug" })).toContain("O5 SEARCH RESULT");
   });
 });
@@ -1330,7 +1330,7 @@ describe('source: "homebrew"', () => {
 
   it("searchMonsters with no homebrew match is a plain not-found", async () => {
     expect(await searchMonsters({ name: "Wolf", source: "homebrew" })).toBe('No homebrew monsters found matching "Wolf".');
-    expect(o5SearchMonsters).not.toHaveBeenCalled();
+    expect(o5SearchMonstersSection).not.toHaveBeenCalled();
   });
 
   it("getMonsterStats still skips homebrew", async () => {
@@ -1348,7 +1348,7 @@ describe('source: "homebrew" never falls back to official content', () => {
     expect(await getMonster("Zombie", { source: "homebrew" })).toBe("Homebrew monster lookup requires login. Run ddb_login first.");
     expect(await searchMonsters({ name: "Zombie", source: " Homebrew " })).toBe("Homebrew monster lookup requires login. Run ddb_login first.");
     expect(o5GetMonster).not.toHaveBeenCalled();
-    expect(o5SearchMonsters).not.toHaveBeenCalled();
+    expect(o5SearchMonstersSection).not.toHaveBeenCalled();
   });
 
   it("D&D Beyond failing: get and search say it could not be reached, with no Open5e fallback", async () => {
@@ -1356,7 +1356,7 @@ describe('source: "homebrew" never falls back to official content', () => {
     expect(await getMonster("Zombie", { source: "homebrew" })).toBe("Homebrew monsters are unavailable: D&D Beyond could not be reached.");
     expect(await searchMonsters({ name: "Zombie", source: "homebrew" })).toBe("Homebrew monsters are unavailable: D&D Beyond could not be reached.");
     expect(o5GetMonster).not.toHaveBeenCalled();
-    expect(o5SearchMonsters).not.toHaveBeenCalled();
+    expect(o5SearchMonstersSection).not.toHaveBeenCalled();
   });
 });
 
@@ -1450,7 +1450,7 @@ describe("searchMonsters counts a twin whose requested pick fails the filters", 
     extraMonsters = [HOUND_2024, HOUND_2014];
     expect(await searchMonsters({ name: "Ghast Hound", cr: 0.5 }))
       .toBe([HEADER, "No monsters found matching the search criteria.", FOOTER].join("\n"));
-    expect(o5SearchMonsters).not.toHaveBeenCalled();
+    expect(o5SearchMonstersSection).not.toHaveBeenCalled();
   });
 
   it("a partial scan: the no-match line names how much was checked", async () => {
@@ -1462,7 +1462,7 @@ describe("searchMonsters counts a twin whose requested pick fails the filters", 
       `No monsters found matching the search criteria (checked the first 600 of ${ALL_MONSTERS.length} entries).`,
       FOOTER,
     ]);
-    expect(o5SearchMonsters).not.toHaveBeenCalled();
+    expect(o5SearchMonstersSection).not.toHaveBeenCalled();
   });
 
   it("a locked 2024 pick swapped to its 2014 twin that passes is listed with the swap, not counted", async () => {

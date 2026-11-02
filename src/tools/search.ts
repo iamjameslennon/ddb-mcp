@@ -19,9 +19,9 @@ const CATEGORY_LABELS: Record<SpecificCategory, string> = {
   feats: "Feats",
 };
 
-// Each underlying search returns its own "no results" sentence. Detect them so
-// we can omit empty sections in the "all" rollup, e.g. Open5e's item fallback:
-// "No items found matching the criteria (SRD only)."
+// Each underlying search returns its own "no results" sentence. Detect them in a
+// section's body (never its header) so we can omit empty sections in the "all"
+// rollup, e.g. Open5e's item fallback: "No items found matching the criteria (SRD only)."
 const EMPTY_RESULT_PATTERN = /^no\s+[\w\s]+?\s+found/i;
 
 export async function search(
@@ -43,17 +43,22 @@ export async function search(
   let anyHeader = false;
   let hidden = 0;
   for (let i = 0; i < ALL_CATEGORIES.length; i++) {
-    const body = results[i].body.trim();
+    const section = results[i];
+    // Every section's hidden twins reach the combined footer, a dropped one's too.
+    hidden += section.hidden;
+    const body = section.body.trim();
     if (!body || EMPTY_RESULT_PATTERN.test(body)) continue;
-    sections.push(`## ${CATEGORY_LABELS[ALL_CATEGORIES[i]]}\n\n${body}`);
-    if (results[i].header !== null) anyHeader = true;
-    hidden += results[i].hidden;
+    // An Open5e section keeps its own Rules line; a D&D Beyond header is folded into the combined one.
+    const text = section.open5e && section.header !== null ? `${section.header}\n${body}` : body;
+    sections.push(`## ${CATEGORY_LABELS[ALL_CATEGORIES[i]]}\n\n${text}`);
+    if (section.header !== null && !section.open5e) anyHeader = true;
   }
 
-  if (sections.length === 0) return `No results found for "${query}".`;
+  const footer = searchFooter(rulesEdition, hidden);
+  // Nothing listed: the dropped sections' hidden twins still get the footer (owner ruling 2026-11-02).
+  if (sections.length === 0) return [`No results found for "${query}".`, ...(footer ? [footer] : [])].join("\n\n");
   // One header and one footer for the whole reply; an all-Open5e reply has no
   // combined header, each section keeps its own Rules line.
-  const footer = searchFooter(rulesEdition, hidden);
   return [
     ...(anyHeader ? [searchHeader({ requested: rulesEdition })] : []),
     `# Search results for "${query}"`,

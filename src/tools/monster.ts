@@ -27,8 +27,8 @@ import {
 } from "../source-filter.js";
 import { TtlCache } from "../cache.js";
 import { wrapUntrusted, stripHtmlRich } from "../utils.js";
-import { o5SearchMonsters, o5GetMonster, o5GetMonsterStats, type MonsterStatsResult } from "../open5e.js";
-import { renderSection, plainSection, sourceFraming, type SearchSection } from "./edition-search.js";
+import { o5SearchMonstersSection, o5GetMonster, o5GetMonsterStats, type MonsterStatsResult } from "../open5e.js";
+import { renderSection, plainSection, sourceFraming, withSourceCaveatSection, type SearchSection } from "./edition-search.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -499,7 +499,7 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
   const homebrew = isHomebrewSource(params.source);
   if (!hasValidSession()) {
     if (homebrew) return HOMEBREW_LOGIN_REQUIRED;
-    return await o5SearchMonsters(params, "unavailable").then(r => withSourceCaveat(r, params.source)).catch(
+    return await o5SearchMonstersSection(params, "unavailable").then(r => withSourceCaveatSection(r, params.source)).catch(
       () => "Monster search requires login. Run ddb_login first."
     );
   }
@@ -622,7 +622,7 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
         hidden,
       };
     }
-    return await o5SearchMonsters(params, "not-found").catch(() => "No monsters found matching the search criteria.");
+    return await o5SearchMonstersSection(params, "not-found").catch(() => "No monsters found matching the search criteria.");
   }
 
   const matchedBy = searchTerm && params.source ? "matched by name and source"
@@ -693,7 +693,7 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
   return { header, body: lines.join("\n"), footer: searchFooter(requested, hidden), hidden };
   } catch {
     if (homebrew) return HOMEBREW_UNREACHABLE;
-    return await o5SearchMonsters(params, "unavailable").then(r => withSourceCaveat(r, params.source)).catch(
+    return await o5SearchMonstersSection(params, "unavailable").then(r => withSourceCaveatSection(r, params.source)).catch(
       () => "Monster search unavailable — DnD Beyond and Open5e both failed."
     );
   }

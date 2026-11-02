@@ -1,6 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { searchHeader, searchFooter } from "../src/edition.js";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { searchHeader, searchFooter, open5eSearchHeader } from "../src/edition.js";
 import { plainSection, renderSection, type SearchSection } from "../src/tools/edition-search.js";
+import {
+  clearOpen5eCache,
+  o5SearchSpells, o5SearchMonsters, o5SearchItems, o5SearchRaces, o5SearchClasses, o5SearchBackgrounds, o5SearchFeats,
+  o5SearchSpellsSection, o5SearchMonstersSection, o5SearchItemsSection, o5SearchRacesSection, o5SearchClassesSection,
+  o5SearchBackgroundsSection, o5SearchFeatsSection,
+} from "../src/open5e.js";
+import { o5FixtureFetch } from "./fixtures/open5e-v2.js";
 
 const sections = vi.hoisted(() => ({
   spells: vi.fn(), monsters: vi.fn(), items: vi.fn(), races: vi.fn(), classes: vi.fn(), feats: vi.fn(),
@@ -18,12 +25,17 @@ vi.mock("../src/tools/monster.js", () => ({ searchMonstersSection: sections.mons
 import { search } from "../src/tools/search.js";
 
 const H = searchHeader({ requested: "2024" });
+const O5H = open5eSearchHeader("2024", "unavailable");
 const ddb = (body: string, hidden = 0): SearchSection =>
   ({ header: H, body, footer: searchFooter("2024", hidden), hidden });
 
 beforeEach(() => {
   for (const fn of Object.values(sections)) fn.mockReset().mockResolvedValue(plainSection("No things found."));
+  // The Open5e sections below are the real ones, served from the recorded v2 documents.
+  clearOpen5eCache();
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => o5FixtureFetch()(url)));
 });
+afterEach(() => vi.unstubAllGlobals());
 
 describe("search (ddb_search_site)", () => {
   it("all: one header, bodies without their own header/footer, one combined footer", async () => {
@@ -83,8 +95,94 @@ describe("search (ddb_search_site)", () => {
 
   it('skips an empty "No items found …" section', async () => {
     sections.spells.mockResolvedValue(ddb("**Spell Search** (1 found)"));
-    sections.items.mockResolvedValue(plainSection("No items found matching the criteria (SRD only)."));
+    // The real Open5e no-match reply, not a hand-built string.
+    const none = await o5SearchItemsSection({ name: "zzzz" }, "not-found");
+    expect(renderSection(none)).toBe(await o5SearchItems({ name: "zzzz" }, "not-found"));
+    sections.items.mockResolvedValue(none);
     expect(await search("x", "all", "2024")).not.toContain("## Items");
+  });
+
+  it.each([
+    ["spells listed", () => o5SearchSpells({ name: "fire" }, "unavailable"), () => o5SearchSpellsSection({ name: "fire" }, "unavailable")],
+    ["spells past the end", () => o5SearchSpells({ name: "fire", offset: 9 }, "not-found"), () => o5SearchSpellsSection({ name: "fire", offset: 9 }, "not-found")],
+    ["spells no match", () => o5SearchSpells({ name: "zzz" }, "not-found"), () => o5SearchSpellsSection({ name: "zzz" }, "not-found")],
+    ["monsters hidden-only", () => o5SearchMonsters({ name: "goblin", type: "humanoid" }, "unavailable"), () => o5SearchMonstersSection({ name: "goblin", type: "humanoid" }, "unavailable")],
+    ["monsters listed, 2014", () => o5SearchMonsters({ name: "goblin", rulesEdition: "2014" }, "unavailable"), () => o5SearchMonstersSection({ name: "goblin", rulesEdition: "2014" }, "unavailable")],
+    ["items listed", () => o5SearchItems({ name: "bag" }, "unavailable"), () => o5SearchItemsSection({ name: "bag" }, "unavailable")],
+    ["races single-hit detail", () => o5SearchRaces({ name: "elf" }, "not-found"), () => o5SearchRacesSection({ name: "elf" }, "not-found")],
+    ["races listed", () => o5SearchRaces({}, "unavailable"), () => o5SearchRacesSection({}, "unavailable")],
+    ["classes single-hit detail", () => o5SearchClasses({ name: "wizard" }, "unavailable"), () => o5SearchClassesSection({ name: "wizard" }, "unavailable")],
+    ["classes no match", () => o5SearchClasses({ name: "zzz" }, "unavailable"), () => o5SearchClassesSection({ name: "zzz" }, "unavailable")],
+    ["backgrounds listed", () => o5SearchBackgrounds({}, "unavailable"), () => o5SearchBackgroundsSection({}, "unavailable")],
+    ["feats listed", () => o5SearchFeats({}, "not-found"), () => o5SearchFeatsSection({}, "not-found")],
+  ])("Open5e %s: the section renders to the string reply byte for byte", async (_n, asString, asSection) => {
+    const section = await asSection();
+    expect(section.open5e).toBe(true);
+    expect(renderSection(section)).toBe(await asString());
+  });
+
+  it("a D&D Beyond section that lists nothing but hides 3 twins adds 3 to the combined footer", async () => {
+    sections.spells.mockResolvedValue(ddb("**Spell Search** (1 found)"));
+    sections.items.mockResolvedValue({ header: H, body: "No items found matching the criteria.", footer: searchFooter("2024", 3), hidden: 3 });
+    const text = await search("x", "all", "2024");
+    expect(text).not.toContain("## Items");
+    expect(text).not.toContain("No items found");
+    expect(text.trimEnd().split("\n").at(-1)).toBe('3 2014 versions hidden — rules_edition: "2014" shows them.');
+  });
+
+  it("an Open5e section that lists nothing but hides twins is dropped and its count kept", async () => {
+    sections.spells.mockResolvedValue(ddb("**Spell Search** (1 found)"));
+    // 2024 goblinoids are Fey; the 2014 Goblin is a Humanoid: nothing listed, one 2014 twin hidden.
+    const goblins = await o5SearchMonstersSection({ name: "goblin", type: "humanoid" }, "unavailable");
+    expect(goblins).toMatchObject({ header: O5H, body: "No monsters found (SRD only).", hidden: 1 });
+    sections.monsters.mockResolvedValue(goblins);
+    const text = await search("x", "all", "2024");
+    expect(text).not.toContain("## Monsters");
+    expect(text).not.toContain(O5H);
+    expect(text.trimEnd().split("\n").at(-1)).toBe('1 2014 version hidden — rules_edition: "2014" shows it.');
+  });
+
+  it('an all-Open5e "all" reply with one hidden-only section has no combined header and keeps the footer count', async () => {
+    const spells = await o5SearchSpellsSection({ name: "fire", limit: 10 }, "unavailable");
+    const goblins = await o5SearchMonstersSection({ name: "goblin", type: "humanoid" }, "unavailable");
+    sections.spells.mockResolvedValue(spells);
+    sections.monsters.mockResolvedValue(goblins);
+    const text = await search("x", "all", "2024");
+    expect(text.startsWith('# Search results for "x"')).toBe(true);
+    expect(text).not.toContain(H);
+    expect(text).not.toContain("## Monsters");
+    // The listed section keeps its own Open5e Rules line; every count is in the one combined footer.
+    expect(text).toContain(`## Spells\n\n${O5H}\n${spells.body}`);
+    expect(text.match(/hidden — /g)).toHaveLength(1);
+    expect(text.trimEnd().split("\n").at(-1)).toBe(searchFooter("2024", spells.hidden + 1));
+  });
+
+  it("every section dropped but some hid twins: the no-results line, then the combined footer", async () => {
+    sections.items.mockResolvedValue({ header: H, body: "No items found matching the criteria.", footer: searchFooter("2024", 2), hidden: 2 });
+    expect(await search("q", "all", "2024")).toBe('No results found for "q".\n\n2 2014 versions hidden — rules_edition: "2014" shows them.');
+  });
+
+  it("an Open5e section's own footer moves into the combined footer", async () => {
+    sections.spells.mockResolvedValue(ddb("**Spell Search** (1 found)", 1));
+    // Thug is the 2014 name of the 2024 Tough: one line, one 2014 twin hidden.
+    const thugs = await o5SearchMonstersSection({ name: "thug" }, "unavailable");
+    expect(thugs.hidden).toBe(1);
+    sections.monsters.mockResolvedValue(thugs);
+    const text = await search("x", "all", "2024");
+    expect(text).toContain(`## Monsters\n\n${O5H}\n${thugs.body}`);
+    expect(text.match(/hidden — /g)).toHaveLength(1);
+    expect(text.trimEnd().split("\n").at(-1)).toBe('2 2014 versions hidden — rules_edition: "2014" shows them.');
+  });
+
+  it("an Open5e single-hit detail block keeps its own label, its count goes to the combined footer", async () => {
+    const elf = await o5SearchRacesSection({ name: "elf" }, "unavailable");
+    expect(elf.header).toBeNull();
+    expect(elf.hidden).toBeGreaterThan(0);
+    sections.races.mockResolvedValue(elf);
+    const text = await search("x", "all", "2024");
+    expect(text.startsWith('# Search results for "x"\n\n## Races\n\nElf\nRules: 2024 · SRD 5.2 (Open5e fallback')).toBe(true);
+    expect(text.match(/hidden — /g)).toHaveLength(1);
+    expect(text.trimEnd().split("\n").at(-1)).toBe(searchFooter("2024", elf.hidden));
   });
 
   it("a throwing section becomes an italic message", async () => {

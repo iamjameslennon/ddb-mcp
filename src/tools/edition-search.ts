@@ -32,20 +32,33 @@ import {
   rulesLine, renameLine, sourceNote, searchHeader, bookChoiceNote, alsoInLine, HOMEBREW_INFO, HOMEBREW_SOURCE_BOOK,
   type EditionInfo, type EditionMarkers, type RulesEdition, type SourceIndex, type TiebreakFields, type TwinNamer,
 } from "../edition.js";
-import { inSources, sourceLabel, type ResolvedSource } from "../source-filter.js";
+import { inSources, sourceLabel, withSourceCaveat, type ResolvedSource } from "../source-filter.js";
 
 // ── Sections ──────────────────────────────────────────────────────────────────
 
-/** One search's output in parts, so ddb_search_site can merge several under one header and footer. */
-export interface SearchSection { header: string | null; body: string; footer: string | null; hidden: number }
+/**
+ * One search's output in parts, so ddb_search_site can merge several under one header and footer.
+ * `open5e`: an Open5e search, whose header (when it has one) is its own Rules line, kept with
+ * its body in an "all" reply instead of being folded into the combined D&D Beyond header.
+ */
+export interface SearchSection { header: string | null; body: string; footer: string | null; hidden: number; open5e?: boolean }
 
 export function renderSection(s: SearchSection): string {
   return [s.header, s.body, s.footer].filter((p): p is string => p !== null).join("\n");
 }
 
-/** A reply with no edition framing: an error, a no-match message or an Open5e fallback. */
+/** A reply with no edition framing: an error or a no-match message. */
 export function plainSection(text: string): SearchSection {
   return { header: null, body: text, footer: null, hidden: 0 };
+}
+
+/**
+ * An Open5e section with the source caveat (`withSourceCaveat`): the caveat
+ * follows the whole reply, footer included, so a caveated section is plain
+ * text. With no `source`, the section is returned as it is.
+ */
+export function withSourceCaveatSection(s: SearchSection, source: string | undefined): SearchSection {
+  return source ? plainSection(withSourceCaveat(renderSection(s), source)) : s;
 }
 
 /**
