@@ -14,7 +14,7 @@
  */
 
 import {
-  sessionFetch, captureSession, assertSessionCurrent, onSessionInvalidated, type SessionSnapshot,
+  sessionFetch, anonymousFetch, captureSession, assertSessionCurrent, onSessionInvalidated, type SessionSnapshot,
 } from "./session-fetch.js";
 import { buildSourceIndex, type CategoryRecord, type SourceIndex, type SourceRecord } from "./edition.js";
 import { SNAPSHOT_CATEGORIES, SNAPSHOT_SOURCES } from "./source-snapshot.js";
@@ -79,6 +79,9 @@ onSessionInvalidated(() => {
   snapshotIndex = null;
   configFailure = null;
   configPending = null;
+  publicConfigCache = null;
+  publicConfigFailureUntil = 0;
+  publicConfigPending = null;
 });
 
 export async function getGameConfig(): Promise<GameConfig | null> {
@@ -128,6 +131,58 @@ function startConfigFetch(snapshot: SessionSnapshot): PendingConfigFetch {
     if (configPending === entry) configPending = null;
   }
   void entry.promise.then(release, release);
+  return entry;
+}
+
+// ── The public config (logged-out monster lookups) ───────────────────────────
+// The config endpoint answers without credentials. Logged out, monster-service
+// answers free content anonymously, and its stat blocks need the CR, type,
+// size and alignment tables. getGameConfig() stays session-bound (logged out it
+// is null and the source index is the snapshot), so other tools see no change.
+// Not account-derived, but dropped on every session transition all the same.
+let publicConfigCache: GameConfig | null = null;
+let publicConfigFailureUntil = 0;
+let publicConfigPending: Promise<GameConfig | null> | null = null;
+
+/**
+ * The game config fetched with no credentials (anonymousFetch). Cached until
+ * the next session transition; concurrent cold callers share one fetch; a
+ * failure (or the CONFIG_FETCH_TIMEOUT_MS deadline) resolves null and is
+ * remembered for CONFIG_FAILURE_TTL_MS. Never rejects.
+ */
+export async function getPublicGameConfig(): Promise<GameConfig | null> {
+  if (publicConfigCache) return publicConfigCache;
+  if (Date.now() < publicConfigFailureUntil) return null;
+  return publicConfigPending ?? startPublicConfigFetch();
+}
+
+function startPublicConfigFetch(): Promise<GameConfig | null> {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), CONFIG_FETCH_TIMEOUT_MS);
+  timer.unref?.();
+  const fetched = (async (): Promise<GameConfig | null> => {
+    try {
+      const resp = await anonymousFetch(CONFIG_URL, { signal: ctl.signal });
+      if (!resp.ok) return null;
+      const json = await resp.json() as { data?: GameConfig } | GameConfig;
+      const cfg = (json as { data?: GameConfig }).data ?? (json as GameConfig);
+      return cfg?.challengeRatings ? cfg : null;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  })();
+  const entry: Promise<GameConfig | null> = fetched.then(cfg => {
+    // A session transition mid-fetch dropped this entry: record nothing.
+    if (publicConfigPending === entry) {
+      publicConfigPending = null;
+      if (cfg) publicConfigCache = cfg;
+      else publicConfigFailureUntil = Date.now() + CONFIG_FAILURE_TTL_MS;
+    }
+    return cfg;
+  });
+  publicConfigPending = entry;
   return entry;
 }
 

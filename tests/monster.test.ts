@@ -3,7 +3,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ── Module mocks ──────────────────────────────────────────────────────────────
 // Must be declared before importing the module under test so vitest hoists them.
 
-vi.mock("../src/session-fetch.js", () => {
+vi.mock("../src/session-fetch.js", async (orig) => {
+  const real = await orig<typeof import("../src/session-fetch.js")>();
   const sessionFetch = vi.fn();
   return {
     hasValidSession: vi.fn(() => true),
@@ -12,6 +13,8 @@ vi.mock("../src/session-fetch.js", () => {
     captureSession: vi.fn(() => ({})),
     assertSessionCurrent: vi.fn(),
     onSessionInvalidated: vi.fn(),
+    // The real credential-free fetch: logged-out tests route global fetch and inspect its headers.
+    anonymousFetch: real.anonymousFetch,
   };
 });
 
@@ -21,9 +24,10 @@ vi.mock("../src/open5e.js", () => ({
   o5GetMonsterStats: vi.fn(async () => ({ status: "not-found" })),
 }));
 
-import { getMonster, searchMonsters, getMonsterStats, clearMonsterCache } from "../src/tools/monster.js";
+import { getMonster, searchMonsters, getMonsterStats, clearMonsterCache, statBlockText } from "../src/tools/monster.js";
 import { rateEncounter } from "../src/tools/encounter.js";
-import { sessionFetch, hasValidSession, onSessionInvalidated } from "../src/session-fetch.js";
+import { sessionFetch, hasValidSession, onSessionInvalidated, beginAuthenticatedSession } from "../src/session-fetch.js";
+import { stripHtmlRich } from "../src/utils.js";
 import { o5SearchMonstersSection, o5GetMonster, o5GetMonsterStats } from "../src/open5e.js";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -260,6 +264,7 @@ let listRequestCount = 0;
 let configAvailable = true;
 let configWithoutSources = false;
 let failUnfilteredSearch = false;
+let firstPageTotal: number | null = null;
 // Lowercased search terms whose list request returns 500.
 const failSearchTerms = new Set<string>();
 // Per-test monsters, kept out of ALL_MONSTERS so they can't shift other tests' counts.
@@ -309,7 +314,8 @@ function setupFetch(): void {
       }));
       return mockResponse({
         ...(omitAccessMap ? {} : { accessType }),
-        pagination: { total: data.length, currentPage: 1, pages: 1 }, data: pageData,
+        // firstPageTotal: a stale total on the first page, as when the result set grows mid-scan.
+        pagination: { total: skip === 0 && firstPageTotal !== null ? firstPageTotal : data.length, currentPage: 1, pages: 1 }, data: pageData,
       });
     }
 
@@ -328,6 +334,8 @@ function setupFetch(): void {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(hasValidSession).mockReturnValue(true);
+  // goLoggedOut() makes it refuse; restore the logged-in session.
+  vi.mocked(beginAuthenticatedSession).mockImplementation((async () => ({ fetch: (url: string) => sessionFetch(url) })) as never);
   clearMonsterCache();
   invalidateMonsterModule();
   reverseOrder = false;
@@ -336,6 +344,8 @@ beforeEach(() => {
   configAvailable = true;
   configWithoutSources = false;
   failUnfilteredSearch = false;
+  firstPageTotal = null;
+  anonymousRequests.length = 0;
   failSearchTerms.clear();
   extraMonsters = [];
   listUrls.length = 0;
@@ -345,6 +355,8 @@ beforeEach(() => {
   mapSaysAvailable.clear();
   omitAccessMap = false;
   setupFetch();
+  // No test reaches the real network: a request nothing stubbed fails loudly.
+  vi.stubGlobal("fetch", vi.fn(async (input: unknown) => { throw new Error(`unexpected network request: ${String(input)}`); }));
 });
 
 afterEach(() => {
@@ -564,8 +576,8 @@ describe("getMonster source filter", () => {
     expect(o5GetMonster).not.toHaveBeenCalled();
   });
 
-  it("falls back to Open5e with a caveat when logged out", async () => {
-    vi.mocked(hasValidSession).mockReturnValue(false);
+  it("falls back to Open5e with a caveat when logged out and monster-service is unreachable", async () => {
+    goLoggedOut(true);
     const result = await getMonster("Zombie", { source: "mm-2024" });
     expect(result).toContain("O5 MONSTER RESULT");
     expect(result).toContain("could not be honoured");
@@ -669,8 +681,8 @@ describe("searchMonsters", () => {
     expect(result).toBe("O5 SEARCH RESULT");
   });
 
-  it("logged out with a source, the Open5e result carries a caveat", async () => {
-    vi.mocked(hasValidSession).mockReturnValue(false);
+  it("logged out with a source and monster-service unreachable, the Open5e result carries a caveat", async () => {
+    goLoggedOut(true);
     const result = await searchMonsters({ name: "Wolf", source: "mm-2024" });
     expect(result).toContain("O5 SEARCH RESULT");
     expect(result).toContain("could not be honoured");
@@ -799,8 +811,8 @@ describe("monsterTiebreak final tie-break", () => {
 });
 
 describe("second-round review follow-ups", () => {
-  it("getMonsterStats takes the Open5e stats when logged out", async () => {
-    vi.mocked(hasValidSession).mockReturnValue(false);
+  it("getMonsterStats takes the Open5e stats when logged out and monster-service is unreachable", async () => {
+    goLoggedOut(true);
     vi.mocked(o5GetMonsterStats).mockResolvedValueOnce({ status: "found", name: "wolf", crValue: 0.25, xp: 50, info: { ruleset: "2024", book: null } });
     expect(await getMonsterStats("Wolf")).toMatchObject({ status: "found", name: "wolf", crValue: 0.25, xp: 50 });
     expect(o5GetMonsterStats).toHaveBeenCalledWith("Wolf", "2024");
@@ -1486,5 +1498,221 @@ describe("searchMonsters counts a twin whose requested pick fails the filters", 
     unownedIds.add(HOUND_2014.id as number);
     expect(await searchMonsters({ name: "Ghast Hound", cr: 0.5 })).toBe("O5 SEARCH RESULT");
     expect(await searchMonsters({ name: "Ghast Hound", cr: 0.5, rulesEdition: "2014" })).toBe("O5 SEARCH RESULT");
+  });
+});
+
+// ── Logged-out lookups and monster edges (work items 4, 5) ───────────────────
+
+/** Every request the logged-out path sent through global fetch, with its headers as sent. */
+const anonymousRequests: Array<{ url: string; headers: Headers }> = [];
+
+/**
+ * Logged out, as the real session-fetch behaves: sessionFetch and the cobalt
+ * exchange refuse without sending anything, and global fetch (which the
+ * credential-free path uses) answers from the same router as the logged-in tests.
+ */
+function goLoggedOut(failMonsterService = false): void {
+  vi.mocked(hasValidSession).mockReturnValue(false);
+  const route = vi.mocked(sessionFetch).getMockImplementation()!;
+  vi.mocked(sessionFetch).mockRejectedValue(new Error("No session found. Please run ddb_login first to authenticate."));
+  vi.mocked(beginAuthenticatedSession).mockRejectedValue(new Error("No session found. Please run ddb_login first to authenticate."));
+  vi.stubGlobal("fetch", vi.fn(async (input: unknown, init?: RequestInit) => {
+    const url = String(input);
+    anonymousRequests.push({ url, headers: new Headers(init?.headers) });
+    if (failMonsterService && url.startsWith("https://monster-service.dndbeyond.com/")) throw new TypeError("fetch failed");
+    return route(url);
+  }));
+}
+
+function expectNoCredentials(): void {
+  for (const r of anonymousRequests) {
+    expect(r.headers.has("cookie"), r.url).toBe(false);
+    expect(r.headers.has("authorization"), r.url).toBe(false);
+  }
+  expect(beginAuthenticatedSession).not.toHaveBeenCalled();
+}
+
+describe("logged out, monster lookups ask monster-service without credentials", () => {
+  it("logged out, getMonster asks monster-service anonymously (no cookie header) and labels the D&D Beyond result", async () => {
+    goLoggedOut();
+    const lines = (await getMonster("Zombie")).split("\n");
+    expect(lines.slice(0, 3)).toEqual(["# Zombie", "Rules: 2024 · Monster Manual (2024)", "*Medium Undead, Neutral Evil*"]);
+    expect(lines).toContain("**Hit Points** 15 (2d8 + 6)");
+    expect(lines).toContain("**Challenge** 1/4 (50 XP)");
+    expect(o5GetMonster).not.toHaveBeenCalled();
+    expect(anonymousRequests.some(r => r.url.startsWith("https://monster-service.dndbeyond.com/v1/Monster?search=Zombie"))).toBe(true);
+    expect(anonymousRequests.some(r => r.url.startsWith("https://monster-service.dndbeyond.com/v1/Monster/"))).toBe(true);
+    // The CR and type tables come from the public config, fetched without credentials too.
+    expect(anonymousRequests.some(r => r.url.includes("api/config/json"))).toBe(true);
+    expectNoCredentials();
+  });
+
+  it("logged out, a search and a book filter answer from monster-service", async () => {
+    goLoggedOut();
+    const search = await searchMonsters({ name: "Wolf" });
+    expect(search).toContain("- **Wolf** [2024] — Monster Manual [mm-2024] — CR 1/4, Medium Beast, AC 12, 11 HP");
+    expect(search).toContain("1 2014 version hidden");
+    const book = await getMonster("Zombie", { source: "mm-2024" });
+    expect(book.split("\n")[1]).toBe("Rules: 2024 · Monster Manual (2024)");
+    expect(book).not.toContain("could not be honoured");
+    expect(o5GetMonster).not.toHaveBeenCalled();
+    expect(o5SearchMonstersSection).not.toHaveBeenCalled();
+    expectNoCredentials();
+  });
+
+  it("logged out, an empty answer still goes to Open5e as not found", async () => {
+    goLoggedOut();
+    expect(await getMonster("Tarrasque")).toBe("O5 MONSTER RESULT");
+    expect(o5GetMonster).toHaveBeenCalledWith("Tarrasque", "2024", "not-found");
+  });
+
+  it("logged out and monster-service fails, the Open5e fallback and its label apply", async () => {
+    goLoggedOut(true);
+    expect(await getMonster("Zombie")).toBe("O5 MONSTER RESULT");
+    expect(o5GetMonster).toHaveBeenCalledWith("Zombie", "2024", "unavailable");
+    expect(await searchMonsters({ name: "Zombie" })).toBe("O5 SEARCH RESULT");
+    expect(o5SearchMonstersSection).toHaveBeenCalledWith({ name: "Zombie" }, "unavailable");
+    // With a source the Open5e answer carries the caveat, as before.
+    expect(await getMonster("Zombie", { source: "mm-2024" })).toContain("could not be honoured");
+    expect(await searchMonsters({ name: "Wolf", source: "mm-2024" })).toContain("could not be honoured");
+    // Both failing: the logged-out messages are unchanged.
+    vi.mocked(o5GetMonster).mockRejectedValueOnce(new Error("down"));
+    expect(await getMonster("Zombie")).toBe("Monster lookup requires login. Run ddb_login first.");
+    vi.mocked(o5SearchMonstersSection).mockRejectedValueOnce(new Error("down"));
+    expect(await searchMonsters({ name: "Zombie" })).toBe("Monster search requires login. Run ddb_login first.");
+    expectNoCredentials();
+  });
+
+  it("logged out, source homebrew still says it needs login", async () => {
+    goLoggedOut();
+    expect(await getMonster("Zombie", { source: "homebrew" })).toBe("Homebrew monster lookup requires login. Run ddb_login first.");
+    expect(await searchMonsters({ name: "Zombie", source: "homebrew" })).toBe("Homebrew monster lookup requires login. Run ddb_login first.");
+    expect(anonymousRequests).toHaveLength(0);
+    expect(o5GetMonster).not.toHaveBeenCalled();
+  });
+
+  it("getMonsterStats logged out resolves from monster-service", async () => {
+    goLoggedOut();
+    expect(await getMonsterStats("Wolf")).toMatchObject({ status: "found", name: "Wolf", crValue: 0.25, xp: 50, info: { ruleset: "2024" } });
+    expect(await getMonsterStats("Wolf", { rulesEdition: "2014" })).toMatchObject({ status: "found", info: { ruleset: "2014" } });
+    expect(o5GetMonsterStats).not.toHaveBeenCalled();
+    expectNoCredentials();
+  });
+
+  it("getMonsterStats logged out falls back to Open5e when monster-service fails", async () => {
+    goLoggedOut(true);
+    await getMonsterStats("Wolf");
+    expect(o5GetMonsterStats).toHaveBeenCalledWith("Wolf", "2024");
+  });
+
+  it("logged-out list and stat-block results are cached apart from logged-in ones", async () => {
+    goLoggedOut();
+    await getMonster("Zombie");
+    vi.mocked(hasValidSession).mockReturnValue(true);
+    vi.mocked(beginAuthenticatedSession).mockImplementation((async () => ({ fetch: (url: string) => sessionFetch(url) })) as never);
+    setupFetch();
+    vi.mocked(sessionFetch).mockClear();
+    await getMonster("Zombie");
+    // The logged-in call fetched its own list and stat block rather than reading the anonymous ones.
+    expect(vi.mocked(sessionFetch).mock.calls.map(c => String(c[0])).filter(u => u.includes("monster-service"))).toHaveLength(2);
+  });
+});
+
+describe("monster edges", () => {
+  it('an unknown cr is an error', async () => {
+    const message = 'Unknown CR "999". Valid CRs: 0, 0.125, 0.25, 0.5, 1–30.';
+    expect(await searchMonsters({ cr: 999 })).toBe(message);
+    expect(await searchMonsters({ name: "Zombie", cr: 0.3 })).toBe('Unknown CR "0.3". Valid CRs: 0, 0.125, 0.25, 0.5, 1–30.');
+    expect(listUrls).toHaveLength(0);
+    // The Open5e path (logged out, monster-service down) says the same, rather than "no matches".
+    goLoggedOut(true);
+    expect(await searchMonsters({ cr: 999 })).toBe(message);
+    expect(o5SearchMonstersSection).not.toHaveBeenCalled();
+    expect(anonymousRequests).toHaveLength(0);
+  });
+
+  it("every listed CR is accepted", async () => {
+    for (const cr of [0, 0.125, 0.25, 0.5, 1, 17, 30]) {
+      expect(await searchMonsters({ name: "Zombie", cr })).not.toMatch(/^Unknown CR/);
+    }
+  });
+
+  it("the checked count never exceeds the total", async () => {
+    // 160 entries in RtHW; the first page still reports 150, the second the grown total.
+    extraMonsters = Array.from({ length: 158 }, (_, i) => monster({
+      id: 3_100_000 + i, name: `Grown ${String(i).padStart(3, "0")}`, sourceId: 232, sources: sources(232),
+    }));
+    firstPageTotal = 150;
+    const result = await searchMonsters({ source: "rthw", cr: 0.25 });
+    expect(result).toContain("checked 160 of 160");
+    expect(result).not.toMatch(/checked 160 of 150/);
+    expect(result).not.toContain("Only the first");
+  });
+
+  it("a name search that fills the 100-entry cap for a spelling says so", async () => {
+    const header = (await searchMonsters({ name: "Filler" })).split("\n").find(l => l.startsWith("**Monster Search**"));
+    expect(header).toBe("**Monster Search** (100 shown, 652 total matched by name) (the first 100 matches per name were checked)");
+    const small = (await searchMonsters({ name: "Zombie" })).split("\n").find(l => l.startsWith("**Monster Search**"));
+    expect(small).not.toContain("per name were checked");
+  });
+
+  it("a single bold span over 8 MB is parsed without a regex backtrack", async () => {
+    const huge = "x".repeat(9 * 1024 * 1024);
+    extraMonsters = [monster({
+      id: 8_000_070, name: "Verbose Horror", sourceId: 147, sources: sources(147),
+      actionsDescription: `<p><strong>Bite.${huge}</strong> tail</p>`,
+    })];
+    const out = await getMonster("Verbose Horror");
+    expect(o5GetMonster).not.toHaveBeenCalled();
+    expect(out).toContain("**Bite.xxx");
+    expect(out).toContain("xxx** tail");
+  });
+});
+
+describe("statBlockText's bold scan matches the regex it replaced", () => {
+  // The pre-2026-11 implementation, kept as the oracle.
+  function boldInnerOld(inner: string): string {
+    if (!inner.replace(/<[^<>]+>/g, "").trim()) return inner;
+    const lead = inner.length - inner.trimStart().length;
+    const end = inner.trimEnd().length;
+    return `${inner.slice(0, lead)}**${inner.slice(lead, end)}**${inner.slice(end)}`;
+  }
+  function statBlockTextOld(html: string): string {
+    if (!html) return "";
+    return stripHtmlRich(html.replace(/<(strong|b)\b[^<>]*>((?:(?!<\/?\1\b)[\s\S])*)<\/\1>/gi,
+      (_m, _tag, inner: string) => boldInnerOld(inner)));
+  }
+
+  it.each([
+    "<p><em><strong>Bite.</strong> Melee</em></p>",
+    "<strong><b>nested</b> outer</strong> after",
+    "<b><strong>inner</strong></b>",
+    "<strong>unclosed <strong>closed</strong>",
+    "<STRONG>upper</strong> <B>mixed</b>",
+    '<strong class="x" data-a=1>attrs</strong>',
+    "<strong>spaced close</strong > tail",
+    "<br><b>after br</b><bdi>not bold</bdi><strongly>no</strongly>",
+    "<strong<b>broken open</b>",
+    "<b>  </b><b><i></i></b><b> pad </b>",
+    "<strong>a</b>b</strong>",
+    "<b/>self</b> <b\n>newline</b> <b>trail</b",
+    "</b> stray <strong>x<strong/>y</strong> z</strong>",
+    "<b_x>word</b_x> <b-x>dash</b> <b1>digit</b1>",
+    "plain text, no tags",
+    "<b>é</b> <strong>İ</strong> <ſtrong>long s</ſtrong> <b>K</b>",
+    "<<b>>double</b>> <b><</b>",
+  ])("%s", (html) => {
+    expect(statBlockText(html)).toBe(statBlockTextOld(html));
+  });
+
+  it("agrees on 3000 random tag soups", () => {
+    const parts = ["<b>", "</b>", "<B>", "</B >", "<strong>", "</strong>", "<STRONG x>", "<strong", "<b", ">", "<", "</", "<i>", "</i>",
+      "<br>", "<bdi>", "</strongx>", " ", "  ", "a", "Bite.", "\n", "<b/>", "</b", "_", "1", "é", "<p>", "</p>"];
+    let seed = 7;
+    const rand = (n: number) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+    for (let t = 0; t < 3000; t++) {
+      const html = Array.from({ length: 1 + rand(14) }, () => parts[rand(parts.length)]).join("");
+      expect(statBlockText(html), JSON.stringify(html)).toBe(statBlockTextOld(html));
+    }
   });
 });

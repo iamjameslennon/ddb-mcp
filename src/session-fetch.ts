@@ -216,10 +216,14 @@ function mergeSignals(lifecycle: AbortSignal, caller?: AbortSignal | null): Abor
   return AbortSignal.any([lifecycle, caller]);
 }
 
+/**
+ * `beforeDispatch` runs immediately before every dispatch. The authenticated
+ * path passes its authority check; the anonymous path has no session to check.
+ */
 async function fetchWithRetry(
   url: string,
   options: RequestInit,
-  snapshot: SessionSnapshot,
+  beforeDispatch: () => void,
   maxRetries = 3,
   baseDelayMs = 1000
 ): Promise<Response> {
@@ -230,7 +234,7 @@ async function fetchWithRetry(
     // already a SessionChangedError, so the order only matters when an on-disk
     // swap nobody has observed yet coincides with a caller or timeout abort:
     // then the swap is what gets reported.
-    assertSessionCurrent(snapshot);
+    beforeDispatch();
     options.signal?.throwIfAborted();
 
     const resp = await fetch(url, options);
@@ -287,7 +291,7 @@ async function snapshotFetch(
         Cookie: cookieHeader,
       },
     },
-    snapshot
+    () => assertSessionCurrent(snapshot)
   );
 
   // Final authority check before publishing the result into the caller's flow.
@@ -505,4 +509,35 @@ export async function sessionFetch(url: string, options: RequestInit = {}): Prom
     throw new Error("No session found. Please run ddb_login first to authenticate.");
   }
   return snapshotFetch(snapshot, url, options);
+}
+
+/**
+ * Upper bound on one anonymous request, every retry and backoff included (the
+ * response body read too: the abort reaches it).
+ */
+export const ANONYMOUS_FETCH_TIMEOUT_MS = 20_000;
+
+/**
+ * A request with no credentials at all, for public endpoints answered while
+ * logged out (monster-service's free content, the game config). It never reads
+ * the session and sends no Cookie and no Authorization header; the caller's
+ * headers are not passed through, so none can be added. Same retry policy as the
+ * authenticated path, bounded by ANONYMOUS_FETCH_TIMEOUT_MS and by `signal`.
+ */
+export async function anonymousFetch(url: string, options: { signal?: AbortSignal } = {}): Promise<Response> {
+  const timeout = new AbortController();
+  // Not cleared on return: the deadline also bounds the caller's body read. Unref'd, so it never holds the process open.
+  const timer = setTimeout(
+    () => timeout.abort(new Error(`request timed out after ${ANONYMOUS_FETCH_TIMEOUT_MS / 1000} s`)),
+    ANONYMOUS_FETCH_TIMEOUT_MS,
+  );
+  timer.unref?.();
+  return fetchWithRetry(
+    url,
+    {
+      signal: mergeSignals(timeout.signal, options.signal ?? null),
+      headers: { Accept: "application/json", "User-Agent": USER_AGENT },
+    },
+    () => {},
+  );
 }

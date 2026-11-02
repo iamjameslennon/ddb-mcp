@@ -400,3 +400,46 @@ describe("revokeSession() — the ddb_logout guarantee", () => {
     expect(calls.some(c => c.cookie.includes("SECRET_A"))).toBe(false);
   });
 });
+
+describe("anonymousFetch: public endpoints with no credentials", () => {
+  const MONSTER_URL = "https://monster-service.dndbeyond.com/v1/Monster?search=goblin&skip=0&take=20";
+
+  it("sends neither the saved session's cookies nor a Bearer token, and never reads the session", async () => {
+    setSessionFile(sessionJson("SECRET_A"));
+    fetchMock.mockResolvedValue(jsonResponse({ data: [] }));
+    const resp = await sf.anonymousFetch(MONSTER_URL);
+    expect(resp.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(MONSTER_URL);
+    const headers = new Headers(init.headers);
+    expect(headers.has("cookie")).toBe(false);
+    expect(headers.has("authorization")).toBe(false);
+    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain("SECRET_A");
+    expect(fsMock.readFileSync).not.toHaveBeenCalled();
+    expect(fsMock.existsSync).not.toHaveBeenCalled();
+  });
+
+  it("retries a 503 with the authenticated path's backoff", async () => {
+    vi.useFakeTimers();
+    fetchMock.mockResolvedValueOnce(jsonResponse({}, 503)).mockResolvedValueOnce(jsonResponse({ data: [] }));
+    const pending = sf.anonymousFetch(MONSTER_URL);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect((await pending).ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives up after ANONYMOUS_FETCH_TIMEOUT_MS (20 s)", async () => {
+    vi.useFakeTimers();
+    expect(sf.ANONYMOUS_FETCH_TIMEOUT_MS).toBe(20_000);
+    fetchMock.mockImplementation((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+      init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+    }));
+    const pending = sf.anonymousFetch(MONSTER_URL);
+    const settled = pending.then(() => "resolved", () => "rejected");
+    await vi.advanceTimersByTimeAsync(19_999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await settled).toBe("rejected");
+  });
+});

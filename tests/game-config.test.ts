@@ -5,6 +5,7 @@ const S = vi.hoisted(() => ({ hooks: [] as Array<() => void> }));
 
 vi.mock("../src/session-fetch.js", () => ({
   sessionFetch: vi.fn(),
+  anonymousFetch: vi.fn(),
   captureSession: vi.fn(() => ({})),
   assertSessionCurrent: vi.fn(),
   onSessionInvalidated: vi.fn((cb: () => void) => { S.hooks.push(cb); }),
@@ -25,8 +26,8 @@ vi.mock("../src/source-snapshot.js", () => ({
   ],
 }));
 
-import { getGameConfig, getSourceIndex, peekSourceIndex, CONFIG_FETCH_TIMEOUT_MS } from "../src/game-config.js";
-import { sessionFetch, assertSessionCurrent, captureSession } from "../src/session-fetch.js";
+import { getGameConfig, getPublicGameConfig, getSourceIndex, peekSourceIndex, CONFIG_FETCH_TIMEOUT_MS } from "../src/game-config.js";
+import { sessionFetch, anonymousFetch, assertSessionCurrent, captureSession } from "../src/session-fetch.js";
 
 const response = (body: unknown, status = 200) =>
   ({ ok: status >= 200 && status < 300, status, statusText: "", json: async () => body }) as unknown as Response;
@@ -529,5 +530,61 @@ describe("the deadline after a session change", () => {
     await vi.advanceTimersByTimeAsync(5_000);
     expect(await fresh).toBeNull();
     expect(await old).toBeNull();
+  });
+});
+
+describe("getPublicGameConfig (logged-out monster lookups)", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("fetches the config with no credentials, once, and leaves getGameConfig's cache alone", async () => {
+    vi.mocked(anonymousFetch).mockResolvedValue(response({ data: LIVE }));
+    const [a, b] = await Promise.all([getPublicGameConfig(), getPublicGameConfig()]);
+    expect(a).toMatchObject({ challengeRatings: LIVE.challengeRatings });
+    expect(b).toBe(a);
+    expect(await getPublicGameConfig()).toBe(a);
+    expect(anonymousFetch).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(anonymousFetch).mock.calls[0][0]).toBe("https://www.dndbeyond.com/api/config/json");
+    expect(sessionFetch).not.toHaveBeenCalled();
+    // The source index other tools use still comes from the session-bound config.
+    vi.mocked(sessionFetch).mockRejectedValue(new Error("No session found."));
+    expect((await getSourceIndex()).sources.get(300)).toBeUndefined();
+  });
+
+  it("a failure is null, remembered for 60 s, then retried", async () => {
+    vi.useFakeTimers();
+    vi.mocked(anonymousFetch).mockResolvedValue(response({}, 503));
+    expect(await getPublicGameConfig()).toBeNull();
+    expect(await getPublicGameConfig()).toBeNull();
+    expect(anonymousFetch).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(60_000);
+    vi.mocked(anonymousFetch).mockResolvedValue(response({ data: LIVE }));
+    expect(await getPublicGameConfig()).not.toBeNull();
+    expect(anonymousFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("a thrown fetch or a config without challengeRatings is null too", async () => {
+    vi.mocked(anonymousFetch).mockRejectedValue(new Error("down"));
+    expect(await getPublicGameConfig()).toBeNull();
+    S.hooks.forEach(hook => hook());
+    vi.mocked(anonymousFetch).mockResolvedValue(response({ data: { monsterTypes: [] } }));
+    expect(await getPublicGameConfig()).toBeNull();
+  });
+
+  it("is dropped by the session-transition hook", async () => {
+    vi.mocked(anonymousFetch).mockResolvedValue(response({ data: LIVE }));
+    await getPublicGameConfig();
+    S.hooks.forEach(hook => hook());
+    await getPublicGameConfig();
+    expect(anonymousFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("a stalled fetch resolves null at the config deadline", async () => {
+    vi.useFakeTimers();
+    vi.mocked(anonymousFetch).mockImplementation((_url, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+    }));
+    const pending = getPublicGameConfig();
+    await vi.advanceTimersByTimeAsync(CONFIG_FETCH_TIMEOUT_MS);
+    expect(await pending).toBeNull();
   });
 });

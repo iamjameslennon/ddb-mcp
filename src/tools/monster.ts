@@ -2,7 +2,9 @@
  * monster.ts — DDB monster service tools
  *
  * API host: monster-service.dndbeyond.com
- * Auth: Bearer cobalt token (same as character service)
+ * Auth: Bearer cobalt token (same as character service). Logged out, the
+ * service is asked with no credentials at all (anonymousFetch): it answers
+ * free content, and its accessType map marks the rest locked (4).
  * Envelope: { accessType, pagination, data } for list; { accessType, data } for single
  *
  * Game config (CR values, type names, sources, etc.) comes from
@@ -10,10 +12,10 @@
  */
 
 import {
-  beginAuthenticatedSession, hasValidSession,
-  captureSession, assertSessionCurrent, onSessionInvalidated,
+  beginAuthenticatedSession, anonymousFetch, hasValidSession,
+  captureSession, assertSessionCurrent, onSessionInvalidated, type SessionSnapshot,
 } from "../session-fetch.js";
-import { getGameConfig, getSourceIndex, type GameConfig } from "../game-config.js";
+import { getGameConfig, getPublicGameConfig, getSourceIndex, type GameConfig } from "../game-config.js";
 import {
   classifyEdition, selectByEdition, lookupByName, groupAndSelect, monsterTiebreak, twinNames, twinAliases,
   normalizeName, dedupeById, isEdition, rulesLine, renameLine, sourceNote, editionTag, searchHeader, searchFooter,
@@ -70,14 +72,74 @@ onSessionInvalidated(() => {
 /**
  * Stat-block prose (traits, actions, reactions…): like stripHtml, but keeps
  * DDB's <strong> feature names ("Bite.", "Multiattack.") as Markdown bold.
- * The body only runs up to the next tag of the same name, so each scan ends
- * there and hostile homebrew markup (unclosed tags, huge whitespace runs)
- * stays linear, while a <b> nested in a <strong> keeps the outer bold.
+ * Exported for tests.
  */
-function statBlockText(html: string | null | undefined): string {
+export function statBlockText(html: string | null | undefined): string {
   if (!html) return "";
-  return stripHtmlRich(html.replace(/<(strong|b)\b[^<>]*>((?:(?!<\/?\1\b)[\s\S])*)<\/\1>/gi,
-    (_m, _tag, inner: string) => boldInner(inner)));
+  return stripHtmlRich(boldSpans(html));
+}
+
+const BOLD_TAGS = ["strong", "b"] as const;
+
+/** [A-Za-z0-9_], as a regex \b sees it. NaN (past the end) is not a word character. */
+function isWordChar(c: number): boolean {
+  return (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95;
+}
+
+/** `name` (lowercase ASCII) at `at`, ASCII case-insensitive, followed by a word boundary. */
+function tagNameAt(html: string, at: number, name: string): boolean {
+  if (at + name.length > html.length) return false;
+  for (let i = 0; i < name.length; i++) {
+    // `| 0x20` lowercases A–Z; no other code unit maps onto a lowercase letter.
+    if ((html.charCodeAt(at + i) | 0x20) !== name.charCodeAt(i)) return false;
+  }
+  return !isWordChar(html.charCodeAt(at + name.length));
+}
+
+/**
+ * Each <strong>/<b> span as Markdown bold, by an indexOf scan: what
+ * `html.replace(/<(strong|b)\b[^<>]*>((?:(?!<\/?\1\b)[\s\S])*)<\/\1>/gi, …)`
+ * did, without its backtracking (a single span over ~8 MB overflowed V8's
+ * backtrack stack and the lookup fell back to Open5e). A span's body runs up to
+ * the next tag of its own name, opening or closing; the span matches only if
+ * that tag is exactly `</name>`. So an unclosed tag stays as it is, and a <b>
+ * nested in a <strong> keeps the outer bold. Linear: each attempt's body scan
+ * ends at the next tag of the same name.
+ */
+function boldSpans(html: string): string {
+  let out = "";
+  let last = 0;
+  let open = html.indexOf("<");
+  while (open !== -1) {
+    const end = boldSpanEnd(html, open);
+    if (end === null) {
+      open = html.indexOf("<", open + 1);
+      continue;
+    }
+    out += html.slice(last, open) + boldInner(html.slice(end.bodyStart, end.bodyEnd));
+    last = end.next;
+    open = html.indexOf("<", last);
+  }
+  return last === 0 ? html : out + html.slice(last);
+}
+
+/** The span opening at `open` (a "<"), or null when no span matches there. */
+function boldSpanEnd(html: string, open: number): { bodyStart: number; bodyEnd: number; next: number } | null {
+  const name = BOLD_TAGS.find(n => tagNameAt(html, open + 1, n));
+  if (!name) return null;
+  // The opening tag's attributes: anything but "<" up to its ">".
+  let q = open + 1 + name.length;
+  while (q < html.length && html[q] !== ">" && html[q] !== "<") q++;
+  if (html[q] !== ">") return null;
+  const bodyStart = q + 1;
+  for (let r = html.indexOf("<", bodyStart); r !== -1; r = html.indexOf("<", r + 1)) {
+    if (html[r + 1] === "/" && tagNameAt(html, r + 2, name)) {
+      const close = r + 2 + name.length;
+      return html[close] === ">" ? { bodyStart, bodyEnd: r, next: close + 1 } : null;
+    }
+    if (tagNameAt(html, r + 1, name)) return null;
+  }
+  return null;
 }
 
 /** Wrap a tag's contents in Markdown bold, keeping its surrounding whitespace outside the markers. */
@@ -218,10 +280,54 @@ interface MonsterSingleResponse {
 
 // ── Fetch helpers ─────────────────────────────────────────────────────────────
 
-async function monsterFetch(url: string): Promise<Response> {
+/**
+ * How one tool call asks monster-service. Logged in, with the session (cobalt
+ * token and cookies from one snapshot); logged out (`anonymous`), with no
+ * credentials at all. Decided once per call, so a call never mixes the two.
+ */
+interface Asker {
+  anonymous: boolean;
+}
+
+const LOGGED_IN: Asker = { anonymous: false };
+
+/** The asker for a call starting now. */
+function askerNow(): Asker {
+  return hasValidSession() ? LOGGED_IN : { anonymous: true };
+}
+
+async function monsterFetch(url: string, asker: Asker): Promise<Response> {
+  // Logged out: free content only, and nothing that identifies an account.
+  if (asker.anonymous) return anonymousFetch(url);
   // Single authenticated-fetch path: token + request bound to one snapshot.
   const session = await beginAuthenticatedSession();
   return session.fetch(url);
+}
+
+/**
+ * Anonymous answers carry a different accessType map (everything not free is
+ * locked), so they are cached under their own keys; logged-in keys are unchanged.
+ */
+function cacheKeyFor(asker: Asker, key: string): string {
+  return asker.anonymous ? `anon:${key}` : key;
+}
+
+/** The config the call's stat blocks and CR filter read: the public one when logged out. */
+function configFor(asker: Asker): Promise<GameConfig | null> {
+  return asker.anonymous ? getPublicGameConfig() : getGameConfig();
+}
+
+interface ListOptions {
+  sourceIds?: number[];
+  skip?: number;
+  asker?: Asker;
+  /**
+   * The caller's session snapshot, when the list must come from the same
+   * account as the rest of its reply (availableSourcesFor): checked before the
+   * cache read and after the fetch, so a change since then yields an error, not
+   * another account's list.
+   */
+  bound?: SessionSnapshot;
 }
 
 /**
@@ -229,20 +335,22 @@ async function monsterFetch(url: string): Promise<Response> {
  * `sourceIds` filters server-side via repeated `sources=` params, which match
  * an entry's primary *or* reprint sources and keep `pagination.total` honest.
  */
-async function fetchMonsterList(search: string, take: number, sourceIds: number[] = [], skip = 0): Promise<MonsterListResponse> {
+async function fetchMonsterList(search: string, take: number, opts: ListOptions = {}): Promise<MonsterListResponse> {
+  const { sourceIds = [], skip = 0, asker = LOGGED_IN, bound } = opts;
   const sourceQs = sourceIds.map(id => `&sources=${id}`).join("");
   const url = `${MONSTER_SERVICE}/v1/Monster?search=${encodeURIComponent(search)}&skip=${skip}&take=${take}${sourceQs}`;
-  const cacheKey = `monsters:list:${search.toLowerCase()}:skip${skip}:take${take}:src${sourceIds.join(",")}`;
+  const cacheKey = cacheKeyFor(asker, `monsters:list:${search.toLowerCase()}:skip${skip}:take${take}:src${sourceIds.join(",")}`);
   // Boundary check before the cache read, so a pending account change clears
   // the cache rather than serving the previous account's list.
   const snapshot = captureSession();
+  if (bound) assertSessionCurrent(bound);
   const cached = monsterCache.get(cacheKey);
   if (cached !== undefined) return JSON.parse(cached) as MonsterListResponse;
 
-  const resp = await monsterFetch(url);
+  const resp = await monsterFetch(url, asker);
   if (!resp.ok) throw new Error(`Monster search failed: ${resp.status} ${resp.statusText}`);
   const list = await resp.json() as MonsterListResponse;
-  assertSessionCurrent(snapshot);
+  assertSessionCurrent(bound ?? snapshot);
   monsterCache.set(cacheKey, JSON.stringify(list));
   return list;
 }
@@ -253,19 +361,22 @@ async function fetchMonsterList(search: string, take: number, sourceIds: number[
  * merged in alias order, first copy of each id kept. Only the typed name's own
  * query (the first alias) fails the call; a failed alias query contributes nothing.
  */
-async function fetchCandidates(name: string, take: number, sourceIds?: number[]): Promise<{ data: DdbMonster[]; access: AccessMap }> {
+async function fetchCandidates(
+  name: string, take: number, sourceIds: number[] | undefined, asker: Asker, bound?: SessionSnapshot,
+): Promise<{ data: DdbMonster[]; access: AccessMap; snapshot: SessionSnapshot }> {
   // One snapshot for every alias query, as in fetchMonsterPages: lists fetched
-  // either side of an account change must not merge.
-  const snapshot = captureSession();
+  // either side of an account change must not merge. Returned, so a follow-up
+  // request (availableSourcesFor) can be held to the same account.
+  const snapshot = bound ?? captureSession();
   const [typed, ...others] = twinAliases(name, monsterTwin);
   const [first, ...rest] = await Promise.all([
-    fetchMonsterList(typed, take, sourceIds),
-    ...others.map(alias => fetchMonsterList(alias, take, sourceIds).catch(() => null)),
+    fetchMonsterList(typed, take, { sourceIds, asker, bound }),
+    ...others.map(alias => fetchMonsterList(alias, take, { sourceIds, asker, bound }).catch(() => null)),
   ]);
   assertSessionCurrent(snapshot);
   const access: AccessMap = new Map();
   for (const list of [first, ...rest]) mergeAccess(access, list);
-  return { data: dedupeById([first, ...rest].flatMap(list => list?.data ?? [])), access };
+  return { data: dedupeById([first, ...rest].flatMap(list => list?.data ?? [])), access, snapshot };
 }
 
 /** Page size the monster service actually honours — larger `take` values are silently capped. */
@@ -281,33 +392,36 @@ const MAX_FILTER_SCAN = 600;
  * with `total` to tell whether the scan was complete.
  */
 async function fetchMonsterPages(
-  search: string, sourceIds: number[], limit: number,
-): Promise<{ data: DdbMonster[]; total: number; access: AccessMap }> {
+  search: string, sourceIds: number[], limit: number, asker: Asker,
+): Promise<{ data: DdbMonster[]; total: number; access: AccessMap; snapshot: SessionSnapshot }> {
   // One snapshot for the whole scan: each page checks only its own request,
   // so pages fetched either side of an account change would otherwise merge.
   const snapshot = captureSession();
-  const first = await fetchMonsterList(search, PAGE_SIZE, sourceIds);
-  const total = first.pagination.total;
+  const first = await fetchMonsterList(search, PAGE_SIZE, { sourceIds, asker });
   const skips: number[] = [];
-  for (let skip = PAGE_SIZE; skip < Math.min(total, limit); skip += PAGE_SIZE) skips.push(skip);
-  const rest = await Promise.all(skips.map(skip => fetchMonsterList(search, PAGE_SIZE, sourceIds, skip)));
+  for (let skip = PAGE_SIZE; skip < Math.min(first.pagination.total, limit); skip += PAGE_SIZE) skips.push(skip);
+  const rest = await Promise.all(skips.map(skip => fetchMonsterList(search, PAGE_SIZE, { sourceIds, skip, asker })));
   assertSessionCurrent(snapshot);
   const seen = new Set<number>();
   const data = [first, ...rest].flatMap(page => page.data ?? []).filter(m => !seen.has(m.id) && seen.add(m.id));
   const access: AccessMap = new Map();
   for (const page of [first, ...rest]) mergeAccess(access, page);
-  return { data, total, access };
+  // The result set can grow mid-scan: a later page's total, or the entries
+  // actually seen, can exceed the first page's, and "checked N of M" must not
+  // read N > M.
+  const total = Math.max(data.length, ...[first, ...rest].map(page => page.pagination.total));
+  return { data, total, access, snapshot };
 }
 
 /** Fetch (or serve from cache) one monster's stat block. */
-async function fetchMonsterDetail(id: number): Promise<MonsterSingleResponse> {
-  const cacheKey = `monster:${id}`;
+async function fetchMonsterDetail(id: number, asker: Asker): Promise<MonsterSingleResponse> {
+  const cacheKey = cacheKeyFor(asker, `monster:${id}`);
   // Boundary check before the cache read, as in fetchMonsterList.
   const snapshot = captureSession();
   const cached = monsterCache.get(cacheKey);
   if (cached !== undefined) return JSON.parse(cached) as MonsterSingleResponse;
 
-  const resp = await monsterFetch(`${MONSTER_SERVICE}/v1/Monster/${id}`);
+  const resp = await monsterFetch(`${MONSTER_SERVICE}/v1/Monster/${id}`, asker);
   if (!resp.ok) throw new Error(`Monster fetch failed: ${resp.status} ${resp.statusText}`);
   const detail = await resp.json() as MonsterSingleResponse;
   assertSessionCurrent(snapshot);
@@ -323,11 +437,13 @@ function isRestricted(detail: MonsterSingleResponse): boolean {
 /**
  * The distinct sources a name appears in (unfiltered search), for "not in that
  * book" errors. Best effort: a failure here must not turn the error into an
- * Open5e substitute, so it yields no hint instead.
+ * Open5e substitute, so it yields no hint instead. `bound` is the caller's
+ * session snapshot: after an account change the hint is dropped rather than
+ * taken from the other account.
  */
-async function availableSourcesFor(name: string, index: SourceIndex): Promise<string[]> {
+async function availableSourcesFor(name: string, index: SourceIndex, asker: Asker, bound: SessionSnapshot): Promise<string[]> {
   try {
-    const all = await fetchMonsterList(name, 20);
+    const all = await fetchMonsterList(name, 20, { asker, bound });
     // Official entries in books the source index knows: a homebrew copy filed
     // under a book (or under none) would advertise a source with no official
     // entry, and an unknown id would surface as a bare "source 424242".
@@ -473,6 +589,17 @@ function formatStatBlock(
 const HOMEBREW_LOGIN_REQUIRED = homebrewLoginRequired("monster");
 const HOMEBREW_UNREACHABLE = homebrewUnreachable("monsters");
 
+/** The challenge ratings D&D Beyond's config lists (live 2026-11-02: 34 entries). */
+const VALID_CRS = new Set([0, 0.125, 0.25, 0.5, ...Array.from({ length: 30 }, (_, i) => i + 1)]);
+
+/**
+ * A `cr` no monster can have. Checked before either path runs, so D&D Beyond
+ * doesn't skip the filter (no CR id to match) and Open5e doesn't answer "no matches".
+ */
+function unknownCrError(cr: number): string | null {
+  return VALID_CRS.has(cr) ? null : `Unknown CR "${cr}". Valid CRs: 0, 0.125, 0.25, 0.5, 1–30.`;
+}
+
 export interface MonsterSearchParams {
   name?: string;
   cr?: number;
@@ -496,17 +623,16 @@ function plainOrSection(r: string | SearchSection): SearchSection {
 }
 
 async function monsterSearchParts(params: MonsterSearchParams): Promise<string | SearchSection> {
+  const crError = params.cr === undefined ? null : unknownCrError(params.cr);
+  if (crError) return crError;
   const homebrew = isHomebrewSource(params.source);
-  if (!hasValidSession()) {
-    if (homebrew) return HOMEBREW_LOGIN_REQUIRED;
-    return await o5SearchMonstersSection(params, "unavailable").then(r => withSourceCaveatSection(r, params.source)).catch(
-      () => "Monster search requires login. Run ddb_login first."
-    );
-  }
+  // Logged out, monster-service is still asked (anonymously); homebrew needs an account.
+  const asker = askerNow();
+  if (asker.anonymous && homebrew) return HOMEBREW_LOGIN_REQUIRED;
   const requested = params.rulesEdition ?? "2024";
 
   try {
-  const config = await getGameConfig();
+  const config = await configFor(asker);
   // No extra request: getGameConfig() serves this call from its cache (or its failure cache).
   const index = await getSourceIndex();
   const info = (m: DdbMonster) => classifyEdition(m, index);
@@ -534,8 +660,8 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
   // as much of each group as one request can; a bare browse keeps 20.
   const take = searchTerm || params.source ? PAGE_SIZE : 20;
   const fetchTerm = async (term: string): Promise<{ data: DdbMonster[]; total: number; access: AccessMap }> => {
-    if (clientFilters) return fetchMonsterPages(term, sourceIds, MAX_FILTER_SCAN);
-    const page = await fetchMonsterList(term, take, sourceIds);
+    if (clientFilters) return fetchMonsterPages(term, sourceIds, MAX_FILTER_SCAN, asker);
+    const page = await fetchMonsterList(term, take, { sourceIds, asker });
     const access: AccessMap = new Map();
     mergeAccess(access, page);
     return { data: page.data ?? [], total: page.pagination.total, access };
@@ -563,7 +689,13 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
     }
   }
   const checked = fetched.length;
+  // Never "checked N of M" with N > M: the service's totals can lag its pages.
+  total = Math.max(total, checked);
   const partialScan = clientFilters && checked < total;
+  // A name search asks for the service's cap per spelling; when a spelling has
+  // more matches than that, its twins beyond the cap were never seen.
+  const nameCapped = Boolean(searchTerm) && !clientFilters
+    && results.some(r => r !== null && r.data.length >= PAGE_SIZE && r.total > r.data.length);
 
   const searchType = params.type?.toLowerCase();
   const searchSize = params.size?.toLowerCase();
@@ -608,7 +740,7 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
       const where = sourceLabel(index, sourceIds[0]);
       let msg = `No monsters matching the search criteria in ${where}${scope}.`;
       if (searchTerm) {
-        const available = await availableSourcesFor(searchTerm, index);
+        const available = await availableSourcesFor(searchTerm, index, asker, snapshot);
         if (available.length) msg += ` "${searchTerm}" appears in: ${available.join(", ")}.`;
       }
       return msg;
@@ -654,7 +786,8 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
   const countText = clientFilters
     ? `${shown.length} shown of ${monsters.length} matching; checked ${checked} of ${total} ${matchedBy}`
     : `${shown.length} shown, ${total - (checked - monsters.length)} total ${matchedBy}`;
-  lines.push(`**Monster Search** (${countText})\n`);
+  const capNote = nameCapped ? ` (the first ${PAGE_SIZE} matches per name were checked)` : "";
+  lines.push(`**Monster Search** (${countText})${capNote}\n`);
   for (const { m, info: mInfo, reason } of shown) {
     const cr = crMap.get(m.challengeRatingId);
     const crStr = cr ? crDisplay(cr.value) : "?";
@@ -694,7 +827,9 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
   } catch {
     if (homebrew) return HOMEBREW_UNREACHABLE;
     return await o5SearchMonstersSection(params, "unavailable").then(r => withSourceCaveatSection(r, params.source)).catch(
-      () => "Monster search unavailable — DnD Beyond and Open5e both failed."
+      () => asker.anonymous
+        ? "Monster search requires login. Run ddb_login first."
+        : "Monster search unavailable — DnD Beyond and Open5e both failed."
     );
   }
 }
@@ -709,15 +844,12 @@ export async function getMonster(
   monsterName = monsterName.trim();
   if (!monsterName) return "Monster name is required.";
   const homebrew = isHomebrewSource(source);
-  if (!hasValidSession()) {
-    if (homebrew) return HOMEBREW_LOGIN_REQUIRED;
-    const o5Result = await o5GetMonster(monsterName, requested, "unavailable").catch(() => null);
-    if (o5Result) return withSourceCaveat(o5Result, source);
-    return "Monster lookup requires login. Run ddb_login first.";
-  }
+  // Logged out, monster-service is still asked (anonymously); homebrew needs an account.
+  const asker = askerNow();
+  if (asker.anonymous && homebrew) return HOMEBREW_LOGIN_REQUIRED;
 
   try {
-    const config = await getGameConfig();
+    const config = await configFor(asker);
     // No extra request: getGameConfig() serves this call from its cache (or its failure cache).
     const index = await getSourceIndex();
     const info = (m: DdbMonster) => classifyEdition(m, index);
@@ -732,9 +864,9 @@ export async function getMonster(
     // Girallon/Greater/Ogre/Strahd/Yellow Musk/plain across both editions)
     // doesn't miss the intended entry. Homebrew pages through the same
     // MAX_FILTER_SCAN entries as searchMonsters, so get and search agree.
-    const { data: candidates, access } = homebrew
-      ? await fetchMonsterPages(monsterName, [], MAX_FILTER_SCAN)
-      : await fetchCandidates(monsterName, 20, sourceIds);
+    const { data: candidates, access, snapshot } = homebrew
+      ? await fetchMonsterPages(monsterName, [], MAX_FILTER_SCAN, asker)
+      : await fetchCandidates(monsterName, 20, sourceIds, asker);
 
     let detail: MonsterSingleResponse;
     let extras: StatBlockExtras;
@@ -747,7 +879,7 @@ export async function getMonster(
       const pick = own.filter(m => normalizeName(m.name) === query).sort(tiebreak)[0]
         ?? own.filter(m => normalizeName(m.name).includes(query)).sort(tiebreak)[0];
       if (!pick) return `No homebrew monster found matching "${monsterName}".`;
-      detail = await fetchMonsterDetail(pick.id);
+      detail = await fetchMonsterDetail(pick.id, asker);
       extras = { info: HOMEBREW_INFO };
     } else if (source) {
       // With a source, require an exact (twin) name: a partial match would
@@ -758,7 +890,7 @@ export async function getMonster(
         // A requested book is never silently swapped for another edition or the SRD.
         // Homebrew names are user-authored — keep them out of this hint.
         const similar = [...new Set(namedCandidates(candidates, monsterName).filter(m => !m.isHomebrew).map(m => m.name))].slice(0, 5);
-        const available = await availableSourcesFor(monsterName, index);
+        const available = await availableSourcesFor(monsterName, index, asker, snapshot);
         let msg = `No "${monsterName}" entry found in source "${source}".`;
         if (similar.length) msg += ` Similar names in that source: ${similar.join(", ")}.`;
         msg += available.length
@@ -771,7 +903,7 @@ export async function getMonster(
       // swapped or replaced with Open5e: the book was asked for, and the
       // restricted block already says the content isn't owned. It does get a
       // hint naming a book where an available version is.
-      detail = await fetchMonsterDetail(picked.entry.id);
+      detail = await fetchMonsterDetail(picked.entry.id, asker);
       const shown = info(detail.data);
       extras = {
         note: isEdition(shown.ruleset) ? sourceNote(source, shown.ruleset, requested) : null,
@@ -779,7 +911,7 @@ export async function getMonster(
         // another name than the query's (as in lookupByName).
         renamed: isEdition(shown.ruleset) ? renamedFromQuery(monsterName, detail.data.name) : undefined,
         hint: isRestricted(detail)
-          ? await availableElsewhere(monsterName, picked.entry, sourceIds, index).catch(() => null)
+          ? await availableElsewhere(monsterName, picked.entry, sourceIds, index, asker, snapshot).catch(() => null)
           : null,
       };
     } else {
@@ -804,7 +936,7 @@ export async function getMonster(
         if (o5Result) return o5Result;
         return `Monster "${monsterName}" not found. Try ddb_search_monsters with a partial name.`;
       }
-      detail = await fetchMonsterDetail(found.entry.id);
+      detail = await fetchMonsterDetail(found.entry.id, asker);
       // The detail check is the fallback when the map lacked the id or called a
       // restricted pick available: try the next candidate in the same order,
       // at most one extra (cached) detail request.
@@ -812,7 +944,7 @@ export async function getMonster(
       if (isRestricted(detail) && !isLockedIn(access, first.entry.id)) {
         const retry = lookup(m => mapAvailable(m) && m.id !== first.entry.id);
         if (retry && retry.entry.id !== first.entry.id) {
-          const retryDetail = await fetchMonsterDetail(retry.entry.id);
+          const retryDetail = await fetchMonsterDetail(retry.entry.id, asker);
           if (!isRestricted(retryDetail)) {
             found = retry;
             detail = retryDetail;
@@ -837,6 +969,7 @@ export async function getMonster(
     if (homebrew) return HOMEBREW_UNREACHABLE;
     const o5Result = await o5GetMonster(monsterName, requested, "unavailable").catch(() => null);
     if (o5Result) return withSourceCaveat(o5Result, source);
+    if (asker.anonymous) return "Monster lookup requires login. Run ddb_login first.";
     return `Monster "${monsterName}" not found. DnD Beyond is unavailable and "${monsterName}" is not in the SRD.`;
   }
 }
@@ -848,9 +981,9 @@ export async function getMonster(
  * filter as availableSourcesFor). A book with no slug is passed by short name.
  */
 async function availableElsewhere(
-  name: string, pick: DdbMonster, sourceIds: number[], index: SourceIndex,
+  name: string, pick: DdbMonster, sourceIds: number[], index: SourceIndex, asker: Asker, bound: SessionSnapshot,
 ): Promise<string | null> {
-  const { data, access } = await fetchCandidates(name, 20);
+  const { data, access } = await fetchCandidates(name, 20, undefined, asker, bound);
   const key = monsterTwin(pick.name);
   const inBook = (m: DdbMonster) =>
     sourceIds.includes(m.sourceId) || (m.sources ?? []).some(s => sourceIds.includes(s.sourceId));
@@ -882,7 +1015,8 @@ export type { MonsterStatsResult };
 
 /**
  * CR and XP for a named monster, for the encounter rater and the treasure
- * generator. Tries the DDB monster service first, then falls back to Open5e.
+ * generator. Tries the DDB monster service first (anonymously when logged
+ * out), then falls back to Open5e.
  * `rulesEdition` (default "2024") picks between edition twins of one creature.
  *
  * Unlike getMonster, it never guesses (on either path): callers fold the CR
@@ -897,53 +1031,53 @@ export async function getMonsterStats(name: string, opts: { rulesEdition?: Rules
   name = name.trim();
   if (!name) return { status: "not-found" };
   const requested = opts.rulesEdition ?? "2024";
-  if (hasValidSession()) {
-    try {
-      const config = await getGameConfig();
-      // No extra request: getGameConfig() serves this call from its cache (or its failure cache).
-      const index = await getSourceIndex();
-      const info = (m: DdbMonster) => classifyEdition(m, index);
-      const tiebreak = monsterTiebreak(index);
-      const crById = new Map((config?.challengeRatings ?? []).map(cr => [cr.id, cr]));
-      const official = (await fetchCandidates(name, 20)).data
-        .filter(m => m.isHomebrew === false && crById.has(m.challengeRatingId));
-      const stats = (m: DdbMonster) => {
-        const cr = crById.get(m.challengeRatingId)!;
-        return { name: m.name, crValue: cr.value, xp: cr.xp };
-      };
-      const found = (group: DdbMonster[]): MonsterStatsResult | null => {
-        const picked = selectByEdition(group, requested, info, tiebreak);
-        return picked ? { status: "found", ...stats(picked.entry), info: info(picked.entry) } : null;
-      };
+  // Logged out, monster-service is still asked, anonymously.
+  const asker = askerNow();
+  try {
+    const config = await configFor(asker);
+    // No extra request: getGameConfig() serves this call from its cache (or its failure cache).
+    const index = await getSourceIndex();
+    const info = (m: DdbMonster) => classifyEdition(m, index);
+    const tiebreak = monsterTiebreak(index);
+    const crById = new Map((config?.challengeRatings ?? []).map(cr => [cr.id, cr]));
+    const official = (await fetchCandidates(name, 20, undefined, asker)).data
+      .filter(m => m.isHomebrew === false && crById.has(m.challengeRatingId));
+    const stats = (m: DdbMonster) => {
+      const cr = crById.get(m.challengeRatingId)!;
+      return { name: m.name, crValue: cr.value, xp: cr.xp };
+    };
+    const found = (group: DdbMonster[]): MonsterStatsResult | null => {
+      const picked = selectByEdition(group, requested, info, tiebreak);
+      return picked ? { status: "found", ...stats(picked.entry), info: info(picked.entry) } : null;
+    };
 
-      const key = monsterTwin(name);
-      const exact = official.filter(m => monsterTwin(m.name) === key);
-      if (exact.length) {
-        const result = found(exact);
-        if (result) return result;
-      }
-
-      const query = normalizeName(name);
-      const groups = new Map<string, DdbMonster[]>();
-      for (const m of official) {
-        if (!normalizeName(m.name).includes(query)) continue;
-        const k = monsterTwin(m.name);
-        groups.set(k, [...(groups.get(k) ?? []), m]);
-      }
-      if (groups.size === 1) {
-        const result = found([...groups.values()][0]);
-        if (result) return result;
-      } else if (groups.size > 1) {
-        const candidates = [...groups.values()]
-          .map(group => selectByEdition(group, requested, info, tiebreak))
-          .filter(picked => picked !== null)
-          .map(picked => stats(picked.entry))
-          .sort((a, b) => a.crValue - b.crValue || a.name.localeCompare(b.name));
-        return { status: "ambiguous", candidates };
-      }
-    } catch {
-      // fall through to Open5e
+    const key = monsterTwin(name);
+    const exact = official.filter(m => monsterTwin(m.name) === key);
+    if (exact.length) {
+      const result = found(exact);
+      if (result) return result;
     }
+
+    const query = normalizeName(name);
+    const groups = new Map<string, DdbMonster[]>();
+    for (const m of official) {
+      if (!normalizeName(m.name).includes(query)) continue;
+      const k = monsterTwin(m.name);
+      groups.set(k, [...(groups.get(k) ?? []), m]);
+    }
+    if (groups.size === 1) {
+      const result = found([...groups.values()][0]);
+      if (result) return result;
+    } else if (groups.size > 1) {
+      const candidates = [...groups.values()]
+        .map(group => selectByEdition(group, requested, info, tiebreak))
+        .filter(picked => picked !== null)
+        .map(picked => stats(picked.entry))
+        .sort((a, b) => a.crValue - b.crValue || a.name.localeCompare(b.name));
+      return { status: "ambiguous", candidates };
+    }
+  } catch {
+    // fall through to Open5e
   }
 
   return o5GetMonsterStats(name, requested);

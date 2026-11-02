@@ -21,6 +21,7 @@ vi.mock("../src/session-fetch.js", () => {
     }),
     assertSessionCurrent: vi.fn(),
     onSessionInvalidated: vi.fn((cb: () => void) => { S.hooks.push(cb); }),
+    anonymousFetch: vi.fn(),
   };
 });
 
@@ -143,5 +144,47 @@ describe("cached monster lists and account changes", () => {
       return snap;
     }) as never);
     expect(await getMonster("Lich")).toContain("Entry 8");
+  });
+});
+
+describe("the available-sources hint and account changes", () => {
+  // The book filter (sources=6, Curse of Strahd) finds no Lich; the unfiltered
+  // list, which the hint reads, files each account's Lich under a different book.
+  beforeEach(() => {
+    vi.mocked(sessionFetch).mockImplementation((async (input: string, account: number) => {
+      const url = String(input);
+      if (url.includes("api/config/json")) return response(CONFIG);
+      if (url.includes("sources=")) return response({ pagination: { total: 0, currentPage: 1, pages: 1 }, data: [] });
+      const sourceId = account === 1 ? 147 : 145;
+      return response({ pagination: { total: 1, currentPage: 1, pages: 1 }, data: [{ ...monster(7, "Lich"), sourceId, sources: [{ sourceId, pageNumber: 1, sourceType: 1 }] }] });
+    }) as never);
+  });
+
+  /** Switch accounts right after the call's own list passed its last boundary check (assert #4: config, index, list, merge). */
+  function swapAfterFourthAssert(): void {
+    let asserts = 0;
+    vi.mocked(assertSessionCurrent).mockImplementation(((snap: { gen: number }) => {
+      if (snap.gen !== S.gen) throw new Error("session changed");
+      if (++asserts === 4) S.gen = 2;
+    }) as never);
+  }
+
+  it("names the caller's account's book when nothing changes", async () => {
+    expect(await getMonster("Lich", { source: "cos" })).toContain('Available sources for "Lich": Monster Manual [mm-2024].');
+  });
+
+  it("availableSourcesFor uses the caller's session snapshot", async () => {
+    swapAfterFourthAssert();
+    const get = await getMonster("Lich", { source: "cos" });
+    expect(get).toContain('No "Lich" entry found in source "cos".');
+    expect(get).not.toContain("Player’s Handbook");
+    expect(get).not.toContain("Available sources");
+
+    S.gen = 1; S.lastSeen = 1; clearMonsterCache(); S.hooks.forEach(h => h());
+    swapAfterFourthAssert();
+    const search = await searchMonsters({ name: "Lich", source: "cos" });
+    expect(search).toContain("No monsters matching the search criteria in Curse of Strahd");
+    expect(search).not.toContain("Player’s Handbook");
+    expect(search).not.toContain("appears in");
   });
 });
