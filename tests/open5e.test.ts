@@ -12,7 +12,7 @@ import { EDITION_RENAMES, OPEN5E_ARMOUR_RENAMES, OPEN5E_EQUIPMENT_RENAMES } from
 import { o5Fixture, o5FixtureFetch, o5Record } from "./fixtures/open5e-v2.js";
 import {
   clearOpen5eCache,
-  o5GetSpell, o5GetMonster, o5GetEquipment,
+  o5GetSpell, o5GetMonster, o5GetEquipment, o5MonsterInEdition,
   o5SearchSpells, o5SearchMonsters, o5SearchItems,
   o5SearchRaces, o5SearchClasses, o5SearchBackgrounds, o5SearchFeats,
   o5SearchRules, o5GetRule, o5GetMonsterStats, crText, castingTime, humanize, o5TwinNameFor, o5EquipmentKey, o5EquipmentGroupKey,
@@ -1334,5 +1334,20 @@ describe("Open5e monster, filter and item fixes (Task 11)", () => {
       expect(out).not.toContain("Wolf");
       expect(out).not.toContain("Aboleth");
     });
+  });
+});
+
+describe("o5MonsterInEdition (logged-out locked D&D Beyond entries)", () => {
+  it("returns that SRD's record by exact name, with its AC, HP and a needs-login label", async () => {
+    const wolf = await o5MonsterInEdition("Wolf", "2024");
+    const rec = o5Record<{ armor_class: number; hit_points: number }>("srd-2024", "creatures", "Wolf");
+    expect(wolf).toMatchObject({ armorClass: rec.armor_class, hitPoints: rec.hit_points });
+    expect(wolf!.text("needs-login").split("\n").slice(0, 2)).toEqual(["Wolf", "Rules: 2024 · SRD 5.2 (Open5e — the D&D Beyond version needs ddb_login)"]);
+    expect((await o5MonsterInEdition("Wolf", "2014"))!.text("needs-login").split("\n")[1]).toBe("Rules: 2014 · SRD 5.1 (Open5e — the D&D Beyond version needs ddb_login)");
+  });
+
+  it("is null for a creature only the other SRD has, and for a partial name", async () => {
+    expect(await o5MonsterInEdition("Half-Red Dragon Veteran", "2024")).toBeNull();
+    expect(await o5MonsterInEdition("Wol", "2024")).toBeNull();
   });
 });

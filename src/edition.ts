@@ -591,6 +591,8 @@ const SRD_NAME: Record<RulesEdition, string> = { "2024": "SRD 5.2", "2014": "SRD
 const OPEN5E_SUFFIX = {
   unavailable: " (Open5e fallback — D&D Beyond unavailable)",
   "not-found": " (Open5e fallback — not found on D&D Beyond)",
+  // A logged-out monster get whose D&D Beyond entry is locked shows the SRD text instead (owner ruling 2026-11-02).
+  "needs-login": " (Open5e — the D&D Beyond version needs ddb_login)",
   primary: "",
 } as const;
 export type Open5eOrigin = keyof typeof OPEN5E_SUFFIX;

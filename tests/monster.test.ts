@@ -22,14 +22,14 @@ vi.mock("../src/open5e.js", () => ({
   o5SearchMonstersSection: vi.fn(async () => ({ header: null, body: "O5 SEARCH RESULT", footer: null, hidden: 0, open5e: true })),
   o5GetMonster: vi.fn(async () => "O5 MONSTER RESULT"),
   o5GetMonsterStats: vi.fn(async () => ({ status: "not-found" })),
-  o5GetMonsterInEdition: vi.fn(async () => null),
+  o5MonsterInEdition: vi.fn(async () => null),
 }));
 
 import { getMonster, searchMonsters, getMonsterStats, clearMonsterCache, statBlockText } from "../src/tools/monster.js";
 import { rateEncounter } from "../src/tools/encounter.js";
 import { sessionFetch, hasValidSession, onSessionInvalidated, beginAuthenticatedSession } from "../src/session-fetch.js";
 import { stripHtmlRich } from "../src/utils.js";
-import { o5SearchMonstersSection, o5GetMonster, o5GetMonsterStats, o5GetMonsterInEdition } from "../src/open5e.js";
+import { o5SearchMonstersSection, o5GetMonster, o5GetMonsterStats, o5MonsterInEdition } from "../src/open5e.js";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 // IDs, source attribution, and categories mirror live monster-service / game
@@ -347,7 +347,7 @@ beforeEach(() => {
   failUnfilteredSearch = false;
   firstPageTotal = null;
   anonymousRequests.length = 0;
-  vi.mocked(o5GetMonsterInEdition).mockResolvedValue(null);
+  vi.mocked(o5MonsterInEdition).mockResolvedValue(null);
   vi.mocked(o5GetMonster).mockResolvedValue("O5 MONSTER RESULT");
   failSearchTerms.clear();
   extraMonsters = [];
@@ -1744,6 +1744,18 @@ describe("logged out: locked content says to log in (item 1)", () => {
     expect(lines.join("\n")).not.toContain("requires ownership");
   });
 
+  it("a locked entry with no free twin asks the SRD with the needs-login label logged out, unavailable logged in", async () => {
+    goLoggedOut();
+    await getMonster("Sealed Horror");
+    expect(o5GetMonster).toHaveBeenCalledWith("Sealed Horror", "2024", "needs-login");
+    vi.mocked(o5GetMonster).mockClear();
+    vi.mocked(hasValidSession).mockReturnValue(true);
+    vi.mocked(beginAuthenticatedSession).mockImplementation((async () => ({ fetch: (url: string) => sessionFetch(url) })) as never);
+    setupFetch();
+    await getMonster("Sealed Horror");
+    expect(o5GetMonster).toHaveBeenCalledWith("Sealed Horror", "2024", "unavailable");
+  });
+
   it("logged in, the ownership note is unchanged", async () => {
     const out = await getMonster("Sealed Horror");
     expect(out.split("\n").at(-1)).toBe("*⚠️ Full stat block requires ownership of this content on D&D Beyond. Ability scores and actions may be missing.*");
@@ -1764,17 +1776,22 @@ describe("logged out: locked content says to log in (item 1)", () => {
 describe("logged out: a locked requested edition prefers the requested edition's SRD text (item 3)", () => {
   const HOUND_2024 = monster({ id: 8_000_810, name: "Grave Hound", sourceId: 147, sources: sources(147), challengeRatingId: 5 });
   const HOUND_2014 = monster({ id: 8_000_811, name: "Grave Hound", isLegacy: true, sourceId: 1, sources: sources(1), challengeRatingId: 4, actionsDescription: "<p>2014 HOUND</p>" });
+  // The SRD 5.2 record: its own AC and HP (the locked list entry's are zeroed live).
+  const srdText = vi.fn((origin: string) => `O5 SRD 5.2 GRAVE HOUND (${origin})`);
+  const SRD_HOUND = { armorClass: 13, hitPoints: 30, text: srdText };
 
   beforeEach(() => {
     extraMonsters = [HOUND_2024, HOUND_2014];
     unownedIds.add(HOUND_2024.id as number);
+    srdText.mockClear();
   });
 
-  it("get: SRD 5.2 has it, so its Open5e text is shown instead of the 2014 swap", async () => {
-    vi.mocked(o5GetMonsterInEdition).mockResolvedValue("O5 SRD 5.2 GRAVE HOUND");
+  it("get: SRD 5.2 has it, so its Open5e text is shown, labelled as needing ddb_login", async () => {
+    vi.mocked(o5MonsterInEdition).mockResolvedValue(SRD_HOUND as never);
     goLoggedOut();
-    expect(await getMonster("Grave Hound")).toBe("O5 SRD 5.2 GRAVE HOUND");
-    expect(o5GetMonsterInEdition).toHaveBeenCalledWith("Grave Hound", "2024", "unavailable");
+    expect(await getMonster("Grave Hound")).toBe("O5 SRD 5.2 GRAVE HOUND (needs-login)");
+    expect(o5MonsterInEdition).toHaveBeenCalledWith("Grave Hound", "2024");
+    expect(srdText).toHaveBeenCalledWith("needs-login");
   });
 
   it("get: SRD 5.2 lacks it, so the swap stays, with the logged-out reason", async () => {
@@ -1785,20 +1802,38 @@ describe("logged out: a locked requested edition prefers the requested edition's
   });
 
   it("get logged in: the swap and its wording are unchanged, and the SRD is not asked", async () => {
-    vi.mocked(o5GetMonsterInEdition).mockResolvedValue("O5 SRD 5.2 GRAVE HOUND");
+    vi.mocked(o5MonsterInEdition).mockResolvedValue(SRD_HOUND as never);
     const out = await getMonster("Grave Hound");
     expect(out).toContain("Rules: 2014 · Basic Rules (2014)\n(the 2024 version isn't available to this account — 2014 text shown)");
-    expect(o5GetMonsterInEdition).not.toHaveBeenCalled();
+    expect(o5MonsterInEdition).not.toHaveBeenCalled();
   });
 
   it("search: SRD 5.2 has it, so the 2024 entry is listed (locked), not swapped", async () => {
-    vi.mocked(o5GetMonsterInEdition).mockResolvedValue("O5 SRD 5.2 GRAVE HOUND");
+    vi.mocked(o5MonsterInEdition).mockResolvedValue(SRD_HOUND as never);
     goLoggedOut();
     const out = await searchMonsters({ name: "Grave Hound" });
-    expect(out.split("\n")).toContain("- **Grave Hound** [2024] — Monster Manual [mm-2024] — CR 1, Medium Undead, AC 8, 22 HP");
+    expect(out.split("\n")).toContain("- **Grave Hound** [2024] — Monster Manual [mm-2024] — CR 1, Medium Undead, AC 13, 30 HP");
     expect(out).toContain("1 entry isn't available without logging in");
     expect(out).not.toContain("[2014]");
     expect(out).not.toContain("shows its");
+  });
+
+  it("search: an SRD-backed line prints the SRD record's AC and HP, not the locked entry's zeroed ones", async () => {
+    extraMonsters = [{ ...HOUND_2024, armorClass: 0, averageHitPoints: 0 }, HOUND_2014];
+    vi.mocked(o5MonsterInEdition).mockResolvedValue(SRD_HOUND as never);
+    goLoggedOut();
+    const out = await searchMonsters({ name: "Grave Hound" });
+    expect(out).toContain("CR 1, Medium Undead, AC 13, 30 HP");
+    expect(out).not.toContain("AC 0, 0 HP");
+  });
+
+  it("search: the SRD-backed 2024 entry passing a filter its free 2014 twin fails is listed", async () => {
+    vi.mocked(o5MonsterInEdition).mockResolvedValue(SRD_HOUND as never);
+    goLoggedOut();
+    const out = await searchMonsters({ name: "Grave Hound", cr: 1 });
+    expect(out.split("\n")).toContain("- **Grave Hound** [2024] — Monster Manual [mm-2024] — CR 1, Medium Undead, AC 13, 30 HP");
+    expect(out).not.toContain("hidden");
+    expect(o5SearchMonstersSection).not.toHaveBeenCalled();
   });
 
   it("search: SRD 5.2 lacks it, so the swap stays, with logged-out wording", async () => {
@@ -1809,7 +1844,7 @@ describe("logged out: a locked requested edition prefers the requested edition's
   });
 
   it("search: the SRD 5.2 entry failing a filter its 2014 twin passes is counted as hidden, not listed", async () => {
-    vi.mocked(o5GetMonsterInEdition).mockResolvedValue("O5 SRD 5.2 GRAVE HOUND");
+    vi.mocked(o5MonsterInEdition).mockResolvedValue(SRD_HOUND as never);
     goLoggedOut();
     const out = await searchMonsters({ name: "Grave Hound", cr: 0.5 });
     expect(out).not.toContain("**Grave Hound**");
@@ -1819,7 +1854,7 @@ describe("logged out: a locked requested edition prefers the requested edition's
   it("getMonsterStats never guesses: logged out it takes the requested edition's CR from the list, locked or not", async () => {
     goLoggedOut();
     expect(await getMonsterStats("Grave Hound")).toMatchObject({ status: "found", name: "Grave Hound", crValue: 1, xp: 200, info: { ruleset: "2024" } });
-    expect(o5GetMonsterInEdition).not.toHaveBeenCalled();
+    expect(o5MonsterInEdition).not.toHaveBeenCalled();
   });
 });
 
@@ -1871,14 +1906,25 @@ describe("both D&D Beyond and Open5e failing, logged out (item 4)", () => {
 });
 
 describe("partial-scan flag when page 1 under-reports its total (item 6)", () => {
-  it("a full first page whose total says 100 keeps the partial note", async () => {
+  it("a full first page whose total says 99 keeps the partial note", async () => {
     extraMonsters = Array.from({ length: 158 }, (_, i) => monster({
       id: 3_200_000 + i, name: `Lagging ${String(i).padStart(3, "0")}`, sourceId: 232, sources: sources(232),
     }));
-    firstPageTotal = 100;
+    firstPageTotal = 99;
     const out = await searchMonsters({ source: "rthw", cr: 0.25 });
     expect(out).toContain("checked 100 of 100+");
     expect(out).toContain("Only the first 100 of 100+ were checked against the CR/type/size filters");
+  });
+
+  it("a genuine total of exactly 100 stays plain", async () => {
+    // 98 + the two RtHW entries in ALL_MONSTERS: exactly one full page, honestly reported.
+    extraMonsters = Array.from({ length: 98 }, (_, i) => monster({
+      id: 3_300_000 + i, name: `Exact ${String(i).padStart(3, "0")}`, sourceId: 232, sources: sources(232),
+    }));
+    const out = await searchMonsters({ source: "rthw", cr: 0.25 });
+    expect(out).toContain("checked 100 of 100 matched by source");
+    expect(out).not.toContain("100+");
+    expect(out).not.toContain("Only the first");
   });
 
   it("a complete short scan stays plain", async () => {

@@ -1105,6 +1105,10 @@ describe("locked-content labels", () => {
       .toBe("Rules: 2024 · Monster Manual (2024)\n(not logged in, so the 2014 version isn't available — 2024 text shown; run ddb_login if your account owns it)");
     expect(LOGGED_OUT_RESTRICTED_NOTE).toBe("*⚠️ Not logged in — run ddb_login if your account owns this content.*");
     expect(NOT_LOGGED_IN_SUFFIX).toBe(" (not logged in — ddb_login may show more)");
+    // The SRD text a logged-out get shows in place of a locked D&D Beyond entry.
+    expect(rulesLine({ ruleset: "2024", book: null }, { open5e: "needs-login" })).toBe("Rules: 2024 · SRD 5.2 (Open5e — the D&D Beyond version needs ddb_login)");
+    expect(rulesLine({ ruleset: "2014", book: null }, { open5e: "needs-login" })).toBe("Rules: 2014 · SRD 5.1 (Open5e — the D&D Beyond version needs ddb_login)");
+    expect(rulesLine({ ruleset: "2024", book: null }, { open5e: "unavailable" })).toBe("Rules: 2024 · SRD 5.2 (Open5e fallback — D&D Beyond unavailable)");
   });
 
   it("available-elsewhere hint", () => {

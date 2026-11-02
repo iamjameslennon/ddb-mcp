@@ -30,7 +30,9 @@ import {
 } from "../source-filter.js";
 import { TtlCache } from "../cache.js";
 import { wrapUntrusted, stripHtmlRich } from "../utils.js";
-import { o5SearchMonstersSection, o5GetMonster, o5GetMonsterStats, o5GetMonsterInEdition, type MonsterStatsResult } from "../open5e.js";
+import {
+  o5SearchMonstersSection, o5GetMonster, o5GetMonsterStats, o5MonsterInEdition, type MonsterStatsResult, type O5EditionMonster,
+} from "../open5e.js";
 import { renderSection, plainSection, sourceFraming, withSourceCaveatSection, type SearchSection } from "./edition-search.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -414,7 +416,8 @@ async function fetchMonsterPages(
   // Known incomplete even when the totals agree with what was seen: a full
   // first page whose total says it was the only page (the total lags), or a
   // scan that reached `limit`.
-  const incomplete = ((first.data?.length ?? 0) >= PAGE_SIZE && first.pagination.total <= PAGE_SIZE) || data.length >= limit;
+  // (A first page of exactly PAGE_SIZE reporting PAGE_SIZE is a genuine single page.)
+  const incomplete = ((first.data?.length ?? 0) >= PAGE_SIZE && first.pagination.total < PAGE_SIZE) || data.length >= limit;
   return { data, total, access, snapshot, incomplete };
 }
 
@@ -726,7 +729,9 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
   // With a source (a book, or homebrew), every matching entry is listed (no
   // edition selection, no swap); otherwise one entry per twin group, the other
   // edition's twins hidden, and a locked group shows its available twin.
-  type Row = { m: DdbMonster; info: EditionInfo; reason?: SelectionReason };
+  // `srd`: logged out, the requested entry is locked but its SRD has it, so the
+  // line shows the SRD record's AC and HP (the locked list entry's are zeroed).
+  type Row = { m: DdbMonster; info: EditionInfo; reason?: SelectionReason; srd?: O5EditionMonster };
   let monsters: Row[];
   let hidden = 0;
   if (homebrew) {
@@ -738,30 +743,22 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
     // countFilteredPicks: a group whose requested pick fails the CR/type/size
     // filters while the other edition's pick passes is counted as hidden, as in
     // the catalog searches. A locked group's swapped pick is never counted.
+    // Logged out, a group that would swap (every requested entry locked, a free
+    // other-edition twin) is not swapped when the requested edition's SRD has
+    // the creature: its stat block is that SRD text (owner ruling 2026-11-02).
+    // Such a group counts as available before selection, so the filters and the
+    // hidden count judge its requested pick like any other.
+    const srdBacked = asker.anonymous ? await srdBackedGroups(fetched, access, requested, info, monsterTiebreak(index)) : new Map<string, O5EditionMonster>();
     const picked = groupAndSelect(fetched, requested, {
       info, twinKey: m => monsterTwin(m.name), tiebreak: monsterTiebreak(index), passes,
-      available: m => !isLockedIn(access, m.id),
+      available: m => !isLockedIn(access, m.id) || srdBacked.has(monsterTwin(m.name)),
       countFilteredPicks: true,
     });
-    monsters = picked.selected.map(s => ({ m: s.entry, info: s.info, reason: s.reason }));
+    monsters = picked.selected.map(s => ({
+      m: s.entry, info: s.info, reason: s.reason,
+      srd: s.info.ruleset === requested ? srdBacked.get(monsterTwin(s.entry.name)) : undefined,
+    }));
     hidden = picked.hidden;
-    if (asker.anonymous) {
-      // Logged out, a locked requested edition is listed rather than swapped
-      // when its SRD has the creature: its stat block is that SRD text (owner
-      // ruling 2026-11-02). Judged against the filters like any requested pick:
-      // failing one while the swapped twin passes counts it as hidden.
-      const kept = await Promise.all(monsters.map(async (row): Promise<Row | null> => {
-        if (!isLockedReason(row.reason)) return row;
-        const wanted = requestedPick(fetched, row.m, requested, info, monsterTiebreak(index));
-        if (!wanted || !(await srdHas(wanted.name, requested))) return row;
-        if (!passes(wanted)) {
-          hidden++;
-          return null;
-        }
-        return { m: wanted, info: info(wanted) };
-      }));
-      monsters = kept.filter((row): row is Row => row !== null);
-    }
   }
 
   if (monsters.length === 0) {
@@ -824,7 +821,7 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
     : `${shown.length} shown, ${total - (checked - monsters.length)} total ${matchedBy}`;
   const capNote = nameCapped ? ` (the first ${PAGE_SIZE} matches per name were checked)` : "";
   lines.push(`**Monster Search** (${countText})${capNote}\n`);
-  for (const { m, info: mInfo, reason } of shown) {
+  for (const { m, info: mInfo, reason, srd } of shown) {
     const cr = crMap.get(m.challengeRatingId);
     const crStr = cr ? crDisplay(cr.value) : "?";
     const typeName = typeMap.get(m.typeId) ?? "Unknown";
@@ -839,7 +836,9 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
       const via = m.sources?.find(s => sourceIds.includes(s.sourceId))?.sourceId ?? sourceIds[0];
       sourceStr += `, reprinted in ${sourceLabel(index, via)}`;
     }
-    let line = `- **${m.name}** ${editionTag(mInfo)}${tagStr} — ${sourceStr} — CR ${crStr}, ${size} ${typeName}, AC ${m.armorClass}, ${m.averageHitPoints} HP`;
+    const ac = srd?.armorClass ?? m.armorClass;
+    const hp = srd?.hitPoints ?? m.averageHitPoints;
+    let line = `- **${m.name}** ${editionTag(mInfo)}${tagStr} — ${sourceStr} — CR ${crStr}, ${size} ${typeName}, AC ${ac}, ${hp} HP`;
     if (isLockedReason(reason)) line += ` ${lockedLineSuffix(reason, asker.anonymous)}`;
     // Homebrew names are user-authored — delimit them, as getMonster does for
     // homebrew stat blocks. Fail closed: only an explicitly official entry is left plain.
@@ -978,8 +977,8 @@ export async function getMonster(
       if (asker.anonymous && isLockedReason(found.reason)) {
         const wanted = lookup(() => true)?.entry;
         if (wanted && info(wanted).ruleset === requested) {
-          const srd = await o5GetMonsterInEdition(wanted.name, requested, "unavailable").catch(() => null);
-          if (srd) return srd;
+          const srd = await o5MonsterInEdition(wanted.name, requested).catch(() => null);
+          if (srd) return srd.text("needs-login");
         }
       }
       detail = await fetchMonsterDetail(found.entry.id, asker);
@@ -1003,9 +1002,10 @@ export async function getMonster(
         loggedOut: asker.anonymous,
       };
 
-      // Still an empty stat block (unowned content): fall back to Open5e.
+      // Still an empty stat block (unowned content): fall back to Open5e. Logged
+      // out, the label says the D&D Beyond version needs a login (owner ruling 2026-11-02).
       if (isRestricted(detail)) {
-        const o5Result = await o5GetMonster(monsterName, requested, "unavailable").catch(() => null);
+        const o5Result = await o5GetMonster(monsterName, requested, asker.anonymous ? "needs-login" : "unavailable").catch(() => null);
         if (o5Result) return o5Result;
       }
     }
@@ -1060,21 +1060,30 @@ function renamedFromQuery(query: string, shownName: string): { name2014: string;
 }
 
 /**
- * The requested edition's entry of `row`'s twin group among `fetched`, locked
- * or not; undefined when the group has none of that edition.
+ * Logged out: the twin groups that would swap (every requested-edition entry
+ * locked, an available other-edition entry) whose requested pick the requested
+ * edition's SRD has, keyed by twin name. An Open5e failure counts as "the SRD
+ * lacks it", so the swap stays.
  */
-function requestedPick(
-  fetched: DdbMonster[], row: DdbMonster, requested: RulesEdition,
+async function srdBackedGroups(
+  fetched: DdbMonster[], access: AccessMap, requested: RulesEdition,
   info: (m: DdbMonster) => EditionInfo, tiebreak: (a: DdbMonster, b: DdbMonster) => number,
-): DdbMonster | undefined {
-  const key = monsterTwin(row.name);
-  const picked = selectByEdition(fetched.filter(m => monsterTwin(m.name) === key), requested, info, tiebreak);
-  return picked && info(picked.entry).ruleset === requested ? picked.entry : undefined;
-}
-
-/** Whether `edition`'s SRD document has exactly this creature. An Open5e failure counts as no. */
-async function srdHas(name: string, edition: RulesEdition): Promise<boolean> {
-  return (await o5GetMonsterInEdition(name, edition, "unavailable").catch(() => null)) !== null;
+): Promise<Map<string, O5EditionMonster>> {
+  const other: RulesEdition = requested === "2024" ? "2014" : "2024";
+  const groups = new Map<string, DdbMonster[]>();
+  for (const m of fetched) {
+    const key = monsterTwin(m.name);
+    groups.set(key, [...(groups.get(key) ?? []), m]);
+  }
+  const backed = new Map<string, O5EditionMonster>();
+  await Promise.all([...groups].map(async ([key, group]) => {
+    const wanted = group.filter(m => info(m).ruleset === requested).sort(tiebreak);
+    if (!wanted.length || wanted.some(m => !isLockedIn(access, m.id))) return;
+    if (!group.some(m => info(m).ruleset === other && !isLockedIn(access, m.id))) return;
+    const srd = await o5MonsterInEdition(wanted[0].name, requested).catch(() => null);
+    if (srd) backed.set(key, srd);
+  }));
+  return backed;
 }
 
 /** Defined beside o5GetMonsterStats, which returns it too. */

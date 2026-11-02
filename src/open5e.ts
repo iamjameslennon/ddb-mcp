@@ -769,17 +769,26 @@ export async function o5GetMonster(name: string, rulesEdition: RulesEdition, ori
   return hit ? formatO5Monster(hit, origin) : null;
 }
 
+/** An SRD creature found by o5MonsterInEdition: its AC and HP for a search line, and its stat block. */
+export interface O5EditionMonster {
+  armorClass: number | null;
+  hitPoints: number | null;
+  text(origin: Open5eOrigin): string;
+}
+
 /**
- * The stat block of exactly `name` (by twin name) in `edition`'s SRD document
- * only, or null when that document lacks it. A logged-out D&D Beyond lookup
- * whose requested edition is locked asks this before swapping to the other
- * edition (owner ruling 2026-11-02: SRD 5.2 text beats a 2014 swap).
+ * Exactly `name` (by twin name) in `edition`'s SRD document only, or null when
+ * that document lacks it. A logged-out D&D Beyond lookup whose requested
+ * edition is locked asks this before swapping to the other edition (owner
+ * ruling 2026-11-02: the requested edition's SRD text beats a swap).
  */
-export async function o5GetMonsterInEdition(name: string, edition: RulesEdition, origin: Open5eOrigin): Promise<string | null> {
+export async function o5MonsterInEdition(name: string, edition: RulesEdition): Promise<O5EditionMonster | null> {
   const hit = await o5Lookup<O5Creature>(["creatures"], name, edition);
   if (!hit || hit.entry.edition !== edition) return null;
   const twin = o5TwinNameFor("creatures");
-  return twin(hit.entry.record.name) === twin(name) ? formatO5Monster(hit, origin) : null;
+  if (twin(hit.entry.record.name) !== twin(name)) return null;
+  const m = hit.entry.record;
+  return { armorClass: m.armor_class ?? null, hitPoints: m.hit_points ?? null, text: origin => formatO5Monster(hit, origin) };
 }
 
 // ── EQUIPMENT ─────────────────────────────────────────────────────────────────

@@ -150,17 +150,17 @@ let publicConfigPending: Promise<GameConfig | null> | null = null;
  * failure (or the CONFIG_FETCH_TIMEOUT_MS deadline) resolves null and is
  * remembered for CONFIG_FAILURE_TTL_MS. Never rejects.
  */
+export async function getPublicGameConfig(): Promise<GameConfig | null> {
+  if (publicConfigCache) return publicConfigCache;
+  if (Date.now() < publicConfigFailureUntil) return null;
+  return publicConfigPending ?? startPublicConfigFetch();
+}
+
 /** Drop the public config, its failure memo and any fetch in flight (ddb_clear_cache), so the next call fetches afresh. */
 export function clearPublicGameConfig(): void {
   publicConfigCache = null;
   publicConfigFailureUntil = 0;
   publicConfigPending = null;
-}
-
-export async function getPublicGameConfig(): Promise<GameConfig | null> {
-  if (publicConfigCache) return publicConfigCache;
-  if (Date.now() < publicConfigFailureUntil) return null;
-  return publicConfigPending ?? startPublicConfigFetch();
 }
 
 function startPublicConfigFetch(): Promise<GameConfig | null> {
