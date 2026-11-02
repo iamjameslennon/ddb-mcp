@@ -279,9 +279,9 @@ describe("source and failures", () => {
       return jsonResponse({});
     });
     expect(await reference.searchBackgrounds({ name: "acolyte" }))
-      .toBe("Backgrounds unavailable — DnD Beyond and Open5e both failed.");
+      .toBe("Backgrounds unavailable — D&D Beyond and Open5e both failed.");
     expect(await reference.searchFeats({ name: "alert", source: "phb-2024" })).toBe(
-      'Feats unavailable — DnD Beyond and Open5e both failed.\n\n*Note: source filtering is not available via the Open5e SRD fallback — "phb-2024" was requested but could not be honoured.*',
+      'Feats unavailable — D&D Beyond and Open5e both failed.\n\n*Note: source filtering is not available via the Open5e SRD fallback — "phb-2024" was requested but could not be honoured.*',
     );
   });
 
@@ -292,7 +292,7 @@ describe("source and failures", () => {
       return jsonResponse({ count: 0, results: [] });
     });
     expect(await reference.searchBackgrounds({ name: "acolyte" }))
-      .toBe("Backgrounds unavailable — DnD Beyond and Open5e both failed.");
+      .toBe("Backgrounds unavailable — D&D Beyond and Open5e both failed.");
   });
 
   it("an empty list is never cached", async () => {

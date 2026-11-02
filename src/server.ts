@@ -469,7 +469,7 @@ server.tool(
     action: z
       .enum(["click", "fill", "screenshot"])
       .describe("The action to perform: click an element, fill a text field, or take a screenshot"),
-    selector: z.string().min(1).describe("CSS or text selector for the target element. Prefer specific selectors to avoid matching hidden elements — e.g. 'button:visible:has-text(\"Spells\")' or '[role=\"tab\"]:has-text(\"Spells\")' rather than 'text=Spells', which may match hidden nav dropdowns on DnD Beyond pages. Hardcoded DnD Beyond class names are unreliable (CSS module hashes change)."),
+    selector: z.string().min(1).describe("CSS or text selector for the target element. Prefer specific selectors to avoid matching hidden elements — e.g. 'button:visible:has-text(\"Spells\")' or '[role=\"tab\"]:has-text(\"Spells\")' rather than 'text=Spells', which may match hidden nav dropdowns on D&D Beyond pages. Hardcoded D&D Beyond class names are unreliable (CSS module hashes change)."),
     value: z
       .string()
       .optional()
@@ -682,7 +682,7 @@ server.tool(
   "Search the D&D Beyond item/equipment compendium by name, rarity, or type. Covers mundane weapons (Longsword, Shortbow), armour (Plate, Chain Mail), adventuring gear, and magic items. Filter by rarity='common' to see mundane equipment along with Common magic items (rarity matches exactly, so 'common' excludes Uncommon). Requires login. A source lists one book's entries and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().optional().describe("Partial item name (e.g. 'sword', 'cloak')"),
-    rarity: z.string().optional().describe("Rarity filter (e.g. 'rare', 'legendary', 'uncommon')"),
+    rarity: z.string().optional().describe("Rarity filter (e.g. 'rare', 'legendary', 'uncommon'); matches exact (rare does not include Very Rare)"),
     type: z.string().optional().describe("Item type filter (e.g. 'weapon', 'armor', 'wondrous')"),
     rules_edition: RULES_EDITION_PARAM,
     source: SOURCE_PARAM,

@@ -29,6 +29,14 @@ export function stripHtml(s: string | null | undefined): string {
   return s
     .replace(/<[^>]*>/g, "")
     .replace(/&nbsp;/g, " ")
+    .replace(/&lsquo;/g, "‘")
+    .replace(/&rsquo;/g, "’")
+    .replace(/&ldquo;/g, "“")
+    .replace(/&rdquo;/g, "”")
+    .replace(/&#x([0-9a-f]+);/gi, (m, h: string) => {
+      const code = parseInt(h, 16);
+      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : m;
+    })
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")

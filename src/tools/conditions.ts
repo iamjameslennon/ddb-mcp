@@ -300,9 +300,12 @@ export function getCondition(conditionName: string, rulesEdition: RulesEdition =
 
   // Exact key match (own keys only: "constructor" is not a condition), then
   // partial name match. A blank name matches nothing.
-  const condition = !key ? undefined
-    : (Object.hasOwn(conditions, key) ? conditions[key] : undefined)
-      ?? Object.values(conditions).find(c => c.name.toLowerCase().includes(key));
+  const exact = !key ? undefined : (Object.hasOwn(conditions, key) ? conditions[key] : undefined);
+  const partial = !key || exact ? [] : Object.values(conditions).filter(c => c.name.toLowerCase().includes(key));
+  if (partial.length > 1) {
+    return `Condition "${conditionName}" is ambiguous: ${partial.map(c => c.name).join(", ")} — use the full name.`;
+  }
+  const condition = exact ?? partial[0];
 
   if (!condition) {
     const available = Object.values(conditions).map(c => c.name).join(", ");

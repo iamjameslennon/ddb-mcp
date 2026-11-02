@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { wrapUntrusted } from "../src/utils.js";
+import { wrapUntrusted, stripHtml } from "../src/utils.js";
 
 describe("wrapUntrusted", () => {
   it("wraps content in untrusted delimiters", () => {
@@ -32,5 +32,16 @@ describe("wrapUntrusted", () => {
   it("leaves ordinary angle-bracket text alone", () => {
     const wrapped = wrapUntrusted("attack deals <strong>2d6</strong> damage");
     expect(wrapped).toContain("<strong>2d6</strong>");
+  });
+});
+
+describe("stripHtml entities", () => {
+  it("decodes &rsquo; &lsquo; &ldquo; &rdquo; and hex numeric entities", () => {
+    expect(stripHtml("Player&rsquo;s &lsquo;x&rsquo; &ldquo;y&rdquo;")).toBe("Player\u2019s \u2018x\u2019 \u201cy\u201d");
+    expect(stripHtml("a&#x2019;b &#X41;")).toBe("a\u2019b A");
+  });
+  it("keeps the existing decimal and &amp; handling", () => {
+    expect(stripHtml("A &amp; B &#39;q&#39; &#8217; <b>x</b>")).toBe("A & B 'q' \u2019 x");
+    expect(stripHtml("&amp;rsquo;")).toBe("&rsquo;");
   });
 });

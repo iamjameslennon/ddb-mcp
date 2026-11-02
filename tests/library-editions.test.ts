@@ -46,6 +46,14 @@ describe("librarySourceId", () => {
   it("an empty slug never matches an empty sourceURL", () => {
     expect(librarySourceId({ slug: "", title: null }, INDEX)).toBeNull();
   });
+  it("a description with &rsquo; and a hex entity joins its plain-apostrophe title (carry-over af)", () => {
+    const idx = buildSourceIndex([
+      { id: 1, name: "A", description: "Player&rsquo;s Handbook", sourceURL: null, sourceCategoryId: 24 },
+      { id: 2, name: "B", description: "Xanathar&#x2019;s Guide", sourceURL: null, sourceCategoryId: 26 },
+    ], []);
+    expect(librarySourceId({ slug: "", title: "Player's Handbook" }, idx)).toBe(1);
+    expect(librarySourceId({ slug: "", title: "Xanathar's Guide" }, idx)).toBe(2);
+  });
   it("an empty slug falls through to the title", () => {
     expect(librarySourceId({ slug: "", title: "Player's Handbook (2014)" }, INDEX)).toBe(2);
   });

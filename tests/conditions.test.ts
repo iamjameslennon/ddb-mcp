@@ -47,4 +47,25 @@ describe("getCondition", () => {
     expect(getCondition("exhaust").split("\n")[0]).toBe("**Exhaustion**");
     expect(getCondition("zzz")).toMatch(/^Condition "zzz" not found\.\n\nAvailable conditions: Blinded, /);
   });
+
+  it("an ambiguous partial lists the candidates in table order", () => {
+    for (const ed of ["2024", "2014"] as const) {
+      const out = getCondition("ed", ed);
+      const prefix = 'Condition "ed" is ambiguous: ';
+      expect(out.startsWith(prefix)).toBe(true);
+      expect(out.endsWith(" — use the full name.")).toBe(true);
+      const names = out.slice(prefix.length, -" — use the full name.".length).split(", ");
+      expect(names.length).toBeGreaterThan(1);
+      for (const n of names) expect(n.toLowerCase()).toContain("ed");
+      expect(names).toContain("Charmed");
+      expect(names).toEqual(CONDITION_NAMES.filter(n => n.toLowerCase().includes("ed")));
+    }
+  });
+
+  it("a unique partial still resolves; exact keys win; blank and constructor are not found", () => {
+    expect(getCondition("exhaus").split("\n")[0]).toBe("**Exhaustion**");
+    expect(getCondition("Stunned").split("\n")[0]).toBe("**Stunned**");
+    expect(getCondition("").startsWith('Condition "" not found.')).toBe(true);
+    expect(getCondition("constructor")).toContain("not found");
+  });
 });

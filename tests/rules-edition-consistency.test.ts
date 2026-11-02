@@ -297,6 +297,12 @@ it("character and library tools carry their rules notes", async () => {
   expect(desc("ddb_read_book").endsWith(READ_BOOK_TOOL_NOTE)).toBe(true);
 });
 
+it("the rarity parameter says it matches exactly (carry-over t)", async () => {
+  const { tools } = await client.listTools();
+  const props = (tools.find(t => t.name === "ddb_search_equipment")?.inputSchema.properties ?? {}) as Record<string, { description?: string }>;
+  expect(props.rarity?.description).toContain("exact (rare does not include Very Rare)");
+});
+
 it("the server instructions tell the client about the labels", async () => {
   expect(client.getInstructions()).toBe(SERVER_INSTRUCTIONS);
 });

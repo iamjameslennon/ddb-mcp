@@ -862,7 +862,7 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
   } catch {
     if (homebrew) return HOMEBREW_UNREACHABLE;
     return await o5SearchMonstersSection(params, "unavailable").then(r => withSourceCaveatSection(r, params.source)).catch(
-      () => `Monster search unavailable — DnD Beyond and Open5e both failed.${asker.anonymous ? NOT_LOGGED_IN_SUFFIX : ""}`
+      () => `Monster search unavailable — D&D Beyond and Open5e both failed.${asker.anonymous ? NOT_LOGGED_IN_SUFFIX : ""}`
     );
   }
 }
@@ -1019,7 +1019,7 @@ export async function getMonster(
     if (homebrew) return HOMEBREW_UNREACHABLE;
     const o5Result = await o5GetMonster(monsterName, requested, "unavailable").catch(() => null);
     if (o5Result) return withSourceCaveat(o5Result, source);
-    return `Monster "${monsterName}" not found. DnD Beyond is unavailable and "${monsterName}" is not in the SRD.${asker.anonymous ? NOT_LOGGED_IN_SUFFIX : ""}`;
+    return `Monster "${monsterName}" not found. D&D Beyond is unavailable and "${monsterName}" is not in the SRD.${asker.anonymous ? NOT_LOGGED_IN_SUFFIX : ""}`;
   }
 }
 

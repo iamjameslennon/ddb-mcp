@@ -612,10 +612,10 @@ describe("searchMonsters", () => {
 
   it("a source that contradicts rules_edition adds a note, on get and search", async () => {
     expect(await getMonster("Zombie", { source: "mm-2024", rulesEdition: "2014" }))
-      .toContain('(source "mm-2024" is a 2024 book — rules_edition "2014" was ignored)');
+      .toContain('(source "mm-2024" is a 2024 book — its entries are listed whatever rules_edition says)');
     expect((await searchMonsters({ name: "Zombie", source: "mm-2024", rulesEdition: "2014" })).split("\n")[1])
-      .toBe('(source "mm-2024" is a 2024 book — rules_edition "2014" was ignored)');
-    expect(await getMonster("Zombie", { source: "mm-2024" })).not.toContain("was ignored");
+      .toBe('(source "mm-2024" is a 2024 book — its entries are listed whatever rules_edition says)');
+    expect(await getMonster("Zombie", { source: "mm-2024" })).not.toContain("whatever rules_edition says");
   });
 
   it("filters by source server-side, including source-only searches", async () => {
@@ -1292,7 +1292,7 @@ describe("searchMonsters and locked entries", () => {
 
   it("with a source: the header note for a locked entry, and nothing swapped", async () => {
     const lines = (await searchMonsters({ source: "cos" })).split("\n");
-    expect(lines[1]).toBe('(source "cos" is a 2014 book — rules_edition "2024" was ignored)');
+    expect(lines[1]).toBe('(source "cos" is a 2014 book — its entries are listed whatever rules_edition says)');
     expect(lines[2]).toBe("1 entry isn't available to this account; its stat block falls back to the SRD or shows a restricted notice.");
     expect(lines.find(l => l.startsWith("- **Vampire Spawn**"))).not.toContain("version isn't available");
     expect(lines.join("\n")).not.toContain("shows its");
@@ -1340,7 +1340,7 @@ describe('source: "homebrew"', () => {
       expect(lines[i - 1]).toBe("<untrusted_dndbeyond_content>");
     }
     expect(lines.join("\n")).not.toContain("hidden");
-    expect(lines.join("\n")).not.toContain("was ignored");
+    expect(lines.join("\n")).not.toContain("whatever rules_edition says");
   });
 
   it("searchMonsters with no homebrew match is a plain not-found", async () => {
@@ -1582,9 +1582,9 @@ describe("logged out, monster lookups ask monster-service without credentials", 
     expect(await searchMonsters({ name: "Wolf", source: "mm-2024" })).toContain("could not be honoured");
     // Both failing: the logged-in wording plus a login hint (fix round 1, item 4).
     vi.mocked(o5GetMonster).mockRejectedValueOnce(new Error("down"));
-    expect(await getMonster("Zombie")).toBe('Monster "Zombie" not found. DnD Beyond is unavailable and "Zombie" is not in the SRD. (not logged in — ddb_login may show more)');
+    expect(await getMonster("Zombie")).toBe('Monster "Zombie" not found. D&D Beyond is unavailable and "Zombie" is not in the SRD. (not logged in — ddb_login may show more)');
     vi.mocked(o5SearchMonstersSection).mockRejectedValueOnce(new Error("down"));
-    expect(await searchMonsters({ name: "Zombie" })).toBe("Monster search unavailable — DnD Beyond and Open5e both failed. (not logged in — ddb_login may show more)");
+    expect(await searchMonsters({ name: "Zombie" })).toBe("Monster search unavailable — D&D Beyond and Open5e both failed. (not logged in — ddb_login may show more)");
     expectNoCredentials();
   });
 
@@ -1899,8 +1899,8 @@ describe("both D&D Beyond and Open5e failing, logged out (item 4)", () => {
     goLoggedOut(true);
     vi.mocked(o5GetMonster).mockRejectedValue(new Error("down"));
     vi.mocked(o5SearchMonstersSection).mockRejectedValueOnce(new Error("down"));
-    expect(await getMonster("Zombie")).toBe('Monster "Zombie" not found. DnD Beyond is unavailable and "Zombie" is not in the SRD. (not logged in — ddb_login may show more)');
-    expect(await searchMonsters({ name: "Zombie" })).toBe("Monster search unavailable — DnD Beyond and Open5e both failed. (not logged in — ddb_login may show more)");
+    expect(await getMonster("Zombie")).toBe('Monster "Zombie" not found. D&D Beyond is unavailable and "Zombie" is not in the SRD. (not logged in — ddb_login may show more)');
+    expect(await searchMonsters({ name: "Zombie" })).toBe("Monster search unavailable — D&D Beyond and Open5e both failed. (not logged in — ddb_login may show more)");
     expect(await getMonster("Zombie", { source: "homebrew" })).toBe("Homebrew monster lookup requires login. Run ddb_login first.");
   });
 });

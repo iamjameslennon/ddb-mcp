@@ -211,7 +211,7 @@ describe("source on the spell tools", () => {
     installBasics();
     const lines = (await reference.getSpell("Sleep", "2024", "phb-2014")).split("\n");
     expect(lines[1]).toBe("Rules: 2014 · Player's Handbook (2014)");
-    expect(lines[2]).toBe('(source "phb-2014" is a 2014 book — rules_edition "2024" was ignored)');
+    expect(lines[2]).toBe('(source "phb-2014" is a 2014 book — its entries are listed whatever rules_edition says)');
     expect(lines.join("\n")).toContain("SLEEP 2014");
   });
 

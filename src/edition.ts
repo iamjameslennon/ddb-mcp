@@ -628,7 +628,7 @@ export function renameLine(name2014: string, name2024: string): string {
 /** Monsters: a `source` book whose edition contradicts rules_edition. Null when they agree. */
 export function sourceNote(source: string, bookRuleset: RulesEdition, requested: RulesEdition): string | null {
   if (bookRuleset === requested) return null;
-  return `(source "${source}" is a ${bookRuleset} book — rules_edition "${requested}" was ignored)`;
+  return `(source "${source}" is a ${bookRuleset} book — its entries are listed whatever rules_edition says)`;
 }
 
 /** Inline tag placed immediately after an entry's name: "[2024]", "[edition not stated]", … */

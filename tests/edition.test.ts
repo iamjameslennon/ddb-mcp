@@ -746,8 +746,8 @@ describe("other single-lookup lines", () => {
   });
 
   it("sourceNote: only when the book's edition differs from the request", () => {
-    expect(sourceNote("mm-2024", "2024", "2014")).toBe(`(source "mm-2024" is a 2024 book — rules_edition "2014" was ignored)`);
-    expect(sourceNote("mm-2014", "2014", "2024")).toBe(`(source "mm-2014" is a 2014 book — rules_edition "2024" was ignored)`);
+    expect(sourceNote("mm-2024", "2024", "2014")).toBe(`(source "mm-2024" is a 2024 book — its entries are listed whatever rules_edition says)`);
+    expect(sourceNote("xgte", "2014", "2024")).toBe(`(source "xgte" is a 2014 book — its entries are listed whatever rules_edition says)`);
     expect(sourceNote("mm-2024", "2024", "2024")).toBeNull();
     expect(sourceNote("mm-2014", "2014", "2014")).toBeNull();
   });

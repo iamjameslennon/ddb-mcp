@@ -884,7 +884,7 @@ async function searchOptionList<T>(
     ),
     notFound: spec.notFound,
     fallback: spec.fallback,
-    unavailable: `${spec.plural[0].toUpperCase()}${spec.plural.slice(1)} unavailable — DnD Beyond and Open5e both failed.`,
+    unavailable: `${spec.plural[0].toUpperCase()}${spec.plural.slice(1)} unavailable — D&D Beyond and Open5e both failed.`,
   });
 }
 

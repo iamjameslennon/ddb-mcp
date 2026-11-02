@@ -122,7 +122,7 @@ describe("selectCatalog, flat mode", () => {
     expect(sel.hits.map(h => h.entry)).toEqual([GOBLIN_VGTM]);
     expect(sel.hits[0].label).toBe("[2014]");
     expect(sel.header).toBe("Rules: showing every entry in Volo's Guide to Monsters, each tagged with its edition.");
-    expect(sel.note).toBe('(source "vgtm" is a 2014 book — rules_edition "2024" was ignored)');
+    expect(sel.note).toBe('(source "vgtm" is a 2014 book — its entries are listed whatever rules_edition says)');
     expect(sel.hidden).toBe(0);
   });
 
@@ -166,7 +166,7 @@ describe("lookupCatalog", () => {
     expect(found?.entry).toBe(GOBLIN_VGTM);
     expect(found?.rulesLines).toEqual([
       "Rules: 2014 · Volo's Guide to Monsters",
-      '(source "vgtm" is a 2014 book — rules_edition "2024" was ignored)',
+      '(source "vgtm" is a 2014 book — its entries are listed whatever rules_edition says)',
     ]);
   });
 
@@ -211,7 +211,7 @@ describe("dual-edition entries (adapter.dualEdition, decision 4)", () => {
   it("with a source, the book's edition decides: a 2014 book tags it [2014], a 2024 book [2024]", () => {
     const br2014 = selectCatalog([LONGSWORD], "2024", dual(), INDEX, resolveSource(INDEX, "basic-rules-2014")!);
     expect(br2014.hits.map(h => h.label)).toEqual(["[2014]"]);
-    expect(br2014.note).toBe('(source "basic-rules-2014" is a 2014 book — rules_edition "2024" was ignored)');
+    expect(br2014.note).toBe('(source "basic-rules-2014" is a 2014 book — its entries are listed whatever rules_edition says)');
     const br2024 = selectCatalog([LONGSWORD], "2014", dual(), INDEX, resolveSource(INDEX, "br-2024")!);
     expect(br2024.hits.map(h => h.label)).toEqual(["[2024]"]);
   });
@@ -234,7 +234,7 @@ describe("dual-edition entries (adapter.dualEdition, decision 4)", () => {
     expect(lookupCatalog([LONGSWORD], "Longsword", "2024", dual(), INDEX)?.rulesLines).toEqual(["Rules: 2024 · D&D Beyond Basic Rules"]);
     expect(lookupCatalog([LONGSWORD], "Longsword", "2024", dual(), INDEX, resolveSource(INDEX, "basic-rules-2014")!)?.rulesLines).toEqual([
       "Rules: 2014 · Basic Rules (2014)",
-      '(source "basic-rules-2014" is a 2014 book — rules_edition "2024" was ignored)',
+      '(source "basic-rules-2014" is a 2014 book — its entries are listed whatever rules_edition says)',
     ]);
   });
 

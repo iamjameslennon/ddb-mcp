@@ -240,7 +240,7 @@ export async function fetchCharacter(characterId: string): Promise<CharacterFetc
   if (resp.status === 403) {
     throw new Error(`Character ${characterId} is private and cannot be accessed.`);
   }
-  throw new Error(`DnD Beyond API returned ${resp.status}: ${resp.statusText}`);
+  throw new Error(`D&D Beyond API returned ${resp.status}: ${resp.statusText}`);
 }
 
 /**
