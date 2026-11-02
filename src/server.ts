@@ -12,6 +12,7 @@ import { navigate, interact, getCurrentPageContent } from "./tools/navigate.js";
 import { search } from "./tools/search.js";
 import { listLibrary, readBook, clearLibraryCache } from "./tools/library.js";
 import { searchMonsters, getMonster, clearMonsterCache } from "./tools/monster.js";
+import { clearPublicGameConfig } from "./game-config.js";
 import { rateEncounter, targetEncounterCr } from "./tools/encounter.js";
 import type { Difficulty } from "./tools/encounter.js";
 import { generateTreasure } from "./tools/treasure.js";
@@ -158,6 +159,8 @@ server.tool(
     }
     if (cache === "monsters" || cache === "all") {
       clearMonsterCache();
+      // The public game config (logged-out monster lookups) and its failure memo.
+      clearPublicGameConfig();
       cleared.push("monsters");
     }
     if (cache === "all") {
@@ -324,10 +327,10 @@ server.tool(
 // ─── ddb_search_monsters ──────────────────────────────────────────────────────
 server.tool(
   "ddb_search_monsters",
-  "Search the D&D Beyond monster compendium by name, CR, type, size, or source. Returns a summary list with each entry's source and edition tag. Where a monster exists in both editions, only the rules_edition version is listed and the other is counted as hidden. A source lists every entry in that book, of either edition, and wins over rules_edition; a book of the other edition adds a note. Use ddb_get_monster for the full stat block. Requires login. " + RULES_EDITION_TOOL_NOTE,
+  "Search the D&D Beyond monster compendium by name, CR, type, size, or source. Returns a summary list with each entry's source and edition tag. Where a monster exists in both editions, only the rules_edition version is listed and the other is counted as hidden. A source lists every entry in that book, of either edition, and wins over rules_edition; a book of the other edition adds a note. Use ddb_get_monster for the full stat block. Works logged out (free D&D Beyond content; the rest is listed as not available without logging in), and falls back to the Open5e SRD when D&D Beyond can't be reached. source: \"homebrew\" requires login. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().optional().describe("Partial name to search for (e.g. 'goblin', 'dragon')"),
-    cr: z.number().optional().describe("Challenge Rating filter (e.g. 0.25, 1, 5, 20)"),
+    cr: z.number().optional().describe("Challenge Rating filter (e.g. 0.25, 1, 5, 20). Valid values: 0, 0.125, 0.25, 0.5, 1–30; any other value returns an 'Unknown CR' error"),
     type: z.string().optional().describe("Monster type filter (e.g. 'undead', 'fiend', 'beast')"),
     size: z.string().optional().describe("Size filter (e.g. 'large', 'tiny')"),
     source: z.string().optional()
@@ -353,7 +356,7 @@ server.tool(
 // ─── ddb_get_monster ──────────────────────────────────────────────────────────
 server.tool(
   "ddb_get_monster",
-  "Get the full stat block for a specific monster from the D&D Beyond compendium. Matches by name: exact, then partial, then D&D Beyond's closest hit (with source, only an exact name in that book counts). Shows the rules_edition version, or the other edition when that is the only one found or the only one available to the account (the output says which). A source picks a specific book and wins over rules_edition; a book of the other edition adds a note. Requires login. " + RULES_EDITION_TOOL_NOTE,
+  "Get the full stat block for a specific monster from the D&D Beyond compendium. Matches by name: exact, then partial, then D&D Beyond's closest hit (with source, only an exact name in that book counts). Shows the rules_edition version, or the other edition when that is the only one found or the only one available to the account (the output says which). A source picks a specific book and wins over rules_edition; a book of the other edition adds a note. Works logged out (free D&D Beyond content; locked content shows the SRD text when there is one, else a notice to log in), and falls back to the Open5e SRD when D&D Beyond can't be reached. source: \"homebrew\" requires login. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().min(1).describe("Monster name (e.g. 'Beholder', 'Adult Red Dragon')"),
     source: z.string().optional()

@@ -29,6 +29,7 @@ vi.mock("../src/open5e.js", () => ({
   o5SearchMonstersSection: vi.fn(async () => ({ header: null, body: "O5 SEARCH RESULT", footer: null, hidden: 0, open5e: true })),
   o5GetMonster: vi.fn(async () => "O5 MONSTER RESULT"),
   o5GetMonsterStats: vi.fn(async () => ({ status: "not-found" })),
+  o5GetMonsterInEdition: vi.fn(async () => null),
 }));
 
 import { searchMonsters, getMonster, clearMonsterCache } from "../src/tools/monster.js";

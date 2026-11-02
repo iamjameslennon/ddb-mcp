@@ -22,13 +22,14 @@ vi.mock("../src/open5e.js", () => ({
   o5SearchMonstersSection: vi.fn(async () => ({ header: null, body: "O5 SEARCH RESULT", footer: null, hidden: 0, open5e: true })),
   o5GetMonster: vi.fn(async () => "O5 MONSTER RESULT"),
   o5GetMonsterStats: vi.fn(async () => ({ status: "not-found" })),
+  o5GetMonsterInEdition: vi.fn(async () => null),
 }));
 
 import { getMonster, searchMonsters, getMonsterStats, clearMonsterCache, statBlockText } from "../src/tools/monster.js";
 import { rateEncounter } from "../src/tools/encounter.js";
 import { sessionFetch, hasValidSession, onSessionInvalidated, beginAuthenticatedSession } from "../src/session-fetch.js";
 import { stripHtmlRich } from "../src/utils.js";
-import { o5SearchMonstersSection, o5GetMonster, o5GetMonsterStats } from "../src/open5e.js";
+import { o5SearchMonstersSection, o5GetMonster, o5GetMonsterStats, o5GetMonsterInEdition } from "../src/open5e.js";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 // IDs, source attribution, and categories mirror live monster-service / game
@@ -346,6 +347,8 @@ beforeEach(() => {
   failUnfilteredSearch = false;
   firstPageTotal = null;
   anonymousRequests.length = 0;
+  vi.mocked(o5GetMonsterInEdition).mockResolvedValue(null);
+  vi.mocked(o5GetMonster).mockResolvedValue("O5 MONSTER RESULT");
   failSearchTerms.clear();
   extraMonsters = [];
   listUrls.length = 0;
@@ -1520,6 +1523,8 @@ function goLoggedOut(failMonsterService = false): void {
     const url = String(input);
     anonymousRequests.push({ url, headers: new Headers(init?.headers) });
     if (failMonsterService && url.startsWith("https://monster-service.dndbeyond.com/")) throw new TypeError("fetch failed");
+    // configAvailable = false: the public config is down (a network error, so no retry backoff).
+    if (!configAvailable && url.includes("api/config/json")) throw new TypeError("fetch failed");
     return route(url);
   }));
 }
@@ -1575,11 +1580,11 @@ describe("logged out, monster lookups ask monster-service without credentials", 
     // With a source the Open5e answer carries the caveat, as before.
     expect(await getMonster("Zombie", { source: "mm-2024" })).toContain("could not be honoured");
     expect(await searchMonsters({ name: "Wolf", source: "mm-2024" })).toContain("could not be honoured");
-    // Both failing: the logged-out messages are unchanged.
+    // Both failing: the logged-in wording plus a login hint (fix round 1, item 4).
     vi.mocked(o5GetMonster).mockRejectedValueOnce(new Error("down"));
-    expect(await getMonster("Zombie")).toBe("Monster lookup requires login. Run ddb_login first.");
+    expect(await getMonster("Zombie")).toBe('Monster "Zombie" not found. DnD Beyond is unavailable and "Zombie" is not in the SRD. (not logged in — ddb_login may show more)');
     vi.mocked(o5SearchMonstersSection).mockRejectedValueOnce(new Error("down"));
-    expect(await searchMonsters({ name: "Zombie" })).toBe("Monster search requires login. Run ddb_login first.");
+    expect(await searchMonsters({ name: "Zombie" })).toBe("Monster search unavailable — DnD Beyond and Open5e both failed. (not logged in — ddb_login may show more)");
     expectNoCredentials();
   });
 
@@ -1714,5 +1719,199 @@ describe("statBlockText's bold scan matches the regex it replaced", () => {
       const html = Array.from({ length: 1 + rand(14) }, () => parts[rand(parts.length)]).join("");
       expect(statBlockText(html), JSON.stringify(html)).toBe(statBlockTextOld(html));
     }
+  });
+});
+
+// ── Task 13 fix round 1 (owner rulings) ──────────────────────────────────────
+
+describe("logged out: locked content says to log in (item 1)", () => {
+  // Locked in both editions' sense: no twin, not in the SRD, restricted stat block.
+  const SEALED_HORROR = monster({ id: 8_000_800, name: "Sealed Horror", sourceId: 147, sources: sources(147), stats: [], actionsDescription: "" });
+  const LOGGED_OUT_NOTE = "*⚠️ Not logged in — run ddb_login if your account owns this content.*";
+
+  beforeEach(() => {
+    extraMonsters = [SEALED_HORROR];
+    unownedIds.add(SEALED_HORROR.id as number);
+    vi.mocked(o5GetMonster).mockResolvedValue(null);
+  });
+
+  it("the restricted block keeps the Rules line and book, with the logged-out note", async () => {
+    goLoggedOut();
+    const lines = (await getMonster("Sealed Horror")).split("\n");
+    expect(lines.slice(0, 2)).toEqual(["# Sealed Horror", "Rules: 2024 · Monster Manual (2024)"]);
+    expect(lines).toContain("**Source** Monster Manual [mm-2024]");
+    expect(lines.at(-1)).toBe(LOGGED_OUT_NOTE);
+    expect(lines.join("\n")).not.toContain("requires ownership");
+  });
+
+  it("logged in, the ownership note is unchanged", async () => {
+    const out = await getMonster("Sealed Horror");
+    expect(out.split("\n").at(-1)).toBe("*⚠️ Full stat block requires ownership of this content on D&D Beyond. Ability scores and actions may be missing.*");
+  });
+
+  it("the search's locked note says to log in", async () => {
+    goLoggedOut();
+    const out = await searchMonsters({ name: "Sealed Horror" });
+    expect(out).toContain("1 entry isn't available without logging in; its stat block falls back to the SRD or shows a restricted notice. Run ddb_login if your account owns it.");
+    expect(out).not.toContain("available to this account");
+    vi.mocked(hasValidSession).mockReturnValue(true);
+    vi.mocked(beginAuthenticatedSession).mockImplementation((async () => ({ fetch: (url: string) => sessionFetch(url) })) as never);
+    setupFetch();
+    expect(await searchMonsters({ name: "Sealed Horror" })).toContain("1 entry isn't available to this account; its stat block falls back to the SRD or shows a restricted notice.");
+  });
+});
+
+describe("logged out: a locked requested edition prefers the requested edition's SRD text (item 3)", () => {
+  const HOUND_2024 = monster({ id: 8_000_810, name: "Grave Hound", sourceId: 147, sources: sources(147), challengeRatingId: 5 });
+  const HOUND_2014 = monster({ id: 8_000_811, name: "Grave Hound", isLegacy: true, sourceId: 1, sources: sources(1), challengeRatingId: 4, actionsDescription: "<p>2014 HOUND</p>" });
+
+  beforeEach(() => {
+    extraMonsters = [HOUND_2024, HOUND_2014];
+    unownedIds.add(HOUND_2024.id as number);
+  });
+
+  it("get: SRD 5.2 has it, so its Open5e text is shown instead of the 2014 swap", async () => {
+    vi.mocked(o5GetMonsterInEdition).mockResolvedValue("O5 SRD 5.2 GRAVE HOUND");
+    goLoggedOut();
+    expect(await getMonster("Grave Hound")).toBe("O5 SRD 5.2 GRAVE HOUND");
+    expect(o5GetMonsterInEdition).toHaveBeenCalledWith("Grave Hound", "2024", "unavailable");
+  });
+
+  it("get: SRD 5.2 lacks it, so the swap stays, with the logged-out reason", async () => {
+    goLoggedOut();
+    const out = await getMonster("Grave Hound");
+    expect(out).toContain("Rules: 2014 · Basic Rules (2014)\n(not logged in, so the 2024 version isn't available — 2014 text shown; run ddb_login if your account owns it)");
+    expect(out).toContain("2014 HOUND");
+  });
+
+  it("get logged in: the swap and its wording are unchanged, and the SRD is not asked", async () => {
+    vi.mocked(o5GetMonsterInEdition).mockResolvedValue("O5 SRD 5.2 GRAVE HOUND");
+    const out = await getMonster("Grave Hound");
+    expect(out).toContain("Rules: 2014 · Basic Rules (2014)\n(the 2024 version isn't available to this account — 2014 text shown)");
+    expect(o5GetMonsterInEdition).not.toHaveBeenCalled();
+  });
+
+  it("search: SRD 5.2 has it, so the 2024 entry is listed (locked), not swapped", async () => {
+    vi.mocked(o5GetMonsterInEdition).mockResolvedValue("O5 SRD 5.2 GRAVE HOUND");
+    goLoggedOut();
+    const out = await searchMonsters({ name: "Grave Hound" });
+    expect(out.split("\n")).toContain("- **Grave Hound** [2024] — Monster Manual [mm-2024] — CR 1, Medium Undead, AC 8, 22 HP");
+    expect(out).toContain("1 entry isn't available without logging in");
+    expect(out).not.toContain("[2014]");
+    expect(out).not.toContain("shows its");
+  });
+
+  it("search: SRD 5.2 lacks it, so the swap stays, with logged-out wording", async () => {
+    goLoggedOut();
+    const lines = (await searchMonsters({ name: "Grave Hound" })).split("\n");
+    expect(lines).toContain("- **Grave Hound** [2014] — Basic Rules (2014) [basic-rules-2014] — CR 1/2, Medium Undead, AC 8, 22 HP (2024 version isn't available without logging in)");
+    expect(lines.at(-1)).toBe("1 entry shows its 2014 version because the 2024 version isn't available without logging in — run ddb_login if your account owns it.");
+  });
+
+  it("search: the SRD 5.2 entry failing a filter its 2014 twin passes is counted as hidden, not listed", async () => {
+    vi.mocked(o5GetMonsterInEdition).mockResolvedValue("O5 SRD 5.2 GRAVE HOUND");
+    goLoggedOut();
+    const out = await searchMonsters({ name: "Grave Hound", cr: 0.5 });
+    expect(out).not.toContain("**Grave Hound**");
+    expect(out).toContain('1 2014 version hidden — rules_edition: "2014" shows it.');
+  });
+
+  it("getMonsterStats never guesses: logged out it takes the requested edition's CR from the list, locked or not", async () => {
+    goLoggedOut();
+    expect(await getMonsterStats("Grave Hound")).toMatchObject({ status: "found", name: "Grave Hound", crValue: 1, xp: 200, info: { ruleset: "2024" } });
+    expect(o5GetMonsterInEdition).not.toHaveBeenCalled();
+  });
+});
+
+describe("config unavailable (item 2)", () => {
+  beforeEach(() => { configAvailable = false; });
+
+  it.each([
+    ["logged in", false], ["logged out", true],
+  ])("%s: a cr, type or size search goes to Open5e as unavailable", async (_label, loggedOut) => {
+    if (loggedOut) goLoggedOut();
+    for (const params of [{ name: "Zombie", cr: 0.25 }, { name: "Zombie", type: "undead" }, { name: "Zombie", size: "medium" }]) {
+      vi.mocked(o5SearchMonstersSection).mockClear();
+      expect(await searchMonsters(params)).toBe("O5 SEARCH RESULT");
+      expect(o5SearchMonstersSection).toHaveBeenCalledWith(params, "unavailable");
+    }
+  });
+
+  it("logged out, a plain get and a plain search go to Open5e as unavailable, never (id:N) or type N", async () => {
+    goLoggedOut();
+    expect(await getMonster("Zombie")).toBe("O5 MONSTER RESULT");
+    expect(o5GetMonster).toHaveBeenCalledWith("Zombie", "2024", "unavailable");
+    expect(await searchMonsters({ name: "Zombie" })).toBe("O5 SEARCH RESULT");
+    expect(o5SearchMonstersSection).toHaveBeenCalledWith({ name: "Zombie" }, "unavailable");
+  });
+
+  it("logged in, a plain get still shows the D&D Beyond stat block, as before", async () => {
+    expect(await getMonster("Zombie")).toContain("**Challenge** (id:3)");
+  });
+
+  it("getMonsterStats falls to Open5e with no CR table, logged in or out", async () => {
+    await getMonsterStats("Wolf");
+    expect(o5GetMonsterStats).toHaveBeenCalledWith("Wolf", "2024");
+    vi.mocked(o5GetMonsterStats).mockClear();
+    goLoggedOut();
+    await getMonsterStats("Wolf");
+    expect(o5GetMonsterStats).toHaveBeenCalledWith("Wolf", "2024");
+  });
+});
+
+describe("both D&D Beyond and Open5e failing, logged out (item 4)", () => {
+  it("uses the logged-in wording plus a login hint; homebrew keeps its login message", async () => {
+    goLoggedOut(true);
+    vi.mocked(o5GetMonster).mockRejectedValue(new Error("down"));
+    vi.mocked(o5SearchMonstersSection).mockRejectedValueOnce(new Error("down"));
+    expect(await getMonster("Zombie")).toBe('Monster "Zombie" not found. DnD Beyond is unavailable and "Zombie" is not in the SRD. (not logged in — ddb_login may show more)');
+    expect(await searchMonsters({ name: "Zombie" })).toBe("Monster search unavailable — DnD Beyond and Open5e both failed. (not logged in — ddb_login may show more)");
+    expect(await getMonster("Zombie", { source: "homebrew" })).toBe("Homebrew monster lookup requires login. Run ddb_login first.");
+  });
+});
+
+describe("partial-scan flag when page 1 under-reports its total (item 6)", () => {
+  it("a full first page whose total says 100 keeps the partial note", async () => {
+    extraMonsters = Array.from({ length: 158 }, (_, i) => monster({
+      id: 3_200_000 + i, name: `Lagging ${String(i).padStart(3, "0")}`, sourceId: 232, sources: sources(232),
+    }));
+    firstPageTotal = 100;
+    const out = await searchMonsters({ source: "rthw", cr: 0.25 });
+    expect(out).toContain("checked 100 of 100+");
+    expect(out).toContain("Only the first 100 of 100+ were checked against the CR/type/size filters");
+  });
+
+  it("a complete short scan stays plain", async () => {
+    const out = await searchMonsters({ source: "rthw", cr: 0.25 });
+    expect(out).not.toContain("+");
+    expect(out).not.toContain("Only the first");
+  });
+});
+
+describe("test gaps", () => {
+  it("a CR-less candidate keeps getMonsterStats ambiguous or not-found, never found", async () => {
+    // The 2024 entry has a CR id the config lacks; its 2014 twin has one.
+    extraMonsters = [
+      monster({ id: 8_000_820, name: "Blank Wyrm", sourceId: 147, sources: sources(147), challengeRatingId: 99 }),
+      monster({ id: 8_000_821, name: "Blank Wyrm", isLegacy: true, sourceId: 1, sources: sources(1), challengeRatingId: 5 }),
+    ];
+    const exact = await getMonsterStats("Blank Wyrm");
+    expect(exact.status).not.toBe("found");
+    // A partial name spanning it and another creature: ambiguous, the CR-less one as unknown.
+    extraMonsters.push(monster({ id: 8_000_822, name: "Blank Wyrmling", sourceId: 147, sources: sources(147), challengeRatingId: 4 }));
+    expect(await getMonsterStats("Blank")).toEqual({ status: "ambiguous", candidates: [
+      { name: "Blank Wyrmling", crValue: 0.5, xp: 100 }, { name: "Blank Wyrm", crValue: null, xp: null },
+    ] });
+  });
+
+  it("logged in, then logged out with expired cookies (same session generation): the logged-in cache is not read", async () => {
+    await getMonster("Zombie");
+    vi.mocked(beginAuthenticatedSession).mockClear();
+    goLoggedOut();
+    const out = await getMonster("Zombie");
+    expect(out.split("\n")[1]).toBe("Rules: 2024 · Monster Manual (2024)");
+    expect(anonymousRequests.some(r => r.url.includes("/v1/Monster?search=Zombie"))).toBe(true);
+    expect(anonymousRequests.some(r => /\/v1\/Monster\/\d+$/.test(r.url))).toBe(true);
+    expectNoCredentials();
   });
 });

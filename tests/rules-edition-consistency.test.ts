@@ -345,3 +345,16 @@ it("error and not-found answers are exempt", () => {
   expect(EXEMPT.test('Spell "Zzz" not found in the compendium. Try ddb_search_spells with a partial name.')).toBe(true);
   expect(EXEMPT.test("No spells found matching the criteria.")).toBe(true);
 });
+
+it("ddb_clear_cache drops the public game config and its failure memo (logged-out monster lookups)", async () => {
+  useMode("open5e");
+  const configRequests = () => vi.mocked(fetch).mock.calls.filter(c => String(c[0]).includes("api/config/json")).length;
+  await client.callTool({ name: "ddb_get_monster", arguments: { name: "Goblin" } });
+  expect(configRequests()).toBe(1);
+  // The failed public-config fetch is remembered: no second request.
+  await client.callTool({ name: "ddb_get_monster", arguments: { name: "Goblin" } });
+  expect(configRequests()).toBe(1);
+  await client.callTool({ name: "ddb_clear_cache", arguments: { cache: "monsters" } });
+  await client.callTool({ name: "ddb_get_monster", arguments: { name: "Goblin" } });
+  expect(configRequests()).toBe(2);
+});

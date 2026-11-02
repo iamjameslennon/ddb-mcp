@@ -543,6 +543,9 @@ const REASON_TEXT = {
   // ddb_get_monster: the requested edition's stat block is locked to the account, the other edition's isn't.
   "locked-2024": "(the 2024 version isn't available to this account — 2014 text shown)",
   "locked-2014": "(the 2014 version isn't available to this account — 2024 text shown)",
+  // The same swap when logged out: anonymous D&D Beyond answers lock everything but free content.
+  "logged-out-locked-2024": "(not logged in, so the 2024 version isn't available — 2014 text shown; run ddb_login if your account owns it)",
+  "logged-out-locked-2014": "(not logged in, so the 2014 version isn't available — 2024 text shown; run ddb_login if your account owns it)",
 } as const;
 /** Appended to the description of every tool that takes rules_edition. */
 export const RULES_EDITION_TOOL_NOTE =
@@ -664,36 +667,64 @@ export function searchFooter(requested: RulesEdition, hidden: number): string | 
 
 // ── Locked content (monsters, owner decisions 2026-10-18) ─────────────────────
 
+// `loggedOut`: the monster tools asked D&D Beyond anonymously (owner ruling
+// 2026-11-02), so "this account" would be false; the text says to log in instead.
+
 const LOCKED_LINE_SUFFIX: Record<LockedReason, string> = {
   "locked-2024": "(2024 version isn't available to this account)",
   "locked-2014": "(2014 version isn't available to this account)",
+};
+const LOGGED_OUT_LOCKED_LINE_SUFFIX: Record<LockedReason, string> = {
+  "locked-2024": "(2024 version isn't available without logging in)",
+  "locked-2014": "(2014 version isn't available without logging in)",
 };
 
 export function isLockedReason(reason: string | undefined): reason is LockedReason {
   return reason === "locked-2024" || reason === "locked-2014";
 }
 
+/** The reason line for a locked swap shown while logged out. */
+export function loggedOutReason(reason: LockedReason): RulesLineReason {
+  return reason === "locked-2024" ? "logged-out-locked-2024" : "logged-out-locked-2014";
+}
+
 /** Appended after HP on a search line that shows the other edition because the requested one is locked. */
-export function lockedLineSuffix(reason: LockedReason): string {
-  return LOCKED_LINE_SUFFIX[reason];
+export function lockedLineSuffix(reason: LockedReason, loggedOut = false): string {
+  return (loggedOut ? LOGGED_OUT_LOCKED_LINE_SUFFIX : LOCKED_LINE_SUFFIX)[reason];
 }
 
 /** Printed just before the search footer when selected entries were swapped; null when none were. */
-export function lockedSwapSummary(requested: RulesEdition, swapped: number): string | null {
+export function lockedSwapSummary(requested: RulesEdition, swapped: number, loggedOut = false): string | null {
   if (swapped <= 0) return null;
   const shown = requested === "2024" ? "2014" : "2024";
+  if (loggedOut) {
+    return swapped === 1
+      ? `1 entry shows its ${shown} version because the ${requested} version isn't available without logging in — run ddb_login if your account owns it.`
+      : `${swapped} entries show their ${shown} versions because the ${requested} versions aren't available without logging in — run ddb_login if your account owns them.`;
+  }
   return swapped === 1
     ? `1 entry shows its ${shown} version because the ${requested} version isn't available to this account.`
     : `${swapped} entries show their ${shown} versions because the ${requested} versions aren't available to this account.`;
 }
 
 /** Under the search header when selected entries are locked to the account; null when none are. */
-export function lockedEntriesNote(locked: number): string | null {
+export function lockedEntriesNote(locked: number, loggedOut = false): string | null {
   if (locked <= 0) return null;
+  if (loggedOut) {
+    return locked === 1
+      ? "1 entry isn't available without logging in; its stat block falls back to the SRD or shows a restricted notice. Run ddb_login if your account owns it."
+      : `${locked} entries aren't available without logging in; their stat blocks fall back to the SRD or show a restricted notice. Run ddb_login if your account owns them.`;
+  }
   return locked === 1
     ? "1 entry isn't available to this account; its stat block falls back to the SRD or shows a restricted notice."
     : `${locked} entries aren't available to this account; their stat blocks fall back to the SRD or show a restricted notice.`;
 }
+
+/** Ends a restricted monster stat block shown while logged out, in place of the ownership note. */
+export const LOGGED_OUT_RESTRICTED_NOTE = "*⚠️ Not logged in — run ddb_login if your account owns this content.*";
+
+/** Appended to a monster tool's both-failed message while logged out (D&D Beyond and Open5e both failed). */
+export const NOT_LOGGED_IN_SUFFIX = " (not logged in — ddb_login may show more)";
 
 /** ddb_get_monster with a source whose pick is locked: where an available version is. */
 export function availableElsewhereHint(book: string, source: string): string {

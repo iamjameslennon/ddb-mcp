@@ -26,7 +26,7 @@ vi.mock("../src/source-snapshot.js", () => ({
   ],
 }));
 
-import { getGameConfig, getPublicGameConfig, getSourceIndex, peekSourceIndex, CONFIG_FETCH_TIMEOUT_MS } from "../src/game-config.js";
+import { getGameConfig, getPublicGameConfig, clearPublicGameConfig, getSourceIndex, peekSourceIndex, CONFIG_FETCH_TIMEOUT_MS } from "../src/game-config.js";
 import { sessionFetch, anonymousFetch, assertSessionCurrent, captureSession } from "../src/session-fetch.js";
 
 const response = (body: unknown, status = 200) =>
@@ -568,6 +568,19 @@ describe("getPublicGameConfig (logged-out monster lookups)", () => {
     S.hooks.forEach(hook => hook());
     vi.mocked(anonymousFetch).mockResolvedValue(response({ data: { monsterTypes: [] } }));
     expect(await getPublicGameConfig()).toBeNull();
+  });
+
+  it("clearPublicGameConfig (ddb_clear_cache) drops the cache and the failure memo", async () => {
+    vi.mocked(anonymousFetch).mockResolvedValue(response({}, 503));
+    expect(await getPublicGameConfig()).toBeNull();
+    clearPublicGameConfig();
+    vi.mocked(anonymousFetch).mockResolvedValue(response({ data: LIVE }));
+    const cfg = await getPublicGameConfig();
+    expect(cfg).not.toBeNull();
+    expect(anonymousFetch).toHaveBeenCalledTimes(2);
+    clearPublicGameConfig();
+    await getPublicGameConfig();
+    expect(anonymousFetch).toHaveBeenCalledTimes(3);
   });
 
   it("is dropped by the session-transition hook", async () => {

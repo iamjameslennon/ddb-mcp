@@ -20,6 +20,7 @@ import {
   classifyEdition, selectByEdition, lookupByName, groupAndSelect, monsterTiebreak, twinNames, twinAliases,
   normalizeName, dedupeById, isEdition, rulesLine, renameLine, sourceNote, editionTag, searchHeader, searchFooter,
   isLockedReason, lockedLineSuffix, lockedSwapSummary, lockedEntriesNote, availableElsewhereHint,
+  loggedOutReason, LOGGED_OUT_RESTRICTED_NOTE, NOT_LOGGED_IN_SUFFIX,
   HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO, homebrewLoginRequired, homebrewUnreachable,
   type EditionInfo, type RulesEdition, type RulesLineReason, type SelectionReason, type SourceIndex,
 } from "../edition.js";
@@ -29,7 +30,7 @@ import {
 } from "../source-filter.js";
 import { TtlCache } from "../cache.js";
 import { wrapUntrusted, stripHtmlRich } from "../utils.js";
-import { o5SearchMonstersSection, o5GetMonster, o5GetMonsterStats, type MonsterStatsResult } from "../open5e.js";
+import { o5SearchMonstersSection, o5GetMonster, o5GetMonsterStats, o5GetMonsterInEdition, type MonsterStatsResult } from "../open5e.js";
 import { renderSection, plainSection, sourceFraming, withSourceCaveatSection, type SearchSection } from "./edition-search.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -393,7 +394,7 @@ const MAX_FILTER_SCAN = 600;
  */
 async function fetchMonsterPages(
   search: string, sourceIds: number[], limit: number, asker: Asker,
-): Promise<{ data: DdbMonster[]; total: number; access: AccessMap; snapshot: SessionSnapshot }> {
+): Promise<{ data: DdbMonster[]; total: number; access: AccessMap; snapshot: SessionSnapshot; incomplete: boolean }> {
   // One snapshot for the whole scan: each page checks only its own request,
   // so pages fetched either side of an account change would otherwise merge.
   const snapshot = captureSession();
@@ -410,7 +411,11 @@ async function fetchMonsterPages(
   // actually seen, can exceed the first page's, and "checked N of M" must not
   // read N > M.
   const total = Math.max(data.length, ...[first, ...rest].map(page => page.pagination.total));
-  return { data, total, access, snapshot };
+  // Known incomplete even when the totals agree with what was seen: a full
+  // first page whose total says it was the only page (the total lags), or a
+  // scan that reached `limit`.
+  const incomplete = ((first.data?.length ?? 0) >= PAGE_SIZE && first.pagination.total <= PAGE_SIZE) || data.length >= limit;
+  return { data, total, access, snapshot, incomplete };
 }
 
 /** Fetch (or serve from cache) one monster's stat block. */
@@ -467,6 +472,8 @@ interface StatBlockExtras {
   hint?: string | null;
   /** Overrides the entry's own classification (source: "homebrew"). */
   info?: EditionInfo;
+  /** Asked anonymously: a restricted block says to log in, not that content needs owning. */
+  loggedOut?: boolean;
 }
 
 function formatStatBlock(
@@ -576,7 +583,9 @@ function formatStatBlock(
 
   // accessType 4 = restricted — basic stats returned but ability scores and actions may be empty.
   if (accessType === 4 && (!m.stats?.length || !m.actionsDescription)) {
-    lines.push("\n---\n*⚠️ Full stat block requires ownership of this content on D&D Beyond. Ability scores and actions may be missing.*");
+    lines.push(extras.loggedOut
+      ? `\n---\n${LOGGED_OUT_RESTRICTED_NOTE}`
+      : "\n---\n*⚠️ Full stat block requires ownership of this content on D&D Beyond. Ability scores and actions may be missing.*");
   }
 
   return lines.join("\n");
@@ -633,6 +642,13 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
 
   try {
   const config = await configFor(asker);
+  // No config means no CR, type or size tables: a filter can't be applied (the
+  // CR filter used to be skipped, type and size to match nothing), and logged
+  // out a stat block or line would read "(id:N)" / "type N". Answer from Open5e
+  // as "unavailable" instead (owner ruling 2026-11-02).
+  if (!config && (asker.anonymous || params.cr !== undefined || params.type || params.size)) {
+    throw new Error("Game config unavailable");
+  }
   // No extra request: getGameConfig() serves this call from its cache (or its failure cache).
   const index = await getSourceIndex();
   const info = (m: DdbMonster) => classifyEdition(m, index);
@@ -659,12 +675,12 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
   // A name search takes the service's cap per spelling, so twin grouping sees
   // as much of each group as one request can; a bare browse keeps 20.
   const take = searchTerm || params.source ? PAGE_SIZE : 20;
-  const fetchTerm = async (term: string): Promise<{ data: DdbMonster[]; total: number; access: AccessMap }> => {
+  const fetchTerm = async (term: string): Promise<{ data: DdbMonster[]; total: number; access: AccessMap; incomplete: boolean }> => {
     if (clientFilters) return fetchMonsterPages(term, sourceIds, MAX_FILTER_SCAN, asker);
     const page = await fetchMonsterList(term, take, { sourceIds, asker });
     const access: AccessMap = new Map();
     mergeAccess(access, page);
-    return { data: page.data ?? [], total: page.pagination.total, access };
+    return { data: page.data ?? [], total: page.pagination.total, access, incomplete: false };
   };
   // Every spelling of the term's twin group (Thug and Tough are one creature,
   // but a search for one never returns the other), under one snapshot, as in
@@ -691,7 +707,10 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
   const checked = fetched.length;
   // Never "checked N of M" with N > M: the service's totals can lag its pages.
   total = Math.max(total, checked);
-  const partialScan = clientFilters && checked < total;
+  // A scan known to be incomplete although the totals agree prints "M+".
+  const incomplete = clientFilters && results.some(r => r?.incomplete);
+  const partialScan = clientFilters && (checked < total || incomplete);
+  const totalText = checked < total ? String(total) : `${total}+`;
   // A name search asks for the service's cap per spelling; when a spelling has
   // more matches than that, its twins beyond the cap were never seen.
   const nameCapped = Boolean(searchTerm) && !clientFilters
@@ -726,10 +745,27 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
     });
     monsters = picked.selected.map(s => ({ m: s.entry, info: s.info, reason: s.reason }));
     hidden = picked.hidden;
+    if (asker.anonymous) {
+      // Logged out, a locked requested edition is listed rather than swapped
+      // when its SRD has the creature: its stat block is that SRD text (owner
+      // ruling 2026-11-02). Judged against the filters like any requested pick:
+      // failing one while the swapped twin passes counts it as hidden.
+      const kept = await Promise.all(monsters.map(async (row): Promise<Row | null> => {
+        if (!isLockedReason(row.reason)) return row;
+        const wanted = requestedPick(fetched, row.m, requested, info, monsterTiebreak(index));
+        if (!wanted || !(await srdHas(wanted.name, requested))) return row;
+        if (!passes(wanted)) {
+          hidden++;
+          return null;
+        }
+        return { m: wanted, info: info(wanted) };
+      }));
+      monsters = kept.filter((row): row is Row => row !== null);
+    }
   }
 
   if (monsters.length === 0) {
-    const scope = partialScan ? ` (checked the first ${checked} of ${total} entries)` : "";
+    const scope = partialScan ? ` (checked the first ${checked} of ${totalText} entries)` : "";
     if (homebrew) {
       return searchTerm
         ? `No homebrew monsters found matching "${searchTerm}"${scope}.`
@@ -778,13 +814,13 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
   }
   // The note and the swap summary count every selected entry, as the header
   // total does, not just the lines shown.
-  const lockedNote = lockedEntriesNote(monsters.filter(r => isLockedIn(access, r.m.id)).length);
+  const lockedNote = lockedEntriesNote(monsters.filter(r => isLockedIn(access, r.m.id)).length, asker.anonymous);
   if (lockedNote) lines.push(lockedNote);
 
   // Totals count the result after hiding: the fetched entries the selection
   // dropped (hidden twins, same-edition duplicates) come off the service total.
   const countText = clientFilters
-    ? `${shown.length} shown of ${monsters.length} matching; checked ${checked} of ${total} ${matchedBy}`
+    ? `${shown.length} shown of ${monsters.length} matching; checked ${checked} of ${partialScan ? totalText : total} ${matchedBy}`
     : `${shown.length} shown, ${total - (checked - monsters.length)} total ${matchedBy}`;
   const capNote = nameCapped ? ` (the first ${PAGE_SIZE} matches per name were checked)` : "";
   lines.push(`**Monster Search** (${countText})${capNote}\n`);
@@ -804,7 +840,7 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
       sourceStr += `, reprinted in ${sourceLabel(index, via)}`;
     }
     let line = `- **${m.name}** ${editionTag(mInfo)}${tagStr} — ${sourceStr} — CR ${crStr}, ${size} ${typeName}, AC ${m.armorClass}, ${m.averageHitPoints} HP`;
-    if (isLockedReason(reason)) line += ` ${lockedLineSuffix(reason)}`;
+    if (isLockedReason(reason)) line += ` ${lockedLineSuffix(reason, asker.anonymous)}`;
     // Homebrew names are user-authored — delimit them, as getMonster does for
     // homebrew stat blocks. Fail closed: only an explicitly official entry is left plain.
     lines.push(m.isHomebrew === false ? line : wrapUntrusted(line));
@@ -815,21 +851,19 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
   }
   if (partialScan) {
     lines.push(homebrew
-      ? `\n*Only the first ${checked} of ${total} were checked for homebrew entries — add a name to narrow the search.*`
-      : `\n*Only the first ${checked} of ${total} were checked against the CR/type/size filters — add a name or source to narrow the search.*`);
+      ? `\n*Only the first ${checked} of ${totalText} were checked for homebrew entries — add a name to narrow the search.*`
+      : `\n*Only the first ${checked} of ${totalText} were checked against the CR/type/size filters — add a name or source to narrow the search.*`);
   } else if (!clientFilters && checked < total) {
     lines.push(`\n*Refine your search with a name term for more specific results.*`);
   }
-  const summary = lockedSwapSummary(requested, monsters.filter(r => isLockedReason(r.reason)).length);
+  const summary = lockedSwapSummary(requested, monsters.filter(r => isLockedReason(r.reason)).length, asker.anonymous);
   if (summary) lines.push(summary);
 
   return { header, body: lines.join("\n"), footer: searchFooter(requested, hidden), hidden };
   } catch {
     if (homebrew) return HOMEBREW_UNREACHABLE;
     return await o5SearchMonstersSection(params, "unavailable").then(r => withSourceCaveatSection(r, params.source)).catch(
-      () => asker.anonymous
-        ? "Monster search requires login. Run ddb_login first."
-        : "Monster search unavailable — DnD Beyond and Open5e both failed."
+      () => `Monster search unavailable — DnD Beyond and Open5e both failed.${asker.anonymous ? NOT_LOGGED_IN_SUFFIX : ""}`
     );
   }
 }
@@ -850,6 +884,8 @@ export async function getMonster(
 
   try {
     const config = await configFor(asker);
+    // Logged out without the public config, a stat block would read "(id:N)" / "type N": use Open5e.
+    if (!config && asker.anonymous) throw new Error("Game config unavailable");
     // No extra request: getGameConfig() serves this call from its cache (or its failure cache).
     const index = await getSourceIndex();
     const info = (m: DdbMonster) => classifyEdition(m, index);
@@ -880,7 +916,7 @@ export async function getMonster(
         ?? own.filter(m => normalizeName(m.name).includes(query)).sort(tiebreak)[0];
       if (!pick) return `No homebrew monster found matching "${monsterName}".`;
       detail = await fetchMonsterDetail(pick.id, asker);
-      extras = { info: HOMEBREW_INFO };
+      extras = { info: HOMEBREW_INFO, loggedOut: asker.anonymous };
     } else if (source) {
       // With a source, require an exact (twin) name: a partial match would
       // quietly turn "Zombie" in mm-2014 into Beholder Zombie. Near names are offered instead.
@@ -913,6 +949,7 @@ export async function getMonster(
         hint: isRestricted(detail)
           ? await availableElsewhere(monsterName, picked.entry, sourceIds, index, asker, snapshot).catch(() => null)
           : null,
+        loggedOut: asker.anonymous,
       };
     } else {
       const lookup = (available: (m: DdbMonster) => boolean) => lookupByName(candidates, monsterName, requested, {
@@ -936,6 +973,15 @@ export async function getMonster(
         if (o5Result) return o5Result;
         return `Monster "${monsterName}" not found. Try ddb_search_monsters with a partial name.`;
       }
+      // Logged out, a locked requested edition with SRD text shows that text
+      // rather than the other edition (owner ruling 2026-11-02).
+      if (asker.anonymous && isLockedReason(found.reason)) {
+        const wanted = lookup(() => true)?.entry;
+        if (wanted && info(wanted).ruleset === requested) {
+          const srd = await o5GetMonsterInEdition(wanted.name, requested, "unavailable").catch(() => null);
+          if (srd) return srd;
+        }
+      }
       detail = await fetchMonsterDetail(found.entry.id, asker);
       // The detail check is the fallback when the map lacked the id or called a
       // restricted pick available: try the next candidate in the same order,
@@ -951,7 +997,11 @@ export async function getMonster(
           }
         }
       }
-      extras = { reason: found.reason, renamed: found.renamed };
+      extras = {
+        reason: asker.anonymous && isLockedReason(found.reason) ? loggedOutReason(found.reason) : found.reason,
+        renamed: found.renamed,
+        loggedOut: asker.anonymous,
+      };
 
       // Still an empty stat block (unowned content): fall back to Open5e.
       if (isRestricted(detail)) {
@@ -969,8 +1019,7 @@ export async function getMonster(
     if (homebrew) return HOMEBREW_UNREACHABLE;
     const o5Result = await o5GetMonster(monsterName, requested, "unavailable").catch(() => null);
     if (o5Result) return withSourceCaveat(o5Result, source);
-    if (asker.anonymous) return "Monster lookup requires login. Run ddb_login first.";
-    return `Monster "${monsterName}" not found. DnD Beyond is unavailable and "${monsterName}" is not in the SRD.`;
+    return `Monster "${monsterName}" not found. DnD Beyond is unavailable and "${monsterName}" is not in the SRD.${asker.anonymous ? NOT_LOGGED_IN_SUFFIX : ""}`;
   }
 }
 
@@ -1010,6 +1059,24 @@ function renamedFromQuery(query: string, shownName: string): { name2014: string;
     : { name2014: shownName, name2024: typed };
 }
 
+/**
+ * The requested edition's entry of `row`'s twin group among `fetched`, locked
+ * or not; undefined when the group has none of that edition.
+ */
+function requestedPick(
+  fetched: DdbMonster[], row: DdbMonster, requested: RulesEdition,
+  info: (m: DdbMonster) => EditionInfo, tiebreak: (a: DdbMonster, b: DdbMonster) => number,
+): DdbMonster | undefined {
+  const key = monsterTwin(row.name);
+  const picked = selectByEdition(fetched.filter(m => monsterTwin(m.name) === key), requested, info, tiebreak);
+  return picked && info(picked.entry).ruleset === requested ? picked.entry : undefined;
+}
+
+/** Whether `edition`'s SRD document has exactly this creature. An Open5e failure counts as no. */
+async function srdHas(name: string, edition: RulesEdition): Promise<boolean> {
+  return (await o5GetMonsterInEdition(name, edition, "unavailable").catch(() => null)) !== null;
+}
+
 /** Defined beside o5GetMonsterStats, which returns it too. */
 export type { MonsterStatsResult };
 
@@ -1035,20 +1102,29 @@ export async function getMonsterStats(name: string, opts: { rulesEdition?: Rules
   const asker = askerNow();
   try {
     const config = await configFor(asker);
+    // No CR table, no CR: Open5e answers instead.
+    if (!config) throw new Error("Game config unavailable");
     // No extra request: getGameConfig() serves this call from its cache (or its failure cache).
     const index = await getSourceIndex();
     const info = (m: DdbMonster) => classifyEdition(m, index);
     const tiebreak = monsterTiebreak(index);
-    const crById = new Map((config?.challengeRatings ?? []).map(cr => [cr.id, cr]));
-    const official = (await fetchCandidates(name, 20, undefined, asker)).data
-      .filter(m => m.isHomebrew === false && crById.has(m.challengeRatingId));
+    const crById = new Map(config.challengeRatings.map(cr => [cr.id, cr]));
+    // No access map: the requested edition's entry is picked whether or not it
+    // is locked (its list entry carries its CR), so logged out a locked 2024
+    // entry gives its own CR, never its free 2014 twin's.
+    const official = (await fetchCandidates(name, 20, undefined, asker)).data.filter(m => m.isHomebrew === false);
     const stats = (m: DdbMonster) => {
-      const cr = crById.get(m.challengeRatingId)!;
-      return { name: m.name, crValue: cr.value, xp: cr.xp };
+      const cr = crById.get(m.challengeRatingId);
+      return cr ? { name: m.name, crValue: cr.value, xp: cr.xp } : { name: m.name, crValue: null, xp: null };
     };
+    // The edition is picked over every name match first; a pick whose CR the
+    // config doesn't know is never replaced by its other-edition twin (fail
+    // closed, as o5GetMonsterStats does).
     const found = (group: DdbMonster[]): MonsterStatsResult | null => {
       const picked = selectByEdition(group, requested, info, tiebreak);
-      return picked ? { status: "found", ...stats(picked.entry), info: info(picked.entry) } : null;
+      if (!picked) return null;
+      const s = stats(picked.entry);
+      return s.crValue !== null && s.xp !== null ? { status: "found", name: s.name, crValue: s.crValue, xp: s.xp, info: info(picked.entry) } : null;
     };
 
     const key = monsterTwin(name);
@@ -1056,6 +1132,8 @@ export async function getMonsterStats(name: string, opts: { rulesEdition?: Rules
     if (exact.length) {
       const result = found(exact);
       if (result) return result;
+      // The exact creature's CR is unknown: no partial guess on D&D Beyond.
+      throw new Error("Unknown CR");
     }
 
     const query = normalizeName(name);
@@ -1072,9 +1150,13 @@ export async function getMonsterStats(name: string, opts: { rulesEdition?: Rules
       const candidates = [...groups.values()]
         .map(group => selectByEdition(group, requested, info, tiebreak))
         .filter(picked => picked !== null)
-        .map(picked => stats(picked.entry))
-        .sort((a, b) => a.crValue - b.crValue || a.name.localeCompare(b.name));
-      return { status: "ambiguous", candidates };
+        .map(picked => stats(picked.entry));
+      // Unknown CRs are listed ("CR unknown"), last; all unknown falls through to Open5e.
+      if (candidates.some(c => c.crValue !== null)) {
+        candidates.sort((a, b) => (a.crValue === null ? 1 : 0) - (b.crValue === null ? 1 : 0)
+          || (a.crValue ?? 0) - (b.crValue ?? 0) || a.name.localeCompare(b.name));
+        return { status: "ambiguous", candidates };
+      }
     }
   } catch {
     // fall through to Open5e

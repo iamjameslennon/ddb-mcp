@@ -769,6 +769,19 @@ export async function o5GetMonster(name: string, rulesEdition: RulesEdition, ori
   return hit ? formatO5Monster(hit, origin) : null;
 }
 
+/**
+ * The stat block of exactly `name` (by twin name) in `edition`'s SRD document
+ * only, or null when that document lacks it. A logged-out D&D Beyond lookup
+ * whose requested edition is locked asks this before swapping to the other
+ * edition (owner ruling 2026-11-02: SRD 5.2 text beats a 2014 swap).
+ */
+export async function o5GetMonsterInEdition(name: string, edition: RulesEdition, origin: Open5eOrigin): Promise<string | null> {
+  const hit = await o5Lookup<O5Creature>(["creatures"], name, edition);
+  if (!hit || hit.entry.edition !== edition) return null;
+  const twin = o5TwinNameFor("creatures");
+  return twin(hit.entry.record.name) === twin(name) ? formatO5Monster(hit, origin) : null;
+}
+
 // ── EQUIPMENT ─────────────────────────────────────────────────────────────────
 
 interface O5MagicItem extends O5Record {

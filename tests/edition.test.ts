@@ -6,6 +6,7 @@ import {
   selectByEdition, lookupByName, groupAndSelect,
   rulesLine, reasonLine, renameLine, RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, PARTY_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, editionTag, searchHeader, open5eSearchHeader, searchFooter, ambiguityMessage,
   lockedLineSuffix, lockedSwapSummary, lockedEntriesNote, availableElsewhereHint, HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO,
+  loggedOutReason, LOGGED_OUT_RESTRICTED_NOTE, NOT_LOGGED_IN_SUFFIX,
   characterMainEdition, characterTag, characterRulesLine, classifyForEdition,
   type CategoryRecord, type CharacterEditionEntry, type CharacterEntryKind,
   type EditionInfo, type EditionMarkers, type Ruleset, type SourceRecord,
@@ -1089,6 +1090,21 @@ describe("locked-content labels", () => {
     expect(lockedEntriesNote(1)).toBe("1 entry isn't available to this account; its stat block falls back to the SRD or shows a restricted notice.");
     expect(lockedEntriesNote(4)).toBe("4 entries aren't available to this account; their stat blocks fall back to the SRD or show a restricted notice.");
     expect(lockedEntriesNote(0)).toBeNull();
+  });
+
+  it("logged out: every locked label says to log in instead of naming the account", () => {
+    expect(lockedLineSuffix("locked-2024", true)).toBe("(2024 version isn't available without logging in)");
+    expect(lockedLineSuffix("locked-2014", true)).toBe("(2014 version isn't available without logging in)");
+    expect(lockedSwapSummary("2024", 1, true)).toBe("1 entry shows its 2014 version because the 2024 version isn't available without logging in — run ddb_login if your account owns it.");
+    expect(lockedSwapSummary("2014", 2, true)).toBe("2 entries show their 2024 versions because the 2014 versions aren't available without logging in — run ddb_login if your account owns them.");
+    expect(lockedEntriesNote(1, true)).toBe("1 entry isn't available without logging in; its stat block falls back to the SRD or shows a restricted notice. Run ddb_login if your account owns it.");
+    expect(lockedEntriesNote(3, true)).toBe("3 entries aren't available without logging in; their stat blocks fall back to the SRD or show a restricted notice. Run ddb_login if your account owns them.");
+    expect(rulesLine({ ruleset: "2014", book: "Basic Rules (2014)" }, { reason: loggedOutReason("locked-2024") }))
+      .toBe("Rules: 2014 · Basic Rules (2014)\n(not logged in, so the 2024 version isn't available — 2014 text shown; run ddb_login if your account owns it)");
+    expect(rulesLine({ ruleset: "2024", book: "Monster Manual (2024)" }, { reason: loggedOutReason("locked-2014") }))
+      .toBe("Rules: 2024 · Monster Manual (2024)\n(not logged in, so the 2014 version isn't available — 2024 text shown; run ddb_login if your account owns it)");
+    expect(LOGGED_OUT_RESTRICTED_NOTE).toBe("*⚠️ Not logged in — run ddb_login if your account owns this content.*");
+    expect(NOT_LOGGED_IN_SUFFIX).toBe(" (not logged in — ddb_login may show more)");
   });
 
   it("available-elsewhere hint", () => {
