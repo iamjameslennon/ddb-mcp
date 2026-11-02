@@ -126,6 +126,15 @@ describe("search (ddb_search_site)", () => {
     expect(renderSection(section)).toBe(await asString());
   });
 
+  it("keeps an Open5e detail block or listed body whose entry name starts 'No … found' (minors B item 3)", async () => {
+    sections.items.mockResolvedValue({ header: null, body: "No Mercy Found\nRules: 2024 · SRD 5.2 (Open5e fallback — not found on D&D Beyond)\nA gentle blade.", footer: null, hidden: 0, open5e: true });
+    sections.feats.mockResolvedValue({ header: null, body: "- **No Quarter found** [2024]", footer: null, hidden: 0, open5e: true });
+    const text = await search("x", "all", "2024");
+    expect(text).toContain("## Items");
+    expect(text).toContain("No Mercy Found");
+    expect(text).toContain("## Feats");
+  });
+
   it("a D&D Beyond section that lists nothing but hides 3 twins adds 3 to the combined footer", async () => {
     sections.spells.mockResolvedValue(ddb("**Spell Search** (1 found)"));
     sections.items.mockResolvedValue({ header: H, body: "No items found matching the criteria.", footer: searchFooter("2024", 3), hidden: 3 });

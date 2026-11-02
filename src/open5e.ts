@@ -202,9 +202,12 @@ function createO5Namer(
   const tableKey = (name: string): string => renamer(foldPunctuation(name));
   const spellings = new Map(pairs.flatMap(pair => pair.map(spelling => [o5Folded(spelling), spelling] as const)));
   const names2024 = new Set(pairs.filter(([name2014, name2024]) => o5Folded(name2014) !== o5Folded(name2024)).map(([, name2024]) => o5Folded(name2024)));
-  const twin: TwinNamer = Object.assign((name: string) => fold(tableKey(name)), { spell: (normalized: string) => spellings.get(o5Folded(normalized)) });
   const tableSide = (name: string): RulesEdition | undefined =>
     tableKey(name) !== o5Folded(name) ? "2014" : names2024.has(o5Folded(name)) ? "2024" : undefined;
+  const twin: TwinNamer = Object.assign((name: string) => fold(tableKey(name)), {
+    spell: (normalized: string) => spellings.get(o5Folded(normalized)),
+    side: tableSide,
+  });
   const words = (name: string): string => strip(o5Folded(name)).split(/\s+/).filter(Boolean).sort().join(" ");
   return { twin, pairs, tableKey, tableSide, words };
 }
@@ -279,6 +282,11 @@ export function o5EquipmentKey(name: string): string {
  * design.
  */
 function guardedNamer(namer: O5Namer, records: ReadonlyArray<{ name: string; edition: RulesEdition }>): O5Namer {
+  return withSplit(namer, splitKeys(namer, records));
+}
+
+/** The twin keys under which one document holds two rename-table keys. */
+function splitKeys(namer: O5Namer, records: ReadonlyArray<{ name: string; edition: RulesEdition }>): ReadonlySet<string> {
   const tableKeys = new Map<string, Set<string>>();
   const split = new Set<string>();
   for (const { name, edition } of records) {
@@ -289,12 +297,42 @@ function guardedNamer(namer: O5Namer, records: ReadonlyArray<{ name: string; edi
     tableKeys.set(at, seen);
     if (seen.size > 1) split.add(key);
   }
+  return split;
+}
+
+function withSplit(namer: O5Namer, split: ReadonlySet<string>): O5Namer {
   if (split.size === 0) return namer;
   const twin: TwinNamer = Object.assign((name: string) => {
     const key = namer.twin(name);
     return split.has(key) ? `${key}\n${namer.tableKey(name)}` : key;
-  }, { spell: namer.twin.spell });
+  }, { spell: namer.twin.spell, side: namer.twin.side });
   return { ...namer, twin };
+}
+
+const O5_EQUIPMENT_ENDPOINTS: readonly O5Endpoint[] = ["magicitems", "weapons", "armor", "items"];
+const EQUIPMENT_SPLIT_KEY = "o5:equipment-split";
+
+/**
+ * The same-document split over every equipment endpoint's records in both
+ * documents, computed once and cached with the documents (1 h, dropped by
+ * `clearOpen5eCache()`). A search (magicitems + items) and a get (all four)
+ * therefore group by the same keys.
+ */
+async function equipmentSplit(): Promise<ReadonlySet<string>> {
+  const cached = open5eCache.get(EQUIPMENT_SPLIT_KEY) as ReadonlySet<string> | undefined;
+  if (cached) return cached;
+  const loads = (["2024", "2014"] as const).flatMap(edition => O5_EQUIPMENT_ENDPOINTS.map(async endpoint =>
+    (await loadO5Document<O5Record>(endpoint, edition)).map(record => ({ name: record.name, edition }))));
+  const split = splitKeys(O5_NAMERS.item, (await Promise.all(loads)).flat());
+  open5eCache.set(EQUIPMENT_SPLIT_KEY, split);
+  return split;
+}
+
+/** A call's guarded namer: equipment kinds use the shared split over all four endpoints, others split over the call's own records. */
+async function o5GuardedNamer(endpoints: readonly O5Endpoint[], entries: ReadonlyArray<{ record: { name: string }; edition: RulesEdition }>): Promise<O5Namer> {
+  const namer = o5NamerFor(endpoints);
+  if (namer === O5_NAMERS.item) return withSplit(namer, await equipmentSplit());
+  return guardedNamer(namer, entries.map(e => ({ name: e.record.name, edition: e.edition })));
 }
 
 /** The equipment twin key over a set of records (each with its document's edition), with the same-document guard. */
@@ -329,7 +367,7 @@ async function o5Entries<T extends O5Record>(endpoints: readonly O5Endpoint[], r
 /** A single lookup: exact twin name across both documents, else a partial match, then the requested edition's entry of that group. */
 async function o5Lookup<T extends O5Record>(endpoints: readonly O5Endpoint[], name: string, requested: RulesEdition): Promise<O5Hit<T> | null> {
   const entries = await o5Entries<T>(endpoints, requested);
-  const namer = guardedNamer(o5NamerFor(endpoints), entries.map(e => ({ name: e.record.name, edition: e.edition })));
+  const namer = await o5GuardedNamer(endpoints, entries);
   const query = o5Folded(name);
   const byEndpoint = o5Tiebreak<T>(endpoints);
   const found = lookupByName(entries, name, requested, {
@@ -394,7 +432,7 @@ async function o5Select<T extends O5Record>(
   opts: { name?: string; passes?: (e: O5Entry<T>) => boolean },
 ): Promise<{ selected: Array<{ entry: O5Entry<T>; reason?: SelectionReason }>; hidden: number }> {
   const entries = await o5Entries<T>(endpoints, requested);
-  const namer = guardedNamer(o5NamerFor(endpoints), entries.map(e => ({ name: e.record.name, edition: e.edition })));
+  const namer = await o5GuardedNamer(endpoints, entries);
   const query = opts.name ? o5Folded(opts.name) : "";
   const byEndpoint = o5Tiebreak<T>(endpoints);
   const { selected, hidden } = groupAndSelect(entries, requested, {

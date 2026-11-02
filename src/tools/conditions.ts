@@ -14,7 +14,7 @@
  * the Coast LLC, licensed under CC-BY-4.0.
  */
 
-import { rulesLine, type RulesEdition } from "../edition.js";
+import { cappedList, rulesLine, type RulesEdition } from "../edition.js";
 
 interface Condition {
   name: string;
@@ -303,7 +303,7 @@ export function getCondition(conditionName: string, rulesEdition: RulesEdition =
   const exact = !key ? undefined : (Object.hasOwn(conditions, key) ? conditions[key] : undefined);
   const partial = !key || exact ? [] : Object.values(conditions).filter(c => c.name.toLowerCase().includes(key));
   if (partial.length > 1) {
-    return `Condition "${conditionName}" is ambiguous: ${partial.map(c => c.name).join(", ")} — use the full name.`;
+    return `Condition "${conditionName}" is ambiguous: ${cappedList(partial.map(c => c.name))} — use the full name.`;
   }
   const condition = exact ?? partial[0];
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { wrapUntrusted, stripHtml } from "../src/utils.js";
+import { wrapUntrusted, stripHtml, stripHtmlRich } from "../src/utils.js";
 
 describe("wrapUntrusted", () => {
   it("wraps content in untrusted delimiters", () => {
@@ -48,5 +48,24 @@ describe("stripHtml entities", () => {
   it("keeps the existing decimal and &amp; handling", () => {
     expect(stripHtml("A &amp; B &#39;q&#39; &#8217; <b>x</b>")).toBe("A & B 'q' \u2019 x");
     expect(stripHtml("&amp;rsquo;")).toBe("&rsquo;");
+  });
+});
+
+describe("stripHtml one-pass entities (minors B item 1)", () => {
+  it("decodes once: a hex-encoded ampersand does not start a second entity", () => {
+    expect(stripHtml("&#x26;amp;")).toBe("&amp;");
+    expect(stripHtml("&#x26;lt;")).toBe("&lt;");
+    expect(stripHtml("&#38;lt;")).toBe("&lt;");
+  });
+  it("decodes astral decimal entities and rejects lone surrogates", () => {
+    expect(stripHtml("a&#128512;b")).toBe("a\u{1F600}b");
+    expect(stripHtml("a&#xD800;b")).toBe("a&#xD800;b");
+    expect(stripHtml("a&#55357;b")).toBe("a&#55357;b");
+  });
+  it("keeps every named entity it decoded before", () => {
+    expect(stripHtml("x&nbsp;&lsquo;&rsquo;&ldquo;&rdquo;&lt;&gt;&quot;&ndash;&mdash;&#39;")).toBe("x ‘’“”<>\"–—'");
+  });
+  it("stripHtmlRich also rejects lone surrogates and decodes astral decimals", () => {
+    expect(stripHtmlRich("a&#128512;b&#xDC00;")).toBe("a\u{1F600}b&#xDC00;");
   });
 });

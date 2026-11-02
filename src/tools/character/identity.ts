@@ -80,8 +80,8 @@ export function computeIdentity(core: CoreStats): Identity {
   return {
     charName: str(char.name),
     rulesLine: editions.rulesLine,
-    // A lineage with no species object has no definition to classify: untagged.
-    race: char.race ? editions.named(deriveRace(char), char.race) : deriveRace(char),
+    // A lineage with no (or a nameless) species object has no definition to classify: untagged.
+    race: str(obj(char.race).fullName || obj(char.race).baseName) ? editions.named(deriveRace(char), char.race) : deriveRace(char),
     classLine: buildClassLine(classes, editions),
     totalLevel,
     background: editions.named(str(obj(bgDef).name), bgDef),

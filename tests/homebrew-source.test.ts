@@ -209,6 +209,24 @@ describe("source: homebrew on the catalog tools", () => {
   });
 });
 
+describe("homebrew catalog paths never fetch the game config (minors B item 7)", () => {
+  const configCalls = () => fetchMock.mock.calls.filter(c => String(c[0]).includes("/api/config/json"));
+
+  it("spell search and get, item search and get, and option lists skip the config fetch", async () => {
+    installSpells();
+    await reference.searchSpells({ source: "homebrew" });
+    await reference.getSpell("Moon Beam", "2024", "homebrew");
+    installGameData({
+      items: [item(2, "Moon Blade", { isHomebrew: true })],
+      feats: [], races: [], classes: [], backgrounds: [],
+    });
+    await reference.searchItems({ source: "homebrew" });
+    await reference.getItem("Moon Blade", "2024", "homebrew");
+    await reference.searchFeats({ source: "homebrew" });
+    expect(configCalls()).toHaveLength(0);
+  });
+});
+
 describe("homebrew messages", () => {
   it("keep the monster wording", () => {
     expect(homebrewLoginRequired("monster")).toBe("Homebrew monster lookup requires login. Run ddb_login first.");

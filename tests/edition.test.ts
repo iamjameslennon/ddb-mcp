@@ -4,7 +4,7 @@ import {
   normalizeName, createTwinNamer, twinNames, twinAliases, classOwnerTwinKey, editionSourceId, entrySourceIds, bookChoiceNote, alsoInLine,
   dedupeById, dedupeByKey, definitionTiebreak, monsterTiebreak,
   selectByEdition, lookupByName, groupAndSelect,
-  rulesLine, reasonLine, renameLine, RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, PARTY_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, editionTag, searchHeader, open5eSearchHeader, searchFooter, ambiguityMessage,
+  cappedList, rulesLine, reasonLine, renameLine, RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, PARTY_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, editionTag, searchHeader, open5eSearchHeader, searchFooter, ambiguityMessage,
   lockedLineSuffix, lockedSwapSummary, lockedEntriesNote, availableElsewhereHint, HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO,
   loggedOutReason, LOGGED_OUT_RESTRICTED_NOTE, NOT_LOGGED_IN_SUFFIX,
   characterMainEdition, characterTag, characterRulesLine, classifyForEdition,
@@ -479,6 +479,24 @@ describe("lookupByName", () => {
   ];
   const opts = { name: (c: E) => c.name, info: infoOf, tiebreak: definitionTiebreak, twinName: twin };
   const find = (q: string, requested: "2024" | "2014" = "2024", extra = {}) => lookupByName(SPELLS, q, requested, { ...opts, ...extra });
+
+  it("a same-edition match orients the rename by the namer's own sides, not the twin key (minors B item 9)", () => {
+    // A twin key that is neither name (sorted words), as Open5e's equipment key is, with the table's sides.
+    const base = createTwinNamer([["Crossbow, hand", "Hand Crossbow"]]);
+    const folded = Object.assign((name: string) => normalizeName(name).replace(/[^a-z ]/g, " ").split(/\s+/).filter(Boolean).sort().join(" "), {
+      spell: base.spell,
+      side: (name: string) => (normalizeName(name) === "hand crossbow" ? "2024" : normalizeName(name) === "crossbow, hand" ? "2014" : undefined),
+    }) as typeof base;
+    // Both records sit in one edition, so the edition cannot orient the pair.
+    const gear = [e(20, "Crossbow, hand", "2024"), e(21, "Hand Crossbow", "2024")];
+    const hit = lookupByName(gear, "Crossbow, hand", "2024", {
+      name: (c: E) => c.name, info: infoOf, twinName: folded,
+      tiebreak: (a: E, b: E) => b.id - a.id, // returns Hand Crossbow (21)
+    });
+    expect(hit?.entry.id).toBe(21);
+    expect(hit?.renamed).toEqual({ name2014: "Crossbow, hand", name2024: "Hand Crossbow" });
+  });
+
 
   it("exact: 2024 by default, 2014 on request", () => {
     expect(find("sleep")).toEqual({ entry: SPELLS[3] });
@@ -1129,5 +1147,14 @@ describe("entrySourceIds with malformed sources", () => {
   it("treats a non-array sources as empty", () => {
     expect(entrySourceIds({ sourceId: 5, sources: {} } as unknown as EditionMarkers)).toEqual([5]);
     expect(entrySourceIds({ sources: "145" } as unknown as EditionMarkers)).toEqual([]);
+  });
+});
+
+describe("cappedList (minors B item 10)", () => {
+  it("names at most AMBIGUITY_LIST_CAP items, then counts the rest", () => {
+    const names = Array.from({ length: 23 }, (_, i) => `N${i}`);
+    expect(cappedList(names.slice(0, 3))).toBe("N0, N1, N2");
+    expect(cappedList(names.slice(0, 20))).toBe(names.slice(0, 20).join(", "));
+    expect(cappedList(names)).toBe(`${names.slice(0, 20).join(", ")}, and 3 more`);
   });
 });

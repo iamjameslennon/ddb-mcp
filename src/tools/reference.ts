@@ -105,6 +105,20 @@ async function resolveSourceParam(source: string | undefined, kind: HomebrewKind
   return resolveSource(index, source) ?? { reply: unknownSourceError(index, source, GENERIC_SOURCE_HINT) };
 }
 
+/**
+ * Starts the source-index fetch alongside a catalog load, except under
+ * `source: "homebrew"`: that mode never reads the index, so it triggers no
+ * game-config request.
+ */
+function startIndex(source: ResolvedSource | "homebrew" | undefined): ReturnType<typeof getSourceIndex> | undefined {
+  return source === "homebrew" ? undefined : getSourceIndex();
+}
+
+/** The started index, else the never-fetching snapshot index (homebrew mode only). */
+async function readIndex(started: ReturnType<typeof getSourceIndex> | undefined) {
+  return started ? await started : peekSourceIndex();
+}
+
 /** What the homebrew messages call a catalog's entries: singular for the login text, plural for the rest. */
 interface HomebrewKind { kind: string; plural: string }
 
@@ -451,7 +465,7 @@ export async function searchSpellsSection(params: SpellSearchParams): Promise<Se
   if (isSourceReply(source)) return plainSection(source.reply);
   const requested = params.rulesEdition ?? "2024";
   // Started with the load, not after it (getSourceIndex never rejects).
-  const indexPromise = getSourceIndex();
+  const indexPromise = startIndex(source);
   let store;
   try {
     store = await loadSpellCompendium();
@@ -463,7 +477,7 @@ export async function searchSpellsSection(params: SpellSearchParams): Promise<Se
       throw err;
     }
   }
-  const index = await indexPromise;
+  const index = await readIndex(indexPromise);
   const nameQuery = params.name ? normalizeName(params.name) : "";
   const schoolQuery = params.school?.toLowerCase();
 
@@ -517,7 +531,7 @@ export async function searchSpellsSection(params: SpellSearchParams): Promise<Se
 export async function getSpell(spellName: string, rulesEdition: RulesEdition = "2024", source?: string): Promise<string> {
   const resolved = await resolveSourceParam(source, SPELL_KIND);
   if (isSourceReply(resolved)) return resolved.reply;
-  const indexPromise = getSourceIndex();
+  const indexPromise = startIndex(resolved);
   let store;
   try {
     store = await loadSpellCompendium();
@@ -531,7 +545,7 @@ export async function getSpell(spellName: string, rulesEdition: RulesEdition = "
     }
     throw err;
   }
-  const index = await indexPromise;
+  const index = await readIndex(indexPromise);
   const found = lookupCatalog(spellList(store), spellName, rulesEdition, SPELL_ADAPTER, index, resolved);
 
   if (!found) {
@@ -587,13 +601,14 @@ let itemCompendium: DdbItem[] | null = null;
 /**
  * One entry per definition. An id alone would drop every later item type that
  * reuses it. Live, every item has a unique definitionKey; without one,
- * entityTypeId:id; without both, the id with the normalized name and
- * filterType, so distinct items sharing an id stay apart.
+ * entityTypeId:id; without both, the id with the normalized name, filterType,
+ * rarity and magic, so distinct items sharing an id stay apart. Only a null or
+ * undefined definitionKey is absent (an empty string is a key, as with `??`).
  */
 function itemKey(i: DdbItem): string {
-  if (i.definitionKey) return i.definitionKey;
+  if (i.definitionKey != null) return i.definitionKey;
   if (i.entityTypeId != null) return `${i.entityTypeId}:${i.id}`;
-  return `?:${i.id}:${normalizeName(i.name ?? "")}:${(i.filterType ?? "").toLowerCase()}`;
+  return `?:${i.id}:${normalizeName(i.name ?? "")}:${(i.filterType ?? "").toLowerCase()}:${(i.rarity ?? "").toLowerCase()}:${i.magic === true}`;
 }
 
 function dedupeItems(items: readonly DdbItem[]): DdbItem[] {
@@ -732,7 +747,7 @@ export async function searchItemsSection(params: ItemSearchParams): Promise<Sear
 export async function getItem(itemName: string, rulesEdition: RulesEdition = "2024", source?: string): Promise<string> {
   const resolved = await resolveSourceParam(source, ITEM_KIND);
   if (isSourceReply(resolved)) return resolved.reply;
-  const indexPromise = getSourceIndex();
+  const indexPromise = startIndex(resolved);
   let items;
   try {
     items = await loadItemCompendium();
@@ -744,7 +759,7 @@ export async function getItem(itemName: string, rulesEdition: RulesEdition = "20
     } catch { /* fall through to the compendium's error */ }
     throw err;
   }
-  const index = await indexPromise;
+  const index = await readIndex(indexPromise);
   const found = lookupCatalog(items, itemName, rulesEdition, ITEM_ADAPTER, index, resolved);
 
   if (!found) {
@@ -803,7 +818,7 @@ async function searchCatalogList<T>(
   if (isSourceReply(source)) return plainSection(source.reply);
   const requested = params.rulesEdition ?? "2024";
 
-  const indexPromise = getSourceIndex();
+  const indexPromise = startIndex(source);
   let all: T[];
   try {
     all = await spec.load();
@@ -819,7 +834,7 @@ async function searchCatalogList<T>(
     return withSourceCaveatSection(fallback, params.source);
   }
 
-  const index = await indexPromise;
+  const index = await readIndex(indexPromise);
   const { hits, hidden, header, note } = selectCatalog(all, requested, spec.adapter, index, source, { bookNotes: params.bookNotes });
   if (hits.length === 0) {
     if (source === "homebrew") return plainSection(homebrewNoMatch(spec.homebrew.plural));

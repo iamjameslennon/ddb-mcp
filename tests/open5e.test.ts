@@ -1029,6 +1029,27 @@ describe("Open5e equipment twin keys (M1–M3 and six verified pairs)", () => {
       }
     });
 
+    it("the guard splits over all four equipment endpoints, so a search and a get agree (minors B item 8)", async () => {
+      const base = o5Record<Record<string, unknown>>("srd-2024", "magicitems", "Ammunition (+1)");
+      const rec = (doc: "srd-2024" | "srd-2014", name: string, slug: string) => ({ ...base, key: `${doc}_${slug}`, name, document: { key: doc, name: doc } });
+      // 2024 files "Potions of Healing" in magicitems (in a search's scope) and "Potion of Healing" in armor (only a get's scope).
+      stubFetch(o5FixtureFetch({
+        "srd-2024/magicitems": [rec("srd-2024", "Potions of Healing", "potions-of-healing")],
+        "srd-2024/armor": [rec("srd-2024", "Potion of Healing", "potion-of-healing")],
+        "srd-2014/magicitems": [rec("srd-2014", "Potion of Healing", "potion-of-healing")],
+        // The real gear lists also hold potions; replace them so only the records above are in play.
+        "srd-2024/items": [rec("srd-2024", "Rope", "rope")],
+        "srd-2014/items": [rec("srd-2014", "Rope", "rope")],
+      }));
+      const search = await o5SearchItems({ name: "healing" }, "unavailable");
+      const lines = search.split("\n").filter(l => /Potions? of Healing/.test(l));
+      expect(lines.some(l => l.includes("Potions of Healing") && l.includes("[2024]"))).toBe(true);
+      expect(lines.some(l => l.includes("Potion of Healing") && !l.includes("Potions") && l.includes("[2014]"))).toBe(true);
+      // The get splits the same way: the rarity table is its own entry, not the 2014 potion's twin.
+      const get = await o5GetEquipment("Potions of Healing", "2014", "unavailable");
+      expect(get).toContain("(no 2014 version found");
+    });
+
     it("the same-document guard keeps the 126 pairs and parts only Potion of Healing from Potions of Healing", () => {
       const records = (["srd-2014", "srd-2024"] as const).flatMap(doc =>
         names(doc).map(name => ({ name, edition: (doc === "srd-2014" ? "2014" : "2024") as RulesEdition })));

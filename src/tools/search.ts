@@ -19,10 +19,13 @@ const CATEGORY_LABELS: Record<SpecificCategory, string> = {
   feats: "Feats",
 };
 
-// Each underlying search returns its own "no results" sentence. Detect them in a
-// section's body (never its header) so we can omit empty sections in the "all"
-// rollup, e.g. Open5e's item fallback: "No items found matching the criteria (SRD only)."
-const EMPTY_RESULT_PATTERN = /^no\s+[\w\s]+?\s+found/i;
+// Each underlying search returns its own "no results" sentence, a full
+// sentence ending in a period. Detect it in the first line of a section's body
+// (never its header) so we can omit empty sections in the "all" rollup, e.g.
+// Open5e's item fallback: "No items found matching the criteria (SRD only)."
+// A listed line or a detail block whose entry name merely starts "No … found"
+// has no closing period on that line, so it is kept.
+const EMPTY_RESULT_PATTERN = /^no\s+[\w\s]+?\s+found[^\n]*\.(?:\n|$)/i;
 
 export async function search(
   query: string,

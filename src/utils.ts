@@ -21,30 +21,35 @@ export function wrapIfHomebrew(text: string, isHomebrew: boolean | null | undefi
   return isHomebrew === true ? wrapUntrusted(text) : text;
 }
 
+const ENTITY_RE = /&(#\d+|#x[0-9a-f]+|[a-z]+);/gi;
+
+/** A numeric reference's character, or null when it is not a valid scalar value (zero, past U+10FFFF, or a lone surrogate). */
+function codePointChar(ref: string): string | null {
+  const code = ref[1] === "x" || ref[1] === "X" ? parseInt(ref.slice(2), 16) : parseInt(ref.slice(1), 10);
+  if (!Number.isFinite(code) || code <= 0 || code > 0x10ffff) return null;
+  if (code >= 0xd800 && code <= 0xdfff) return null;
+  return String.fromCodePoint(code);
+}
+
+/** Decode entities in one pass (an entity's output is never decoded again). Unknown or invalid references stay as written. */
+function decodeOnePass(s: string, named: Record<string, string>): string {
+  return s.replace(ENTITY_RE, (match, ref: string) => {
+    if (ref[0] !== "#") return named[ref.toLowerCase()] ?? match;
+    return codePointChar(ref) ?? match;
+  });
+}
+
+const STRIP_ENTITIES: Record<string, string> = {
+  nbsp: " ", lsquo: "‘", rsquo: "’", ldquo: "“", rdquo: "”",
+  amp: "&", lt: "<", gt: ">", quot: '"', ndash: "–", mdash: "—",
+};
+
 /**
- * Strip HTML tags and decode common HTML entities from a string.
+ * Strip HTML tags and decode common HTML entities from a string, in one pass.
  */
 export function stripHtml(s: string | null | undefined): string {
   if (!s) return "";
-  return s
-    .replace(/<[^>]*>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&lsquo;/g, "‘")
-    .replace(/&rsquo;/g, "’")
-    .replace(/&ldquo;/g, "“")
-    .replace(/&rdquo;/g, "”")
-    .replace(/&#x([0-9a-f]+);/gi, (m, h: string) => {
-      const code = parseInt(h, 16);
-      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : m;
-    })
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&ndash;/g, "–")
-    .replace(/&mdash;/g, "—")
-    .replace(/&#\d+;/g, (m) => String.fromCharCode(parseInt(m.slice(2, -1))))
+  return decodeOnePass(s.replace(/<[^>]*>/g, ""), STRIP_ENTITIES)
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
@@ -61,13 +66,7 @@ const NAMED_ENTITIES: Record<string, string> = {
  * plain spaces. Unknown named entities are left as-is.
  */
 function decodeEntities(s: string): string {
-  return s
-    .replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (match, ref: string) => {
-      if (ref[0] !== "#") return NAMED_ENTITIES[ref.toLowerCase()] ?? match;
-      const code = ref[1] === "x" || ref[1] === "X" ? parseInt(ref.slice(2), 16) : parseInt(ref.slice(1), 10);
-      return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
-    })
-    .replace(/\u00a0/g, " ");
+  return decodeOnePass(s, NAMED_ENTITIES).replace(/\u00a0/g, " ");
 }
 
 /** Like stripHtml, but decodes named/hex entities and keeps line breaks and list bullets (monster stat blocks, source titles). */

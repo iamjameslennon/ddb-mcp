@@ -54,11 +54,16 @@ export function plainSection(text: string): SearchSection {
 
 /**
  * An Open5e section with the source caveat (`withSourceCaveat`): the caveat
- * follows the whole reply, footer included, so a caveated section is plain
- * text. With no `source`, the section is returned as it is.
+ * follows the whole reply, so it goes on the footer (else the body) and the
+ * header, hidden count and `open5e` flag survive. The rendered text is the
+ * same as caveating the rendered section. With no `source`, the section is
+ * returned as it is.
  */
 export function withSourceCaveatSection(s: SearchSection, source: string | undefined): SearchSection {
-  return source ? plainSection(withSourceCaveat(renderSection(s), source)) : s;
+  if (!source) return s;
+  return s.footer !== null
+    ? { ...s, footer: withSourceCaveat(s.footer, source) }
+    : { ...s, body: withSourceCaveat(s.body, source) };
 }
 
 /**
@@ -169,7 +174,7 @@ function sourceRuleset(source: ResolvedSource, index: SourceIndex): EditionInfo[
  * Option B: a dual entry keeps its plain classification when its twin group
  * holds a non-dual entry of that edition. The scan covers the entries in
  * scope (under a `source`, only the book's entries: "B within the book") that
- * pass the adapter's `passes` filter, so a Legacy twin the filters reject
+ * pass the adapter's `passes` filter (and, under a `source`, `nameMatches`), so a Legacy twin the filters reject
  * does not demote the dual entry. That matches countFilteredPicks: when only
  * the dual entry passes, both editions would list that same entry, so it is
  * listed, not counted as hidden. The exceptions are a set of entries, so an
@@ -187,17 +192,23 @@ function classifier<T>(
     const sourceId = (m: EditionMarkers) => editionSourceId(m, index);
     return { info: t => info(adapter.markers(t)), sourceId: t => sourceId(adapter.markers(t)), markersInfo: info, markersSourceId: sourceId };
   }
+  // Option B scans entries; an owner unit has no entry-level form of it. No
+  // adapter combines the two, so refuse the combination instead of half-applying B.
+  if (adapter.owner) throw new Error("CatalogAdapter: dualEdition cannot be combined with owner");
   const bookRuleset = source ? sourceRuleset(source, index) : null;
   const edition = bookRuleset && isEdition(bookRuleset) ? bookRuleset : requested;
 
   const scope = source ? all.filter(t => inSources(adapter.markers(t), source.ids)) : all;
   const passes = adapter.passes ?? (() => true);
+  // Under a source the listing filters entry by entry on the name too, so the
+  // scan counts only the twins that listing would show.
+  const listed = (t: T) => passes(t) && (!source || (adapter.nameMatches?.(t) ?? true));
   const duals: T[] = [];
   const singleEditionKeys = new Set<string>();
   for (const t of scope) {
     const m = adapter.markers(t);
     if (isDualEdition(m, index)) duals.push(t);
-    else if (classifyEdition(m, index).ruleset === edition && passes(t)) singleEditionKeys.add(adapter.twinKey(t));
+    else if (classifyEdition(m, index).ruleset === edition && listed(t)) singleEditionKeys.add(adapter.twinKey(t));
   }
   const plainDual = new Set<T>(duals.filter(t => singleEditionKeys.has(adapter.twinKey(t))));
 

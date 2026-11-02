@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildSourceIndex, definitionTiebreak, normalizeName, twinNames, type EditionMarkers } from "../src/edition.js";
 import { resolveSource, sourceLabel } from "../src/source-filter.js";
 import {
-  selectCatalog, lookupCatalog, paginateResults, renderSection, plainSection,
+  selectCatalog, lookupCatalog, paginateResults, renderSection, plainSection, withSourceCaveatSection,
   lookupCatalogAdapter, type CatalogAdapter, type CatalogOwner, type LookupAdapter,
 } from "../src/tools/edition-search.js";
 
@@ -276,6 +276,24 @@ describe("dual-edition entries (adapter.dualEdition, decision 4)", () => {
     expect(lookupCatalog([efficient, ehlonna], "Efficient Quiver", "2014", copying, DMG_INDEX)?.entry).toBe(efficient);
   });
 
+  it("under a source, B counts only twins the name filter lists (minors B item 4)", () => {
+    const efficient = entry(4628, "Efficient Quiver", [1, 2], { isLegacy: true });
+    const ehlonna = entry(5367, "Quiver of Ehlonna", [146, 148, 1]);
+    const adapter = (q?: string) => lookupCatalogAdapter({ ...dual(q), twinName: twinNames.item });
+    const book = resolveSource(DMG_INDEX, "basic-rules-2014")!;
+    // The Legacy twin is not named by the query, so it is not listed and cannot demote the dual entry.
+    const named = selectCatalog([efficient, ehlonna], "2024", adapter("ehlonna"), DMG_INDEX, book);
+    expect(named.hits.map(h => [h.entry.id, h.label])).toEqual([[5367, "[2014]"]]);
+    // Unfiltered, both are listed and B still applies.
+    const both = selectCatalog([efficient, ehlonna], "2024", adapter(), DMG_INDEX, book);
+    expect(both.hits.map(h => [h.entry.id, h.label])).toEqual([[4628, "[2014]"], [5367, "[2024]"]]);
+  });
+
+  it("dualEdition cannot be combined with owner units: option B has no owner form (minors B item 6)", () => {
+    const withOwner = { ...dual(), owner: (e: Entry) => ({ id: String(e.id), markers: e as EditionMarkers, tiebreak: { id: e.id } as never }) };
+    expect(() => selectCatalog([LONGSWORD], "2024", withOwner, INDEX)).toThrow(/dualEdition.*owner/);
+  });
+
   it("a book note names a dual pick's book in the requested edition", () => {
     // Two dual definitions and no single-edition one: both are 2014 under 2014.
     const a = entry(40, "Gem Blade", [146, 1]);
@@ -476,5 +494,26 @@ describe("selectCatalog breaks compare ties with the adapter's tiebreak", () => 
       compare: (x, y) => x.level - y.level || x.name.localeCompare(y.name),
     };
     expect(selectCatalog(all, "2024", adapter, INDEX).hits.map(h => h.entry.id)).toEqual([10, 20, 30]);
+  });
+});
+
+describe("withSourceCaveatSection keeps the section structure (minors B item 2)", () => {
+  const caveat = '\n\n*Note: source filtering is not available via the Open5e SRD fallback — "xgte" was requested but could not be honoured.*';
+  it("appends the caveat to the footer and keeps header, hidden and open5e", () => {
+    const s = { header: "H", body: "B", footer: "F", hidden: 2, open5e: true };
+    const r = withSourceCaveatSection(s, "xgte");
+    expect(r).toMatchObject({ header: "H", body: "B", hidden: 2, open5e: true });
+    expect(r.footer).toBe("F" + caveat);
+    expect(renderSection(r)).toBe("H\nB\nF" + caveat);
+  });
+  it("appends to the body when there is no footer", () => {
+    const r = withSourceCaveatSection({ header: "H", body: "B", footer: null, hidden: 1 }, "xgte");
+    expect(r.hidden).toBe(1);
+    expect(r.header).toBe("H");
+    expect(renderSection(r)).toBe("H\nB" + caveat);
+  });
+  it("returns the section untouched with no source", () => {
+    const s = { header: "H", body: "B", footer: "F", hidden: 0 };
+    expect(withSourceCaveatSection(s, undefined)).toBe(s);
   });
 });

@@ -138,6 +138,16 @@ describe("character Rules line and header tags", () => {
     expect(out).not.toContain("Wood Elf [edition not stated]");
   });
 
+  it("a present-but-nameless race object with a lineage prints the lineage alone, untagged (minors B item 11)", () => {
+    const c = variant(FIGHTER_5, d => {
+      d.race = {};
+      d.options = { race: [{ definition: { name: "Wood Elf Lineage" } }] };
+    });
+    const out = sheet(c);
+    expect(out).toContain("  Wood Elf | Fighter 5 | Level 5");
+    expect(out).not.toContain("Wood Elf [edition not stated]");
+  });
+
   it("a nameless species, background or subclass object adds no summary item", () => {
     const c = variant(FIGHTER_5, d => {
       d.race = {};
@@ -216,7 +226,12 @@ describe("inline tags", () => {
 
   it("duplicate warning keeps the tag", () => {
     const out = sheet(spellChar([{ definition: { id: 911, name: "Fire Bolt", level: 0, sources: S(2) } }]));
-    expect(out).toContain("  • Fire Bolt [2014] — already granted by Spells, also in Racial Trait");
+    expect(out).toContain("  • Fire Bolt [2014] — already granted by Cantrips, also in Racial Trait");
+  });
+
+  it("a leveled duplicate names the Spells line (minors B item 12)", () => {
+    const out = sheet(spellChar([{ definition: { id: 912, name: "Shield", level: 1, sources: S(145) } }]));
+    expect(out).toContain("already granted by Spells, also in Racial Trait");
   });
 
   it("concentration block", () => {

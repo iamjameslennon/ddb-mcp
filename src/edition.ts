@@ -209,6 +209,8 @@ export type TwinNamer = ((name: string) => string) & {
   spell?: (normalizedName: string) => string | undefined;
   /** Every table spelling in the name's twin group, the given name first. */
   aliases?: (name: string) => string[];
+  /** Which edition's spelling of a rename pair the name is; undefined when it is in no pair (or is both sides'). */
+  side?: (name: string) => "2014" | "2024" | undefined;
 };
 
 /** A twin-name function over a rename table: normalizes, then maps a 2014 name to its 2024 name. */
@@ -224,6 +226,11 @@ export function createTwinNamer(pairs: ReadonlyArray<readonly [string, string]>)
     return renames.get(n) ?? n;
   };
   namer.spell = normalized => spellings.get(normalized);
+  const names2024 = new Set(pairs.map(([, name2024]) => normalizeName(name2024)));
+  namer.side = name => {
+    const n = normalizeName(name);
+    return renames.has(n) ? (names2024.has(n) ? undefined : "2014") : names2024.has(n) ? "2024" : undefined;
+  };
   namer.aliases = name => {
     const key = namer(name);
     const out = [name];
@@ -441,11 +448,12 @@ export function lookupByName<T>(
   if (!isEdition(returnedEdition)) return picked;
   // The returned record's edition orients the pair when the matched name is the other edition's
   // (a record of it, or a typed name no record carries): name2014 is always the 2014 side. A twin
-  // key need not be either name (Open5e's equipment key sorts words). A same-edition match keeps
-  // the old reading: the 2024 name is the twin key itself.
+  // key need not be either name (Open5e's equipment key sorts words). A same-edition match reads
+  // the namer's own sides (TwinNamer.side), else the old reading: the 2024 name is the twin key itself.
   const matchedEdition = matched ? opts.info(matched).ruleset : undefined;
   const byEdition = matchedEdition === undefined || (isEdition(matchedEdition) && matchedEdition !== returnedEdition);
-  const returnedIs2024 = byEdition ? returnedEdition === "2024" : normalizeName(returnedName) === key;
+  const returnedSide = namer.side?.(returnedName);
+  const returnedIs2024 = byEdition ? returnedEdition === "2024" : returnedSide !== undefined ? returnedSide === "2024" : normalizeName(returnedName) === key;
   const [name2024, name2014] = returnedIs2024 ? [returnedName, matchedName] : [matchedName, returnedName];
   return { ...picked, renamed: { name2014, name2024 } };
 }
@@ -774,11 +782,16 @@ export const AMBIGUITY_LIST_CAP = 20;
 /** An ambiguity candidate whose CR the data does not give (`cr: null`) prints as `(CR unknown)`. */
 export const CR_UNKNOWN_TEXT = "unknown";
 
+/** A comma list of at most AMBIGUITY_LIST_CAP names, then ", and N more". */
+export function cappedList(names: readonly string[]): string {
+  const shown = names.slice(0, AMBIGUITY_LIST_CAP).join(", ");
+  const more = names.length - AMBIGUITY_LIST_CAP;
+  return more > 0 ? `${shown}, and ${more} more` : shown;
+}
+
 /** Encounter/treasure: a partial monster name that spans several distinct creatures. At most 20 are named, then "and N more". */
 export function ambiguityMessage(query: string, candidates: ReadonlyArray<{ name: string; cr: string | null }>): string {
-  const shown = candidates.slice(0, AMBIGUITY_LIST_CAP).map(c => `${c.name} (CR ${c.cr ?? CR_UNKNOWN_TEXT})`).join(", ");
-  const more = candidates.length - AMBIGUITY_LIST_CAP;
-  const list = more > 0 ? `${shown}, and ${more} more` : shown;
+  const list = cappedList(candidates.map(c => `${c.name} (CR ${c.cr ?? CR_UNKNOWN_TEXT})`));
   return `Ambiguous: "${query}" could be ${list} — use the full name.`;
 }
 

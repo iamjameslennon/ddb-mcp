@@ -248,6 +248,25 @@ describe("the item compendium keeps every item type (carry-over (e))", () => {
     expect(lines).toEqual(["- **Dagger** [2024] — Common Weapon", "- **Studded Leather** [2024] — Common Armor"]);
   });
 
+  it("the last-resort key keeps items that differ only in rarity or magic (minors B item 5a)", async () => {
+    installItems([
+      item(3, "Sword Blade", { type: "Weapon", filterType: "Weapon", rarity: "Common" }, [148, 1]),
+      item(3, "Sword Blade", { type: "Weapon", filterType: "Weapon", rarity: "Rare", magic: true }, [148, 1]),
+    ]);
+    // A source lists every entry in the book, so the compendium's two entries both show.
+    const lines = (await reference.searchItems({ source: "basic-rules-2014" })).split("\n").filter(l => l.startsWith("- **"));
+    expect(lines).toHaveLength(2);
+  });
+
+  it("an empty-string definitionKey is a key, as before; only null or undefined fall through (minors B item 5b)", async () => {
+    installItems([
+      shared(1782728300, "Dagger", "Weapon", ""),
+      shared(701257905, "Studded Leather", "Armor", ""),
+    ].map(i => ({ ...i, definitionKey: "" })));
+    const lines = (await reference.searchItems({})).split("\n").filter(l => l.startsWith("- **"));
+    expect(lines).toHaveLength(1);
+  });
+
   it("dedupes by definitionKey when the payload carries one", async () => {
     installItems([
       shared(1782728300, "Dagger", "Weapon", "1782728300:3"),

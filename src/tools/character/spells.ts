@@ -178,7 +178,8 @@ function buildSpellSections(
     for (const s of allSpells) {
       if (!isShownClassSpell(s, isSpellbook)) continue;
       const spellId = num(obj(s.definition).id);
-      if (spellId && !seenSpellIds.has(spellId)) seenSpellIds.set(spellId, "Spells");
+      // The label names the line the spell prints on: cantrips have their own.
+      if (spellId && !seenSpellIds.has(spellId)) seenSpellIds.set(spellId, num(obj(s.definition).level) === 0 ? "Cantrips" : "Spells");
     }
   }
 
