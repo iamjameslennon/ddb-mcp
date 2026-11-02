@@ -119,7 +119,7 @@ All strings come from `src/edition.ts`. **No tool builds its own edition text**,
   - `source: "homebrew"` search header: `Rules: showing every entry in homebrew content, each tagged with its edition.`
 - **Rename line**, appended when the query matched a different name in the same twin group than the entry returned: `(2014 name: Acid Arrow · 2024 name: Melf's Acid Arrow)`
 - **Book-choice labels** (a same-edition entry exists in several books; owner decision 2026-10-19): a search line ends with `· Monsters of the Multiverse [motm] (also in Volo's Guide to Monsters [vgtm] — pass source to choose)`; a single lookup adds the line `(also in Volo's Guide to Monsters [vgtm] — pass source to choose)`.
-- **Source note** (monsters): `(source "mm-2024" is a 2024 book — rules_edition "2014" was ignored)`
+- **Source note** (monsters): `(source "xgte" is a 2014 book — its entries are listed whatever rules_edition says)` (owner decision 3, 2026-10-27)
 - **Inline tag**, placed **immediately after the entry's name** on search lines and minority-edition character entries: `[2024]`, `[2014]`, `[third-party]`, `[homebrew]`, `[playtest]`, `[edition not stated]`. Example search line: `- **Fireball** [2024] — 3rd-level Evocation`.
 - **Search header**, as the first line of every search result, above the tool's existing heading (e.g. `**Spell Search** (N found)`, which stays):
   - Default: `Rules: 2024 by default — 2014 entries appear only where no 2024 version was found. Use rules_edition: "2014" for 2014 versions.`
@@ -428,7 +428,7 @@ Later owner rulings (made while executing the plan, 2026-10-21):
 - An Open5e spell search with an offset past the end gives the plain no-match line, as D&D Beyond does.
 - Item search no-match text: "No items found matching the criteria (SRD only)." Mundane item line: `• <name> [tag] (<category>)`. Option searches are uncapped. Cost and weight show "—" when 0 or missing.
 - Open5e species search groups by base race, as D&D Beyond does: the 2024 Elf hides and counts the 2014 High Elf, 2014 lists each subrace, naming a subrace finds it.
-- Seven armour renames (Leather, Padded, Studded leather, Hide, Half plate, Splint, Plate → "… Armor") are Open5e-only (`OPEN5E_ARMOUR_RENAMES` in `src/edition-renames.ts`, used through `o5TwinName`), not in `EDITION_RENAMES`: D&D Beyond keeps one "Studded Leather" definition for both editions, and its spellings of the other six are unverified.
+- Seven armour renames (Leather, Padded, Studded leather, Hide, Half plate, Splint, Plate → "… Armor") are Open5e-only (`OPEN5E_ARMOUR_RENAMES` in `src/edition-renames.ts`, used through `o5TwinNameFor(endpoint)`, the per-endpoint rename kinds), not in `EDITION_RENAMES`: D&D Beyond keeps one "Studded Leather" definition for both editions, and its spellings of the other six are unverified.
 - Within the edition `selectByEdition` picks, an exact-name entry beats endpoint order ("Plate Armor" under 2014 gives the SRD 5.1 items record).
 - Class `Features:` lists only `feature_type` CLASS_LEVEL_FEATURE; `caster_type` and feat type are humanized (Full, General, Fighting Style).
 - Rules search folds the query and text like `normalizeName`. A blank get name is not found; a blank search query lists every chapter. Not-found text: `Rules chapter or section "<name>" not found. Try ddb_search_rules to browse the chapters.`
