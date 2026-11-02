@@ -56,6 +56,8 @@ function deriveRace(char: CharData): string {
   const base = str(obj(char.race).fullName || obj(char.race).baseName);
   const variant = detectRaceVariant(char);
   if (!variant) return base;
+  // No species object: the lineage stands alone, not as " (Wood Elf)".
+  if (!base) return variant;
   // Avoid "Wood Elf (Wood Elf)" if the base race name already mentions the
   // variant (defensive — happens when fullName has been pre-decorated).
   if (base.toLowerCase().includes(variant.toLowerCase())) return base;
@@ -78,7 +80,8 @@ export function computeIdentity(core: CoreStats): Identity {
   return {
     charName: str(char.name),
     rulesLine: editions.rulesLine,
-    race: editions.named(deriveRace(char), char.race),
+    // A lineage with no species object has no definition to classify: untagged.
+    race: char.race ? editions.named(deriveRace(char), char.race) : deriveRace(char),
     classLine: buildClassLine(classes, editions),
     totalLevel,
     background: editions.named(str(obj(bgDef).name), bgDef),

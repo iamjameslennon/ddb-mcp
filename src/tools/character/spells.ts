@@ -172,9 +172,11 @@ function buildSpellSections(
       });
     if (cantrips.length) sections.push(`  Cantrips: ${cantrips.join(", ")}`);
     if (leveled.length) sections.push(`  Spells: ${leveled.join(", ")}`);
-    // Pre-seed duplicate detection in the same pass, from the ungated list: an
-    // unprepared spellbook spell that another source also grants still warns.
+    // Pre-seed duplicate detection in the same pass, from the gated list the
+    // section prints: an unprepared spellbook spell is not shown, so it can't
+    // be "already granted".
     for (const s of allSpells) {
+      if (!isShownClassSpell(s, isSpellbook)) continue;
       const spellId = num(obj(s.definition).id);
       if (spellId && !seenSpellIds.has(spellId)) seenSpellIds.set(spellId, "Spells");
     }

@@ -127,6 +127,17 @@ describe("character Rules line and header tags", () => {
     expect(sheet(c)).toContain("  Elf (Wood Elf) [2014] | Fighter 5 | Level 5");
   });
 
+  it("race null with an options.race lineage prints the lineage alone, untagged", () => {
+    const c = variant(FIGHTER_5, d => {
+      d.race = null;
+      d.options = { race: [{ definition: { name: "Wood Elf Lineage" } }] };
+    });
+    const out = sheet(c);
+    expect(out).toContain("  Wood Elf | Fighter 5 | Level 5");
+    expect(out).not.toContain(" (Wood Elf)");
+    expect(out).not.toContain("Wood Elf [edition not stated]");
+  });
+
   it("a nameless species, background or subclass object adds no summary item", () => {
     const c = variant(FIGHTER_5, d => {
       d.race = {};

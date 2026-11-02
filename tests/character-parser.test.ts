@@ -1260,6 +1260,29 @@ describe("parseCharacterData — cross-source spell deduplication", () => {
     expect(out).toContain("Find Familiar (L1) — already granted by Class Feature, also in Feat");
   });
 
+  it("a duplicate warning ignores an unprepared Wizard spell the SPELLS section doesn't print", () => {
+    const out = parseCharacterData({
+      data: {
+        ...((FIGHTER_5.data) as Record<string, unknown>),
+        classes: [{
+          id: 1, level: 5, hitDiceUsed: 0,
+          definition: { name: "Wizard", hitDice: 6, canCastSpells: true, spellCastingAbilityId: 4, spellRules: {} },
+          subclassDefinition: null, classFeatures: [],
+        }],
+        classSpells: [{
+          characterClassId: 1,
+          spells: [{ prepared: false, definition: { id: 123, name: "Speak with Animals", level: 1, sources: [{ sourceId: 145 }] } }],
+        }],
+        spells: {
+          class: [makeSpell(123, "Speak with Animals", 1)],
+          race: [], background: [], feat: [], item: [],
+        },
+      },
+    }, "spells");
+    expect(out).not.toContain("⚠");
+    expect(out).toMatch(/From Class Feature: Speak with Animals.* \(L1\)/);
+  });
+
   it("warns when classSpells and char.spells.class share the same spell ID", () => {
     // Speak with Animals (id 123) prepared via classSpells AND auto-granted via class feature
     const out = parseCharacterData({
