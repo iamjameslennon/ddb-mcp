@@ -17,9 +17,9 @@
 
 import { TtlCache } from "./cache.js";
 import {
-  createTwinNamer, editionTag, groupAndSelect, LEGENDARY_USES_NOTE, lookupByName, normalizeName, open5eSearchHeader, reasonLine, renameLine, rulesLine, searchFooter,
+  createTwinNamer, editionTag, groupAndSelect, LEGENDARY_USES_NOTE, loggedOutReason, lookupByName, normalizeName, open5eSearchHeader, reasonLine, renameLine, rulesLine, searchFooter,
   searchHeader, selectByEdition,
-  type EditionInfo, type Open5eOrigin, type RulesEdition, type SelectionReason, type TwinNamer,
+  type EditionInfo, type Open5eOrigin, type RulesEdition, type RulesLineReason, type SelectionReason, type TwinNamer,
 } from "./edition.js";
 import { paginateResults, renderSection, type SearchSection } from "./tools/edition-search.js";
 import { EDITION_RENAMES, OPEN5E_ARMOUR_RENAMES, OPEN5E_EQUIPMENT_RENAMES, type RenameKind } from "./edition-renames.js";
@@ -144,7 +144,7 @@ interface O5Entry<T> { record: T; endpoint: O5Endpoint; edition: RulesEdition }
 
 interface O5Hit<T> {
   entry: O5Entry<T>;
-  reason?: SelectionReason;
+  reason?: RulesLineReason;
   renamed?: { name2014: string; name2024: string };
 }
 
@@ -414,7 +414,7 @@ async function o5Select<T extends O5Record>(
 }
 
 /** The lines under a single lookup's title: the rules line, then the reason line, then the rename line. */
-function o5Label(edition: RulesEdition, origin: Open5eOrigin, extra: { reason?: SelectionReason; renamed?: O5Hit<unknown>["renamed"] } = {}): string {
+function o5Label(edition: RulesEdition, origin: Open5eOrigin, extra: { reason?: RulesLineReason; renamed?: O5Hit<unknown>["renamed"] } = {}): string {
   const lines = [rulesLine({ ruleset: edition, book: null }, { open5e: origin, reason: extra.reason })];
   if (extra.renamed) lines.push(renameLine(extra.renamed.name2014, extra.renamed.name2024));
   return lines.join("\n");
@@ -764,9 +764,19 @@ export async function o5SearchMonstersSection(params: O5MonsterSearchParams, ori
   );
 }
 
-export async function o5GetMonster(name: string, rulesEdition: RulesEdition, origin: Open5eOrigin): Promise<string | null> {
+/**
+ * `lockedEdition`: a logged-out lookup whose D&D Beyond entry of that edition is
+ * locked. When only the other SRD has the creature, "no 2024 version found"
+ * would be false (D&D Beyond has one), so the reason says that version needs
+ * ddb_login instead.
+ */
+export async function o5GetMonster(name: string, rulesEdition: RulesEdition, origin: Open5eOrigin, lockedEdition?: RulesEdition): Promise<string | null> {
   const hit = await o5Lookup<O5Creature>(["creatures"], name, rulesEdition);
-  return hit ? formatO5Monster(hit, origin) : null;
+  if (!hit) return null;
+  if (lockedEdition && hit.reason === (lockedEdition === "2024" ? "no-2024-version" : "no-2014-version")) {
+    return formatO5Monster({ ...hit, reason: loggedOutReason(lockedEdition === "2024" ? "locked-2024" : "locked-2014") }, origin);
+  }
+  return formatO5Monster(hit, origin);
 }
 
 /** An SRD creature found by o5MonsterInEdition: its AC and HP for a search line, and its stat block. */
@@ -1396,8 +1406,9 @@ export type MonsterStatsResult =
  * finds them: the exact twin name first, else the partial matches grouped by
  * twin name. One group is found, picked by edition; several are ambiguous, one
  * candidate per group, by CR then name. Never a guess. The edition comes from
- * the document the pick is in. A picked record with an unknown CR is not-found (or dropped from the candidates); any
- * Open5e failure is not-found.
+ * the document the pick is in. A picked record with an unknown CR is not-found
+ * (exact or single group) or listed as "CR unknown", last, among ambiguous
+ * candidates (all unknown is not-found); any Open5e failure is not-found.
  */
 export async function o5GetMonsterStats(name: string, rulesEdition: RulesEdition): Promise<MonsterStatsResult> {
   try {

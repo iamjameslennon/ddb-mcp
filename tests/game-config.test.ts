@@ -26,7 +26,7 @@ vi.mock("../src/source-snapshot.js", () => ({
   ],
 }));
 
-import { getGameConfig, getPublicGameConfig, clearPublicGameConfig, getSourceIndex, peekSourceIndex, CONFIG_FETCH_TIMEOUT_MS } from "../src/game-config.js";
+import { getGameConfig, clearGameConfig, getPublicGameConfig, clearPublicGameConfig, getSourceIndex, peekSourceIndex, CONFIG_FETCH_TIMEOUT_MS } from "../src/game-config.js";
 import { sessionFetch, anonymousFetch, assertSessionCurrent, captureSession } from "../src/session-fetch.js";
 
 const response = (body: unknown, status = 200) =>
@@ -599,5 +599,47 @@ describe("getPublicGameConfig (logged-out monster lookups)", () => {
     const pending = getPublicGameConfig();
     await vi.advanceTimersByTimeAsync(CONFIG_FETCH_TIMEOUT_MS);
     expect(await pending).toBeNull();
+  });
+});
+
+describe("clearGameConfig (ddb_clear_cache)", () => {
+  it("drops the cached config and the failure memo, so the next call fetches at once", async () => {
+    configResponse = () => response({}, 503);
+    expect(await getGameConfig()).toBeNull();
+    expect(await getGameConfig()).toBeNull();
+    expect(sessionFetch).toHaveBeenCalledTimes(1);
+    clearGameConfig();
+    configResponse = () => response({ data: LIVE });
+    expect(await getGameConfig()).not.toBeNull();
+    expect(sessionFetch).toHaveBeenCalledTimes(2);
+    clearGameConfig();
+    await getGameConfig();
+    expect(sessionFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("a fetch that settles after the clear writes nothing: no cache, no memo", async () => {
+    let settle!: (r: Response) => void;
+    vi.mocked(sessionFetch).mockImplementationOnce(() => new Promise<Response>(r => { settle = r; }));
+    const pending = getGameConfig();
+    await Promise.resolve(); await Promise.resolve();
+    clearGameConfig();
+    settle(response({ data: LIVE }));
+    expect(await pending).not.toBeNull();
+    // The late success was not cached: the next call fetches again.
+    await getGameConfig();
+    expect(sessionFetch).toHaveBeenCalledTimes(2);
+
+    clearGameConfig();
+    vi.mocked(sessionFetch).mockClear();
+    vi.mocked(sessionFetch).mockImplementationOnce(() => new Promise<Response>(r => { settle = r; }));
+    const failing = getGameConfig();
+    await Promise.resolve(); await Promise.resolve();
+    clearGameConfig();
+    settle(response({}, 503));
+    expect(await failing).toBeNull();
+    // The late failure was not remembered either.
+    vi.mocked(sessionFetch).mockImplementation(async () => response({ data: LIVE }));
+    expect(await getGameConfig()).not.toBeNull();
+    expect(sessionFetch).toHaveBeenCalledTimes(2);
   });
 });

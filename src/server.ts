@@ -12,7 +12,7 @@ import { navigate, interact, getCurrentPageContent } from "./tools/navigate.js";
 import { search } from "./tools/search.js";
 import { listLibrary, readBook, clearLibraryCache } from "./tools/library.js";
 import { searchMonsters, getMonster, clearMonsterCache } from "./tools/monster.js";
-import { clearPublicGameConfig } from "./game-config.js";
+import { clearGameConfig, clearPublicGameConfig } from "./game-config.js";
 import { rateEncounter, targetEncounterCr } from "./tools/encounter.js";
 import type { Difficulty } from "./tools/encounter.js";
 import { generateTreasure } from "./tools/treasure.js";
@@ -159,7 +159,8 @@ server.tool(
     }
     if (cache === "monsters" || cache === "all") {
       clearMonsterCache();
-      // The public game config (logged-out monster lookups) and its failure memo.
+      // The game config (session-bound and public) and their failure memos.
+      clearGameConfig();
       clearPublicGameConfig();
       cleared.push("monsters");
     }

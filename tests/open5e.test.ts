@@ -1351,3 +1351,17 @@ describe("o5MonsterInEdition (logged-out locked D&D Beyond entries)", () => {
     expect(await o5MonsterInEdition("Wol", "2024")).toBeNull();
   });
 });
+
+describe("o5GetMonster with a locked D&D Beyond edition (M2)", () => {
+  it("only the other SRD has it: the reason says the requested version needs ddb_login, not that none exists", async () => {
+    const lines = (await o5GetMonster("Half-Red Dragon Veteran", "2024", "needs-login", "2024"))!.split("\n");
+    expect(lines.slice(1, 3)).toEqual([
+      "Rules: 2014 · SRD 5.1 (Open5e — the D&D Beyond version needs ddb_login)",
+      "(not logged in, so the 2024 version isn't available — 2014 text shown; run ddb_login if your account owns it)",
+    ]);
+  });
+
+  it("without a locked edition the reason is unchanged", async () => {
+    expect((await o5GetMonster("Half-Red Dragon Veteran", "2024", "unavailable"))!.split("\n")[2]).toBe("(no 2024 version found — 2014 text shown)");
+  });
+});

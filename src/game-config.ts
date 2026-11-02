@@ -71,6 +71,9 @@ interface PendingConfigFetch {
   promise: Promise<GameConfig | null>;
 }
 let configPending: PendingConfigFetch | null = null;
+// Advanced by clearGameConfig(): a fetch started before a clear writes neither
+// the cache nor the failure memo when it settles.
+let configEpoch = 0;
 
 // Registered once per module lifetime.
 onSessionInvalidated(() => {
@@ -100,6 +103,19 @@ export async function getGameConfig(): Promise<GameConfig | null> {
 }
 
 /** Start the shared fetch for `snapshot`'s generation and publish it as the pending entry. */
+/**
+ * Drop the session-bound config, the index built from it, the failure memo and
+ * any fetch in flight (ddb_clear_cache), so the next call fetches at once. A
+ * fetch that settles after the clear writes nothing.
+ */
+export function clearGameConfig(): void {
+  configEpoch++;
+  configCache = null;
+  indexCache = null;
+  configFailure = null;
+  configPending = null;
+}
+
 function startConfigFetch(snapshot: SessionSnapshot): PendingConfigFetch {
   // Deferred one microtask so the fetch runs only after the entry is stored: if
   // its first authority check fires the invalidation hook, the hook finds and
@@ -108,13 +124,14 @@ function startConfigFetch(snapshot: SessionSnapshot): PendingConfigFetch {
   // own try) resolves every caller to null, so getGameConfig never rejects.
   const ctl = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const fetched = Promise.resolve().then(() => fetchGameConfig(snapshot, ctl.signal)).catch(() => null);
+  const epoch = configEpoch;
+  const fetched = Promise.resolve().then(() => fetchGameConfig(snapshot, ctl.signal, epoch)).catch(() => null);
   // Resolves null at the deadline, after aborting the fetch and recording the
   // failure (only if the session is still the one we started under).
   const deadline = new Promise<null>(resolve => {
     timer = setTimeout(() => {
       ctl.abort();
-      rememberFailure(snapshot);
+      rememberFailure(snapshot, epoch);
       release();
       resolve(null);
     }, CONFIG_FETCH_TIMEOUT_MS);
@@ -194,7 +211,9 @@ function startPublicConfigFetch(): Promise<GameConfig | null> {
 }
 
 /** Remember a failure for this snapshot's generation; records nothing if the session has changed. */
-function rememberFailure(snapshot: SessionSnapshot): void {
+function rememberFailure(snapshot: SessionSnapshot, epoch: number): void {
+  // Cleared (ddb_clear_cache) since this fetch started: record nothing.
+  if (epoch !== configEpoch) return;
   try {
     // A late failure from an old session must not suppress the new one's fetch.
     assertSessionCurrent(snapshot);
@@ -205,7 +224,7 @@ function rememberFailure(snapshot: SessionSnapshot): void {
 }
 
 /** One config fetch under `snapshot`. A failure resolves null. */
-async function fetchGameConfig(snapshot: SessionSnapshot, signal: AbortSignal): Promise<GameConfig | null> {
+async function fetchGameConfig(snapshot: SessionSnapshot, signal: AbortSignal, epoch: number): Promise<GameConfig | null> {
   // The session changed between publishing the entry and this run: send
   // nothing (sessionFetch would otherwise send the request under the new
   // session) and return what a stale fetch returns. captureSession re-reads
@@ -213,7 +232,7 @@ async function fetchGameConfig(snapshot: SessionSnapshot, signal: AbortSignal): 
   if (captureSession().generation !== snapshot.generation) return null;
   const fail = (): null => {
     // Past the deadline the failure is already remembered (or the session moved on).
-    if (!signal.aborted) rememberFailure(snapshot);
+    if (!signal.aborted) rememberFailure(snapshot, epoch);
     return null;
   };
   try {
@@ -230,6 +249,8 @@ async function fetchGameConfig(snapshot: SessionSnapshot, signal: AbortSignal): 
       } catch {
         return null; // stale session: neither cache nor record a failure
       }
+      // Cleared since this fetch started: hand the config to its callers, cache nothing.
+      if (epoch !== configEpoch) return cfg;
       configCache = cfg;
       configFailure = null;
       return cfg;

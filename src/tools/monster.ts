@@ -794,7 +794,7 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
     : searchTerm ? "matched by name"
     : params.source ? "matched by source"
     : "in the compendium";
-  const shown = monsters.slice(0, PAGE_SIZE);
+  const shown = await withListStats(monsters.slice(0, PAGE_SIZE), access);
 
   const lines: string[] = [];
   let header: string;
@@ -821,7 +821,7 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
     : `${shown.length} shown, ${total - (checked - monsters.length)} total ${matchedBy}`;
   const capNote = nameCapped ? ` (the first ${PAGE_SIZE} matches per name were checked)` : "";
   lines.push(`**Monster Search** (${countText})${capNote}\n`);
-  for (const { m, info: mInfo, reason, srd } of shown) {
+  for (const { m, info: mInfo, reason, srd, statsUnknown } of shown) {
     const cr = crMap.get(m.challengeRatingId);
     const crStr = cr ? crDisplay(cr.value) : "?";
     const typeName = typeMap.get(m.typeId) ?? "Unknown";
@@ -836,8 +836,9 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
       const via = m.sources?.find(s => sourceIds.includes(s.sourceId))?.sourceId ?? sourceIds[0];
       sourceStr += `, reprinted in ${sourceLabel(index, via)}`;
     }
-    const ac = srd?.armorClass ?? m.armorClass;
-    const hp = srd?.hitPoints ?? m.averageHitPoints;
+    // A locked list entry's AC and HP are zeroed: the SRD's, else dashes.
+    const ac = srd?.armorClass ?? (statsUnknown ? "—" : m.armorClass);
+    const hp = srd?.hitPoints ?? (statsUnknown ? "—" : m.averageHitPoints);
     let line = `- **${m.name}** ${editionTag(mInfo)}${tagStr} — ${sourceStr} — CR ${crStr}, ${size} ${typeName}, AC ${ac}, ${hp} HP`;
     if (isLockedReason(reason)) line += ` ${lockedLineSuffix(reason, asker.anonymous)}`;
     // Homebrew names are user-authored — delimit them, as getMonster does for
@@ -1005,7 +1006,12 @@ export async function getMonster(
       // Still an empty stat block (unowned content): fall back to Open5e. Logged
       // out, the label says the D&D Beyond version needs a login (owner ruling 2026-11-02).
       if (isRestricted(detail)) {
-        const o5Result = await o5GetMonster(monsterName, requested, asker.anonymous ? "needs-login" : "unavailable").catch(() => null);
+        // Logged out, the locked pick's edition goes along, so an answer from the
+        // other SRD doesn't claim "no <edition> version found".
+        const lockedRuleset = info(detail.data).ruleset;
+        const o5Result = await (asker.anonymous
+          ? o5GetMonster(monsterName, requested, "needs-login", isEdition(lockedRuleset) ? lockedRuleset : undefined)
+          : o5GetMonster(monsterName, requested, "unavailable")).catch(() => null);
         if (o5Result) return o5Result;
       }
     }
@@ -1057,6 +1063,26 @@ function renamedFromQuery(query: string, shownName: string): { name2014: string;
   return normalizeName(shownName) === monsterTwin(shownName)
     ? { name2014: typed, name2024: shownName }
     : { name2014: shownName, name2024: typed };
+}
+
+/**
+ * The lines about to be printed, with `srd` (the record's AC and HP) for each
+ * locked entry whose list AC and HP are both 0: monster-service zeroes them on
+ * locked entries, logged in (a free account) or out (final review I1). The
+ * entry's own edition's SRD is asked by exact name, so only printed lines are
+ * probed, after the filters. No SRD record (or an Open5e failure, or an entry
+ * that isn't 2014/2024) sets `statsUnknown`: the line prints dashes. Other
+ * entries are returned as they are.
+ */
+async function withListStats<R extends { m: DdbMonster; info: EditionInfo; srd?: O5EditionMonster }>(
+  rows: R[], access: AccessMap,
+): Promise<Array<R & { statsUnknown?: boolean }>> {
+  return Promise.all(rows.map(async row => {
+    const { m, info } = row;
+    if (row.srd || !isLockedIn(access, m.id) || m.armorClass !== 0 || m.averageHitPoints !== 0) return row;
+    const srd = isEdition(info.ruleset) ? await o5MonsterInEdition(m.name, info.ruleset).catch(() => null) : null;
+    return srd ? { ...row, srd } : { ...row, statsUnknown: true };
+  }));
 }
 
 /**

@@ -1747,7 +1747,7 @@ describe("logged out: locked content says to log in (item 1)", () => {
   it("a locked entry with no free twin asks the SRD with the needs-login label logged out, unavailable logged in", async () => {
     goLoggedOut();
     await getMonster("Sealed Horror");
-    expect(o5GetMonster).toHaveBeenCalledWith("Sealed Horror", "2024", "needs-login");
+    expect(o5GetMonster).toHaveBeenCalledWith("Sealed Horror", "2024", "needs-login", "2024");
     vi.mocked(o5GetMonster).mockClear();
     vi.mocked(hasValidSession).mockReturnValue(true);
     vi.mocked(beginAuthenticatedSession).mockImplementation((async () => ({ fetch: (url: string) => sessionFetch(url) })) as never);
@@ -1959,5 +1959,56 @@ describe("test gaps", () => {
     expect(anonymousRequests.some(r => r.url.includes("/v1/Monster?search=Zombie"))).toBe(true);
     expect(anonymousRequests.some(r => /\/v1\/Monster\/\d+$/.test(r.url))).toBe(true);
     expectNoCredentials();
+  });
+});
+
+// ── Final fix wave: locked list entries' zeroed AC/HP (I1), truthful logged-out reason (M2) ──
+
+describe("locked search lines show the SRD's AC and HP, else dashes (I1)", () => {
+  // monster-service zeroes AC and HP on locked list entries; no free twin, so no swap.
+  const LOCKED_SRD = monster({ id: 8_000_900, name: "Vault Beholder", sourceId: 147, sources: sources(147), armorClass: 0, averageHitPoints: 0 });
+  const LOCKED_NONE = monster({ id: 8_000_901, name: "Vault Wraith", sourceId: 147, sources: sources(147), armorClass: 0, averageHitPoints: 0 });
+  const OPEN = monster({ id: 8_000_902, name: "Vault Rat", sourceId: 147, sources: sources(147), armorClass: 12, averageHitPoints: 7 });
+
+  beforeEach(() => {
+    extraMonsters = [LOCKED_SRD, LOCKED_NONE, OPEN];
+    unownedIds.add(LOCKED_SRD.id as number);
+    unownedIds.add(LOCKED_NONE.id as number);
+    vi.mocked(o5MonsterInEdition).mockImplementation((async (name: string) =>
+      name === "Vault Beholder" ? { armorClass: 18, hitPoints: 180, text: () => "SRD" } : null) as never);
+  });
+
+  const lineOf = (out: string, name: string) => out.split("\n").find(l => l.startsWith(`- **${name}**`));
+
+  it.each([["logged out", true], ["logged in (a free account)", false]])("%s", async (_label, loggedOut) => {
+    if (loggedOut) goLoggedOut();
+    const out = await searchMonsters({ name: "Vault" });
+    expect(lineOf(out, "Vault Beholder")).toBe("- **Vault Beholder** [2024] — Monster Manual [mm-2024] — CR 1/4, Medium Undead, AC 18, 180 HP");
+    expect(lineOf(out, "Vault Wraith")).toBe("- **Vault Wraith** [2024] — Monster Manual [mm-2024] — CR 1/4, Medium Undead, AC —, — HP");
+    expect(lineOf(out, "Vault Rat")).toBe("- **Vault Rat** [2024] — Monster Manual [mm-2024] — CR 1/4, Medium Undead, AC 12, 7 HP");
+    expect(o5MonsterInEdition).toHaveBeenCalledWith("Vault Beholder", "2024");
+    // Only the locked, zeroed entries are probed.
+    expect(vi.mocked(o5MonsterInEdition).mock.calls.map(c => c[0])).not.toContain("Vault Rat");
+  });
+
+  it("an Open5e failure prints dashes", async () => {
+    vi.mocked(o5MonsterInEdition).mockRejectedValue(new Error("down"));
+    expect(lineOf(await searchMonsters({ name: "Vault" }), "Vault Beholder")).toContain("AC —, — HP");
+  });
+
+  it("only printed entries are probed: a filtered-out locked entry is not", async () => {
+    await searchMonsters({ name: "Vault", type: "beast" });
+    expect(o5MonsterInEdition).not.toHaveBeenCalled();
+  });
+});
+
+describe("a logged-out restricted get answered by the other edition's SRD (M2)", () => {
+  it("passes the locked D&D Beyond edition, so Open5e can give a truthful reason", async () => {
+    const SEALED = monster({ id: 8_000_910, name: "Sealed Drake", sourceId: 147, sources: sources(147), stats: [], actionsDescription: "" });
+    extraMonsters = [SEALED];
+    unownedIds.add(SEALED.id as number);
+    goLoggedOut();
+    await getMonster("Sealed Drake");
+    expect(o5GetMonster).toHaveBeenCalledWith("Sealed Drake", "2024", "needs-login", "2024");
   });
 });
