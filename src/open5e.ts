@@ -118,12 +118,12 @@ async function fetchPages(firstUrl: string): Promise<unknown[]> {
   return all;
 }
 
-/** One whole SRD document of an endpoint, other documents' records dropped. Cached 1 h; concurrent callers share one fetch; a failure is remembered for 60 s (and rethrown without fetching), never cached as data. */
 /** The one request URL of an endpoint's SRD document (the cache, pending and failure key). */
 function o5DocumentUrl(endpoint: O5Endpoint, edition: RulesEdition): string {
   return `${O5_V2}/${endpoint}/?document__key__in=${O5_DOC[edition]}&limit=1000`;
 }
 
+/** One whole SRD document of an endpoint, other documents' records dropped. Cached 1 h; concurrent callers share one fetch; a failure is remembered for 60 s (and rethrown without fetching), never cached as data. */
 export async function loadO5Document<T extends O5Record>(endpoint: O5Endpoint, edition: RulesEdition): Promise<T[]> {
   const doc = O5_DOC[edition];
   const url = o5DocumentUrl(endpoint, edition);

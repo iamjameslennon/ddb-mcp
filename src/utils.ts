@@ -89,15 +89,25 @@ export const MONSTER_LOOKUP_CONCURRENCY = 4;
 
 /**
  * `items.map(fn)` with at most `limit` calls in flight at once. Results keep
- * the input order. A rejection rejects the whole call, as Promise.all does.
+ * the input order. A rejection rejects the whole call, as Promise.all does,
+ * and no new item is started after it. `limit` must be a whole number ≥ 1.
  */
 export async function mapWithConcurrency<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw new RangeError(`mapWithConcurrency: limit must be a whole number of at least 1, got ${limit}`);
+  }
   const results = new Array<R>(items.length);
   let next = 0;
+  let failed = false;
   const worker = async (): Promise<void> => {
-    while (next < items.length) {
+    while (!failed && next < items.length) {
       const i = next++;
-      results[i] = await fn(items[i]);
+      try {
+        results[i] = await fn(items[i]);
+      } catch (error) {
+        failed = true;
+        throw error;
+      }
     }
   };
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));

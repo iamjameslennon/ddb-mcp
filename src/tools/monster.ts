@@ -646,6 +646,10 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
 
   try {
   const config = await configFor(asker);
+  // No extra request: getGameConfig() serves this call from its cache (or its failure cache).
+  const index = await getSourceIndex();
+  // A mistyped source is an error even when the config is down (the snapshot index resolves sources).
+  if (params.source && !homebrew && !resolveSource(index, params.source)) return unknownSourceError(index, params.source);
   // No config means no CR, type or size tables: a filter can't be applied (the
   // CR filter used to be skipped, type and size to match nothing), and logged
   // out a stat block or line would read "(id:N)" / "type N". Answer from Open5e
@@ -653,8 +657,6 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
   if (!config && (asker.anonymous || params.cr !== undefined || params.type || params.size)) {
     throw new Error("Game config unavailable");
   }
-  // No extra request: getGameConfig() serves this call from its cache (or its failure cache).
-  const index = await getSourceIndex();
   const info = (m: DdbMonster) => classifyEdition(m, index);
   const crMap = new Map(config?.challengeRatings.map(cr => [cr.id, cr]) ?? []);
   const typeMap = new Map(config?.monsterTypes.map(t => [t.id, t.name]) ?? []);
@@ -886,19 +888,21 @@ export async function getMonster(
 
   try {
     const config = await configFor(asker);
-    // Without the config (public or session-bound), a stat block would read
-    // "(id:N)" / "type N": use Open5e as "unavailable" (owner ruling 2026-11-02).
-    // Homebrew has no Open5e answer and keeps its D&D Beyond block.
-    if (!config && !homebrew) throw new Error("Game config unavailable");
     // No extra request: getGameConfig() serves this call from its cache (or its failure cache).
     const index = await getSourceIndex();
     const info = (m: DdbMonster) => classifyEdition(m, index);
     const tiebreak = monsterTiebreak(index);
+    // The source is checked first (the snapshot index can resolve it), so a
+    // mistyped one is an error even when the config is down, logged in or out.
     let sourceIds: number[] = [];
     if (source && !homebrew) {
       sourceIds = resolveSourceIds(index, source);
       if (!sourceIds.length) return unknownSourceError(index, source);
     }
+    // Without the config (public or session-bound), a stat block would read
+    // "(id:N)" / "type N": use Open5e as "unavailable" (owner ruling 2026-11-02).
+    // Homebrew has no Open5e answer and keeps its D&D Beyond block.
+    if (!config && !homebrew) throw new Error("Game config unavailable");
 
     // 20 slots per spelling so a crowded name (e.g. "Zombie" has Ash/Beholder/
     // Girallon/Greater/Ogre/Strahd/Yellow Musk/plain across both editions)
@@ -1123,6 +1127,7 @@ async function srdBackedGroups(
 
 /** Defined beside o5GetMonsterStats, which returns it too. */
 export type { MonsterStatsResult };
+type UnknownCrResult = Extract<MonsterStatsResult, { status: "unknown-cr" }>;
 
 /**
  * CR and XP for a named monster, for the encounter rater and the treasure
@@ -1145,7 +1150,7 @@ export async function getMonsterStats(name: string, opts: { rulesEdition?: Rules
   // Logged out, monster-service is still asked, anonymously.
   const asker = askerNow();
   // Set when D&D Beyond's only pick is another edition's entry with an unknown CR.
-  let unknownElsewhere: MonsterStatsResult | null = null;
+  let unknownElsewhere: UnknownCrResult | null = null;
   try {
     const config = await configFor(asker);
     // No CR table, no CR: Open5e answers instead.
@@ -1218,5 +1223,11 @@ export async function getMonsterStats(name: string, opts: { rulesEdition?: Rules
   }
 
   const o5 = await o5GetMonsterStats(name, requested);
-  return o5.status === "not-found" && unknownElsewhere ? unknownElsewhere : o5;
+  // Assigned inside `settle`, which TypeScript's narrowing doesn't follow.
+  const elsewhere = unknownElsewhere as UnknownCrResult | null;
+  if (!elsewhere) return o5;
+  // D&D Beyond identified the creature: only Open5e's record of that same
+  // creature (same twin key) may answer for it, never a partial match on another.
+  const same = (o5.status === "found" || o5.status === "unknown-cr") && monsterTwin(o5.name) === monsterTwin(elsewhere.name);
+  return same ? o5 : elsewhere;
 }

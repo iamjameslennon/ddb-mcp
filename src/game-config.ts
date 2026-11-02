@@ -272,14 +272,20 @@ async function fetchGameConfig(snapshot: SessionSnapshot, signal: AbortSignal, e
   if (captureSession().generation !== snapshot.generation) return null;
   // Every caller withdrew before the request went out: send nothing.
   if (signal.aborted) return null;
+  // Set when an attempt failed (an HTTP error, retried or not). A fetch that
+  // is cancelled (every caller withdrew) or passes its deadline after that
+  // still records the failure memo, so an outage costs about one attempt a
+  // minute; one cancelled before any failure records nothing.
+  let observedFailure = false;
   const fail = (): null => {
-    // Past the deadline the failure is already remembered (or the session moved on).
-    if (!signal.aborted) rememberFailure(snapshot, epoch);
+    // Not aborted: a failure. Aborted: only one already observed (the deadline
+    // remembers its own; rememberFailure ignores an old session or a clear).
+    if (!signal.aborted || observedFailure) rememberFailure(snapshot, epoch);
     return null;
   };
   try {
-    const resp = await sessionFetch(CONFIG_URL, { signal });
-    if (signal.aborted) return null;
+    const resp = await sessionFetch(CONFIG_URL, { signal }, { onResponse: r => { if (!r.ok) observedFailure = true; } });
+    if (signal.aborted) return fail();
     if (!resp.ok) return fail();
     const json = await resp.json() as { data?: GameConfig } | GameConfig;
     if (signal.aborted) return null; // settled after the deadline: record nothing
@@ -299,6 +305,7 @@ async function fetchGameConfig(snapshot: SessionSnapshot, signal: AbortSignal, e
     }
     return fail();
   } catch {
+    // A network failure (not an abort) is observed too; fail() records it either way.
     return fail();
   }
 }

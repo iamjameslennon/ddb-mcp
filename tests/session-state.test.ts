@@ -14,6 +14,7 @@ const fsMock = vi.hoisted(() => ({
   fchmodSync: vi.fn(),
   renameSync: vi.fn(),
   readdirSync: vi.fn((): string[] => []),
+  statSync: vi.fn(() => ({ mtimeMs: 0 })),
   constants: { O_CREAT: 1, O_TRUNC: 2, O_WRONLY: 4, O_NOFOLLOW: 8 },
 }));
 vi.mock("fs", () => fsMock);
@@ -64,6 +65,8 @@ beforeEach(async () => {
   fsMock.renameSync.mockReset();
   fsMock.readdirSync.mockReset();
   fsMock.readdirSync.mockReturnValue([]);
+  fsMock.statSync.mockReset();
+  fsMock.statSync.mockReturnValue({ mtimeMs: 0 }); // long ago
   state = await loadState();
 });
 
@@ -209,6 +212,30 @@ describe("third-party credentials are not part of the session", () => {
     expect(removed).not.toContain(`${state.SESSION_PATH}.${process.pid}.tmp`);
     expect(removed.some(p => p.includes("abc") || p.includes("other.json"))).toBe(false);
     expect(fsMock.renameSync).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a dead pid's temp file modified in the last 10 s: its writer may be in another PID namespace (fix round 1)", () => {
+    let file = mixedFile();
+    fsMock.existsSync.mockReturnValue(true);
+    fsMock.readFileSync.mockImplementation(() => file);
+    let tmp = "";
+    fsMock.writeFileSync.mockImplementation((_fd: unknown, data: string) => { tmp = data; });
+    fsMock.renameSync.mockImplementation(() => { file = tmp; });
+    const FRESH = 999_999_011;
+    const OLD = 999_999_012;
+    fsMock.readdirSync.mockReturnValue([`session.json.${FRESH}.tmp`, `session.json.${OLD}.tmp`]);
+    fsMock.statSync.mockImplementation(((p: string) => ({ mtimeMs: p.includes(String(FRESH)) ? Date.now() - 2_000 : Date.now() - 60_000 })) as never);
+    const kill = vi.spyOn(process, "kill").mockImplementation((() => {
+      throw Object.assign(new Error("no such process"), { code: "ESRCH" });
+    }) as typeof process.kill);
+    try {
+      state.captureSession();
+    } finally {
+      kill.mockRestore();
+    }
+    const removed = fsMock.rmSync.mock.calls.map(c => String(c[0]));
+    expect(removed).toContain(`${state.SESSION_PATH}.${OLD}.tmp`);
+    expect(removed).not.toContain(`${state.SESSION_PATH}.${FRESH}.tmp`);
   });
 
   it("a failing stale-temp sweep never fails the read or the rewrite", () => {

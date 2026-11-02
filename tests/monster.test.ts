@@ -2094,6 +2094,15 @@ describe("minors C #8 / #11: a known creature whose CR isn't known", () => {
     expect(await getMonsterStats("Blank Wyrm")).toMatchObject({ status: "unknown-cr", name: "Blank Wyrm" });
   });
 
+  it("an Open5e answer for a different creature never replaces the other-edition pick (fix round 1)", async () => {
+    extraMonsters = [{ ...WYRM_2014, challengeRatingId: 99 }];
+    // Open5e partial-matched another creature (e.g. "Blank Wyrmling").
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce({ status: "found", name: "Blank Wyrmling", crValue: 0.5, xp: 100, info: { ruleset: "2024", book: null } });
+    expect(await getMonsterStats("Blank Wyrm")).toMatchObject({ status: "unknown-cr", name: "Blank Wyrm" });
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce({ status: "ambiguous", candidates: [{ name: "Blank Wyrmling", crValue: 0.5, xp: 100 }, { name: "Blank Wyrm Elder", crValue: 2, xp: 450 }] });
+    expect(await getMonsterStats("Blank Wyrm")).toMatchObject({ status: "unknown-cr", name: "Blank Wyrm" });
+  });
+
   it("D&D Beyond unavailable still falls back to Open5e", async () => {
     extraMonsters = [WYRM_2024, WYRM_2014];
     failSearchTerms.add("blank wyrm");
@@ -2139,5 +2148,23 @@ describe("minors C #12: logged in without the game config, a get answers from Op
     configAvailable = false;
     expect(await getMonster("Zombie")).toBe("O5 MONSTER RESULT");
     expect(o5GetMonster).toHaveBeenCalledWith("Zombie", "2024", "unavailable");
+  });
+});
+
+describe("fix round 1: a mistyped source is an error even with the config down", () => {
+  beforeEach(() => { configAvailable = false; });
+
+  it.each([["logged in", false], ["logged out", true]])("%s: get and search answer unknown source, not Open5e", async (_label, loggedOut) => {
+    if (loggedOut) goLoggedOut();
+    const get = await getMonster("Zombie", { source: "mm-2O24" });
+    expect(get).toContain('Unknown source "mm-2O24"');
+    expect(o5GetMonster).not.toHaveBeenCalled();
+    const search = await searchMonsters({ name: "Zombie", source: "mm-2O24", cr: 0.25 });
+    expect(search).toContain('Unknown source "mm-2O24"');
+    expect(o5SearchMonstersSection).not.toHaveBeenCalled();
+  });
+
+  it("a valid source still answers from Open5e with the caveat", async () => {
+    expect(await getMonster("Zombie", { source: "mm-2024" })).toContain("could not be honoured");
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { wrapUntrusted, stripHtml, stripHtmlRich } from "../src/utils.js";
+import { wrapUntrusted, stripHtml, stripHtmlRich, mapWithConcurrency } from "../src/utils.js";
 
 describe("wrapUntrusted", () => {
   it("wraps content in untrusted delimiters", () => {
@@ -67,5 +67,29 @@ describe("stripHtml one-pass entities (minors B item 1)", () => {
   });
   it("stripHtmlRich also rejects lone surrogates and decodes astral decimals", () => {
     expect(stripHtmlRich("a&#128512;b&#xDC00;")).toBe("a\u{1F600}b&#xDC00;");
+  });
+});
+
+describe("mapWithConcurrency (fix round 1)", () => {
+  it.each([0, -1, 0.5, Number.NaN])("rejects a limit of %s with a clear error", async limit => {
+    await expect(mapWithConcurrency([1, 2], limit, async x => x)).rejects.toThrow(/limit must be a whole number of at least 1/);
+  });
+
+  it("stops handing out new work after a rejection", async () => {
+    const started: number[] = [];
+    const run = mapWithConcurrency([1, 2, 3, 4, 5, 6], 2, async x => {
+      started.push(x);
+      await new Promise(r => setTimeout(r, 1));
+      if (x === 1) throw new Error("boom");
+      return x;
+    });
+    await expect(run).rejects.toThrow("boom");
+    await new Promise(r => setTimeout(r, 20));
+    // 1 and 2 ran together; 1 failed, so at most 2's worker started one more.
+    expect(started.length).toBeLessThanOrEqual(3);
+  });
+
+  it("keeps input order", async () => {
+    expect(await mapWithConcurrency([3, 1, 2], 2, async x => { await new Promise(r => setTimeout(r, x)); return x * 10; })).toEqual([30, 10, 20]);
   });
 });

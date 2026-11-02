@@ -694,3 +694,38 @@ describe("a caller that withdraws (minors C #4: a failed load never reads its in
     expect(sessionFetch).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("a cancelled fetch that already saw a failure keeps the memo (fix round 1)", () => {
+  /** sessionFetch that reports one attempt's response, then waits in retry backoff until aborted. */
+  function failingThenWaiting(status: number | "network") {
+    vi.mocked(sessionFetch).mockImplementationOnce(((_url: string, init?: RequestInit, hooks?: { onResponse?: (r: Response) => void }) =>
+      new Promise((_resolve, reject) => {
+        if (status !== "network") hooks?.onResponse?.(response({}, status));
+        init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+      })) as never);
+  }
+
+  it("a 503 seen before the cancel is remembered for 60 s: the next call sends nothing", async () => {
+    failingThenWaiting(503);
+    const ctl = new AbortController();
+    const pending = getGameConfig({ signal: ctl.signal });
+    await vi.waitFor(() => expect(sessionFetch).toHaveBeenCalledTimes(1));
+    ctl.abort();
+    expect(await pending).toBeNull();
+    await new Promise(r => setTimeout(r, 0));
+    expect(await getGameConfig()).toBeNull();
+    expect(sessionFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("a cancel before any response records nothing", async () => {
+    failingThenWaiting("network");
+    const ctl = new AbortController();
+    const pending = getGameConfig({ signal: ctl.signal });
+    await vi.waitFor(() => expect(sessionFetch).toHaveBeenCalledTimes(1));
+    ctl.abort();
+    expect(await pending).toBeNull();
+    await new Promise(r => setTimeout(r, 0));
+    expect(await getGameConfig()).not.toBeNull();
+    expect(sessionFetch).toHaveBeenCalledTimes(2);
+  });
+});

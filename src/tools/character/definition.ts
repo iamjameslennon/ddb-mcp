@@ -16,7 +16,7 @@ import { classifyEdition, editionTag, rulesLine, type EditionInfo, type EditionM
 import { getSourceIndex } from "../../game-config.js";
 import { fetchCharacter, withNotice } from "../character.js";
 import { computeCharacterEditions, type CharacterEditions } from "./editions.js";
-import { isHomebrewClassFeature, isHomebrewEntry, levenshteinDistance } from "./helpers.js";
+import { featureDefinition, isHomebrewClassFeature, isHomebrewEntry, levenshteinDistance } from "./helpers.js";
 import type { CharData } from "./types.js";
 
 function matchesDefinitionQuery(name: string, query: string): boolean {
@@ -193,8 +193,9 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
 
     const subDef = obj(cls.subclassDefinition);
     const subName = str(subDef.name);
+    // Plain definitions here, unlike classes[].classFeatures (featureDefinition reads both shapes).
     for (const cf of arr<Record<string, unknown>>(subDef.classFeatures)) {
-      const d = obj(cf.definition);
+      const d = featureDefinition(cf);
       const name = str(d.name);
       const requiredLevel = num(d.requiredLevel || 1);
       const label = subName ? `${className} / ${subName}` : className;

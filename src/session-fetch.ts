@@ -216,6 +216,11 @@ function mergeSignals(lifecycle: AbortSignal, caller?: AbortSignal | null): Abor
   return AbortSignal.any([lifecycle, caller]);
 }
 
+/** Observers of one request. `onResponse` sees every attempt's response, retried ones included. */
+export interface FetchHooks {
+  onResponse?(resp: Response): void;
+}
+
 /**
  * `beforeDispatch` runs immediately before every dispatch. The authenticated
  * path passes its authority check; the anonymous path has no session to check.
@@ -225,7 +230,8 @@ async function fetchWithRetry(
   options: RequestInit,
   beforeDispatch: () => void,
   maxRetries = 3,
-  baseDelayMs = 1000
+  baseDelayMs = 1000,
+  hooks: FetchHooks = {},
 ): Promise<Response> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     // Authority check immediately before every dispatch — including the retry
@@ -238,6 +244,7 @@ async function fetchWithRetry(
     options.signal?.throwIfAborted();
 
     const resp = await fetch(url, options);
+    hooks.onResponse?.(resp);
 
     if (resp.ok || NON_RETRYABLE_STATUS_CODES.has(resp.status)) {
       return resp;
@@ -269,7 +276,8 @@ async function snapshotFetch(
   snapshot: SessionSnapshot,
   url: string,
   options: RequestInit,
-  bearer?: string
+  bearer?: string,
+  hooks: FetchHooks = {},
 ): Promise<Response> {
   if (snapshot.state.kind !== "authenticated") {
     throw new Error("No session found. Please run ddb_login first to authenticate.");
@@ -291,7 +299,10 @@ async function snapshotFetch(
         Cookie: cookieHeader,
       },
     },
-    () => assertSessionCurrent(snapshot)
+    () => assertSessionCurrent(snapshot),
+    undefined,
+    undefined,
+    hooks,
   );
 
   // Final authority check before publishing the result into the caller's flow.
@@ -503,12 +514,12 @@ export async function getCobaltToken(): Promise<{ token: string; userId: string 
  * the authority check: it captures
  * a fresh snapshot, refuses when anonymous, and binds the request to it.
  */
-export async function sessionFetch(url: string, options: RequestInit = {}): Promise<Response> {
+export async function sessionFetch(url: string, options: RequestInit = {}, hooks: FetchHooks = {}): Promise<Response> {
   const snapshot = captureSession();
   if (snapshot.state.kind !== "authenticated") {
     throw new Error("No session found. Please run ddb_login first to authenticate.");
   }
-  return snapshotFetch(snapshot, url, options);
+  return snapshotFetch(snapshot, url, options, undefined, hooks);
 }
 
 /**

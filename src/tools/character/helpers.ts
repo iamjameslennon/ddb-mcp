@@ -36,16 +36,29 @@ export const isHomebrewEntry = (...records: unknown[]): boolean =>
   records.some(r => obj(r).isHomebrew === true || obj(obj(r).definition).isHomebrew === true);
 
 /**
- * Whether a class feature entry is one of its class's subclass features: the
- * same definition id as one in `subclassDefinition.classFeatures`, or (an
- * entry without ids) the same name.
+ * A class feature's definition. `classes[].classFeatures` wraps each one
+ * (`{ definition, levelScale }`); `subclassDefinition.classFeatures` lists
+ * plain definitions (live D&D Beyond data, probe 2026-10-23). Both shapes are read.
+ */
+export const featureDefinition = (feature: unknown): Record<string, unknown> => {
+  const f = obj(feature);
+  return f.definition != null ? obj(f.definition) : f;
+};
+
+/**
+ * Whether a class feature entry is one of its class's subclass features: its
+ * definition's `classId` is the subclass's id, or it has the same definition id
+ * as one in `subclassDefinition.classFeatures`, or (an entry without ids) the
+ * same name.
  */
 function isSubclassFeature(feature: unknown, subclass: Record<string, unknown>): boolean {
-  const def = obj(obj(feature).definition);
+  const def = featureDefinition(feature);
+  const subclassId = num(subclass.id);
+  if (subclassId && num(def.classId) === subclassId) return true;
   const id = num(def.id);
   const name = str(def.name);
-  return arr<Record<string, unknown>>(subclass.classFeatures).some(sf => {
-    const subDef = obj(sf.definition);
+  return arr<unknown>(subclass.classFeatures).some(sf => {
+    const subDef = featureDefinition(sf);
     const subId = num(subDef.id);
     return id && subId ? id === subId : name !== "" && str(subDef.name) === name;
   });

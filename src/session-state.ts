@@ -28,7 +28,7 @@
  */
 
 import {
-  readFileSync, existsSync, chmodSync, rmSync, readdirSync,
+  readFileSync, existsSync, chmodSync, rmSync, readdirSync, statSync,
   openSync, closeSync, writeFileSync, fchmodSync, renameSync, constants,
 } from "fs";
 import { isAbsolute, join } from "path";
@@ -197,17 +197,28 @@ function processAlive(pid: number): boolean {
 }
 
 /**
+ * A temp file younger than this is never swept: a writer in another PID
+ * namespace (a container sharing the config directory) reads as dead here.
+ */
+const TEMP_FILE_MIN_AGE_MS = 10_000;
+
+/**
  * Best effort, never throws: remove `session.json.<pid>.tmp` files whose
  * writer crashed between its write and its rename (they hold a copy of the
- * cookies). This process's own temp path and a running process's are kept: a
- * live writer may be between its write and its rename.
+ * cookies). This process's own temp path, a running process's, and any
+ * modified in the last TEMP_FILE_MIN_AGE_MS are kept: a live writer may be
+ * between its write and its rename.
  */
 function removeStaleTempFiles(): void {
   try {
     for (const name of readdirSync(SESSION_DIR)) {
       const pid = Number(TEMP_FILE.exec(name)?.[1]);
       if (!Number.isSafeInteger(pid) || pid <= 0 || pid === process.pid || processAlive(pid)) continue;
-      try { rmSync(join(SESSION_DIR, name), { force: true }); } catch { /* best-effort */ }
+      const path = join(SESSION_DIR, name);
+      try {
+        if (Date.now() - statSync(path).mtimeMs < TEMP_FILE_MIN_AGE_MS) continue;
+        rmSync(path, { force: true });
+      } catch { /* best-effort */ }
     }
   } catch {
     // Unlistable directory: nothing to sweep.
