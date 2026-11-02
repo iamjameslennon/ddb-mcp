@@ -1,6 +1,7 @@
 import { getMonsterStats, type MonsterStatsResult } from "./monster.js";
 import { peekSourceIndex } from "../game-config.js";
-import { classifyEdition, rulesLine, editionTag, ambiguityMessage, DMG_SOURCE_ID, type RulesEdition } from "../edition.js";
+import { mapWithConcurrency, MONSTER_LOOKUP_CONCURRENCY } from "../utils.js";
+import { classifyEdition, rulesLine, editionTag, ambiguityMessage, unknownCrMessage, DMG_SOURCE_ID, type RulesEdition } from "../edition.js";
 import { validateTreasureBudget, MAX_MONSTER_NAME_CHARS, MAX_TREASURE_OUTPUT_CHARS } from "../treasure-limits.js";
 
 // ── Dice helpers ──────────────────────────────────────────────────────────────
@@ -517,7 +518,7 @@ export async function generateTreasure(
   // ── Monster list path ─────────────────────────────────────────────────────
   const monsterList = monsters!;
   const uniqueNames = [...new Set(monsterList.map(m => m.name))];
-  const statsResults = await Promise.all(uniqueNames.map(n => getMonsterStats(n, { rulesEdition })));
+  const statsResults = await mapWithConcurrency(uniqueNames, MONSTER_LOOKUP_CONCURRENCY, n => getMonsterStats(n, { rulesEdition }));
   const resolvedMap = new Map<string, MonsterStatsResult>();
   for (let i = 0; i < uniqueNames.length; i++) {
     resolvedMap.set(uniqueNames[i], statsResults[i]);
@@ -535,12 +536,14 @@ export async function generateTreasure(
     }
   }
 
-  // A name that resolved to nothing, or to several distinct creatures.
+  // A name that resolved to nothing, to several distinct creatures, or to one whose CR isn't known.
   const unresolvedLine = (n: string): string => {
     const stats = resolvedMap.get(n);
-    return stats?.status === "ambiguous"
-      ? `  ✗ ${ambiguityMessage(displayName(n), stats.candidates.map(c => ({ name: displayName(c.name), cr: c.crValue === null ? null : crDisplay(c.crValue) })))}`
-      : `  ✗ "${displayName(n)}" — not found in DDB or Open5e`;
+    if (stats?.status === "ambiguous") {
+      return `  ✗ ${ambiguityMessage(displayName(n), stats.candidates.map(c => ({ name: displayName(c.name), cr: c.crValue === null ? null : crDisplay(c.crValue) })))}`;
+    }
+    if (stats?.status === "unknown-cr") return `  ✗ ${unknownCrMessage(displayName(stats.name))}`;
+    return `  ✗ "${displayName(n)}" — not found in DDB or Open5e`;
   };
 
   if (found.length === 0) {

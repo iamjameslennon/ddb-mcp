@@ -27,6 +27,7 @@ vi.mock("../src/open5e.js", () => ({
 
 import { getMonster, searchMonsters, getMonsterStats, clearMonsterCache, statBlockText } from "../src/tools/monster.js";
 import { rateEncounter } from "../src/tools/encounter.js";
+import { generateTreasure } from "../src/tools/treasure.js";
 import { sessionFetch, hasValidSession, onSessionInvalidated, beginAuthenticatedSession } from "../src/session-fetch.js";
 import { stripHtmlRich } from "../src/utils.js";
 import { o5SearchMonstersSection, o5GetMonster, o5GetMonsterStats, o5MonsterInEdition } from "../src/open5e.js";
@@ -573,10 +574,18 @@ describe("getMonster source filter", () => {
 
   it("resolves the source through the snapshot when DDB's game config is unavailable", async () => {
     configAvailable = false;
-    const result = await getMonster("Strahd Zombie", { source: "cos" });
-    expect(result).toContain("Rotting Claw");
+    const result = await searchMonsters({ name: "Strahd Zombie", source: "cos" });
+    expect(result).toContain("**Strahd Zombie**");
     expect(listUrls[0]).toContain("sources=6");
-    expect(o5GetMonster).not.toHaveBeenCalled();
+    expect(o5SearchMonstersSection).not.toHaveBeenCalled();
+  });
+
+  it("a get without the game config answers from Open5e with the source caveat (minors C #12), never (id:N)", async () => {
+    configAvailable = false;
+    const result = await getMonster("Strahd Zombie", { source: "cos" });
+    expect(result).toContain("O5 MONSTER RESULT");
+    expect(result).toContain("could not be honoured");
+    expect(result).not.toContain("(id:");
   });
 
   it("falls back to Open5e with a caveat when logged out and monster-service is unreachable", async () => {
@@ -1880,8 +1889,13 @@ describe("config unavailable (item 2)", () => {
     expect(o5SearchMonstersSection).toHaveBeenCalledWith({ name: "Zombie" }, "unavailable");
   });
 
-  it("logged in, a plain get still shows the D&D Beyond stat block, as before", async () => {
-    expect(await getMonster("Zombie")).toContain("**Challenge** (id:3)");
+  it("logged in, a plain get goes to Open5e as unavailable too (minors C #12), never (id:N) or type N", async () => {
+    expect(await getMonster("Zombie")).toBe("O5 MONSTER RESULT");
+    expect(o5GetMonster).toHaveBeenCalledWith("Zombie", "2024", "unavailable");
+  });
+
+  it("logged in, a homebrew get keeps its D&D Beyond block (no Open5e answer for homebrew)", async () => {
+    expect(await getMonster("Zombie", { source: "homebrew" })).toContain("HOMEBREW SLAM");
   });
 
   it("getMonsterStats falls to Open5e with no CR table, logged in or out", async () => {
@@ -2010,5 +2024,120 @@ describe("a logged-out restricted get answered by the other edition's SRD (M2)",
     goLoggedOut();
     await getMonster("Sealed Drake");
     expect(o5GetMonster).toHaveBeenCalledWith("Sealed Drake", "2024", "needs-login", "2024");
+  });
+});
+
+// ── Minors batch C ────────────────────────────────────────────────────────────
+
+describe("minors C #6: an SRD record with a null AC or HP prints dashes for that part", () => {
+  it("prints — for the null part, the SRD's value for the other", async () => {
+    const LOCKED = monster({ id: 8_001_000, name: "Vault Lich", sourceId: 147, sources: sources(147), armorClass: 0, averageHitPoints: 0 });
+    extraMonsters = [LOCKED];
+    unownedIds.add(LOCKED.id as number);
+    vi.mocked(o5MonsterInEdition).mockResolvedValue({ armorClass: null, hitPoints: 135, text: () => "SRD" } as never);
+    const line = (await searchMonsters({ name: "Vault Lich" })).split("\n").find(l => l.startsWith("- **Vault Lich**"));
+    expect(line).toContain("AC —, 135 HP");
+    vi.mocked(o5MonsterInEdition).mockResolvedValue({ armorClass: 17, hitPoints: null, text: () => "SRD" } as never);
+    clearMonsterCache();
+    const again = (await searchMonsters({ name: "Vault Lich" })).split("\n").find(l => l.startsWith("- **Vault Lich**"));
+    expect(again).toContain("AC 17, — HP");
+  });
+});
+
+describe("minors C #7: a scan of exactly the cap is complete", () => {
+  it("600 entries in all, 600 checked: no 600+ and no partial note", async () => {
+    // 598 + the two RtHW entries in ALL_MONSTERS: exactly MAX_FILTER_SCAN.
+    extraMonsters = Array.from({ length: 598 }, (_, i) => monster({
+      id: 3_400_000 + i, name: `Cap ${String(i).padStart(3, "0")}`, sourceId: 232, sources: sources(232),
+    }));
+    const out = await searchMonsters({ source: "rthw", cr: 0.25 });
+    expect(out).toContain("checked 600 of 600 matched by source");
+    expect(out).not.toContain("600+");
+    expect(out).not.toContain("Only the first");
+  });
+
+  it("more than the cap still says so", async () => {
+    extraMonsters = Array.from({ length: 640 }, (_, i) => monster({
+      id: 3_500_000 + i, name: `Over ${String(i).padStart(3, "0")}`, sourceId: 232, sources: sources(232),
+    }));
+    const out = await searchMonsters({ source: "rthw", cr: 0.25 });
+    expect(out).toContain("checked 600 of 642 matched by source");
+    expect(out).toContain("Only the first 600 of 642 were checked");
+  });
+});
+
+describe("minors C #8 / #11: a known creature whose CR isn't known", () => {
+  const WYRM_2024 = monster({ id: 8_001_100, name: "Blank Wyrm", sourceId: 147, sources: sources(147), challengeRatingId: 99 });
+  const WYRM_2014 = monster({ id: 8_001_101, name: "Blank Wyrm", isLegacy: true, sourceId: 1, sources: sources(1), challengeRatingId: 5 });
+  const SRD_2014 = { status: "found", name: "Blank Wyrm", crValue: 1, xp: 200, info: { ruleset: "2014", book: null } } as const;
+  beforeEach(() => { vi.mocked(o5GetMonsterStats).mockResolvedValue({ status: "not-found" }); });
+
+  it("the requested edition's entry with an unknown CR is unknown-cr: never Open5e's other-edition record", async () => {
+    extraMonsters = [WYRM_2024, WYRM_2014];
+    vi.mocked(o5GetMonsterStats).mockResolvedValue(SRD_2014 as never);
+    expect(await getMonsterStats("Blank Wyrm")).toMatchObject({ status: "unknown-cr", name: "Blank Wyrm" });
+    expect(o5GetMonsterStats).not.toHaveBeenCalled();
+  });
+
+  it("a single partial group with an unknown CR is unknown-cr too", async () => {
+    extraMonsters = [WYRM_2024];
+    expect(await getMonsterStats("Blank Wy")).toMatchObject({ status: "unknown-cr", name: "Blank Wyrm" });
+    expect(o5GetMonsterStats).not.toHaveBeenCalled();
+  });
+
+  it("an other-edition pick with an unknown CR still asks Open5e for the requested edition; unknown-cr when it has nothing", async () => {
+    extraMonsters = [{ ...WYRM_2014, challengeRatingId: 99 }];
+    const SRD_2024 = { status: "found", name: "Blank Wyrm", crValue: 2, xp: 450, info: { ruleset: "2024", book: null } };
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce(SRD_2024 as never);
+    expect(await getMonsterStats("Blank Wyrm")).toEqual(SRD_2024);
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce({ status: "not-found" });
+    expect(await getMonsterStats("Blank Wyrm")).toMatchObject({ status: "unknown-cr", name: "Blank Wyrm" });
+  });
+
+  it("D&D Beyond unavailable still falls back to Open5e", async () => {
+    extraMonsters = [WYRM_2024, WYRM_2014];
+    failSearchTerms.add("blank wyrm");
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce(SRD_2014 as never);
+    expect(await getMonsterStats("Blank Wyrm")).toEqual(SRD_2014);
+  });
+
+  it("rateEncounter says the CR isn't known instead of not found", async () => {
+    extraMonsters = [WYRM_2024, WYRM_2014];
+    const out = await rateEncounter([{ count: 4, level: 5 }], [{ name: "Blank Wyrm" }, { name: "Wolf" }], "2024");
+    expect(out).toContain('⚠ "Blank Wyrm" — its CR isn\'t known; supply cr manually');
+    expect(out).not.toContain("Not found in compendium");
+    expect(out).toContain("1 × Wolf [2024]");
+  });
+
+  it("generateTreasure says the CR isn't known instead of not found", async () => {
+    extraMonsters = [WYRM_2024, WYRM_2014];
+    const out = await generateTreasure({ monsters: [{ name: "Blank Wyrm", count: 1 }, { name: "Wolf", count: 1 }], treasureType: "individual" });
+    expect(out).toContain('  ✗ "Blank Wyrm" — its CR isn\'t known; supply cr manually');
+    expect(out).not.toContain("not found in DDB or Open5e");
+    const alone = await generateTreasure({ monsters: [{ name: "Blank Wyrm", count: 1 }], treasureType: "individual" });
+    expect(alone).toContain('  ✗ "Blank Wyrm" — its CR isn\'t known; supply cr manually');
+  });
+});
+
+describe("minors C #9: logged out, the SRD is probed only where the filters can use it", () => {
+  const HOUND_2024 = monster({ id: 8_001_200, name: "Grave Hound", sourceId: 147, sources: sources(147), challengeRatingId: 5 });
+  const HOUND_2014 = monster({ id: 8_001_201, name: "Grave Hound", isLegacy: true, sourceId: 1, sources: sources(1), challengeRatingId: 4 });
+
+  it("a filtered search where neither edition passes makes no Open5e request", async () => {
+    extraMonsters = [HOUND_2024, HOUND_2014];
+    unownedIds.add(HOUND_2024.id as number);
+    vi.mocked(o5MonsterInEdition).mockResolvedValue({ armorClass: 13, hitPoints: 30, text: () => "SRD" } as never);
+    goLoggedOut();
+    const out = await searchMonsters({ name: "Grave Hound", cr: 4 });
+    expect(out).not.toContain("**Grave Hound**");
+    expect(o5MonsterInEdition).not.toHaveBeenCalled();
+  });
+});
+
+describe("minors C #12: logged in without the game config, a get answers from Open5e", () => {
+  it("goes to Open5e as unavailable, never (id:N) or type N", async () => {
+    configAvailable = false;
+    expect(await getMonster("Zombie")).toBe("O5 MONSTER RESULT");
+    expect(o5GetMonster).toHaveBeenCalledWith("Zombie", "2024", "unavailable");
   });
 });

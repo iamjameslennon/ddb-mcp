@@ -8,7 +8,8 @@
 
 import { getMonsterStats } from "./monster.js";
 import { peekSourceIndex } from "../game-config.js";
-import { classifyEdition, rulesLine, editionTag, ambiguityMessage, DMG_SOURCE_ID, type RulesEdition } from "../edition.js";
+import { mapWithConcurrency, MONSTER_LOOKUP_CONCURRENCY } from "../utils.js";
+import { classifyEdition, rulesLine, editionTag, ambiguityMessage, unknownCrMessage, DMG_SOURCE_ID, type RulesEdition } from "../edition.js";
 
 // ── XP thresholds by level (2014 DMG p.82) ────────────────────────────────────
 // Tuple: [easy, medium, hard, deadly]
@@ -108,7 +109,7 @@ function encounterRulesLine(rulesEdition: RulesEdition): string {
   return rulesLine(classifyEdition({ sourceId: DMG_SOURCE_ID[rulesEdition] }, peekSourceIndex()));
 }
 
-/** The unresolved-name warnings under the result: not-found names, then each ambiguous one. */
+/** The unresolved-name warnings under the result: not-found names, then each ambiguous or CR-less one. */
 function warningLines(notFound: string[], ambiguous: string[]): string[] {
   if (!notFound.length && !ambiguous.length) return [];
   return [
@@ -262,10 +263,10 @@ export async function rateEncounter(
   const notFound: string[] = [];
   const ambiguous: string[] = [];
 
-  // Distinct names resolve concurrently; the loop below keeps input order.
+  // Distinct names resolve concurrently, MONSTER_LOOKUP_CONCURRENCY at a time; the loop below keeps input order.
   const lookupNames = [...new Set(monsters.filter(m => m.cr === undefined && m.name).map(m => m.name as string))];
   const lookups = new Map<string, Awaited<ReturnType<typeof getMonsterStats>>>(
-    (await Promise.all(lookupNames.map(async n => [n, await getMonsterStats(n, { rulesEdition })] as const))),
+    await mapWithConcurrency(lookupNames, MONSTER_LOOKUP_CONCURRENCY, async n => [n, await getMonsterStats(n, { rulesEdition })] as const),
   );
 
   for (const m of monsters) {
@@ -291,6 +292,12 @@ export async function rateEncounter(
       }
       if (stats.status === "ambiguous") {
         ambiguous.push(ambiguityMessage(m.name, stats.candidates.map(c => ({ name: c.name, cr: c.crValue === null ? null : displayCr(c.crValue) }))));
+        continue;
+      }
+      if (stats.status === "unknown-cr") {
+        // Listed with the ambiguous names: each is its own line telling the user to supply cr.
+        const message = unknownCrMessage(stats.name);
+        if (!ambiguous.includes(message)) ambiguous.push(message);
         continue;
       }
       resolvedName = stats.name;

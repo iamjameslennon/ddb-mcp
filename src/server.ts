@@ -18,7 +18,7 @@ import type { Difficulty } from "./tools/encounter.js";
 import { generateTreasure } from "./tools/treasure.js";
 import { MAX_TREASURE_ENTRIES, MAX_MONSTER_COUNT, MAX_INDIVIDUAL_ROLLS, MAX_MONSTER_NAME_CHARS } from "./treasure-limits.js";
 import { searchSpells, getSpell, searchItems, getItem, searchRaces, searchClasses, searchBackgrounds, searchFeats, searchClassFeatures, searchRacialTraits, searchRules, getRule, clearReferenceCache } from "./tools/reference.js";
-import { clearOpen5eCache } from "./open5e.js";
+import { clearOpen5eCache, clearOpen5eCreatures } from "./open5e.js";
 import { getCondition } from "./tools/conditions.js";
 import { RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, PARTY_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, TREASURE_RULES_EDITION_NOTE, SERVER_INSTRUCTIONS } from "./edition.js";
 
@@ -144,7 +144,7 @@ server.tool(
     cache: z
       .enum(["spells", "characters", "monsters", "all"])
       .default("spells")
-      .describe("Which cache to clear. 'spells' (default) — the spell / equipment / races / classes / feats compendium. 'characters' — character JSON cache. 'monsters' — monster stat-block cache. 'all' — everything, including the library list, campaigns and Open5e responses."),
+      .describe("Which cache to clear. 'spells' (default) — the spell / equipment / races / classes / feats compendium. 'characters' — character JSON cache. 'monsters' — monster stat-block cache, the game config, and the Open5e SRD creature data (including a remembered Open5e failure). 'all' — everything, including the library list, campaigns and Open5e responses."),
   },
   { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   async ({ cache }) => {
@@ -159,9 +159,11 @@ server.tool(
     }
     if (cache === "monsters" || cache === "all") {
       clearMonsterCache();
-      // The game config (session-bound and public) and their failure memos.
+      // The game config (session-bound and public) and their failure memos, and
+      // Open5e's creature documents (cache, fetches in flight, failure memos).
       clearGameConfig();
       clearPublicGameConfig();
+      clearOpen5eCreatures();
       cleared.push("monsters");
     }
     if (cache === "all") {

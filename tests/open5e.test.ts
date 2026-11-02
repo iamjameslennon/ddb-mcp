@@ -1254,10 +1254,12 @@ describe("Open5e equipment rename lines and the same-document guard", () => {
 describe("Open5e monster, filter and item fixes (Task 11)", () => {
   const wolf = () => o5Record<Record<string, unknown>>("srd-2024", "creatures", "Wolf");
 
-  it("a 2024 creature with an unrecognised CR is not-found, not its 2014 twin (#8)", async () => {
+  it("a 2024 creature with an unrecognised CR is unknown-cr, not its 2014 twin (#8, minors C #11)", async () => {
     const odd = { ...o5Record<Record<string, unknown>>("srd-2024", "creatures", "Goblin Warrior"), challenge_rating: 0.3 };
     stubFetch(o5FixtureFetch({ "srd-2024/creatures": [odd] }));
-    expect(await o5GetMonsterStats("Goblin Warrior", "2024")).toEqual({ status: "not-found" });
+    expect(await o5GetMonsterStats("Goblin Warrior", "2024")).toEqual({
+      status: "unknown-cr", name: "Goblin Warrior", info: { ruleset: "2024", book: null },
+    });
   });
 
   it("matches school, type and size by part of a word", async () => {
@@ -1307,16 +1309,16 @@ describe("Open5e monster, filter and item fixes (Task 11)", () => {
       expect(out).toContain('⚠ Ambiguous: "oblin" could be Goblin Boss (CR 1), Goblin Warrior (CR unknown) — use the full name.');
     });
 
-    it("every group's pick unknown is not-found; a single group with an unknown CR is not-found", async () => {
+    it("every group's pick unknown is not-found; an exact name with an unknown CR is unknown-cr (minors C #11)", async () => {
       stubFetch(o5FixtureFetch({ "srd-2024/creatures": [gob("Goblin Boss", 1.5), gob("Goblin Warrior", 0.3)] }));
       expect(await o5GetMonsterStats("oblin", "2024")).toEqual({ status: "not-found" });
       stubFetch(o5FixtureFetch({ "srd-2024/creatures": [gob("Goblin Boss", 1.5), gob("Goblin Warrior", 0.3)] }));
-      expect(await o5GetMonsterStats("Goblin Boss", "2024")).toEqual({ status: "not-found" });
+      expect(await o5GetMonsterStats("Goblin Boss", "2024")).toMatchObject({ status: "unknown-cr", name: "Goblin Boss" });
     });
 
-    it("a partial name matching one group with an unknown CR is not-found; with a known CR it is found", async () => {
+    it("a partial name matching one group with an unknown CR is unknown-cr; with a known CR it is found", async () => {
       stubFetch(o5FixtureFetch({ "srd-2024/creatures": [gob("Goblin Boss", 1.5), gob("Hobgoblin", 1)] }));
-      expect(await o5GetMonsterStats("Boss", "2024")).toEqual({ status: "not-found" });
+      expect(await o5GetMonsterStats("Boss", "2024")).toMatchObject({ status: "unknown-cr", name: "Goblin Boss" });
       expect(await o5GetMonsterStats("Hobgob", "2024")).toMatchObject({ status: "found", name: "Hobgoblin", crValue: 1 });
     });
 

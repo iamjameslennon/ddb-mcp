@@ -414,10 +414,11 @@ async function fetchMonsterPages(
   // read N > M.
   const total = Math.max(data.length, ...[first, ...rest].map(page => page.pagination.total));
   // Known incomplete even when the totals agree with what was seen: a full
-  // first page whose total says it was the only page (the total lags), or a
-  // scan that reached `limit`.
+  // first page whose total says it was the only page (the total lags). A scan
+  // that reached `limit` is incomplete only when a total says there is more
+  // (callers compare `total` with what was checked), so exactly 600 of 600 is complete.
   // (A first page of exactly PAGE_SIZE reporting PAGE_SIZE is a genuine single page.)
-  const incomplete = ((first.data?.length ?? 0) >= PAGE_SIZE && first.pagination.total < PAGE_SIZE) || data.length >= limit;
+  const incomplete = (first.data?.length ?? 0) >= PAGE_SIZE && first.pagination.total < PAGE_SIZE;
   return { data, total, access, snapshot, incomplete };
 }
 
@@ -748,7 +749,7 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
     // the creature: its stat block is that SRD text (owner ruling 2026-11-02).
     // Such a group counts as available before selection, so the filters and the
     // hidden count judge its requested pick like any other.
-    const srdBacked = asker.anonymous ? await srdBackedGroups(fetched, access, requested, info, monsterTiebreak(index)) : new Map<string, O5EditionMonster>();
+    const srdBacked = asker.anonymous ? await srdBackedGroups(fetched, access, requested, info, monsterTiebreak(index), passes) : new Map<string, O5EditionMonster>();
     const picked = groupAndSelect(fetched, requested, {
       info, twinKey: m => monsterTwin(m.name), tiebreak: monsterTiebreak(index), passes,
       available: m => !isLockedIn(access, m.id) || srdBacked.has(monsterTwin(m.name)),
@@ -837,8 +838,9 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
       sourceStr += `, reprinted in ${sourceLabel(index, via)}`;
     }
     // A locked list entry's AC and HP are zeroed: the SRD's, else dashes.
-    const ac = srd?.armorClass ?? (statsUnknown ? "—" : m.armorClass);
-    const hp = srd?.hitPoints ?? (statsUnknown ? "—" : m.averageHitPoints);
+    // An SRD record's null AC or HP is unknown too: a dash, never the zeroed list value.
+    const ac = srd ? srd.armorClass ?? "—" : statsUnknown ? "—" : m.armorClass;
+    const hp = srd ? srd.hitPoints ?? "—" : statsUnknown ? "—" : m.averageHitPoints;
     let line = `- **${m.name}** ${editionTag(mInfo)}${tagStr} — ${sourceStr} — CR ${crStr}, ${size} ${typeName}, AC ${ac}, ${hp} HP`;
     if (isLockedReason(reason)) line += ` ${lockedLineSuffix(reason, asker.anonymous)}`;
     // Homebrew names are user-authored — delimit them, as getMonster does for
@@ -884,8 +886,10 @@ export async function getMonster(
 
   try {
     const config = await configFor(asker);
-    // Logged out without the public config, a stat block would read "(id:N)" / "type N": use Open5e.
-    if (!config && asker.anonymous) throw new Error("Game config unavailable");
+    // Without the config (public or session-bound), a stat block would read
+    // "(id:N)" / "type N": use Open5e as "unavailable" (owner ruling 2026-11-02).
+    // Homebrew has no Open5e answer and keeps its D&D Beyond block.
+    if (!config && !homebrew) throw new Error("Game config unavailable");
     // No extra request: getGameConfig() serves this call from its cache (or its failure cache).
     const index = await getSourceIndex();
     const info = (m: DdbMonster) => classifyEdition(m, index);
@@ -1089,11 +1093,15 @@ async function withListStats<R extends { m: DdbMonster; info: EditionInfo; srd?:
  * Logged out: the twin groups that would swap (every requested-edition entry
  * locked, an available other-edition entry) whose requested pick the requested
  * edition's SRD has, keyed by twin name. An Open5e failure counts as "the SRD
- * lacks it", so the swap stays.
+ * lacks it", so the swap stays. Only groups the answer can change are probed:
+ * the requested pick or an other-edition entry passes the CR/type/size
+ * filters. When neither does, the group lists nothing and counts nothing
+ * either way, so a filtered search that matches nothing asks Open5e nothing.
  */
 async function srdBackedGroups(
   fetched: DdbMonster[], access: AccessMap, requested: RulesEdition,
   info: (m: DdbMonster) => EditionInfo, tiebreak: (a: DdbMonster, b: DdbMonster) => number,
+  passes: (m: DdbMonster) => boolean,
 ): Promise<Map<string, O5EditionMonster>> {
   const other: RulesEdition = requested === "2024" ? "2014" : "2024";
   const groups = new Map<string, DdbMonster[]>();
@@ -1106,6 +1114,7 @@ async function srdBackedGroups(
     const wanted = group.filter(m => info(m).ruleset === requested).sort(tiebreak);
     if (!wanted.length || wanted.some(m => !isLockedIn(access, m.id))) return;
     if (!group.some(m => info(m).ruleset === other && !isLockedIn(access, m.id))) return;
+    if (!passes(wanted[0]) && !group.some(m => info(m).ruleset === other && passes(m))) return;
     const srd = await o5MonsterInEdition(wanted[0].name, requested).catch(() => null);
     if (srd) backed.set(key, srd);
   }));
@@ -1135,6 +1144,8 @@ export async function getMonsterStats(name: string, opts: { rulesEdition?: Rules
   const requested = opts.rulesEdition ?? "2024";
   // Logged out, monster-service is still asked, anonymously.
   const asker = askerNow();
+  // Set when D&D Beyond's only pick is another edition's entry with an unknown CR.
+  let unknownElsewhere: MonsterStatsResult | null = null;
   try {
     const config = await configFor(asker);
     // No CR table, no CR: Open5e answers instead.
@@ -1154,48 +1165,58 @@ export async function getMonsterStats(name: string, opts: { rulesEdition?: Rules
     };
     // The edition is picked over every name match first; a pick whose CR the
     // config doesn't know is never replaced by its other-edition twin (fail
-    // closed, as o5GetMonsterStats does).
+    // closed, as o5GetMonsterStats does): it is unknown-cr.
     const found = (group: DdbMonster[]): MonsterStatsResult | null => {
       const picked = selectByEdition(group, requested, info, tiebreak);
       if (!picked) return null;
       const s = stats(picked.entry);
-      return s.crValue !== null && s.xp !== null ? { status: "found", name: s.name, crValue: s.crValue, xp: s.xp, info: info(picked.entry) } : null;
+      return s.crValue !== null && s.xp !== null
+        ? { status: "found", name: s.name, crValue: s.crValue, xp: s.xp, info: info(picked.entry) }
+        : { status: "unknown-cr", name: s.name, info: info(picked.entry) };
+    };
+    // D&D Beyond identified the creature but not its CR. The requested
+    // edition's entry ends the lookup there: Open5e must not answer with the
+    // other edition's SRD record. Another edition's pick (no requested-edition
+    // entry) still lets Open5e try the requested edition's SRD.
+    const settle = (result: MonsterStatsResult | null): MonsterStatsResult | null => {
+      if (result?.status !== "unknown-cr" || result.info.ruleset === requested) return result;
+      unknownElsewhere = result;
+      return null;
     };
 
     const key = monsterTwin(name);
     const exact = official.filter(m => monsterTwin(m.name) === key);
     if (exact.length) {
-      const result = found(exact);
+      const result = settle(found(exact));
       if (result) return result;
-      // The exact creature's CR is unknown: no partial guess on D&D Beyond.
-      throw new Error("Unknown CR");
-    }
-
-    const query = normalizeName(name);
-    const groups = new Map<string, DdbMonster[]>();
-    for (const m of official) {
-      if (!normalizeName(m.name).includes(query)) continue;
-      const k = monsterTwin(m.name);
-      groups.set(k, [...(groups.get(k) ?? []), m]);
-    }
-    if (groups.size === 1) {
-      const result = found([...groups.values()][0]);
-      if (result) return result;
-    } else if (groups.size > 1) {
-      const candidates = [...groups.values()]
-        .map(group => selectByEdition(group, requested, info, tiebreak))
-        .filter(picked => picked !== null)
-        .map(picked => stats(picked.entry));
-      // Unknown CRs are listed ("CR unknown"), last; all unknown falls through to Open5e.
-      if (candidates.some(c => c.crValue !== null)) {
-        candidates.sort((a, b) => (a.crValue === null ? 1 : 0) - (b.crValue === null ? 1 : 0)
-          || (a.crValue ?? 0) - (b.crValue ?? 0) || a.name.localeCompare(b.name));
-        return { status: "ambiguous", candidates };
+    } else {
+      const query = normalizeName(name);
+      const groups = new Map<string, DdbMonster[]>();
+      for (const m of official) {
+        if (!normalizeName(m.name).includes(query)) continue;
+        const k = monsterTwin(m.name);
+        groups.set(k, [...(groups.get(k) ?? []), m]);
+      }
+      if (groups.size === 1) {
+        const result = settle(found([...groups.values()][0]));
+        if (result) return result;
+      } else if (groups.size > 1) {
+        const candidates = [...groups.values()]
+          .map(group => selectByEdition(group, requested, info, tiebreak))
+          .filter(picked => picked !== null)
+          .map(picked => stats(picked.entry));
+        // Unknown CRs are listed ("CR unknown"), last; all unknown falls through to Open5e.
+        if (candidates.some(c => c.crValue !== null)) {
+          candidates.sort((a, b) => (a.crValue === null ? 1 : 0) - (b.crValue === null ? 1 : 0)
+            || (a.crValue ?? 0) - (b.crValue ?? 0) || a.name.localeCompare(b.name));
+          return { status: "ambiguous", candidates };
+        }
       }
     }
   } catch {
     // fall through to Open5e
   }
 
-  return o5GetMonsterStats(name, requested);
+  const o5 = await o5GetMonsterStats(name, requested);
+  return o5.status === "not-found" && unknownElsewhere ? unknownElsewhere : o5;
 }

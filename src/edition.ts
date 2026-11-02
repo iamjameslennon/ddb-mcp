@@ -795,6 +795,15 @@ export function ambiguityMessage(query: string, candidates: ReadonlyArray<{ name
   return `Ambiguous: "${query}" could be ${list} — use the full name.`;
 }
 
+/**
+ * The encounter and treasure line for a creature that was found but whose CR
+ * isn't known (getMonsterStats "unknown-cr"): the stat block exists, so "not
+ * found" would be wrong.
+ */
+export function unknownCrMessage(name: string): string {
+  return `"${name}" — its CR isn't known; supply cr manually`;
+}
+
 // ── Character summary ─────────────────────────────────────────────────────────
 
 export type CharacterEntryKind = "class" | "subclass" | "species" | "background" | "feat" | "spell" | "item";

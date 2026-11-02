@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { clearOpen5eCache, docKey, loadO5Document, O5_DOC, O5_DOCUMENT_DEADLINE_MS, O5_FAILURE_TTL_MS, type O5Endpoint, type O5Record } from "../src/open5e.js";
+import {
+  clearOpen5eCache, clearOpen5eCreatures, docKey, loadO5Document, o5GetEquipment, o5SearchItems,
+  O5_DOC, O5_DOCUMENT_DEADLINE_MS, O5_FAILURE_TTL_MS, type O5Endpoint, type O5Record,
+} from "../src/open5e.js";
 import { o5Fixture, o5FixtureFetch } from "./fixtures/open5e-v2.js";
 
 const ENDPOINTS: O5Endpoint[] = ["spells", "creatures", "items", "magicitems", "weapons", "armor", "species", "classes", "backgrounds", "feats", "rulesets"];
@@ -294,5 +297,120 @@ describe("failure memo, deadline and response checks", () => {
     // page 2 alone would only hit its own 20 s request timeout at t=35 s; the document deadline fires first, at t=30 s
     await vi.advanceTimersByTimeAsync(O5_DOCUMENT_DEADLINE_MS - 15_000);
     await outcome;
+  });
+});
+
+const callsTo = (fetchMock: ReturnType<typeof vi.fn>, endpoint: O5Endpoint) =>
+  fetchMock.mock.calls.filter(c => String(c[0]).includes(`/v2/${endpoint}/`)).length;
+
+describe("clearOpen5eCreatures (minors C #13: ddb_clear_cache monsters)", () => {
+  it("drops both creature documents' failure memos, leaving other endpoints' memos alone", async () => {
+    const fetchMock = vi.fn(async () => json({}, 503));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(loadO5Document("creatures", "2024")).rejects.toThrow();
+    await expect(loadO5Document("creatures", "2014")).rejects.toThrow();
+    await expect(loadO5Document("spells", "2024")).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    clearOpen5eCreatures();
+    fetchMock.mockImplementation(o5FixtureFetch() as never);
+    expect((await loadO5Document("creatures", "2024")).length).toBeGreaterThan(0);
+    expect((await loadO5Document("creatures", "2014")).length).toBeGreaterThan(0);
+    expect(callsTo(fetchMock, "creatures")).toBe(4);
+    // The spells failure is still remembered: no new request.
+    await expect(loadO5Document("spells", "2024")).rejects.toThrow();
+    expect(callsTo(fetchMock, "spells")).toBe(1);
+  });
+
+  it("drops cached creature records but keeps cached spells", async () => {
+    const fetchMock = vi.fn(o5FixtureFetch());
+    vi.stubGlobal("fetch", fetchMock);
+    await loadO5Document("creatures", "2024");
+    await loadO5Document("spells", "2024");
+    clearOpen5eCreatures();
+    await loadO5Document("creatures", "2024");
+    await loadO5Document("spells", "2024");
+    expect(callsTo(fetchMock, "creatures")).toBe(2);
+    expect(callsTo(fetchMock, "spells")).toBe(1);
+  });
+
+  it("a creature fetch in flight during the clear writes nothing", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(r => { release = r; });
+    const serve = o5FixtureFetch();
+    const fetchMock = vi.fn(async (input: unknown) => { await gate; return serve(input); });
+    vi.stubGlobal("fetch", fetchMock);
+    const first = loadO5Document("creatures", "2024");
+    clearOpen5eCreatures();
+    release();
+    expect((await first).length).toBeGreaterThan(0);
+    await loadO5Document("creatures", "2024");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("the equipment split (minors C #14, #15)", () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  /** Fixtures, except the given endpoints answer 503. */
+  function failing(...endpoints: O5Endpoint[]) {
+    const serve = o5FixtureFetch();
+    return vi.fn(async (input: unknown) =>
+      endpoints.some(e => String(input).includes(`/v2/${e}/`)) ? json({}, 503) : serve(input));
+  }
+
+  it("a search answers when weapons or armor fail to load; a get still fails", async () => {
+    const fetchMock = failing("weapons", "armor");
+    vi.stubGlobal("fetch", fetchMock);
+    const out = await o5SearchItems({ name: "Potion of Healing" }, "unavailable");
+    expect(out).toContain("Potion of Healing");
+    await expect(o5GetEquipment("Potion of Healing", "2024", "unavailable")).rejects.toThrow();
+  });
+
+  it("a split from a partial load is not cached: the next search tries weapons again", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const fetchMock = failing("weapons");
+    vi.stubGlobal("fetch", fetchMock);
+    await o5SearchItems({ name: "Potion" }, "unavailable");
+    expect(callsTo(fetchMock, "weapons")).toBe(2);
+    // Past the failure memo, weapons recover.
+    vi.setSystemTime(Date.now() + O5_FAILURE_TTL_MS + 1);
+    fetchMock.mockImplementation(o5FixtureFetch() as never);
+    await o5SearchItems({ name: "Potion" }, "unavailable");
+    expect(callsTo(fetchMock, "weapons")).toBe(4);
+    // Now complete, the split is cached: a third search loads no weapons.
+    await o5SearchItems({ name: "Potion" }, "unavailable");
+    expect(callsTo(fetchMock, "weapons")).toBe(4);
+  });
+
+  it("a split computed while a clear runs is not cached", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(r => { release = r; });
+    const serve = o5FixtureFetch();
+    const fetchMock = vi.fn(async (input: unknown) => {
+      if (String(input).includes("/v2/weapons/")) await gate;
+      return serve(input);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const first = o5SearchItems({ name: "Potion" }, "unavailable");
+    await vi.waitFor(() => expect(callsTo(fetchMock, "weapons")).toBe(2));
+    clearOpen5eCache();
+    release();
+    await first;
+    // Warm the documents a search needs, then search: a cached (stale) split would load no weapons.
+    for (const doc of ["srd-2024", "srd-2014"]) {
+      await loadO5Document("magicitems", doc === "srd-2024" ? "2024" : "2014");
+      await loadO5Document("items", doc === "srd-2024" ? "2024" : "2014");
+    }
+    const before = callsTo(fetchMock, "weapons");
+    await o5SearchItems({ name: "Potion" }, "unavailable");
+    expect(callsTo(fetchMock, "weapons")).toBe(before + 2);
+  });
+
+  it("concurrent cold searches share one computation", async () => {
+    const fetchMock = vi.fn(o5FixtureFetch());
+    vi.stubGlobal("fetch", fetchMock);
+    await Promise.all([o5SearchItems({ name: "Potion" }, "unavailable"), o5SearchItems({ name: "Rope" }, "unavailable")]);
+    expect(callsTo(fetchMock, "weapons")).toBe(2);
+    expect(fetchMock.mock.calls.every(c => [...ENDPOINTS].some(e => String(c[0]).includes(`/v2/${e}/`)))).toBe(true);
   });
 });

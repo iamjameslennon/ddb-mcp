@@ -32,6 +32,24 @@ export function clearOpen5eCache(): void {
   open5eCache.clear();
   o5Pending.clear();
   o5Failures.clear();
+  // Also drops the cached equipment split (in open5eCache); a split being computed writes nothing.
+  equipmentSplitPending = null;
+}
+
+/**
+ * Drop both SRD documents of the creatures endpoint: cached records, fetches
+ * in flight and remembered failures (ddb_clear_cache "monsters"), so the next
+ * monster fallback fetches them at once. Spells, items, rules and the rest are
+ * kept. A dropped fetch that settles later writes nothing (the o5Pending
+ * identity guard in loadO5Document).
+ */
+export function clearOpen5eCreatures(): void {
+  for (const edition of ["2024", "2014"] as const) {
+    const url = o5DocumentUrl("creatures", edition);
+    open5eCache.invalidate(url);
+    o5Pending.delete(url);
+    o5Failures.delete(url);
+  }
 }
 
 // ── v2 document loader ────────────────────────────────────────────────────────
@@ -101,9 +119,14 @@ async function fetchPages(firstUrl: string): Promise<unknown[]> {
 }
 
 /** One whole SRD document of an endpoint, other documents' records dropped. Cached 1 h; concurrent callers share one fetch; a failure is remembered for 60 s (and rethrown without fetching), never cached as data. */
+/** The one request URL of an endpoint's SRD document (the cache, pending and failure key). */
+function o5DocumentUrl(endpoint: O5Endpoint, edition: RulesEdition): string {
+  return `${O5_V2}/${endpoint}/?document__key__in=${O5_DOC[edition]}&limit=1000`;
+}
+
 export async function loadO5Document<T extends O5Record>(endpoint: O5Endpoint, edition: RulesEdition): Promise<T[]> {
   const doc = O5_DOC[edition];
-  const url = `${O5_V2}/${endpoint}/?document__key__in=${doc}&limit=1000`;
+  const url = o5DocumentUrl(endpoint, edition);
   const cached = open5eCache.get(url) as T[] | undefined;
   if (cached !== undefined) return cached;
   let pending = o5Pending.get(url);
@@ -312,26 +335,62 @@ function withSplit(namer: O5Namer, split: ReadonlySet<string>): O5Namer {
 const O5_EQUIPMENT_ENDPOINTS: readonly O5Endpoint[] = ["magicitems", "weapons", "armor", "items"];
 const EQUIPMENT_SPLIT_KEY = "o5:equipment-split";
 
+/** One computation of the equipment split: the split over the documents that loaded, and each failed endpoint's error. */
+interface EquipmentSplitComputation {
+  split: ReadonlySet<string>;
+  failed: ReadonlyMap<O5Endpoint, unknown>;
+}
+/** The computation in flight, shared by concurrent cold callers; dropped by clearOpen5eCache(). */
+let equipmentSplitPending: Promise<EquipmentSplitComputation> | null = null;
+
 /**
  * The same-document split over every equipment endpoint's records in both
  * documents, computed once and cached with the documents (1 h, dropped by
  * `clearOpen5eCache()`). A search (magicitems + items) and a get (all four)
- * therefore group by the same keys.
+ * therefore group by the same keys. `required` are the call's own endpoints:
+ * one of them failing fails the call, as its own load would. Another (a
+ * search's weapons or armor) failing leaves the split computed over the
+ * documents that loaded, used for this call and never cached (owner ruling
+ * 2026-11-02). Concurrent cold callers share one computation; a clear while it
+ * runs leaves nothing cached.
  */
-async function equipmentSplit(): Promise<ReadonlySet<string>> {
+async function equipmentSplit(required: readonly O5Endpoint[]): Promise<ReadonlySet<string>> {
   const cached = open5eCache.get(EQUIPMENT_SPLIT_KEY) as ReadonlySet<string> | undefined;
   if (cached) return cached;
-  const loads = (["2024", "2014"] as const).flatMap(edition => O5_EQUIPMENT_ENDPOINTS.map(async endpoint =>
-    (await loadO5Document<O5Record>(endpoint, edition)).map(record => ({ name: record.name, edition }))));
-  const split = splitKeys(O5_NAMERS.item, (await Promise.all(loads)).flat());
-  open5eCache.set(EQUIPMENT_SPLIT_KEY, split);
+  let computation = equipmentSplitPending;
+  if (!computation) {
+    const p: Promise<EquipmentSplitComputation> = computeEquipmentSplit().then(result => {
+      // Cached only while this computation is still the authoritative one, and only when complete.
+      if (equipmentSplitPending === p && result.failed.size === 0) open5eCache.set(EQUIPMENT_SPLIT_KEY, result.split);
+      return result;
+    }).finally(() => { if (equipmentSplitPending === p) equipmentSplitPending = null; });
+    equipmentSplitPending = p;
+    computation = p;
+  }
+  const { split, failed } = await computation;
+  for (const endpoint of required) {
+    if (failed.has(endpoint)) throw failed.get(endpoint);
+  }
   return split;
+}
+
+async function computeEquipmentSplit(): Promise<EquipmentSplitComputation> {
+  const jobs = (["2024", "2014"] as const).flatMap(edition => O5_EQUIPMENT_ENDPOINTS.map(endpoint => ({ edition, endpoint })));
+  const settled = await Promise.allSettled(jobs.map(({ endpoint, edition }) => loadO5Document<O5Record>(endpoint, edition)));
+  const records: Array<{ name: string; edition: RulesEdition }> = [];
+  const failed = new Map<O5Endpoint, unknown>();
+  settled.forEach((result, i) => {
+    const { endpoint, edition } = jobs[i];
+    if (result.status === "fulfilled") records.push(...result.value.map(record => ({ name: record.name, edition })));
+    else if (!failed.has(endpoint)) failed.set(endpoint, result.reason);
+  });
+  return { split: splitKeys(O5_NAMERS.item, records), failed };
 }
 
 /** A call's guarded namer: equipment kinds use the shared split over all four endpoints, others split over the call's own records. */
 async function o5GuardedNamer(endpoints: readonly O5Endpoint[], entries: ReadonlyArray<{ record: { name: string }; edition: RulesEdition }>): Promise<O5Namer> {
   const namer = o5NamerFor(endpoints);
-  if (namer === O5_NAMERS.item) return withSplit(namer, await equipmentSplit());
+  if (namer === O5_NAMERS.item) return withSplit(namer, await equipmentSplit(endpoints));
   return guardedNamer(namer, entries.map(e => ({ name: e.record.name, edition: e.edition })));
 }
 
@@ -1440,6 +1499,8 @@ const CR_XP_O5: Record<string, number> = {
 export type MonsterStatsResult =
   | { status: "found"; name: string; crValue: number; xp: number; info: EditionInfo }
   | { status: "not-found" }
+  /** The creature was identified (exact name, or the one group a partial name matches), but its CR isn't known. */
+  | { status: "unknown-cr"; name: string; info: EditionInfo }
   | { status: "ambiguous"; candidates: Array<{ name: string; crValue: number | null; xp: number | null }> };
 
 /**
@@ -1447,9 +1508,10 @@ export type MonsterStatsResult =
  * finds them: the exact twin name first, else the partial matches grouped by
  * twin name. One group is found, picked by edition; several are ambiguous, one
  * candidate per group, by CR then name. Never a guess. The edition comes from
- * the document the pick is in. A picked record with an unknown CR is not-found
- * (exact or single group) or listed as "CR unknown", last, among ambiguous
- * candidates (all unknown is not-found); any Open5e failure is not-found.
+ * the document the pick is in. A picked record with an unknown CR is
+ * unknown-cr (exact or single group: never replaced by its other-edition twin)
+ * or listed as "CR unknown", last, among ambiguous candidates (all unknown is
+ * not-found); any Open5e failure is not-found.
  */
 export async function o5GetMonsterStats(name: string, rulesEdition: RulesEdition): Promise<MonsterStatsResult> {
   try {
@@ -1463,7 +1525,10 @@ export async function o5GetMonsterStats(name: string, rulesEdition: RulesEdition
     // unknown CR is never replaced by its other-edition twin (fail closed).
     const found = (group: Array<O5Entry<O5Creature>>): MonsterStatsResult | null => {
       const picked = selectByEdition(group, rulesEdition, o5Info, tiebreak);
-      return picked && hasXp(picked.entry) ? { status: "found", ...stats(picked.entry), info: o5Info(picked.entry) } : null;
+      if (!picked) return null;
+      return hasXp(picked.entry)
+        ? { status: "found", ...stats(picked.entry), info: o5Info(picked.entry) }
+        : { status: "unknown-cr", name: picked.entry.record.name, info: o5Info(picked.entry) };
     };
 
     const twin = o5TwinNameFor("creatures");

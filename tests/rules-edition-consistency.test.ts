@@ -38,7 +38,7 @@ import { server } from "../src/server.js";
 import { SERVER_INSTRUCTIONS, CHARACTER_RULES_TOOL_NOTE, PARTY_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, open5eSearchHeader, searchHeader } from "../src/edition.js";
 import { clearReferenceCache } from "../src/tools/reference.js";
 import { clearMonsterCache } from "../src/tools/monster.js";
-import { clearOpen5eCache, type O5Endpoint } from "../src/open5e.js";
+import { clearOpen5eCache, loadO5Document, type O5Endpoint } from "../src/open5e.js";
 import { COBALT_URL, GAME_DATA, jsonResponse, makeJwt, spell } from "./fixtures/spell-service.js";
 import { o5Fixture, o5FixtureFetch, o5Record } from "./fixtures/open5e-v2.js";
 
@@ -363,4 +363,23 @@ it("ddb_clear_cache drops the public game config and its failure memo (logged-ou
   await client.callTool({ name: "ddb_clear_cache", arguments: { cache: "monsters" } });
   await client.callTool({ name: "ddb_get_monster", arguments: { name: "Goblin" } });
   expect(configRequests()).toBe(2);
+});
+
+it("ddb_clear_cache monsters drops Open5e's remembered creature failures, not spells' (minors C #13)", async () => {
+  const fetchMock = vi.fn(async (_input: unknown) => new Response("{}", { status: 503 }));
+  vi.stubGlobal("fetch", fetchMock);
+  const calls = (endpoint: string) => fetchMock.mock.calls.filter(c => String(c[0]).includes(`/v2/${endpoint}/`)).length;
+  await expect(loadO5Document("creatures", "2024")).rejects.toThrow();
+  await expect(loadO5Document("spells", "2024")).rejects.toThrow();
+  await client.callTool({ name: "ddb_clear_cache", arguments: { cache: "monsters" } });
+  await expect(loadO5Document("creatures", "2024")).rejects.toThrow();
+  await expect(loadO5Document("spells", "2024")).rejects.toThrow();
+  expect(calls("creatures")).toBe(2);
+  expect(calls("spells")).toBe(1);
+});
+
+it("the cache parameter says monsters clears the Open5e creature data", async () => {
+  const { tools } = await client.listTools();
+  const props = (tools.find(t => t.name === "ddb_clear_cache")?.inputSchema.properties ?? {}) as Record<string, { description?: string }>;
+  expect(props.cache?.description).toContain("Open5e SRD creature data");
 });
