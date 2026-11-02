@@ -1586,6 +1586,34 @@ describe("parseCharacterData — speed bonuses from class/feat modifiers", () =>
     expect(out).toContain("Speed: 35 ft.");
   });
 
+  // subclassDefinition.classFeatures lists plain definitions ({ id, name, … },
+  // live D&D Beyond data), unlike classes[].classFeatures' { definition } wrap.
+  // A subclass feature's modifier must count as granted from either shape.
+  it.each([
+    ["plain", { id: 300, name: "Subclass Speed Feature", requiredLevel: 3 }],
+    ["wrapped", { definition: { id: 300, name: "Subclass Speed Feature", requiredLevel: 3 } }],
+  ])("applies a subclass modifier whose componentId is a %s subclass feature", (_shape, feature) => {
+    const base = FIGHTER_5.data as Record<string, unknown>;
+    const data = {
+      ...base,
+      classes: [{
+        id: 1,
+        level: 5,
+        hitDiceUsed: 0,
+        definition: { name: "Fighter", hitDice: 10, canCastSpells: false, spellCastingAbilityId: 0, spellRules: {} },
+        subclassDefinition: { id: 50, name: "Scout-ish", classFeatures: [feature] },
+        classFeatures: [{ definition: { id: 100, name: "Some Granted Feature", requiredLevel: 1 } }],
+      }],
+      modifiers: {
+        ...(base.modifiers as Record<string, unknown>),
+        subclass: [
+          { type: "bonus", subType: "speed-walking", fixedValue: 10, value: 10, isGranted: true, componentId: 300 },
+        ],
+      },
+    };
+    expect(parseCharacterData({ data }, "summary")).toContain("Speed: 35 ft.");
+  });
+
   it("still applies class modifier with no componentId (fixture / legacy shape)", () => {
     // Hand-built fixtures throughout the test suite don't set componentId.
     // The filter must bypass when componentId is missing so fixtures keep working.
@@ -2373,6 +2401,29 @@ describe("parseCharacterData — multiclass save proficiencies", () => {
     // we're filtering ONLY save profs, not all class proficiencies.
     const out = parseCharacterData(multiclass);
     expect(out).toMatch(/Tools?:.*Thieves tools/i);
+  });
+
+  // subclassDefinition.classFeatures lists plain definitions in live data; a
+  // save proficiency granted by the starting class's subclass feature stays
+  // from either shape.
+  it.each([
+    ["plain", { id: 300, name: "Subclass Save Feature" }],
+    ["wrapped", { definition: { id: 300, name: "Subclass Save Feature" } }],
+  ])("keeps a starting-class save proficiency granted by a %s subclass feature", (_shape, feature) => {
+    const data = multiclass.data as Record<string, unknown>;
+    const [fighter, rogue] = data.classes as Array<Record<string, unknown>>;
+    const withSubclass = {
+      data: {
+        ...data,
+        classes: [{ ...fighter, subclassDefinition: { id: 50, name: "Champion", classFeatures: [feature] } }, rogue],
+        modifiers: {
+          ...(data.modifiers as Record<string, unknown>),
+          subclass: [{ type: "proficiency", subType: "wisdom-saving-throws", componentId: 300 }],
+        },
+      },
+    };
+    // FIGHTER_5: WIS 13 (+1), profBonus 3 → +4 when proficient.
+    expect(parseCharacterData(withSubclass)).toContain("WIS +4*");
   });
 });
 

@@ -13,7 +13,7 @@
 
 import type { SourceIndex } from "../../edition.js";
 import { computeCharacterEditions } from "./editions.js";
-import { arr, isBonusMod, isSetMod, num, modOf, obj, statKeys, statNames } from "./helpers.js";
+import { arr, featureDefinition, isBonusMod, isSetMod, num, modOf, obj, statKeys, statNames } from "./helpers.js";
 import { makeResolveTemplates } from "./templates.js";
 import type { CharData, ClassEntry, CoreStats, InventoryItem, Mod } from "./types.js";
 
@@ -35,8 +35,9 @@ export function computeCoreStats(char: CharData, index: SourceIndex): CoreStats 
       const id = num(obj(cf.definition).id);
       if (id) startingClassFeatureIds.add(id);
     }
-    for (const cf of arr<Record<string, unknown>>(obj(startingClass.subclassDefinition).classFeatures)) {
-      const id = num(obj(cf.definition).id);
+    // Plain definitions here, unlike classes[].classFeatures (featureDefinition reads both shapes).
+    for (const cf of arr<unknown>(obj(startingClass.subclassDefinition).classFeatures)) {
+      const id = num(featureDefinition(cf).id);
       if (id) startingClassFeatureIds.add(id);
     }
   }

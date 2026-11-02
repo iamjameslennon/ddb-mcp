@@ -9,7 +9,7 @@
  * a vitals concern.
  */
 
-import { arr, hasRemarkableAthlete, isBonusMod, isHalfProficiencyMod, isSetMod, num, obj, signed, str } from "./helpers.js";
+import { arr, featureDefinition, hasRemarkableAthlete, isBonusMod, isHalfProficiencyMod, isSetMod, num, obj, signed, str } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
 
 export interface HitPoints { current: number; max: number; temp: number }
@@ -77,8 +77,9 @@ function computeSpeed(core: CoreStats): string[] {
       const id = num(obj(cf.definition).id);
       if (id) grantedClassFeatureIds.add(id);
     }
-    for (const cf of arr<Record<string, unknown>>(obj(c.subclassDefinition).classFeatures)) {
-      const id = num(obj(cf.definition).id);
+    // Plain definitions here, unlike classes[].classFeatures (featureDefinition reads both shapes).
+    for (const cf of arr<unknown>(obj(c.subclassDefinition).classFeatures)) {
+      const id = num(featureDefinition(cf).id);
       if (id) grantedClassFeatureIds.add(id);
     }
   }
