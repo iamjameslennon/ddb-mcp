@@ -739,8 +739,11 @@ export const LEGENDARY_USES_NOTE = "(Uses per round aren't in the Open5e SRD dat
 export const AMBIGUITY_LIST_CAP = 20;
 
 /** Encounter/treasure: a partial monster name that spans several distinct creatures. At most 20 are named, then "and N more". */
-export function ambiguityMessage(query: string, candidates: ReadonlyArray<{ name: string; cr: string }>): string {
-  const shown = candidates.slice(0, AMBIGUITY_LIST_CAP).map(c => `${c.name} (CR ${c.cr})`).join(", ");
+/** An ambiguity candidate whose CR the data does not give (`cr: null`) prints as `(CR unknown)`. */
+export const CR_UNKNOWN_TEXT = "unknown";
+
+export function ambiguityMessage(query: string, candidates: ReadonlyArray<{ name: string; cr: string | null }>): string {
+  const shown = candidates.slice(0, AMBIGUITY_LIST_CAP).map(c => `${c.name} (CR ${c.cr ?? CR_UNKNOWN_TEXT})`).join(", ");
   const more = candidates.length - AMBIGUITY_LIST_CAP;
   const list = more > 0 ? `${shown}, and ${more} more` : shown;
   return `Ambiguous: "${query}" could be ${list} — use the full name.`;

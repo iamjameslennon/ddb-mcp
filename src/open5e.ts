@@ -453,7 +453,7 @@ export function crText(cr: number): string {
 
 /** school, type and size match part of a word, as on D&D Beyond (rarity stays exact). */
 const lowerHas = (query: string, ...values: Array<string | null | undefined>): boolean => {
-  const q = query.trim().toLowerCase();
+  const q = query.toLowerCase();
   return values.some(v => v != null && v.toLowerCase().includes(q));
 };
 
@@ -800,7 +800,8 @@ function formatO5MagicItem(hit: O5Hit<O5MagicItem>, origin: Open5eOrigin): strin
   const i = hit.entry.record;
   const attune = i.requires_attunement ? ` | Requires attunement${i.attunement_detail ? ` (${i.attunement_detail})` : ""}` : "";
   const kind = [i.category?.name, i.rarity?.name].filter(Boolean).join(", ");
-  return [`${i.name} (${kind}${attune})`, o5Label(hit.entry.edition, origin, hit), ``, stripTags(i.desc)].join("\n");
+  const inner = [kind, attune.replace(/^ \| /, "")].filter(Boolean).join(" | ");
+  return [`${i.name}${inner ? ` (${inner})` : ""}`, o5Label(hit.entry.edition, origin, hit), ``, stripTags(i.desc)].join("\n");
 }
 
 /** An items record's cost and weight; a zero or missing part prints a dash. */
@@ -810,12 +811,18 @@ function costWeightLine(i: O5Item): string {
   return `Cost: ${cost > 0 ? `${cost} gp` : "—"} | Weight: ${weight > 0 ? `${weight}${i.weight_unit ? ` ${i.weight_unit}` : ""}` : "—"}`;
 }
 
+/** " (a, b)" from the non-empty parts, or "" when there are none. */
+const parens = (parts: Array<string | null | undefined>): string => {
+  const inner = parts.filter(Boolean).join(", ");
+  return inner ? ` (${inner})` : "";
+};
+
 function formatO5Item(hit: O5Hit<O5Item>, origin: Open5eOrigin): string {
   const i = hit.entry.record;
   // srd-2014 has no armour Shield, and its items record carries no AC value (armor is null), only the
   // prose "increases your Armor Class by 2": the SRD's +2, as the armour formatter prints it for 2024.
   const ac = O5_NAMERS.item.twin(i.name) === "shield" ? [`AC: +2`] : [];
-  const lines = [`${i.name} (${i.category?.name ?? ""})`, o5Label(hit.entry.edition, origin, hit), ...ac, costWeightLine(i)];
+  const lines = [`${i.name}${parens([i.category?.name])}`, o5Label(hit.entry.edition, origin, hit), ...ac, costWeightLine(i)];
   const desc = stripTags(i.desc);
   if (desc) lines.push(``, desc);
   return lines.join("\n");
@@ -878,14 +885,14 @@ export async function o5SearchItems(params: {
     // Rarity matches exactly ("common" is not "Uncommon"). Mundane items have
     // none and count as Common, so "common" lists mundane gear, as on D&D Beyond.
     passes: ({ record: i, endpoint }) =>
-      (!rarity || (endpoint === "magicitems" ? ((i as O5MagicItem).rarity?.name ?? "") : "Common").toLowerCase() === rarity)
+      (!rarity || (endpoint === "magicitems" ? ((i as O5MagicItem).rarity?.name || "Common") : "Common").toLowerCase() === rarity)
       && (!type || (i.category?.name ?? "").toLowerCase().includes(type)),
   });
 
   const lines = selected.slice(0, SEARCH_CAP + 1).map(({ entry }) => {
     const i = entry.record;
     const kind = [i.category?.name, entry.endpoint === "magicitems" ? (i as O5MagicItem).rarity?.name : null].filter(Boolean).join(", ");
-    return `• ${i.name} ${editionTag(o5Info(entry))} (${kind})`;
+    return `• ${i.name} ${editionTag(o5Info(entry))}${kind ? ` (${kind})` : ""}`;
   });
   return o5SearchReply(
     requested, origin,
@@ -1314,7 +1321,7 @@ const CR_XP_O5: Record<string, number> = {
 export type MonsterStatsResult =
   | { status: "found"; name: string; crValue: number; xp: number; info: EditionInfo }
   | { status: "not-found" }
-  | { status: "ambiguous"; candidates: Array<{ name: string; crValue: number; xp: number }> };
+  | { status: "ambiguous"; candidates: Array<{ name: string; crValue: number | null; xp: number | null }> };
 
 /**
  * CR and XP for an SRD monster, as the D&D Beyond branch of getMonsterStats
@@ -1357,9 +1364,13 @@ export async function o5GetMonsterStats(name: string, rulesEdition: RulesEdition
       const candidates = [...groups.values()]
         .map(group => selectByEdition(group, rulesEdition, o5Info, tiebreak))
         .filter(picked => picked !== null)
-        .filter(picked => hasXp(picked.entry))
-        .map(picked => stats(picked.entry))
-        .sort((a, b) => a.crValue - b.crValue || a.name.localeCompare(b.name));
+        .map(picked => hasXp(picked.entry)
+          ? stats(picked.entry)
+          : { name: picked.entry.record.name, crValue: null, xp: null });
+      // Unknown CRs are listed ("CR unknown"), last; all unknown is not-found.
+      if (candidates.every(c => c.crValue === null)) return { status: "not-found" };
+      candidates.sort((a, b) => (a.crValue === null ? 1 : 0) - (b.crValue === null ? 1 : 0)
+        || (a.crValue ?? 0) - (b.crValue ?? 0) || a.name.localeCompare(b.name));
       return { status: "ambiguous", candidates };
     }
     return { status: "not-found" };

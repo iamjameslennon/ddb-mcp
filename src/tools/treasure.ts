@@ -539,7 +539,7 @@ export async function generateTreasure(
   const unresolvedLine = (n: string): string => {
     const stats = resolvedMap.get(n);
     return stats?.status === "ambiguous"
-      ? `  ✗ ${ambiguityMessage(displayName(n), stats.candidates.map(c => ({ name: displayName(c.name), cr: crDisplay(c.crValue) })))}`
+      ? `  ✗ ${ambiguityMessage(displayName(n), stats.candidates.map(c => ({ name: displayName(c.name), cr: c.crValue === null ? null : crDisplay(c.crValue) })))}`
       : `  ✗ "${displayName(n)}" — not found in DDB or Open5e`;
   };
 

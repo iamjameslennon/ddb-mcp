@@ -290,7 +290,7 @@ export async function rateEncounter(
         continue;
       }
       if (stats.status === "ambiguous") {
-        ambiguous.push(ambiguityMessage(m.name, stats.candidates.map(c => ({ name: c.name, cr: displayCr(c.crValue) }))));
+        ambiguous.push(ambiguityMessage(m.name, stats.candidates.map(c => ({ name: c.name, cr: c.crValue === null ? null : displayCr(c.crValue) }))));
         continue;
       }
       resolvedName = stats.name;

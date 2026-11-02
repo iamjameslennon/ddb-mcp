@@ -1270,4 +1270,69 @@ describe("Open5e monster, filter and item fixes (Task 11)", () => {
     expect(out).not.toContain("undefined");
     expect(await o5SearchItems({ rarity: "rare" }, "unavailable")).not.toContain("Nullish");
   });
+
+  describe("fix round 1", () => {
+    const gob = (name: string, cr: number) => ({ ...o5Record<Record<string, unknown>>("srd-2024", "creatures", "Goblin Boss"), key: `srd-2024_${name.toLowerCase().replace(/ /g, "-")}`, name, challenge_rating: cr });
+    const asLoggedOut = () => sessionMocks.hasValidSession.mockReturnValue(false);
+
+    it("an ambiguous list keeps an unknown-CR pick as 'CR unknown', last", async () => {
+      stubFetch(o5FixtureFetch({ "srd-2024/creatures": [gob("Goblin Boss", 1), gob("Goblin Warrior", 0.3)] }));
+      const r = await o5GetMonsterStats("oblin", "2024");
+      expect(r).toEqual({ status: "ambiguous", candidates: [
+        { name: "Goblin Boss", crValue: 1, xp: 200 }, { name: "Goblin Warrior", crValue: null, xp: null },
+      ] });
+      asLoggedOut();
+      const out = await rateEncounter([{ count: 4, level: 5 }], [{ name: "oblin" }], "2024");
+      expect(out).toContain('⚠ Ambiguous: "oblin" could be Goblin Boss (CR 1), Goblin Warrior (CR unknown) — use the full name.');
+    });
+
+    it("every group's pick unknown is not-found; a single group with an unknown CR is not-found", async () => {
+      stubFetch(o5FixtureFetch({ "srd-2024/creatures": [gob("Goblin Boss", 1.5), gob("Goblin Warrior", 0.3)] }));
+      expect(await o5GetMonsterStats("oblin", "2024")).toEqual({ status: "not-found" });
+      stubFetch(o5FixtureFetch({ "srd-2024/creatures": [gob("Goblin Boss", 1.5), gob("Goblin Warrior", 0.3)] }));
+      expect(await o5GetMonsterStats("Goblin Boss", "2024")).toEqual({ status: "not-found" });
+    });
+
+    it("rateEncounter names exactly 20 candidates, CR then name, and counts the rest", async () => {
+      const many = Array.from({ length: 25 }, (_, i) => gob(`Gob ${String(i).padStart(2, "0")}`, i % 5));
+      stubFetch(o5FixtureFetch({ "srd-2024/creatures": many, "srd-2014/creatures": o5Fixture<{ name: string }>("srd-2014", "creatures").filter(r => r.name === "Wolf") }));
+      asLoggedOut();
+      const out = await rateEncounter([{ count: 4, level: 5 }], [{ name: "Gob" }], "2024");
+      const line = out.split("\n").find(l => l.includes("Ambiguous:"))!;
+      expect(line.match(/Gob \d\d/g)).toHaveLength(20);
+      expect(line).toContain("Gob 00 (CR 0), Gob 05 (CR 0)");
+      expect(line).toContain(", and 5 more — use the full name.");
+    });
+
+    it("no empty parentheses when category and rarity are null", async () => {
+      const base = o5Fixture<Record<string, unknown>>("srd-2024", "magicitems")[0];
+      const bad = { ...base, key: "srd-2024_nullish", name: "Nullish Trinket", rarity: null, category: null, requires_attunement: true, attunement_detail: null };
+      const plain = { ...bad, key: "srd-2024_nullish2", name: "Plain Trinket", requires_attunement: false };
+      stubFetch(o5FixtureFetch({ "srd-2024/magicitems": [bad, plain] }));
+      const get = (await o5GetEquipment("Nullish Trinket", "2024", "unavailable"))!;
+      expect(get.split("\n")[0]).toBe("Nullish Trinket (Requires attunement)");
+      expect((await o5GetEquipment("Plain Trinket", "2024", "unavailable"))!.split("\n")[0]).toBe("Plain Trinket");
+      const search = await o5SearchItems({ name: "Trinket" }, "unavailable");
+      expect(search).toMatch(/^• Nullish Trinket \[2024\]$/m);
+      expect(search).not.toContain("()");
+    });
+
+    it("a whitespace-only school, type or size matches nothing, as on D&D Beyond", async () => {
+      expect(await o5SearchMonsters({ size: "  " }, "unavailable")).toContain("No monsters found");
+      expect(await o5SearchSpells({ school: " " }, "unavailable")).toContain("No spells found");
+    });
+
+    it("a magic item with a null rarity counts as Common", async () => {
+      const base = o5Fixture<Record<string, unknown>>("srd-2024", "magicitems")[0];
+      stubFetch(o5FixtureFetch({ "srd-2024/magicitems": [{ ...base, key: "srd-2024_nullish", name: "Nullish Trinket", rarity: null }] }));
+      expect(await o5SearchItems({ rarity: "common" }, "unavailable")).toContain("Nullish Trinket");
+    });
+
+    it("type: drag excludes non-dragons", async () => {
+      const out = await o5SearchMonsters({ type: "drag" }, "unavailable");
+      expect(out).toContain("Adult Red Dragon");
+      expect(out).not.toContain("Wolf");
+      expect(out).not.toContain("Aboleth");
+    });
+  });
 });
