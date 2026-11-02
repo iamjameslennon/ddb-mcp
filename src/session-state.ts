@@ -28,7 +28,7 @@
  */
 
 import {
-  readFileSync, existsSync, chmodSync, rmSync,
+  readFileSync, existsSync, chmodSync, rmSync, readdirSync,
   openSync, closeSync, writeFileSync, fchmodSync, renameSync, constants,
 } from "fs";
 import { isAbsolute, join } from "path";
@@ -155,6 +155,7 @@ export function sanitizeSessionStorage(parsed: unknown): SanitizedSessionStorage
  * `expected`; otherwise the temp file is removed and this throws.
  */
 export function writeSessionFile(json: string, expected?: string): void {
+  removeStaleTempFiles();
   // Per process: two ddb-mcp processes can share one session file, and a
   // shared temp path would let one rename the other's half-written state.
   const tmpPath = `${SESSION_PATH}.${process.pid}.tmp`;
@@ -180,6 +181,37 @@ export function writeSessionFile(json: string, expected?: string): void {
     throw new Error("Session file changed before the rewrite; not replaced.");
   }
   renameSync(tmpPath, SESSION_PATH);
+}
+
+/** `session.json.<pid>.tmp`: a temp file of writeSessionFile, with the writer's pid. */
+const TEMP_FILE = /^session\.json\.(\d+)\.tmp$/;
+
+/** Whether a process with this pid is running (EPERM: running, as another user). */
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/**
+ * Best effort, never throws: remove `session.json.<pid>.tmp` files whose
+ * writer crashed between its write and its rename (they hold a copy of the
+ * cookies). This process's own temp path and a running process's are kept: a
+ * live writer may be between its write and its rename.
+ */
+function removeStaleTempFiles(): void {
+  try {
+    for (const name of readdirSync(SESSION_DIR)) {
+      const pid = Number(TEMP_FILE.exec(name)?.[1]);
+      if (!Number.isSafeInteger(pid) || pid <= 0 || pid === process.pid || processAlive(pid)) continue;
+      try { rmSync(join(SESSION_DIR, name), { force: true }); } catch { /* best-effort */ }
+    }
+  } catch {
+    // Unlistable directory: nothing to sweep.
+  }
 }
 
 /** The session file's content, or null when it is missing or unreadable. */
@@ -323,7 +355,12 @@ function refreshAuthority(): SessionState {
     state = { kind: "anonymous", reason: readable ? "missing" : "unreadable" };
   } else {
     try {
-      const sanitized = sanitizeSessionStorage(JSON.parse(content) as unknown);
+      const parsed = JSON.parse(content) as unknown;
+      // Not a storage state (null, an array, a number, or no cookies array):
+      // malformed, as unparseable JSON is, so tools say to run ddb_login rather
+      // than send requests with no credentials.
+      if (!isStorageState(parsed)) throw new Error("malformed session file");
+      const sanitized = sanitizeSessionStorage(parsed);
       if (sanitized.changed) {
         const cleaned = JSON.stringify(sanitized.storage);
         try {
@@ -357,6 +394,12 @@ function refreshAuthority(): SessionState {
   unscrubbedKey = nextUnscrubbed;
   lastState = state;
   return state;
+}
+
+/** A Playwright storage state: a plain object with a cookies array. */
+function isStorageState(parsed: unknown): boolean {
+  return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+    && Array.isArray((parsed as { cookies?: unknown }).cookies);
 }
 
 // ── Public lifecycle API ─────────────────────────────────────────────────────

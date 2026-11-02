@@ -3,17 +3,21 @@ import { fetchCharacter, parseCharacterData, withNotice } from "./character.js";
 import { getSourceIndex } from "../game-config.js";
 
 export async function getParty(campaignId: string): Promise<string> {
-  // Start the source index with the campaign fetch (getSourceIndex never rejects).
-  const indexPromise = getSourceIndex();
+  // Start the source index with the campaign fetch (getSourceIndex never
+  // rejects); a failed campaign fetch, or a campaign with no characters,
+  // withdraws it, as nothing will read it.
+  const indexCtl = new AbortController();
+  const indexPromise = getSourceIndex({ signal: indexCtl.signal });
 
   // 1. Get campaign to retrieve character IDs
-  const campaignJson = await getCampaign(campaignId);
+  const campaignJson = await getCampaign(campaignId).catch((err: unknown) => { indexCtl.abort(); throw err; });
   const campaign = JSON.parse(campaignJson) as {
     name: string;
     characters: Array<{ character: string; player: string; url: string }>;
   };
 
   if (!campaign.characters || campaign.characters.length === 0) {
+    indexCtl.abort();
     return `Campaign "${campaign.name}" has no active characters.`;
   }
 

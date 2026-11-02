@@ -233,6 +233,103 @@ describe("ddb_character_lookup homebrew paths", () => {
   });
 });
 
+describe("one homebrew predicate for the sheet and the lookup (minors C #2)", () => {
+  const OFFICIAL_CLASS = { name: "Fighter", hitDice: 10, isHomebrew: false, canCastSpells: false, spellCastingAbilityId: 0, spellRules: {} };
+
+  /** A character with these feats, classes and species, the rest from FIGHTER_5 (sheet) or empty (lookup). */
+  function char(overrides: Record<string, unknown>): Record<string, unknown> {
+    return {
+      ...(FIGHTER_5.data as Record<string, unknown>),
+      feats: [], background: { definition: {} }, inventory: [], classSpells: [], spells: {},
+      race: { fullName: "Human", baseName: "Human", weightSpeeds: { normal: { walk: 30, fly: 0, swim: 0, climb: 0, burrow: 0 } }, racialTraits: [] },
+      ...overrides,
+    };
+  }
+  const sheet = (c: Record<string, unknown>) => parseCharacterData({ data: c }, "features");
+  const lookup = (c: Record<string, unknown>, q: string) => formatCharacterLookup(c, q, INDEX);
+  const wrapped = (out: string, text: string) => {
+    const at = out.indexOf(text);
+    expect(at).toBeGreaterThan(-1);
+    const open = out.lastIndexOf("<untrusted_dndbeyond_content>", at);
+    const close = out.lastIndexOf("</untrusted_dndbeyond_content>", at);
+    return open > close;
+  };
+  const cls = (overrides: Record<string, unknown>) => ({
+    id: 1, level: 5, hitDiceUsed: 0, definition: OFFICIAL_CLASS, subclassDefinition: null, classFeatures: [], ...overrides,
+  });
+
+  it("a feat flagged homebrew on its record, not its definition", () => {
+    const c = char({ feats: [{ isHomebrew: true, definition: { name: "Record Hex", snippet: "Text.", isHomebrew: false, categories: [] } }] });
+    expect(wrapped(sheet(c), "• Record Hex")).toBe(true);
+    expect(wrapped(lookup(c, "record hex"), "Record Hex")).toBe(true);
+  });
+
+  it("a disguised feat flagged homebrew on its record", () => {
+    const c = char({ feats: [{ isHomebrew: true, definition: { name: "Record Surge", isHomebrew: false, categories: [{ tagName: "__DISGUISE_FEAT" }] } }] });
+    expect(wrapped(sheet(c), "• Record Surge")).toBe(true);
+    expect(wrapped(lookup(c, "record surge"), "Record Surge")).toBe(true);
+  });
+
+  it("a class flagged homebrew on its record wraps its features", () => {
+    const c = char({ classes: [cls({ isHomebrew: true, classFeatures: [{ definition: { name: "Class Hex", requiredLevel: 1 } }] })] });
+    expect(wrapped(sheet(c), "• Class Hex (Fighter 1)")).toBe(true);
+    expect(wrapped(lookup(c, "class hex"), "Class Hex")).toBe(true);
+  });
+
+  it("a class feature flagged homebrew on its record", () => {
+    const c = char({ classes: [cls({ classFeatures: [
+      { isHomebrew: true, definition: { name: "Feature Hex", requiredLevel: 1 } },
+      { definition: { name: "Second Wind", requiredLevel: 1, isHomebrew: false } },
+    ] })] });
+    const out = sheet(c);
+    expect(wrapped(out, "• Feature Hex (Fighter 1)")).toBe(true);
+    expect(wrapped(out, "• Second Wind (Fighter 1)")).toBe(false);
+    expect(wrapped(lookup(c, "feature hex"), "Feature Hex")).toBe(true);
+  });
+
+  it("a homebrew subclass wraps its own features on the sheet, not the class's", () => {
+    const subFeature = { definition: { id: 77, name: "Hex Strike", requiredLevel: 3 } };
+    const c = char({ classes: [cls({
+      classFeatures: [{ definition: { id: 11, name: "Second Wind", requiredLevel: 1 } }, subFeature],
+      subclassDefinition: { name: "Hexblade Knight", isHomebrew: true, classFeatures: [subFeature] },
+    })] });
+    const out = sheet(c);
+    expect(wrapped(out, "• Hex Strike (Fighter 3)")).toBe(true);
+    expect(wrapped(out, "• Second Wind (Fighter 1)")).toBe(false);
+    expect(wrapped(lookup(c, "hex strike"), "Hex Strike")).toBe(true);
+    expect(lookup(c, "second wind")).not.toContain("untrusted_dndbeyond_content");
+  });
+
+  it("a homebrew subclass feature with no ids is matched by name", () => {
+    const c = char({ classes: [cls({
+      classFeatures: [{ definition: { name: "Hex Strike", requiredLevel: 3 } }],
+      subclassDefinition: { name: "Hexblade Knight", isHomebrew: true, classFeatures: [{ definition: { name: "Hex Strike", requiredLevel: 3 } }] },
+    })] });
+    expect(wrapped(sheet(c), "• Hex Strike (Fighter 3)")).toBe(true);
+  });
+
+  it("a racial trait flagged homebrew on its record", () => {
+    const c = char({ race: {
+      fullName: "Human", baseName: "Human", isHomebrew: false, weightSpeeds: { normal: { walk: 30, fly: 0, swim: 0, climb: 0, burrow: 0 } },
+      racialTraits: [{ isHomebrew: true, definition: { name: "Trait Hex", isHomebrew: false } }, { definition: { name: "Versatile" } }],
+    } });
+    const out = sheet(c);
+    expect(wrapped(out, "• Trait Hex")).toBe(true);
+    expect(wrapped(out, "• Versatile")).toBe(false);
+    expect(wrapped(lookup(c, "trait hex"), "Trait Hex")).toBe(true);
+  });
+
+  it("an official entry flagged false everywhere stays plain on both paths", () => {
+    const c = char({
+      feats: [{ isHomebrew: false, definition: { name: "Alert", isHomebrew: false, categories: [] } }],
+      classes: [cls({ classFeatures: [{ isHomebrew: false, definition: { name: "Second Wind", requiredLevel: 1, isHomebrew: false } }] })],
+    });
+    expect(sheet(c)).not.toContain("untrusted_dndbeyond_content");
+    expect(lookup(c, "alert")).not.toContain("untrusted_dndbeyond_content");
+    expect(lookup(c, "second wind")).not.toContain("untrusted_dndbeyond_content");
+  });
+});
+
 describe("ddb_character_lookup class spells", () => {
   it("ddb_character_lookup wraps a homebrew spell found in classSpells[].classSpells", () => {
     // 2024 format: `spells` is empty and the class's spells sit in `classSpells`.

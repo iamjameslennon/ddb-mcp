@@ -26,6 +26,37 @@ export const capitalize = (s: string): string => s.charAt(0).toUpperCase() + s.s
 export const stripHtml = (s: string): string =>
   s.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
 
+/**
+ * User-authored character content: any of these records, or its definition,
+ * is flagged homebrew (strictly `isHomebrew === true`). Pass the entry first,
+ * then its owners (class, subclass, species). The one predicate the character
+ * sheet and ddb_character_lookup both use, so they wrap the same entries.
+ */
+export const isHomebrewEntry = (...records: unknown[]): boolean =>
+  records.some(r => obj(r).isHomebrew === true || obj(obj(r).definition).isHomebrew === true);
+
+/**
+ * Whether a class feature entry is one of its class's subclass features: the
+ * same definition id as one in `subclassDefinition.classFeatures`, or (an
+ * entry without ids) the same name.
+ */
+function isSubclassFeature(feature: unknown, subclass: Record<string, unknown>): boolean {
+  const def = obj(obj(feature).definition);
+  const id = num(def.id);
+  const name = str(def.name);
+  return arr<Record<string, unknown>>(subclass.classFeatures).some(sf => {
+    const subDef = obj(sf.definition);
+    const subId = num(subDef.id);
+    return id && subId ? id === subId : name !== "" && str(subDef.name) === name;
+  });
+}
+
+/** A class or subclass feature of `cls` is homebrew: the feature, its class, or (a subclass feature) its subclass. */
+export const isHomebrewClassFeature = (feature: unknown, cls: unknown): boolean => {
+  const subclass = obj(obj(cls).subclassDefinition);
+  return isHomebrewEntry(feature, cls, isSubclassFeature(feature, subclass) ? subclass : null);
+};
+
 /** Returns true if the feat has the given category tagName. */
 export const hasTag = (feat: Mod, tag: string): boolean =>
   arr<Record<string, unknown>>(obj(feat.definition).categories).some(c => c.tagName === tag);

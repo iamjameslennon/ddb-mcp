@@ -105,18 +105,27 @@ async function resolveSourceParam(source: string | undefined, kind: HomebrewKind
   return resolveSource(index, source) ?? { reply: unknownSourceError(index, source, GENERIC_SOURCE_HINT) };
 }
 
+/** A source index started alongside a catalog load; `withdraw()` when the load fails and the index will never be read. */
+interface StartedIndex {
+  promise: ReturnType<typeof getSourceIndex>;
+  withdraw(): void;
+}
+
 /**
  * Starts the source-index fetch alongside a catalog load, except under
  * `source: "homebrew"`: that mode never reads the index, so it triggers no
- * game-config request.
+ * game-config request. A load that fails withdraws it (getGameConfig), so an
+ * outage doesn't leave a config fetch nobody reads running on.
  */
-function startIndex(source: ResolvedSource | "homebrew" | undefined): ReturnType<typeof getSourceIndex> | undefined {
-  return source === "homebrew" ? undefined : getSourceIndex();
+function startIndex(source: ResolvedSource | "homebrew" | undefined): StartedIndex | undefined {
+  if (source === "homebrew") return undefined;
+  const ctl = new AbortController();
+  return { promise: getSourceIndex({ signal: ctl.signal }), withdraw: () => ctl.abort() };
 }
 
 /** The started index, else the never-fetching snapshot index (homebrew mode only). */
-async function readIndex(started: ReturnType<typeof getSourceIndex> | undefined) {
-  return started ? await started : peekSourceIndex();
+async function readIndex(started: StartedIndex | undefined) {
+  return started ? await started.promise : peekSourceIndex();
 }
 
 /** What the homebrew messages call a catalog's entries: singular for the login text, plural for the rest. */
@@ -465,11 +474,12 @@ export async function searchSpellsSection(params: SpellSearchParams): Promise<Se
   if (isSourceReply(source)) return plainSection(source.reply);
   const requested = params.rulesEdition ?? "2024";
   // Started with the load, not after it (getSourceIndex never rejects).
-  const indexPromise = startIndex(source);
+  const startedIndex = startIndex(source);
   let store;
   try {
     store = await loadSpellCompendium();
   } catch (err) {
+    startedIndex?.withdraw();
     if (source === "homebrew") return plainSection(homebrewUnreachable("spells"));
     try {
       return withSourceCaveatSection(await o5SearchSpellsSection(params, "unavailable"), params.source);
@@ -477,7 +487,7 @@ export async function searchSpellsSection(params: SpellSearchParams): Promise<Se
       throw err;
     }
   }
-  const index = await readIndex(indexPromise);
+  const index = await readIndex(startedIndex);
   const nameQuery = params.name ? normalizeName(params.name) : "";
   const schoolQuery = params.school?.toLowerCase();
 
@@ -531,11 +541,12 @@ export async function searchSpellsSection(params: SpellSearchParams): Promise<Se
 export async function getSpell(spellName: string, rulesEdition: RulesEdition = "2024", source?: string): Promise<string> {
   const resolved = await resolveSourceParam(source, SPELL_KIND);
   if (isSourceReply(resolved)) return resolved.reply;
-  const indexPromise = startIndex(resolved);
+  const startedIndex = startIndex(resolved);
   let store;
   try {
     store = await loadSpellCompendium();
   } catch (err) {
+    startedIndex?.withdraw();
     if (resolved === "homebrew") return homebrewUnreachable("spells");
     try {
       const o5Result = await o5GetSpell(spellName, rulesEdition, "unavailable");
@@ -545,7 +556,7 @@ export async function getSpell(spellName: string, rulesEdition: RulesEdition = "
     }
     throw err;
   }
-  const index = await readIndex(indexPromise);
+  const index = await readIndex(startedIndex);
   const found = lookupCatalog(spellList(store), spellName, rulesEdition, SPELL_ADAPTER, index, resolved);
 
   if (!found) {
@@ -747,11 +758,12 @@ export async function searchItemsSection(params: ItemSearchParams): Promise<Sear
 export async function getItem(itemName: string, rulesEdition: RulesEdition = "2024", source?: string): Promise<string> {
   const resolved = await resolveSourceParam(source, ITEM_KIND);
   if (isSourceReply(resolved)) return resolved.reply;
-  const indexPromise = startIndex(resolved);
+  const startedIndex = startIndex(resolved);
   let items;
   try {
     items = await loadItemCompendium();
   } catch (err) {
+    startedIndex?.withdraw();
     if (resolved === "homebrew") return homebrewUnreachable("items");
     try {
       const result = await o5GetEquipment(itemName, rulesEdition, "unavailable");
@@ -759,7 +771,7 @@ export async function getItem(itemName: string, rulesEdition: RulesEdition = "20
     } catch { /* fall through to the compendium's error */ }
     throw err;
   }
-  const index = await readIndex(indexPromise);
+  const index = await readIndex(startedIndex);
   const found = lookupCatalog(items, itemName, rulesEdition, ITEM_ADAPTER, index, resolved);
 
   if (!found) {
@@ -818,11 +830,12 @@ async function searchCatalogList<T>(
   if (isSourceReply(source)) return plainSection(source.reply);
   const requested = params.rulesEdition ?? "2024";
 
-  const indexPromise = startIndex(source);
+  const startedIndex = startIndex(source);
   let all: T[];
   try {
     all = await spec.load();
   } catch (err) {
+    startedIndex?.withdraw();
     if (source === "homebrew") return plainSection(homebrewUnreachable(spec.homebrew.plural));
     let fallback: SearchSection;
     try {
@@ -834,7 +847,7 @@ async function searchCatalogList<T>(
     return withSourceCaveatSection(fallback, params.source);
   }
 
-  const index = await readIndex(indexPromise);
+  const index = await readIndex(startedIndex);
   const { hits, hidden, header, note } = selectCatalog(all, requested, spec.adapter, index, source, { bookNotes: params.bookNotes });
   if (hits.length === 0) {
     if (source === "homebrew") return plainSection(homebrewNoMatch(spec.homebrew.plural));
@@ -1277,17 +1290,18 @@ async function searchOwnedEntries<T>(
   const requested = params.rulesEdition ?? "2024";
 
   // Homebrew mode never uses the index: don't let a config fetch decide its reply.
-  const indexPromise = source === "homebrew" ? undefined : getSourceIndex();
+  const startedIndex = startIndex(source);
   let build;
   try {
     build = await spec.load();
   } catch (err) {
+    startedIndex?.withdraw();
     // Homebrew never falls back; otherwise a failed load throws, as before.
     if (source === "homebrew") return plainSection(homebrewUnreachable(spec.homebrew.plural));
     throw err;
   }
   const partial = build.source === "ddb-partial" ? `${spec.partialNote}\n\n` : "";
-  const index = indexPromise ? await indexPromise : peekSourceIndex();
+  const index = await readIndex(startedIndex);
   const { hits, hidden, header, note } = selectCatalog(build.entries, requested, spec.adapter, index, source);
   if (hits.length === 0) {
     return plainSection(source === "homebrew"

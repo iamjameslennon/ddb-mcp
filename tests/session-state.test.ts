@@ -13,6 +13,7 @@ const fsMock = vi.hoisted(() => ({
   closeSync: vi.fn(),
   fchmodSync: vi.fn(),
   renameSync: vi.fn(),
+  readdirSync: vi.fn((): string[] => []),
   constants: { O_CREAT: 1, O_TRUNC: 2, O_WRONLY: 4, O_NOFOLLOW: 8 },
 }));
 vi.mock("fs", () => fsMock);
@@ -61,6 +62,8 @@ beforeEach(async () => {
   fsMock.openSync.mockReset();
   fsMock.openSync.mockReturnValue(3);
   fsMock.renameSync.mockReset();
+  fsMock.readdirSync.mockReset();
+  fsMock.readdirSync.mockReturnValue([]);
   state = await loadState();
 });
 
@@ -178,6 +181,49 @@ describe("third-party credentials are not part of the session", () => {
     expect(fsMock.rmSync).toHaveBeenCalledWith(`${state.SESSION_PATH}.${process.pid}.tmp`, { force: true });
   });
 
+  it("removes a stale temp file left by a dead process before the rewrite, never this process's or a live one's (minors C #3)", () => {
+    let file = mixedFile();
+    fsMock.existsSync.mockReturnValue(true);
+    fsMock.readFileSync.mockImplementation(() => file);
+    let tmp = "";
+    fsMock.writeFileSync.mockImplementation((_fd: unknown, data: string) => { tmp = data; });
+    fsMock.renameSync.mockImplementation(() => { file = tmp; });
+    const DEAD = 999_999_001;
+    const LIVE = 999_999_002;
+    fsMock.readdirSync.mockReturnValue([
+      "session.json", `session.json.${DEAD}.tmp`, `session.json.${LIVE}.tmp`, `session.json.${process.pid}.tmp`,
+      "session.json.abc.tmp", "other.json.123.tmp",
+    ]);
+    const kill = vi.spyOn(process, "kill").mockImplementation(((pid: number) => {
+      if (pid === DEAD) throw Object.assign(new Error("no such process"), { code: "ESRCH" });
+      return true;
+    }) as typeof process.kill);
+    try {
+      state.captureSession();
+    } finally {
+      kill.mockRestore();
+    }
+    const removed = fsMock.rmSync.mock.calls.map(c => String(c[0]));
+    expect(removed).toContain(`${state.SESSION_PATH}.${DEAD}.tmp`);
+    expect(removed).not.toContain(`${state.SESSION_PATH}.${LIVE}.tmp`);
+    expect(removed).not.toContain(`${state.SESSION_PATH}.${process.pid}.tmp`);
+    expect(removed.some(p => p.includes("abc") || p.includes("other.json"))).toBe(false);
+    expect(fsMock.renameSync).toHaveBeenCalledTimes(1);
+  });
+
+  it("a failing stale-temp sweep never fails the read or the rewrite", () => {
+    let file = mixedFile();
+    fsMock.existsSync.mockReturnValue(true);
+    fsMock.readFileSync.mockImplementation(() => file);
+    fsMock.readdirSync.mockImplementation(() => { throw new Error("EACCES"); });
+    let tmp = "";
+    fsMock.writeFileSync.mockImplementation((_fd: unknown, data: string) => { tmp = data; });
+    fsMock.renameSync.mockImplementation(() => { file = tmp; });
+    const snap = state.captureSession();
+    expect(snap.state.kind).toBe("authenticated");
+    expect(fsMock.renameSync).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps only the D&D Beyond cookies in memory when the rewrite fails, and retries without churning", () => {
     const file = mixedFile();
     fsMock.existsSync.mockReturnValue(true);
@@ -220,6 +266,24 @@ describe("captureSession", () => {
     const snap = state.captureSession();
     expect(snap.state.kind).toBe("anonymous");
     if (snap.state.kind === "anonymous") expect(snap.state.reason).toBe("malformed");
+  });
+
+  it.each([
+    ["null", "null"], ["an array", "[]"], ["a number", "42"], ["a string", '"cookies"'],
+    ["an object without cookies", "{}"], ["an object whose cookies is not an array", '{"cookies":"x"}'],
+    ["an object whose cookies is null", '{"cookies":null}'],
+  ])("returns anonymous(malformed) for %s, and leaves the file alone (minors C #1)", (_label, content) => {
+    setSessionFile(content);
+    const snap = state.captureSession();
+    expect(snap.state.kind).toBe("anonymous");
+    if (snap.state.kind === "anonymous") expect(snap.state.reason).toBe("malformed");
+    expect(fsMock.openSync).not.toHaveBeenCalled();
+    expect(fsMock.renameSync).not.toHaveBeenCalled();
+  });
+
+  it("an object with an empty cookies array is still a session (no credentials to send)", () => {
+    setSessionFile('{"cookies":[]}');
+    expect(state.captureSession().state.kind).toBe("authenticated");
   });
 
   it("returns anonymous(unreadable) when the read throws", () => {

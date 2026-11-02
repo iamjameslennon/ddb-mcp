@@ -9,7 +9,7 @@
  */
 
 import { wrapIfHomebrew, wrapUntrusted } from "../../utils.js";
-import { arr, hasTag, num, obj, str, stripHtml } from "./helpers.js";
+import { arr, hasTag, isHomebrewClassFeature, isHomebrewEntry, num, obj, str, stripHtml } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
 import type { TemplateResolver } from "./templates.js";
 import type { CharacterEditions } from "./editions.js";
@@ -47,11 +47,11 @@ function buildFeatLines(char: CharData, resolveTemplates: TemplateResolver, edit
     const def = obj(f.definition);
     const snippet = resolveTemplates(stripHtml(str(def.snippet || def.description))).slice(0, 120);
     const line = `• ${editions.named(str(def.name), def)}${snippet ? `: ${snippet}${snippet.length >= 120 ? "…" : ""}` : ""}`;
-    return wrapIfHomebrew(line, def.isHomebrew === true);
+    return wrapIfHomebrew(line, isHomebrewEntry(f));
   });
   const disguisedFeatLines = disguisedFeats.map(f => {
     const def = obj(f.definition);
-    return wrapIfHomebrew(`• ${editions.named(str(def.name), f.definition)}`, def.isHomebrew === true);
+    return wrapIfHomebrew(`• ${editions.named(str(def.name), f.definition)}`, isHomebrewEntry(f));
   });
   return { featLines, disguisedFeatLines, realFeatCount: realFeats.length };
 }
@@ -63,13 +63,12 @@ function buildClassFeatureLines(classes: readonly ClassEntry[]): string[] {
   for (const c of classes) {
     const charLevel = num(c.level);
     const classDef = obj(c.definition);
-    const classHomebrew = classDef.isHomebrew === true;
     for (const cf of arr<Record<string, unknown>>(c.classFeatures)) {
       const def = obj(cf.definition);
       const line = `• ${str(def.name)} (${str(classDef.name)} ${num(def.requiredLevel || 1)})`;
       if (num(def.requiredLevel || 0) <= charLevel && !seen.has(line)) {
         seen.add(line);
-        lines.push(wrapIfHomebrew(line, classHomebrew || def.isHomebrew === true));
+        lines.push(wrapIfHomebrew(line, isHomebrewClassFeature(cf, c)));
       }
     }
   }
@@ -79,11 +78,8 @@ function buildClassFeatureLines(classes: readonly ClassEntry[]): string[] {
 // ── Racial traits ────────────────────────────────────────────────────────────
 function buildRacialTraitLines(char: CharData): string[] {
   const race = obj(char.race);
-  const raceHomebrew = race.isHomebrew === true;
-  return arr<Record<string, unknown>>(race.racialTraits).map(t => {
-    const def = obj(t.definition);
-    return wrapIfHomebrew(`• ${str(def.name)}`, raceHomebrew || def.isHomebrew === true);
-  });
+  return arr<Record<string, unknown>>(race.racialTraits).map(t =>
+    wrapIfHomebrew(`• ${str(obj(t.definition).name)}`, isHomebrewEntry(t, race)));
 }
 
 // ── Background feature ───────────────────────────────────────────────────────
@@ -106,7 +102,7 @@ function buildBackgroundFeature(char: CharData, resolveTemplates: TemplateResolv
       : "",
     // A custom background's feature text is written by the player. Homebrew
     // backgrounds can come from someone else's shared collection.
-    untrusted: usedCustom || bgDef.isHomebrew === true || bgObj.isHomebrew === true,
+    untrusted: usedCustom || isHomebrewEntry(bgObj, bgDef),
   };
 }
 

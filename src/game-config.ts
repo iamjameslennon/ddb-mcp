@@ -14,7 +14,7 @@
  */
 
 import {
-  sessionFetch, anonymousFetch, captureSession, assertSessionCurrent, onSessionInvalidated, type SessionSnapshot,
+  sessionFetch, anonymousFetch, captureSession, assertSessionCurrent, hasValidSession, onSessionInvalidated, type SessionSnapshot,
 } from "./session-fetch.js";
 import { buildSourceIndex, type CategoryRecord, type SourceIndex, type SourceRecord } from "./edition.js";
 import { SNAPSHOT_CATEGORIES, SNAPSHOT_SOURCES } from "./source-snapshot.js";
@@ -69,6 +69,10 @@ let configFailure: { until: number; generation: number } | null = null;
 interface PendingConfigFetch {
   generation: number;
   promise: Promise<GameConfig | null>;
+  /** Callers still waiting on it. A caller that withdraws (its signal aborts) leaves. */
+  waiters: number;
+  /** Abort the fetch with no failure memo and free the slot: the last waiter withdrew. */
+  cancel(): void;
 }
 let configPending: PendingConfigFetch | null = null;
 // Advanced by clearGameConfig(): a fetch started before a clear writes neither
@@ -87,11 +91,25 @@ onSessionInvalidated(() => {
   publicConfigPending = null;
 });
 
-export async function getGameConfig(): Promise<GameConfig | null> {
+/**
+ * The session-bound game config, or null. `signal`: the caller may withdraw (a
+ * catalog search whose load failed never reads the index it started). A
+ * withdrawn caller resolves null at once; when no caller is left the shared
+ * fetch is aborted, before dispatch if it hasn't been sent, with no retries
+ * and no failure memo. An already-aborted signal starts nothing.
+ */
+export async function getGameConfig(opts: { signal?: AbortSignal } = {}): Promise<GameConfig | null> {
   // Boundary check before the early singleton return, so a pending transition
   // fires the invalidation hook (which nulls configCache) before we reuse it.
   const snapshot = captureSession();
   if (configCache) return configCache;
+  const { signal } = opts;
+  if (signal?.aborted) return null;
+  // A session file holding only session cookies (or expired ones) makes monster
+  // lookups run anonymously (hasValidSession() false). The config follows the
+  // same rule: the public config, with no Cookie header. With no session at
+  // all, nothing is sent (sessionFetch refuses) and the index is the snapshot.
+  if (!hasValidSession() && snapshot.state.kind === "authenticated") return getPublicGameConfig();
   if (configFailure && configFailure.generation === snapshot.generation && Date.now() < configFailure.until) {
     return null;
   }
@@ -99,7 +117,20 @@ export async function getGameConfig(): Promise<GameConfig | null> {
   // result: the config, or null (a failure, or a session change mid-fetch).
   let pending = configPending;
   if (!pending || pending.generation !== snapshot.generation) pending = startConfigFetch(snapshot);
-  return pending.promise;
+  pending.waiters++;
+  if (!signal) return pending.promise;
+  const entry = pending;
+  return new Promise<GameConfig | null>(resolve => {
+    const withdraw = () => {
+      resolve(null);
+      if (--entry.waiters === 0) entry.cancel();
+    };
+    signal.addEventListener("abort", withdraw, { once: true });
+    void entry.promise.then(config => {
+      signal.removeEventListener("abort", withdraw);
+      resolve(config);
+    });
+  });
 }
 
 /**
@@ -139,6 +170,13 @@ function startConfigFetch(snapshot: SessionSnapshot): PendingConfigFetch {
   const entry: PendingConfigFetch = {
     generation: snapshot.generation,
     promise: Promise.race([fetched, deadline]).finally(() => clearTimeout(timer)),
+    waiters: 0,
+    cancel() {
+      // No deadline memo either: nobody wanted this config after all.
+      clearTimeout(timer);
+      ctl.abort();
+      release();
+    },
   };
   configPending = entry;
   // Clear only our own entry, on either settlement: after an invalidation the
@@ -155,7 +193,9 @@ function startConfigFetch(snapshot: SessionSnapshot): PendingConfigFetch {
 // The config endpoint answers without credentials. Logged out, monster-service
 // answers free content anonymously, and its stat blocks need the CR, type,
 // size and alignment tables. getGameConfig() stays session-bound (logged out it
-// is null and the source index is the snapshot), so other tools see no change.
+// is null and the source index is the snapshot), except that a session file
+// with only session or expired cookies (hasValidSession() false) gets this
+// public config rather than sending those cookies.
 // Not account-derived, but dropped on every session transition all the same.
 let publicConfigCache: GameConfig | null = null;
 let publicConfigFailureUntil = 0;
@@ -230,6 +270,8 @@ async function fetchGameConfig(snapshot: SessionSnapshot, signal: AbortSignal, e
   // session) and return what a stale fetch returns. captureSession re-reads
   // the session file; a throw from it rejects, which startConfigFetch turns into null.
   if (captureSession().generation !== snapshot.generation) return null;
+  // Every caller withdrew before the request went out: send nothing.
+  if (signal.aborted) return null;
   const fail = (): null => {
     // Past the deadline the failure is already remembered (or the session moved on).
     if (!signal.aborted) rememberFailure(snapshot, epoch);
@@ -272,21 +314,27 @@ export function peekSourceIndex(): SourceIndex {
   return snapshotIndex;
 }
 
-export async function getSourceIndex(): Promise<SourceIndex> {
+/**
+ * The source index: the live config merged over the snapshot. Never rejects.
+ * Callers start it alongside a data load; `signal` withdraws it when that load
+ * fails (see getGameConfig), and a withdrawn call resolves to the snapshot index.
+ */
+export async function getSourceIndex(opts: { signal?: AbortSignal } = {}): Promise<SourceIndex> {
   // Callers start this early and may not await it (a failing load returns
   // first), so it must never reject: any failure degrades to the snapshot.
   try {
-    return await buildLiveSourceIndex();
+    return await buildLiveSourceIndex(opts.signal);
   } catch {
     return peekSourceIndex();
   }
 }
 
-async function buildLiveSourceIndex(): Promise<SourceIndex> {
+async function buildLiveSourceIndex(signal: AbortSignal | undefined): Promise<SourceIndex> {
   // Capture before the work, assert before caching: a session change while the
   // index is built must not leave one account's index in the cache.
   const snapshot = captureSession();
-  const config = await getGameConfig();
+  const config = await getGameConfig({ signal });
+  if (signal?.aborted) return peekSourceIndex();
   if (indexCache && indexCache.config === config) return indexCache.index;
   let index: SourceIndex;
   try {

@@ -72,3 +72,27 @@ describe("the index starts before the load resolves", () => {
     expect(index.getSourceIndex).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("a failed load withdraws the index it started (minors C #4)", () => {
+  const failing: Array<[string, () => Promise<unknown>]> = [
+    ["searchRaces", async () => (await import("../src/tools/reference.js")).searchRaces({ name: "elf" })],
+    ["searchSpellsSection", async () => (await import("../src/tools/reference.js")).searchSpellsSection({ name: "fire" })],
+    ["getSpell", async () => (await import("../src/tools/reference.js")).getSpell("Fireball")],
+    ["getItem", async () => (await import("../src/tools/reference.js")).getItem("Longsword")],
+    ["searchOwnedEntries (class features)", async () => (await import("../src/tools/reference.js")).searchClassFeatures({ name: "rage" })],
+    ["parseCharacter", async () => (await import("../src/tools/character.js")).parseCharacter("12345678")],
+    ["getDefinition", async () => (await import("../src/tools/character.js")).getDefinition("12345678", "sword")],
+    ["getParty", async () => (await import("../src/tools/party.js")).getParty("999")],
+  ];
+
+  it.each(failing)("%s", async (_name, call) => {
+    index.getSourceIndex.mockReturnValue(new Promise(() => {}));
+    // The token exchange is refused and every other request is a 404 (no retries): the load fails.
+    fetchMock.mockImplementation(async (url: unknown) =>
+      new Response("{}", { status: String(url) === COBALT_URL ? 401 : 404 }));
+    await call().catch(() => undefined);
+    expect(index.getSourceIndex).toHaveBeenCalledTimes(1);
+    const signal = (index.getSourceIndex.mock.calls[0][0] as { signal?: AbortSignal } | undefined)?.signal;
+    expect(signal?.aborted).toBe(true);
+  });
+});

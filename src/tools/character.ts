@@ -101,9 +101,11 @@ export async function parseCharacter(
   characterId: string,
   sections: ParseSection = "full"
 ): Promise<string> {
-  // The index fetch runs alongside the character fetch (getSourceIndex never rejects).
-  const indexPromise = getSourceIndex();
-  const { json, notice } = await fetchCharacter(characterId);
+  // The index fetch runs alongside the character fetch (getSourceIndex never
+  // rejects); a failed fetch withdraws it, as nothing will read it.
+  const indexCtl = new AbortController();
+  const indexPromise = getSourceIndex({ signal: indexCtl.signal });
+  const { json, notice } = await fetchCharacter(characterId).catch((err: unknown) => { indexCtl.abort(); throw err; });
   const raw = JSON.parse(json) as Record<string, unknown>;
   return withNotice(parseCharacterData(raw, sections, await indexPromise), notice);
 }

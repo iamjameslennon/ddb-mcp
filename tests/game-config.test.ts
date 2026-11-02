@@ -6,6 +6,7 @@ const S = vi.hoisted(() => ({ hooks: [] as Array<() => void> }));
 vi.mock("../src/session-fetch.js", () => ({
   sessionFetch: vi.fn(),
   anonymousFetch: vi.fn(),
+  hasValidSession: vi.fn(() => true),
   captureSession: vi.fn(() => ({})),
   assertSessionCurrent: vi.fn(),
   onSessionInvalidated: vi.fn((cb: () => void) => { S.hooks.push(cb); }),
@@ -641,5 +642,55 @@ describe("clearGameConfig (ddb_clear_cache)", () => {
     vi.mocked(sessionFetch).mockImplementation(async () => response({ data: LIVE }));
     expect(await getGameConfig()).not.toBeNull();
     expect(sessionFetch).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("a caller that withdraws (minors C #4: a failed load never reads its index)", () => {
+  it("withdrawn before the request goes out: no config request, no failure memo", async () => {
+    const ctl = new AbortController();
+    const pending = getGameConfig({ signal: ctl.signal });
+    ctl.abort();
+    expect(await pending).toBeNull();
+    await new Promise(r => setTimeout(r, 0));
+    expect(sessionFetch).not.toHaveBeenCalled();
+    // Nothing remembered: the next caller fetches at once.
+    expect(await getGameConfig()).toMatchObject({ challengeRatings: LIVE.challengeRatings });
+    expect(sessionFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("withdrawn mid-request: the request is aborted, not retried, and no failure is remembered", async () => {
+    let seen: AbortSignal | undefined;
+    vi.mocked(sessionFetch).mockImplementationOnce((_url, init) => new Promise((_resolve, reject) => {
+      seen = init?.signal ?? undefined;
+      seen?.addEventListener("abort", () => reject(new Error("aborted")));
+    }));
+    const ctl = new AbortController();
+    const index = getSourceIndex({ signal: ctl.signal });
+    await vi.waitFor(() => expect(sessionFetch).toHaveBeenCalledTimes(1));
+    ctl.abort();
+    expect((await index).sources.has(300)).toBe(false); // the snapshot index
+    expect(seen?.aborted).toBe(true);
+    await new Promise(r => setTimeout(r, 0));
+    expect(sessionFetch).toHaveBeenCalledTimes(1);
+    expect(await getGameConfig()).not.toBeNull();
+    expect(sessionFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("another caller still waiting keeps the shared fetch alive", async () => {
+    const ctl = new AbortController();
+    const withdrawn = getGameConfig({ signal: ctl.signal });
+    const kept = getGameConfig();
+    ctl.abort();
+    expect(await withdrawn).toBeNull();
+    expect(await kept).toMatchObject({ challengeRatings: LIVE.challengeRatings });
+    expect(sessionFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("a caller that never withdraws gets the config as before", async () => {
+    const ctl = new AbortController();
+    expect(await getGameConfig({ signal: ctl.signal })).toMatchObject({ challengeRatings: LIVE.challengeRatings });
+    ctl.abort(); // after settling: no effect
+    expect(await getGameConfig()).not.toBeNull();
+    expect(sessionFetch).toHaveBeenCalledTimes(1);
   });
 });
