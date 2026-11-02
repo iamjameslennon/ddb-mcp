@@ -87,10 +87,15 @@ describe("search (ddb_search_site)", () => {
 
   it("mixed: prints the combined header and the Open5e section's own Rules line", async () => {
     sections.spells.mockResolvedValue(ddb("**Spell Search** (1 found)"));
-    sections.items.mockResolvedValue(plainSection("Rules: 2014 · SRD 5.1\n- **Rope**"));
+    // The real Open5e section (open5e: true, its own header), not a hand-built plain one.
+    const items = await o5SearchItemsSection({ name: "longsword" }, "unavailable");
+    expect(items).toMatchObject({ header: O5H, open5e: true, hidden: 2 });
+    sections.items.mockResolvedValue(items);
     const text = await search("x", "all", "2024");
     expect(text.split("\n")[0]).toBe(H);
     expect(text.match(/^Rules: /gm)).toHaveLength(2);
+    expect(text).toContain(`## Items\n\n${O5H}\n${items.body}`);
+    expect(text.trimEnd().split("\n").at(-1)).toBe(searchFooter("2024", 2));
   });
 
   it('skips an empty "No items found …" section', async () => {
