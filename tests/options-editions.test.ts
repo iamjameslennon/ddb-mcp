@@ -23,6 +23,7 @@ const fsMock = vi.hoisted(() => ({
 vi.mock("fs", () => fsMock);
 
 import { COBALT_URL, GAME_DATA, jsonResponse, makeJwt } from "./fixtures/spell-service.js";
+import { o5Response } from "./fixtures/open5e-v2.js";
 
 type ReferenceModule = typeof import("../src/tools/reference.js");
 let reference: ReferenceModule;
@@ -317,7 +318,7 @@ describe("no-name searches that match nothing", () => {
   it("say 'matching the criteria', never 'undefined'", async () => {
     install({ races: [], classes: [], backgrounds: [], feats: [] });
     fetchMock.mockImplementation(async (url: string) => {
-      if (url.includes("api.open5e.com")) return new Response("down", { status: 500 });
+      if (url.includes("api.open5e.com")) return o5Response("down", { status: 500 }, url);
       return jsonResponse({ token: makeJwt("99"), data: [] });
     });
     for (const text of [await reference.searchRaces(), await reference.searchClasses(), await reference.searchBackgrounds()]) {
@@ -329,7 +330,7 @@ describe("no-name searches that match nothing", () => {
   it("keep the name when one was given", async () => {
     install({ races: [], classes: [], backgrounds: [] });
     fetchMock.mockImplementation(async (url: string) => {
-      if (url.includes("api.open5e.com")) return new Response("down", { status: 500 });
+      if (url.includes("api.open5e.com")) return o5Response("down", { status: 500 }, url);
       return jsonResponse({ token: makeJwt("99"), data: [] });
     });
     expect(await reference.searchRaces({ name: "zzz" })).toContain('matching "zzz"');

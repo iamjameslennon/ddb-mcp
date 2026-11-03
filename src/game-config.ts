@@ -110,7 +110,10 @@ export async function getGameConfig(opts: { signal?: AbortSignal } = {}): Promis
   // lookups run anonymously (hasValidSession() false). The config follows the
   // same rule: the public config, with no Cookie header. With no session at
   // all, nothing is sent (sessionFetch refuses); getSourceIndex() asks
-  // getPublicGameConfig() itself.
+  // getPublicGameConfig() itself. Both callers (buildLiveSourceIndex and
+  // monster.ts's configFor) check hasValidSession() first, so this branch is
+  // reached only when the session changes between that check and this call;
+  // it ignores `signal`.
   if (!hasValidSession() && snapshot.state.kind === "authenticated") return getPublicGameConfig();
   if (configFailure && configFailure.generation === snapshot.generation && Date.now() < configFailure.until) {
     return null;

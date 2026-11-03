@@ -49,7 +49,7 @@ export function renderSection(s: SearchSection): string {
   return [s.header, s.body, s.footer].filter((p): p is string => p !== null).join("\n");
 }
 
-/** A reply with no edition framing: an error or a no-match message. */
+/** A reply with no edition framing: an error or other reply with no edition framing. */
 export function plainSection(text: string): SearchSection {
   return { header: null, body: text, footer: null, hidden: 0 };
 }
