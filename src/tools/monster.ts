@@ -33,7 +33,7 @@ import { wrapUntrusted, stripHtmlRich } from "../utils.js";
 import {
   o5SearchMonstersSection, o5GetMonster, o5GetMonsterStats, o5MonsterInEdition, type MonsterStatsResult, type O5EditionMonster,
 } from "../open5e.js";
-import { renderSection, plainSection, sourceFraming, withSourceCaveatSection, type SearchSection } from "./edition-search.js";
+import { renderSection, plainSection, noMatchSection, sourceFraming, withSourceCaveatSection, type SearchSection } from "./edition-search.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -767,9 +767,9 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
   if (monsters.length === 0) {
     const scope = partialScan ? ` (checked the first ${checked} of ${totalText} entries)` : "";
     if (homebrew) {
-      return searchTerm
+      return noMatchSection(searchTerm
         ? `No homebrew monsters found matching "${searchTerm}"${scope}.`
-        : `No homebrew monsters found matching the search criteria${scope}.`;
+        : `No homebrew monsters found matching the search criteria${scope}.`);
     }
     if (params.source) {
       // Open5e only carries the SRD — never substitute it for a requested book.
@@ -779,7 +779,7 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
         const available = await availableSourcesFor(searchTerm, index, asker, snapshot);
         if (available.length) msg += ` "${searchTerm}" appears in: ${available.join(", ")}.`;
       }
-      return msg;
+      return noMatchSection(msg);
     }
     // Only the other edition has a match: say so, rather than substitute the SRD.
     if (hidden > 0) {
@@ -788,9 +788,10 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
         body: `No monsters found matching the search criteria${scope}.`,
         footer: searchFooter(requested, hidden),
         hidden,
+        noMatch: true,
       };
     }
-    return await o5SearchMonstersSection(params, "not-found").catch(() => "No monsters found matching the search criteria.");
+    return await o5SearchMonstersSection(params, "not-found").catch(() => noMatchSection("No monsters found matching the search criteria."));
   }
 
   const matchedBy = searchTerm && params.source ? "matched by name and source"

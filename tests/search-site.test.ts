@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { searchHeader, searchFooter, open5eSearchHeader } from "../src/edition.js";
-import { plainSection, renderSection, type SearchSection } from "../src/tools/edition-search.js";
+import { plainSection, noMatchSection, renderSection, type SearchSection } from "../src/tools/edition-search.js";
 import {
   clearOpen5eCache,
   o5SearchSpells, o5SearchMonsters, o5SearchItems, o5SearchRaces, o5SearchClasses, o5SearchBackgrounds, o5SearchFeats,
@@ -30,7 +30,7 @@ const ddb = (body: string, hidden = 0): SearchSection =>
   ({ header: H, body, footer: searchFooter("2024", hidden), hidden });
 
 beforeEach(() => {
-  for (const fn of Object.values(sections)) fn.mockReset().mockResolvedValue(plainSection("No things found."));
+  for (const fn of Object.values(sections)) fn.mockReset().mockResolvedValue(noMatchSection("No things found."));
   // The Open5e sections below are the real ones, served from the recorded v2 documents.
   clearOpen5eCache();
   vi.stubGlobal("fetch", vi.fn(async (url: string) => o5FixtureFetch()(url)));
@@ -135,9 +135,36 @@ describe("search (ddb_search_site)", () => {
     expect(text).toContain("## Feats");
   });
 
+  it("keeps a D&D Beyond section whose first listed line is a closed 'No … found.' sentence", async () => {
+    sections.items.mockResolvedValue(ddb("No Escape found.\nA grim relic."));
+    const text = await search("x", "all", "2024");
+    expect(text).toContain("## Items\n\nNo Escape found.");
+  });
+
+  it.each([
+    ["spells", () => o5SearchSpellsSection({ name: "zzz" }, "not-found"), () => o5SearchSpellsSection({ name: "fire", limit: 10 }, "not-found")],
+    ["monsters", () => o5SearchMonstersSection({ name: "zzz" }, "not-found"), () => o5SearchMonstersSection({ name: "goblin" }, "not-found")],
+    ["items", () => o5SearchItemsSection({ name: "zzz" }, "not-found"), () => o5SearchItemsSection({ name: "bag" }, "not-found")],
+    ["races", () => o5SearchRacesSection({ name: "zzz" }, "not-found"), () => o5SearchRacesSection({}, "not-found")],
+    ["classes", () => o5SearchClassesSection({ name: "zzz" }, "not-found"), () => o5SearchClassesSection({}, "not-found")],
+    ["feats", () => o5SearchFeatsSection({ name: "zzz" }, "not-found"), () => o5SearchFeatsSection({}, "not-found")],
+  ])("Open5e %s: the no-match reply carries noMatch, the listed one does not", async (_n, none, listed) => {
+    expect((await none()).noMatch).toBe(true);
+    expect((await listed()).noMatch).toBeUndefined();
+  });
+
+  it("an Open5e hidden-only reply carries noMatch", async () => {
+    expect((await o5SearchMonstersSection({ name: "goblin", type: "humanoid" }, "unavailable")).noMatch).toBe(true);
+  });
+
+  it("an error section is kept", async () => {
+    sections.items.mockResolvedValue(plainSection("No items found: Unknown source."));
+    expect(await search("x", "all", "2024")).toContain("## Items");
+  });
+
   it("a D&D Beyond section that lists nothing but hides 3 twins adds 3 to the combined footer", async () => {
     sections.spells.mockResolvedValue(ddb("**Spell Search** (1 found)"));
-    sections.items.mockResolvedValue({ header: H, body: "No items found matching the criteria.", footer: searchFooter("2024", 3), hidden: 3 });
+    sections.items.mockResolvedValue({ header: H, body: "No items found matching the criteria.", footer: searchFooter("2024", 3), hidden: 3, noMatch: true });
     const text = await search("x", "all", "2024");
     expect(text).not.toContain("## Items");
     expect(text).not.toContain("No items found");
@@ -172,7 +199,7 @@ describe("search (ddb_search_site)", () => {
   });
 
   it("every section dropped but some hid twins: the no-results line, then the combined footer", async () => {
-    sections.items.mockResolvedValue({ header: H, body: "No items found matching the criteria.", footer: searchFooter("2024", 2), hidden: 2 });
+    sections.items.mockResolvedValue({ header: H, body: "No items found matching the criteria.", footer: searchFooter("2024", 2), hidden: 2, noMatch: true });
     expect(await search("q", "all", "2024")).toBe('No results found for "q".\n\n2 2014 versions hidden — rules_edition: "2014" shows them.');
   });
 

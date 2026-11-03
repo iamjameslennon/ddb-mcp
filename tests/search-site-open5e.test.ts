@@ -27,7 +27,7 @@ const fsMock = vi.hoisted(() => ({
 }));
 vi.mock("fs", () => fsMock);
 
-const noMatch = vi.hoisted(() => (text: string) => async () => ({ header: null, body: text, footer: null, hidden: 0 }));
+const noMatch = vi.hoisted(() => (text: string) => async () => ({ header: null, body: text, footer: null, hidden: 0, noMatch: true }));
 vi.mock("../src/tools/reference.js", async importOriginal => ({
   ...(await importOriginal<typeof import("../src/tools/reference.js")>()),
   searchSpellsSection: async () => ({
@@ -35,6 +35,7 @@ vi.mock("../src/tools/reference.js", async importOriginal => ({
     body: "No spells found matching the criteria.",
     footer: '1 2014 version hidden — rules_edition: "2014" shows it.',
     hidden: 1,
+    noMatch: true,
   }),
   searchRacesSection: noMatch("No races found matching the criteria."),
   searchClassesSection: noMatch("No classes found matching the criteria."),

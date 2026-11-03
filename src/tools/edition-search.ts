@@ -40,8 +40,10 @@ import { inSources, sourceLabel, withSourceCaveat, type ResolvedSource } from ".
  * One search's output in parts, so ddb_search_site can merge several under one header and footer.
  * `open5e`: an Open5e search, whose header (when it has one) is its own Rules line, kept with
  * its body in an "all" reply instead of being folded into the combined D&D Beyond header.
+ * `noMatch`: the reply means nothing matched (a plain no-match line, or one under hidden-twin
+ * framing), so ddb_search_site omits the section. An error or "unavailable" reply never sets it.
  */
-export interface SearchSection { header: string | null; body: string; footer: string | null; hidden: number; open5e?: boolean }
+export interface SearchSection { header: string | null; body: string; footer: string | null; hidden: number; open5e?: boolean; noMatch?: true }
 
 export function renderSection(s: SearchSection): string {
   return [s.header, s.body, s.footer].filter((p): p is string => p !== null).join("\n");
@@ -50,6 +52,11 @@ export function renderSection(s: SearchSection): string {
 /** A reply with no edition framing: an error or a no-match message. */
 export function plainSection(text: string): SearchSection {
   return { header: null, body: text, footer: null, hidden: 0 };
+}
+
+/** A plain reply that means nothing matched (`noMatch`). */
+export function noMatchSection(text: string): SearchSection {
+  return { ...plainSection(text), noMatch: true };
 }
 
 /**

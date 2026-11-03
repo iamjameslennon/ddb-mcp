@@ -237,6 +237,16 @@ describe("a filter only the other edition's twin passes (Grappler)", () => {
   });
 });
 
+describe("noMatch (ddb_search_site)", () => {
+  it("species, classes and feats flag a no-match reply, not a listed one", async () => {
+    install();
+    expect((await reference.searchFeatsSection({ name: "zzz", source: "phb-2024" })).noMatch).toBe(true);
+    expect((await reference.searchRacesSection({ name: "zzz" })).noMatch).toBe(true);
+    expect((await reference.searchClassesSection({ name: "zzz" })).noMatch).toBe(true);
+    expect((await reference.searchClassesSection({ name: "fighter" })).noMatch).toBeUndefined();
+  });
+});
+
 describe("bookNotes: false (ddb_search_site)", () => {
   it("keeps the tag and drops the book note", async () => {
     install();

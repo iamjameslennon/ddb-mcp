@@ -535,8 +535,8 @@ function o5SearchReply(
 ): SearchSection {
   const footer = searchFooter(requested, hidden);
   if (lines.length) return o5Section(open5eSearchHeader(requested, origin), [heading, ...lines].join("\n"), footer, hidden);
-  if (footer) return o5Section(open5eSearchHeader(requested, origin), noMatch, footer, hidden);
-  return o5Section(null, noMatch, null, 0);
+  if (footer) return { ...o5Section(open5eSearchHeader(requested, origin), noMatch, footer, hidden), noMatch: true };
+  return { ...o5Section(null, noMatch, null, 0), noMatch: true };
 }
 
 function o5Section(header: string | null, body: string, footer: string | null, hidden: number): SearchSection {

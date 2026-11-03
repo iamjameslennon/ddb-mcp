@@ -151,6 +151,12 @@ describe("ddb_search_equipment rules_edition and source", () => {
     expect(lines.some(l => l.includes("hidden"))).toBe(false);
   });
 
+  it("the site-search section flags a hidden-only reply, not a listed one", async () => {
+    installItems([item(11, "Longsword", { isLegacy: true, rarity: "Uncommon" }, [1]), item(12, "Longsword", {}, [148])]);
+    expect((await reference.searchItemsSection({ name: "longsword", rarity: "uncommon" })).noMatch).toBe(true);
+    expect((await reference.searchItemsSection({ name: "longsword" })).noMatch).toBeUndefined();
+  });
+
   it("a filter only the 2014 twin passes: header, a no-match body and the footer counting it, no Open5e", async () => {
     installItems([item(11, "Longsword", { isLegacy: true, rarity: "Uncommon" }, [1]), item(12, "Longsword", {}, [148])]);
     expect(await reference.searchItems({ name: "longsword", rarity: "uncommon" })).toBe(

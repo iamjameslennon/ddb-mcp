@@ -19,14 +19,6 @@ const CATEGORY_LABELS: Record<SpecificCategory, string> = {
   feats: "Feats",
 };
 
-// Each underlying search returns its own "no results" sentence, a full
-// sentence ending in a period. Detect it in the first line of a section's body
-// (never its header) so we can omit empty sections in the "all" rollup, e.g.
-// Open5e's item fallback: "No items found matching the criteria (SRD only)."
-// A listed line or a detail block whose entry name merely starts "No … found"
-// has no closing period on that line, so it is kept.
-const EMPTY_RESULT_PATTERN = /^no\s+[\w\s]+?\s+found[^\n]*\.(?:\n|$)/i;
-
 export async function search(
   query: string,
   category: SearchCategory = "all",
@@ -50,7 +42,8 @@ export async function search(
     // Every section's hidden twins reach the combined footer, a dropped one's too.
     hidden += section.hidden;
     const body = section.body.trim();
-    if (!body || EMPTY_RESULT_PATTERN.test(body)) continue;
+    // A section that matched nothing is omitted (its hidden twins were counted above).
+    if (!body || section.noMatch) continue;
     // An Open5e section keeps its own Rules line; a D&D Beyond header is folded into the combined one.
     const text = section.open5e && section.header !== null ? `${section.header}\n${body}` : body;
     sections.push(`## ${CATEGORY_LABELS[ALL_CATEGORIES[i]]}\n\n${text}`);

@@ -25,7 +25,7 @@ vi.mock("../src/open5e.js", () => ({
   o5MonsterInEdition: vi.fn(async () => null),
 }));
 
-import { getMonster, searchMonsters, getMonsterStats, clearMonsterCache, statBlockText } from "../src/tools/monster.js";
+import { getMonster, searchMonsters, searchMonstersSection, getMonsterStats, clearMonsterCache, statBlockText } from "../src/tools/monster.js";
 import { rateEncounter } from "../src/tools/encounter.js";
 import { generateTreasure } from "../src/tools/treasure.js";
 import { sessionFetch, hasValidSession, onSessionInvalidated, beginAuthenticatedSession } from "../src/session-fetch.js";
@@ -1472,6 +1472,12 @@ describe("searchMonsters counts a twin whose requested pick fails the filters", 
     expect(out).toContain("- **Ghast Hound** [2014] — Basic Rules (2014) [basic-rules-2014] — CR 1/2");
     expect(out).toContain("- **Ghast Pup** [2024]");
     expect(out).not.toContain("hidden");
+  });
+
+  it("the site-search section flags the hidden-only reply, not a listed one", async () => {
+    extraMonsters = [HOUND_2024, HOUND_2014];
+    expect((await searchMonstersSection({ name: "Ghast Hound", cr: 0.5 })).noMatch).toBe(true);
+    expect((await searchMonstersSection({ name: "Ghast Hound" })).noMatch).toBeUndefined();
   });
 
   it("alone: the search header, the no-match line and the footer, no Open5e", async () => {

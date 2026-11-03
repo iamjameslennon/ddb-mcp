@@ -26,7 +26,7 @@ import {
 import { peekSourceIndex, getSourceIndex } from "../game-config.js";
 import { resolveSource, unknownSourceError, withSourceCaveat, isHomebrewSource, GENERIC_SOURCE_HINT, type ResolvedSource } from "../source-filter.js";
 import {
-  paginateResults, renderSection, plainSection, withSourceCaveatSection, selectCatalog, lookupCatalog, lookupCatalogAdapter,
+  paginateResults, renderSection, plainSection, noMatchSection, withSourceCaveatSection, selectCatalog, lookupCatalog, lookupCatalogAdapter,
   type CatalogAdapter, type CatalogHit, type LookupAdapter, type SearchSection,
 } from "./edition-search.js";
 import { createSpellStore, addSpells, spellList, type DdbSpell, type SpellStore } from "./spell-store.js";
@@ -144,7 +144,7 @@ function isSourceReply(source: ResolvedSource | "homebrew" | SourceReply | undef
  * an Open5e fallback.
  */
 function hiddenOnlySection(header: string, noMatch: string, requested: RulesEdition, hidden: number): SearchSection {
-  return { header, body: noMatch, footer: searchFooter(requested, hidden), hidden };
+  return { header, body: noMatch, footer: searchFooter(requested, hidden), hidden, noMatch: true };
 }
 
 // ── HTML strip — imported from src/utils.ts ───────────────────────────────────
@@ -509,7 +509,7 @@ export async function searchSpellsSection(params: SpellSearchParams): Promise<Se
     return hiddenOnlySection(header, "No spells found matching the criteria.", requested, hidden);
   }
   if (hits.length === 0) {
-    return plainSection(source && source !== "homebrew"
+    return noMatchSection(source && source !== "homebrew"
       ? `No spells found matching the criteria in ${source.book}.`
       : source ? homebrewNoMatch("spells") : "No spells found matching the criteria.");
   }
@@ -850,10 +850,10 @@ async function searchCatalogList<T>(
   const index = await readIndex(startedIndex);
   const { hits, hidden, header, note } = selectCatalog(all, requested, spec.adapter, index, source, { bookNotes: params.bookNotes });
   if (hits.length === 0) {
-    if (source === "homebrew") return plainSection(homebrewNoMatch(spec.homebrew.plural));
-    if (source) return plainSection(`No ${spec.plural} found matching the criteria in ${source.book}.`);
+    if (source === "homebrew") return noMatchSection(homebrewNoMatch(spec.homebrew.plural));
+    if (source) return noMatchSection(`No ${spec.plural} found matching the criteria in ${source.book}.`);
     if (hidden > 0) return hiddenOnlySection(header, `No ${spec.plural} found matching the criteria.`, requested, hidden);
-    return await spec.fallback("not-found").catch(() => plainSection(spec.notFound));
+    return await spec.fallback("not-found").catch(() => noMatchSection(spec.notFound));
   }
 
   const results = spec.render(hits);
@@ -1304,7 +1304,7 @@ async function searchOwnedEntries<T>(
   const index = await readIndex(startedIndex);
   const { hits, hidden, header, note } = selectCatalog(build.entries, requested, spec.adapter, index, source);
   if (hits.length === 0) {
-    return plainSection(source === "homebrew"
+    return noMatchSection(source === "homebrew"
       ? partial + homebrewNoMatch(spec.homebrew.plural)
       : partial + spec.noMatch(build.entries.length, source?.book));
   }

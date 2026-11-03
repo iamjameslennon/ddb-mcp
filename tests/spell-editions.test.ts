@@ -177,6 +177,13 @@ describe("ddb_search_spells rules_edition", () => {
     expect(await reference.searchSpells({ concentration: true, rulesEdition: "2014" })).toContain("- **Barkskin** [2014]");
   });
 
+  it("the site-search section flags a hidden-only and a book no-match reply, not a listed one", async () => {
+    installBasics();
+    expect((await reference.searchSpellsSection({ concentration: true })).noMatch).toBe(true);
+    expect((await reference.searchSpellsSection({ name: "zzz", source: "phb-2024" })).noMatch).toBe(true);
+    expect((await reference.searchSpellsSection({ name: "sleep" })).noMatch).toBeUndefined();
+  });
+
   it("the name filter matches a group by either name", async () => {
     installBasics();
     expect(await reference.searchSpells({ name: "melf", rulesEdition: "2014" })).toContain("- **Acid Arrow** [2014]");
