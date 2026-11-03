@@ -101,8 +101,9 @@ async function fetchPages(firstUrl: string): Promise<unknown[]> {
       seen.add(url);
       const signal = AbortSignal.any([AbortSignal.timeout(O5_TIMEOUT_MS), deadline.signal]);
       const resp: Response = await fetch(url, { headers: { Accept: "application/json" }, signal });
-      // fetch follows redirects; a real response always carries its final url (an empty one only comes from a hand-built Response).
-      if (resp.url && new URL(resp.url).origin !== O5_ORIGIN) throw new Error(`Open5e redirected off ${O5_ORIGIN}: ${new URL(resp.url).origin}`);
+      // fetch follows redirects; a real response always carries its final url.
+      if (!resp.url) throw new Error(`Open5e response has no final url: ${new URL(url).pathname}`);
+      if (new URL(resp.url).origin !== O5_ORIGIN) throw new Error(`Open5e redirected off ${O5_ORIGIN}: ${new URL(resp.url).origin}`);
       if (!resp.ok) throw new Error(`Open5e ${resp.status}: ${new URL(url).pathname}`);
       const body = await resp.json() as { count?: number; next?: string | null; results?: unknown[] };
       if (expected === undefined && typeof body.count === "number") expected = body.count;

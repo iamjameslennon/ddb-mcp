@@ -22,23 +22,30 @@ export function o5Record<T = O5Record>(doc: Doc, endpoint: O5Endpoint, name: str
   return found as unknown as T;
 }
 
+/** A hand-built Open5e response. A real `fetch` response carries its final url and the loader requires it, so a hand-built one gets `url` (default: an Open5e v2 URL). */
+export function o5Response(body: BodyInit | null, init: ResponseInit = {}, url = "https://api.open5e.com/v2/spells/"): Response {
+  const resp = new Response(body, init);
+  Object.defineProperty(resp, "url", { value: url });
+  return resp;
+}
+
 const URL_RE = /^https:\/\/api\.open5e\.com\/v2\/([a-z]+)\/\?document__key__in=(srd-2024|srd-2014)&limit=1000$/;
 
 /** Serves `…/v2/<endpoint>/?document__key__in=<doc>&limit=1000` from the fixtures; anything else is a 404. `overrides` is keyed `"<doc>/<endpoint>"`. */
 export function o5FixtureFetch(overrides: Partial<Record<string, unknown[]>> = {}, counts: Partial<Record<string, number>> = {}): (input: unknown) => Promise<Response> {
   return async (input: unknown) => {
     const m = URL_RE.exec(String(input));
-    if (!m) return new Response("not found", { status: 404 });
+    if (!m) return o5Response("not found", { status: 404 }, String(input));
     const doc = m[2] as Doc;
     const endpoint = m[1] as O5Endpoint;
     let body: Page;
     try {
       body = page(doc, endpoint);
     } catch {
-      return new Response("not found", { status: 404 });
+      return o5Response("not found", { status: 404 }, String(input));
     }
     const results = overrides[`${doc}/${endpoint}`] ?? body.results;
     const count = counts[`${doc}/${endpoint}`] ?? results.length;
-    return new Response(JSON.stringify({ count, next: null, previous: null, results }), { status: 200, headers: { "Content-Type": "application/json" } });
+    return o5Response(JSON.stringify({ count, next: null, previous: null, results }), { status: 200, headers: { "Content-Type": "application/json" } }, String(input));
   };
 }

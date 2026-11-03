@@ -3,7 +3,7 @@ import {
   clearOpen5eCache, clearOpen5eCreatures, docKey, loadO5Document, o5GetEquipment, o5SearchItems,
   O5_DOC, O5_DOCUMENT_DEADLINE_MS, O5_FAILURE_TTL_MS, type O5Endpoint, type O5Record,
 } from "../src/open5e.js";
-import { o5Fixture, o5FixtureFetch } from "./fixtures/open5e-v2.js";
+import { o5Fixture, o5FixtureFetch, o5Response } from "./fixtures/open5e-v2.js";
 
 const ENDPOINTS: O5Endpoint[] = ["spells", "creatures", "items", "magicitems", "weapons", "armor", "species", "classes", "backgrounds", "feats", "rulesets"];
 
@@ -24,7 +24,7 @@ const ONLY: Record<O5Endpoint, { "2024": string[]; "2014": string[] }> = {
 
 const spellsUrl = "https://api.open5e.com/v2/spells/?document__key__in=srd-2024&limit=1000";
 const rec = (name: string): O5Record => ({ key: name, name, document: { key: "srd-2024" } });
-const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status });
+const json = (body: unknown, status = 200): Response => o5Response(JSON.stringify(body), { status });
 
 beforeEach(() => {
   clearOpen5eCache();
@@ -257,6 +257,15 @@ describe("failure memo, deadline and response checks", () => {
     const other = { key: "x", name: "X", document: { key: "srd-2014" } };
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({ count: 3, next: null, results: [rec("A"), other, other] })));
     expect((await loadO5Document("spells", "2024")).map(r => r.name)).toEqual(["A"]);
+  });
+
+  it("a response with no url fails, is not cached, and the failure is remembered", async () => {
+    const bare = () => new Response(JSON.stringify({ count: 1, next: null, results: [rec("A")] }), { status: 200 });
+    const fetchMock = vi.fn().mockImplementation(async () => bare());
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(loadO5Document("spells", "2024")).rejects.toThrow("no final url");
+    await expect(loadO5Document("spells", "2024")).rejects.toThrow("no final url");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("a redirect to another origin fails", async () => {
