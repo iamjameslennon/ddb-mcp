@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status: done (2026-10-17).** All six tasks landed on `main`: Task 1 `07acf8a` + `3765b55`, Task 2 `267d778` + `cdb8366`, Task 3 `137ffaf`, Task 4 `1c11398`, Task 5 `d5e0536` + `edc5524`, Task 6 `d1e9b25` (119 verified rename pairs), with follow-up fixes in `223256c`.
+
 **Goal:** Add the pure edition module (classification, twin selection, every label string), the game-config/source-index module with an offline snapshot, the rename table and its generator script — with **no change to any tool's output**.
 
 **Architecture:** `src/edition.ts` is pure and stateless. It classifies a D&D Beyond definition into a ruleset from its `isHomebrew`/`isLegacy`/source markers, using a source index the caller passes in. It also groups 2014/2024 twins and picks one, and it owns every user-facing edition string. `src/game-config.ts` takes over `getGameConfig()` (and its session-invalidation hook) from `src/tools/monster.ts`, and adds `getSourceIndex()`, which merges the live config's source list over a generated snapshot (`src/source-snapshot.ts`). `scripts/dump-edition-renames.mts` regenerates that snapshot and proposes 2014→2024 rename pairs for `src/edition-renames.ts`.
@@ -92,7 +94,7 @@ Phase-2+ planners: these are the real phase-1 interfaces.
   - `classifyEdition(entry: EditionMarkers, index: SourceIndex): EditionInfo`
   - `EDITION_RENAMES: ReadonlyArray<readonly [name2014: string, name2024: string]>`, empty for now, from `src/edition-renames.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/edition.test.ts`:
 
@@ -283,12 +285,12 @@ describe("classifyEdition", () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `npx vitest run tests/edition.test.ts`
 Expected: FAIL, with `Failed to resolve import "../src/edition.js"` (or `Cannot find module`).
 
-- [ ] **Step 3: Create the empty rename table**
+- [x] **Step 3: Create the empty rename table**
 
 Create `src/edition-renames.ts`:
 
@@ -309,7 +311,7 @@ export const EDITION_RENAMES: ReadonlyArray<readonly [name2014: string, name2024
 ];
 ```
 
-- [ ] **Step 4: Write `src/edition.ts` (part 1)**
+- [x] **Step 4: Write `src/edition.ts` (part 1)**
 
 Create `src/edition.ts`:
 
@@ -485,12 +487,12 @@ export function classifyEdition(entry: EditionMarkers, index: SourceIndex): Edit
 }
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `npx vitest run tests/edition.test.ts`
 Expected: PASS (every test in the file).
 
-- [ ] **Step 6: Full gate, then commit**
+- [x] **Step 6: Full gate, then commit**
 
 Run: `npm run typecheck && npm run lint && npm test`
 Expected: all green.
@@ -533,7 +535,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `interface SearchSelection<T> extends Selection<T> { info: EditionInfo }`
   - `groupAndSelect<T>(all: readonly T[], requested: RulesEdition, opts: SearchOptions<T>): { selected: SearchSelection<T>[]; hidden: number }`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `tests/edition.test.ts`, replace the `../src/edition.js` import block with:
 
@@ -791,12 +793,12 @@ describe("groupAndSelect", () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `npx vitest run tests/edition.test.ts`
 Expected: FAIL. Vitest reports that `normalizeName` (and the other new imports) is not exported / `is not a function`. The Task 1 tests are collected in the same file, so the whole file fails to load until Step 3.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `src/edition.ts`, add this import below the `stripHtml` import:
 
@@ -1014,12 +1016,12 @@ export function groupAndSelect<T>(
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `npx vitest run tests/edition.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Full gate, then commit**
+- [x] **Step 5: Full gate, then commit**
 
 Run: `npm run typecheck && npm run lint && npm test`
 Expected: all green.
@@ -1060,7 +1062,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Main-edition note for the implementer:** the spec says "highest level wins, tie → 2024" and also "if the counted classes span both editions, the character is mixed and 2024 is the main edition". When both editions are present the second rule applies, and when only one is present every counted class shares it. So the highest-level rule never changes the result, and the code does not implement it.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `tests/edition.test.ts`, replace the `../src/edition.js` import block (only that statement — leave the separate `../src/edition-renames.js` import line from Task 2 in place) with:
 
@@ -1238,12 +1240,12 @@ describe("character edition labels", () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `npx vitest run tests/edition.test.ts`
 Expected: FAIL. Vitest reports `rulesLine` (and the other new imports) is not exported / `is not a function`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Append to `src/edition.ts`:
 
@@ -1406,12 +1408,12 @@ export function characterRulesLine(entries: readonly CharacterEditionEntry[]): s
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `npx vitest run tests/edition.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Full gate, then commit**
+- [x] **Step 5: Full gate, then commit**
 
 Run: `npm run typecheck && npm run lint && npm test`
 Expected: all green.
@@ -1440,7 +1442,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `SNAPSHOT_CATEGORIES: readonly CategoryRecord[]`
   - `SNAPSHOT_SOURCES: readonly SourceRecord[]`
 
-- [ ] **Step 1: Write the failing snapshot sanity test**
+- [x] **Step 1: Write the failing snapshot sanity test**
 
 In `tests/edition.test.ts`, add this import below the `edition-renames` import:
 
@@ -1477,12 +1479,12 @@ describe("source snapshot", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run tests/edition.test.ts`
 Expected: FAIL with `Failed to resolve import "../src/source-snapshot.js"`.
 
-- [ ] **Step 3: Write the script**
+- [x] **Step 3: Write the script**
 
 Create `scripts/dump-edition-renames.mts`:
 
@@ -1699,17 +1701,17 @@ for (const [kind, load] of loaders) {
 process.exit(0);
 ```
 
-- [ ] **Step 4: Generate the snapshot (no login needed)**
+- [x] **Step 4: Generate the snapshot (no login needed)**
 
 Run: `npx tsx scripts/dump-edition-renames.mts --snapshot-only`
 Expected: `Wrote 264 sources and 50 categories to src/source-snapshot.ts` (counts as of 2026-10-16; small changes are fine), then either "Every source category is placed…" or a list of unplaced categories. **If any category is unplaced, stop and report it to the owner** with its books. Don't guess a ruleset for it; until someone places it, it is correctly `unstated`.
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `npx vitest run tests/edition.test.ts`
 Expected: PASS. The "source snapshot" block pins live descriptions (verified 2026-10-16). If one of its book strings fails, first check whether D&D Beyond changed that book's description in the regenerated snapshot. If it did, update the expected string, and say so in the commit message. Never change `buildSourceIndex` to make a live string match.
 
-- [ ] **Step 6: Document the refresh in CLAUDE.md**
+- [x] **Step 6: Document the refresh in CLAUDE.md**
 
 In `CLAUDE.md`, directly after the bullet that starts `  - **Refreshing the language table**:`, add a top-level bullet:
 
@@ -1717,7 +1719,7 @@ In `CLAUDE.md`, directly after the bullet that starts `  - **Refreshing the lang
 - **Refreshing the source snapshot and rename table**: run `npx tsx scripts/dump-edition-renames.mts` (needs `ddb_login`; `--snapshot-only` needs no login). It rewrites `src/source-snapshot.ts` from the live game config (commit it), reports any `sourceCategoryId` missing from the category table in `src/edition.ts` (place it there by hand — unknown categories classify "edition not stated"), and prints 2014→2024 rename candidates with evidence. Add a pair to `src/edition-renames.ts` only after reading both descriptions, with the evidence in a comment.
 ```
 
-- [ ] **Step 7: Full gate, then commit**
+- [x] **Step 7: Full gate, then commit**
 
 Run: `npm run typecheck && npm run lint && npm test`
 Expected: all green. If lint flags the generated file, fix the **generator** and regenerate. Never hand-edit the snapshot.
@@ -1750,7 +1752,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `getGameConfig(): Promise<GameConfig | null>`, identical behaviour
   - `getSourceIndex(): Promise<SourceIndex>`. It never rejects: a malformed live source list falls back to the snapshot alone. It merges the live sources/categories over the snapshot, field by field (a live `null`/missing field falls back to the snapshot's), and caches one index per config object.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/game-config.test.ts`:
 
@@ -1885,12 +1887,12 @@ describe("getSourceIndex", () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `npx vitest run tests/game-config.test.ts`
 Expected: FAIL with `Failed to resolve import "../src/game-config.js"`.
 
-- [ ] **Step 3: Create `src/game-config.ts`**
+- [x] **Step 3: Create `src/game-config.ts`**
 
 ```ts
 /**
@@ -2005,12 +2007,12 @@ function mergeCategories(live: Array<{ id: number; name: string }> | undefined):
 }
 ```
 
-- [ ] **Step 4: Run the new tests to verify they pass**
+- [x] **Step 4: Run the new tests to verify they pass**
 
 Run: `npx vitest run tests/game-config.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Point `monster.ts` at the new module**
+- [x] **Step 5: Point `monster.ts` at the new module**
 
 In `src/tools/monster.ts`:
 
@@ -2080,7 +2082,7 @@ Then check that nothing else referenced the removed names:
 Run: `grep -n "configCache\|CONFIG_URL\|sessionFetch" src/tools/monster.ts`
 Expected: no output.
 
-- [ ] **Step 6: Update the monster test's hook lookup**
+- [x] **Step 6: Update the monster test's hook lookup**
 
 `game-config.ts` now registers its hook first, when `monster.ts` imports it, so `mock.calls[0][0]` would only clear the game config. In `tests/monster.test.ts`, replace:
 
@@ -2102,12 +2104,12 @@ const invalidateMonsterModule = () => invalidationHooks.forEach(hook => hook());
 
 `tests/monster-session.test.ts` already collects every registered hook in `S.hooks`, so it needs no change. `tests/session-consumers.test.ts` uses the real session modules, so game-config's hook registers for real.
 
-- [ ] **Step 7: Run the monster and session suites**
+- [x] **Step 7: Run the monster and session suites**
 
 Run: `npx vitest run tests/monster.test.ts tests/monster-session.test.ts tests/session-consumers.test.ts tests/encounter.test.ts tests/treasure.test.ts`
 Expected: PASS, with no other test edits. If a test fails because a hook did not run, find where it reads `mock.calls[0]` and apply the Step 6 pattern. Do not change any assertion.
 
-- [ ] **Step 8: Update CLAUDE.md**
+- [x] **Step 8: Update CLAUDE.md**
 
 In the **Key modules** table in `CLAUDE.md`, add these rows directly after the `src/utils.ts` row:
 
@@ -2124,7 +2126,7 @@ In **Caching layers**, add this bullet after the **Open5e responses** bullet:
 - **Game config / source index**: `game-config.ts` caches the config until the next session transition (failures are never cached) and one `SourceIndex` per config object, so a recovered config always rebuilds the index; both are dropped by its `onSessionInvalidated` hook
 ```
 
-- [ ] **Step 9: Full gate, then commit**
+- [x] **Step 9: Full gate, then commit**
 
 Run: `npm run typecheck && npm run lint && npm test`
 Expected: all green.
@@ -2154,12 +2156,12 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 This task needs a logged-in D&D Beyond session (`~/.config/ddb-mcp/session.json`). If the script fails with `No session found` or a cobalt-token error, **stop and ask the owner to run `ddb_login`**. Do not fake the run.
 
-- [ ] **Step 1: Run the full script and keep its output**
+- [x] **Step 1: Run the full script and keep its output**
 
 Run: `npx tsx scripts/dump-edition-renames.mts > "$TMPDIR/edition-renames-candidates.txt" 2>&1; tail -40 "$TMPDIR/edition-renames-candidates.txt"`
 Expected: a `=== <kind>: … ===` summary line for each of spell, item, species, class, background, feat and monster. A `FAILED` line for one kind is acceptable: note it in the commit message. Also review the category check at the top again.
 
-- [ ] **Step 2: Verify candidates and fill the table**
+- [x] **Step 2: Verify candidates and fill the table**
 
 Read the candidates for each kind in the output file. For each one, keep the pair **only if all three hold**:
 1. It is the same thing (same spell, item, creature, feat…), not merely a similar one.
@@ -2180,12 +2182,12 @@ export const EDITION_RENAMES: ReadonlyArray<readonly [name2014: string, name2024
 
 Fill in the real values from the script output. The tests reject a duplicated 2014 name, a self-map, or a chain.
 
-- [ ] **Step 3: Re-run and confirm the kept pairs are gone from the orphan lists**
+- [x] **Step 3: Re-run and confirm the kept pairs are gone from the orphan lists**
 
 Run: `npx tsx scripts/dump-edition-renames.mts > "$TMPDIR/edition-renames-after.txt" 2>&1; grep "^===" "$TMPDIR/edition-renames-after.txt"`
 Expected: each kind's "2014 names with no 2024 twin" count has dropped by the number of pairs kept for that kind. This run also refreshes `src/source-snapshot.ts` (usually only `SNAPSHOT_DATE` changes).
 
-- [ ] **Step 4: Mark phase 1 done in CLAUDE.md**
+- [x] **Step 4: Mark phase 1 done in CLAUDE.md**
 
 In `CLAUDE.md` › **Next steps (known issues)**:
 
@@ -2203,7 +2205,7 @@ Last updated 2026-10-16, after phase 1 (foundation) of the rules-edition spec la
 
 Replace `N` with the actual count.
 
-- [ ] **Step 5: Full gate, then commit**
+- [x] **Step 5: Full gate, then commit**
 
 Run: `npm run typecheck && npm run lint && npm test`
 Expected: all green.
@@ -2220,7 +2222,7 @@ Phase 1 changes no tool output, so there are no live Rules: lines to record.
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
-- [ ] **Step 6: Report to the owner**
+- [x] **Step 6: Report to the owner**
 
 Tell the owner:
 - how many pairs you kept per kind, and the file to review asynchronously (`src/edition-renames.ts`);
