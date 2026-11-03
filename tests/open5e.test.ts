@@ -1062,8 +1062,9 @@ describe("Open5e equipment twin keys (M1–M3 and six verified pairs)", () => {
       }
       // Every group: within a document, one rename-table key only.
       for (const g of guarded.values()) for (const l of [g.n14, g.n24]) expect(new Set(l.map(tableKey)).size, l.join(" | ")).toBeLessThanOrEqual(1);
-      const changed = [...guarded.values()].filter(g => g.n14.length + g.n24.length > 0
-        && grouped().every(u => u.n14.join() !== g.n14.join() || u.n24.join() !== g.n24.join()))
+      const signature = (g: { n14: string[]; n24: string[] }) => `${g.n14.join()}\n${g.n24.join()}`;
+      const unguarded = new Set(grouped().map(signature));
+      const changed = [...guarded.values()].filter(g => g.n14.length + g.n24.length > 0 && !unguarded.has(signature(g)))
         .map(g => `${g.n14.join(" | ")} <=> ${g.n24.join(" | ")}`).sort();
       expect(changed).toEqual([" <=> Potions of Healing", "Potion of Healing <=> Potion of Healing"]);
       // Cross-document plural pairs still join.
