@@ -717,6 +717,26 @@ describe("a cancelled fetch that already saw a failure keeps the memo (fix round
     expect(sessionFetch).toHaveBeenCalledTimes(1);
   });
 
+  it("a 503 followed by a 200 before the cancel records nothing: the next call fetches again", async () => {
+    let release!: () => void;
+    const held = new Promise<void>(r => { release = r; });
+    vi.mocked(sessionFetch).mockImplementationOnce((async (_url: string, _init?: RequestInit, hooks?: { onResponse?: (r: Response) => void }) => {
+      hooks?.onResponse?.(response({}, 503));
+      hooks?.onResponse?.(response({ data: LIVE }));
+      await held; // the 200 is in, but its result is not used yet
+      return response({ data: LIVE });
+    }) as never);
+    const ctl = new AbortController();
+    const pending = getGameConfig({ signal: ctl.signal });
+    await vi.waitFor(() => expect(sessionFetch).toHaveBeenCalledTimes(1));
+    ctl.abort();
+    release();
+    expect(await pending).toBeNull();
+    await new Promise(r => setTimeout(r, 0));
+    expect(await getGameConfig()).not.toBeNull();
+    expect(sessionFetch).toHaveBeenCalledTimes(2);
+  });
+
   it("a cancel before any response records nothing", async () => {
     failingThenWaiting("network");
     const ctl = new AbortController();

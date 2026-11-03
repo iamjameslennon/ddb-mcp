@@ -272,10 +272,11 @@ async function fetchGameConfig(snapshot: SessionSnapshot, signal: AbortSignal, e
   if (captureSession().generation !== snapshot.generation) return null;
   // Every caller withdrew before the request went out: send nothing.
   if (signal.aborted) return null;
-  // Set when an attempt failed (an HTTP error, retried or not). A fetch that
-  // is cancelled (every caller withdrew) or passes its deadline after that
-  // still records the failure memo, so an outage costs about one attempt a
-  // minute; one cancelled before any failure records nothing.
+  // Follows the latest attempt: an HTTP error sets it, a later ok response
+  // (after a retry) clears it. A fetch that is cancelled (every caller
+  // withdrew) or passes its deadline while it is set still records the failure
+  // memo, so an outage costs about one attempt a minute; one cancelled before
+  // any failure, or after the endpoint answered ok, records nothing.
   let observedFailure = false;
   const fail = (): null => {
     // Not aborted: a failure. Aborted: only one already observed (the deadline
@@ -284,7 +285,7 @@ async function fetchGameConfig(snapshot: SessionSnapshot, signal: AbortSignal, e
     return null;
   };
   try {
-    const resp = await sessionFetch(CONFIG_URL, { signal }, { onResponse: r => { if (!r.ok) observedFailure = true; } });
+    const resp = await sessionFetch(CONFIG_URL, { signal }, { onResponse: r => { observedFailure = !r.ok; } });
     if (signal.aborted) return fail();
     if (!resp.ok) return fail();
     const json = await resp.json() as { data?: GameConfig } | GameConfig;
