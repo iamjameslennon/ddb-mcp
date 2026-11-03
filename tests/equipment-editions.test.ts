@@ -264,13 +264,13 @@ describe("the item compendium keeps every item type (carry-over (e))", () => {
     expect(lines).toHaveLength(2);
   });
 
-  it("an empty-string definitionKey is a key, as before; only null or undefined fall through (minors B item 5b)", async () => {
+  it("an empty-string definitionKey is absent: distinct items carrying one both survive", async () => {
     installItems([
       shared(1782728300, "Dagger", "Weapon", ""),
       shared(701257905, "Studded Leather", "Armor", ""),
     ].map(i => ({ ...i, definitionKey: "" })));
     const lines = (await reference.searchItems({})).split("\n").filter(l => l.startsWith("- **"));
-    expect(lines).toHaveLength(1);
+    expect(lines).toEqual(["- **Dagger** [2024] — Common Weapon", "- **Studded Leather** [2024] — Common Armor"]);
   });
 
   it("dedupes by definitionKey when the payload carries one", async () => {

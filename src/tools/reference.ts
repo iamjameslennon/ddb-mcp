@@ -613,11 +613,11 @@ let itemCompendium: DdbItem[] | null = null;
  * One entry per definition. An id alone would drop every later item type that
  * reuses it. Live, every item has a unique definitionKey; without one,
  * entityTypeId:id; without both, the id with the normalized name, filterType,
- * rarity and magic, so distinct items sharing an id stay apart. Only a null or
- * undefined definitionKey is absent (an empty string is a key, as with `??`).
+ * rarity and magic, so distinct items sharing an id stay apart. A null,
+ * undefined or empty definitionKey is absent.
  */
 function itemKey(i: DdbItem): string {
-  if (i.definitionKey != null) return i.definitionKey;
+  if (i.definitionKey) return i.definitionKey;
   if (i.entityTypeId != null) return `${i.entityTypeId}:${i.id}`;
   return `?:${i.id}:${normalizeName(i.name ?? "")}:${(i.filterType ?? "").toLowerCase()}:${(i.rarity ?? "").toLowerCase()}:${i.magic === true}`;
 }
