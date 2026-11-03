@@ -265,6 +265,8 @@ let flipEachRequest = false;
 let listRequestCount = 0;
 let configAvailable = true;
 let configWithoutSources = false;
+// Sources the live config lists beyond CONFIG's (books newer than the snapshot).
+let extraConfigSources: Array<Record<string, unknown>> = [];
 let failUnfilteredSearch = false;
 let firstPageTotal: number | null = null;
 // Lowercased search terms whose list request returns 500.
@@ -283,6 +285,7 @@ function setupFetch(): void {
     if (url.includes("api/config/json")) {
       if (!configAvailable) return mockResponse({}, 503);
       if (configWithoutSources) return mockResponse({ data: { ...CONFIG.data, sources: undefined } });
+      if (extraConfigSources.length) return mockResponse({ data: { ...CONFIG.data, sources: [...CONFIG.data.sources, ...extraConfigSources] } });
       return mockResponse(CONFIG);
     }
 
@@ -345,6 +348,7 @@ beforeEach(() => {
   listRequestCount = 0;
   configAvailable = true;
   configWithoutSources = false;
+  extraConfigSources = [];
   failUnfilteredSearch = false;
   firstPageTotal = null;
   anonymousRequests.length = 0;
@@ -1571,6 +1575,19 @@ describe("logged out, monster lookups ask monster-service without credentials", 
     expect(book).not.toContain("could not be honoured");
     expect(o5GetMonster).not.toHaveBeenCalled();
     expect(o5SearchMonstersSection).not.toHaveBeenCalled();
+    expectNoCredentials();
+  });
+
+  it("logged out, a book newer than the snapshot resolves and labels from the public config, with one config request", async () => {
+    extraConfigSources = [{ id: 990_001, name: "NB-2027", description: "Brand New Bestiary", sourceURL: "sources/dnd/nb-2027", sourceCategoryId: 38 }];
+    extraMonsters = [monster({ id: 9_000_001, name: "Gloom Wisp", sourceId: 990_001, sources: sources(990_001) })];
+    goLoggedOut();
+    const lines = (await getMonster("Gloom Wisp", { source: "nb-2027" })).split("\n");
+    expect(lines.slice(0, 2)).toEqual(["# Gloom Wisp", "Rules: 2024 · Brand New Bestiary"]);
+    expect(listUrls[0]).toContain("sources=990001");
+    expect(o5GetMonster).not.toHaveBeenCalled();
+    // The stat block's config and the source index share one public-config request.
+    expect(anonymousRequests.filter(r => r.url.includes("api/config/json"))).toHaveLength(1);
     expectNoCredentials();
   });
 

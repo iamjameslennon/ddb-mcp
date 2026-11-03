@@ -9,8 +9,9 @@
  *
  * getSourceIndex() merges the live source list over the generated snapshot in
  * source-snapshot.ts, so edition labels and book names survive a D&D Beyond
- * outage. While the live config is unavailable, sources newer than the
- * snapshot classify as "edition not stated". It never rejects.
+ * outage. With no valid session the live list is the public config's. While
+ * the live config is unavailable, sources newer than the snapshot classify as
+ * "edition not stated". It never rejects.
  */
 
 import {
@@ -108,7 +109,8 @@ export async function getGameConfig(opts: { signal?: AbortSignal } = {}): Promis
   // A session file holding only session cookies (or expired ones) makes monster
   // lookups run anonymously (hasValidSession() false). The config follows the
   // same rule: the public config, with no Cookie header. With no session at
-  // all, nothing is sent (sessionFetch refuses) and the index is the snapshot.
+  // all, nothing is sent (sessionFetch refuses); getSourceIndex() asks
+  // getPublicGameConfig() itself.
   if (!hasValidSession() && snapshot.state.kind === "authenticated") return getPublicGameConfig();
   if (configFailure && configFailure.generation === snapshot.generation && Date.now() < configFailure.until) {
     return null;
@@ -192,10 +194,11 @@ function startConfigFetch(snapshot: SessionSnapshot): PendingConfigFetch {
 // ── The public config (logged-out monster lookups) ───────────────────────────
 // The config endpoint answers without credentials. Logged out, monster-service
 // answers free content anonymously, and its stat blocks need the CR, type,
-// size and alignment tables. getGameConfig() stays session-bound (logged out it
-// is null and the source index is the snapshot), except that a session file
-// with only session or expired cookies (hasValidSession() false) gets this
-// public config rather than sending those cookies.
+// size and alignment tables. With no valid session the source index is built
+// from it too. getGameConfig() stays session-bound (with no session file it is
+// null), except that a session file with only session or expired cookies
+// (hasValidSession() false) gets this public config rather than sending those
+// cookies.
 // Not account-derived, but dropped on every session transition all the same.
 let publicConfigCache: GameConfig | null = null;
 let publicConfigFailureUntil = 0;
@@ -323,9 +326,10 @@ export function peekSourceIndex(): SourceIndex {
 }
 
 /**
- * The source index: the live config merged over the snapshot. Never rejects.
- * Callers start it alongside a data load; `signal` withdraws it when that load
- * fails (see getGameConfig), and a withdrawn call resolves to the snapshot index.
+ * The source index: the live config (the public one with no valid session)
+ * merged over the snapshot. Never rejects. Callers start it alongside a data
+ * load; `signal` withdraws it when that load fails (see getGameConfig), and a
+ * withdrawn call resolves to the snapshot index.
  */
 export async function getSourceIndex(opts: { signal?: AbortSignal } = {}): Promise<SourceIndex> {
   // Callers start this early and may not await it (a failing load returns
@@ -341,7 +345,10 @@ async function buildLiveSourceIndex(signal: AbortSignal | undefined): Promise<So
   // Capture before the work, assert before caching: a session change while the
   // index is built must not leave one account's index in the cache.
   const snapshot = captureSession();
-  const config = await getGameConfig({ signal });
+  // Logged out (no valid session), monster lookups and public characters still
+  // answer, so the index comes from the public config: the one the logged-out
+  // monster path fetches anyway, shared through its in-flight and cached entry.
+  const config = hasValidSession() ? await getGameConfig({ signal }) : await publicConfigUntilAborted(signal);
   if (signal?.aborted) return peekSourceIndex();
   if (indexCache && indexCache.config === config) return indexCache.index;
   let index: SourceIndex;
@@ -361,6 +368,26 @@ async function buildLiveSourceIndex(signal: AbortSignal | undefined): Promise<So
     // Session changed mid-build: return this index, but don't cache it.
   }
   return index;
+}
+
+/**
+ * The public config, or null once `signal` aborts (an already-aborted signal
+ * starts nothing). A withdrawn caller only stops waiting: the shared fetch is
+ * one anonymous request, cached until the next session transition, so it is
+ * left to finish.
+ */
+function publicConfigUntilAborted(signal: AbortSignal | undefined): Promise<GameConfig | null> {
+  if (!signal) return getPublicGameConfig();
+  if (signal.aborted) return Promise.resolve(null);
+  const fetched = getPublicGameConfig();
+  return new Promise(resolve => {
+    const withdraw = () => resolve(null);
+    signal.addEventListener("abort", withdraw, { once: true });
+    void fetched.then(config => {
+      signal.removeEventListener("abort", withdraw);
+      resolve(config);
+    });
+  });
 }
 
 /** Live sources over the snapshot, field by field: a missing live field keeps the snapshot's. */

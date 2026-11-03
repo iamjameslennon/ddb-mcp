@@ -28,7 +28,9 @@ vi.mock("../src/source-snapshot.js", () => ({
 }));
 
 import { getGameConfig, clearGameConfig, getPublicGameConfig, clearPublicGameConfig, getSourceIndex, peekSourceIndex, CONFIG_FETCH_TIMEOUT_MS } from "../src/game-config.js";
-import { sessionFetch, anonymousFetch, assertSessionCurrent, captureSession } from "../src/session-fetch.js";
+import { sessionFetch, anonymousFetch, assertSessionCurrent, captureSession, hasValidSession } from "../src/session-fetch.js";
+import { classifyEdition } from "../src/edition.js";
+import { resolveSource } from "../src/source-filter.js";
 
 const response = (body: unknown, status = 200) =>
   ({ ok: status >= 200 && status < 300, status, statusText: "", json: async () => body }) as unknown as Response;
@@ -600,6 +602,82 @@ describe("getPublicGameConfig (logged-out monster lookups)", () => {
     const pending = getPublicGameConfig();
     await vi.advanceTimersByTimeAsync(CONFIG_FETCH_TIMEOUT_MS);
     expect(await pending).toBeNull();
+  });
+});
+
+describe("logged out, the source index comes from the public config (ag)", () => {
+  beforeEach(() => {
+    vi.mocked(hasValidSession).mockReturnValue(false);
+    // As the real session-fetch behaves with no session: sessionFetch refuses.
+    vi.mocked(sessionFetch).mockRejectedValue(new Error("No session found."));
+    vi.mocked(anonymousFetch).mockResolvedValue(response({ data: LIVE }));
+  });
+  afterEach(() => vi.mocked(hasValidSession).mockReturnValue(true));
+
+  it("labels a source newer than the snapshot with its live book and category", async () => {
+    const index = await getSourceIndex();
+    expect(index.sources.get(300)?.categoryId).toBe(38);
+    expect(classifyEdition({ sourceId: 300 }, index)).toEqual({ ruleset: "2024", book: "Brand New Book" });
+    expect(anonymousFetch).toHaveBeenCalledTimes(1);
+    expect(sessionFetch).not.toHaveBeenCalled();
+  });
+
+  it("resolves a source naming that new book", async () => {
+    const index = await getSourceIndex();
+    expect(resolveSource(index, "new-2024")).toEqual({ query: "new-2024", ids: [300], book: "Brand New Book" });
+  });
+
+  it("shares the public config fetch and its cache with getPublicGameConfig", async () => {
+    const [index, config] = await Promise.all([getSourceIndex(), getPublicGameConfig()]);
+    expect(index.sources.has(300)).toBe(true);
+    expect(config).not.toBeNull();
+    expect(await getSourceIndex()).toBe(index); // cached against the same config object
+    expect(anonymousFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("the public config failing leaves the snapshot index, without rejecting", async () => {
+    vi.mocked(anonymousFetch).mockResolvedValue(response({}, 503));
+    const index = await getSourceIndex();
+    expect(index.sources.has(300)).toBe(false);
+    expect(index.sources.get(145)?.categoryId).toBe(24);
+    vi.mocked(anonymousFetch).mockRejectedValue(new Error("down"));
+    clearPublicGameConfig();
+    expect((await getSourceIndex()).sources.has(300)).toBe(false);
+  });
+
+  it("an already-aborted signal gets the snapshot index and starts no fetch", async () => {
+    const ctl = new AbortController();
+    ctl.abort();
+    expect(await getSourceIndex({ signal: ctl.signal })).toBe(peekSourceIndex());
+    expect(anonymousFetch).not.toHaveBeenCalled();
+  });
+
+  it("a signal aborted mid-fetch resolves at once; the shared fetch is left to finish", async () => {
+    let settle!: (r: Response) => void;
+    let seen: AbortSignal | undefined;
+    vi.mocked(anonymousFetch).mockImplementationOnce((_url, init) => new Promise<Response>(r => {
+      seen = init?.signal ?? undefined;
+      settle = r;
+    }));
+    const ctl = new AbortController();
+    const index = getSourceIndex({ signal: ctl.signal });
+    await vi.waitFor(() => expect(anonymousFetch).toHaveBeenCalledTimes(1));
+    ctl.abort();
+    expect(await index).toBe(peekSourceIndex());
+    expect((await index).sources.has(300)).toBe(false);
+    expect(seen?.aborted).toBe(false);
+    // The fetch finishes and is cached: the next caller sends nothing.
+    settle(response({ data: LIVE }));
+    expect((await getSourceIndex()).sources.has(300)).toBe(true);
+    expect(anonymousFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("a valid session still builds the index from the session-bound config", async () => {
+    vi.mocked(hasValidSession).mockReturnValue(true);
+    vi.mocked(sessionFetch).mockImplementation(async () => configResponse());
+    expect((await getSourceIndex()).sources.has(300)).toBe(true);
+    expect(sessionFetch).toHaveBeenCalledTimes(1);
+    expect(anonymousFetch).not.toHaveBeenCalled();
   });
 });
 
