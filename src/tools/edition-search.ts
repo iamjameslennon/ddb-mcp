@@ -169,7 +169,7 @@ interface Classifier<T> {
 }
 
 /** The ruleset of a `source` book: what its resolved ids classify as together. */
-function sourceRuleset(source: ResolvedSource, index: SourceIndex): EditionInfo["ruleset"] {
+function sourceRuleset(source: Pick<ResolvedSource, "ids">, index: SourceIndex): EditionInfo["ruleset"] {
   return classifyEdition({ sources: source.ids.map(sourceId => ({ sourceId })) }, index).ruleset;
 }
 
@@ -269,6 +269,19 @@ function bookNoteSuffix<U>(
 // ── Selection ─────────────────────────────────────────────────────────────────
 
 /**
+ * The source note of a `source` call: the book's edition against `requested`,
+ * or null. Both gets and searches describe the book, not the entry shown.
+ */
+export function sourceNoteFor(
+  source: Pick<ResolvedSource, "query" | "ids">,
+  requested: RulesEdition,
+  index: SourceIndex,
+): string | null {
+  const bookRuleset = sourceRuleset(source, index);
+  return isEdition(bookRuleset) ? sourceNote(source.query, bookRuleset, requested) : null;
+}
+
+/**
  * A `source` search's framing: the search header naming the book (the
  * lowest-id one, see resolveSource), and the source note when the book's
  * edition differs from `requested`. Shared by selectCatalog and monster search.
@@ -278,10 +291,9 @@ export function sourceFraming(
   requested: RulesEdition,
   index: SourceIndex,
 ): { header: string; note: string | null } {
-  const bookRuleset = sourceRuleset(source, index);
   return {
     header: searchHeader({ sourceBook: source.book }),
-    note: isEdition(bookRuleset) ? sourceNote(source.query, bookRuleset, requested) : null,
+    note: sourceNoteFor(source, requested, index),
   };
 }
 
@@ -496,7 +508,7 @@ function selectNested<T>(
  * A single lookup (get_*): lookupByName over the catalog, or over the book's
  * entries when `source` is given. `rulesLines` go directly under the title, one
  * line per element: the rules line (and, without `source`, its reason), a
- * rename line, then either the source note (the shown entry's ruleset against
+ * rename line, then either the source note (the book's edition against
  * `requested`) or an "also in" line naming other books with a same-edition version.
  */
 export function lookupCatalog<T>(
@@ -524,7 +536,7 @@ export function lookupCatalog<T>(
   const rulesLines = rulesLine(shown, { reason: source ? undefined : found.reason }).split("\n");
   if (found.renamed) rulesLines.push(renameLine(found.renamed.name2014, found.renamed.name2024));
   if (source) {
-    const note = isEdition(shown.ruleset) ? sourceNote(source.query, shown.ruleset, requested) : null;
+    const note = sourceNoteFor(source, requested, index);
     if (note) rulesLines.push(note);
   } else {
     const choice = bookChoice(found.entry, found.alternatives, classify.sourceId, index);

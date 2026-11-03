@@ -18,7 +18,7 @@ import {
 import { getGameConfig, getPublicGameConfig, getSourceIndex, type GameConfig } from "../game-config.js";
 import {
   classifyEdition, selectByEdition, lookupByName, groupAndSelect, monsterTiebreak, twinNames, twinAliases,
-  normalizeName, dedupeById, isEdition, rulesLine, renameLine, sourceNote, editionTag, searchHeader, searchFooter,
+  normalizeName, dedupeById, isEdition, rulesLine, renameLine, editionTag, searchHeader, searchFooter,
   isLockedReason, lockedLineSuffix, lockedSwapSummary, lockedEntriesNote, availableElsewhereHint,
   loggedOutReason, LOGGED_OUT_RESTRICTED_NOTE, NOT_LOGGED_IN_SUFFIX,
   HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO, homebrewLoginRequired, homebrewUnreachable,
@@ -33,7 +33,7 @@ import { wrapUntrusted, stripHtmlRich } from "../utils.js";
 import {
   o5SearchMonstersSection, o5GetMonster, o5GetMonsterStats, o5MonsterInEdition, type MonsterStatsResult, type O5EditionMonster,
 } from "../open5e.js";
-import { renderSection, plainSection, noMatchSection, sourceFraming, withSourceCaveatSection, type SearchSection } from "./edition-search.js";
+import { renderSection, plainSection, noMatchSection, sourceFraming, sourceNoteFor, withSourceCaveatSection, type SearchSection } from "./edition-search.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -951,7 +951,7 @@ export async function getMonster(
       detail = await fetchMonsterDetail(picked.entry.id, asker);
       const shown = info(detail.data);
       extras = {
-        note: isEdition(shown.ruleset) ? sourceNote(source, shown.ruleset, requested) : null,
+        note: sourceNoteFor({ query: source, ids: sourceIds }, requested, index),
         // Only 2014/2024 entries are twins, so only they can be shown under
         // another name than the query's (as in lookupByName).
         renamed: isEdition(shown.ruleset) ? renamedFromQuery(monsterName, detail.data.name) : undefined,

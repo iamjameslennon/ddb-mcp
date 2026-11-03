@@ -631,6 +631,15 @@ describe("searchMonsters", () => {
     expect(await getMonster("Zombie", { source: "mm-2024" })).not.toContain("whatever rules_edition says");
   });
 
+  it("a get's source note names the book's edition, not the shown entry's (a 2024 reprint in a 2014 book)", async () => {
+    extraMonsters = [monster({ id: 8_000_310, name: "Crypt Reprint", sourceId: 147, sources: sources(147, 6) })];
+    const note = '(source "cos" is a 2014 book — its entries are listed whatever rules_edition says)';
+    const out = await getMonster("Crypt Reprint", { source: "cos" });
+    expect(out).toContain("Rules: 2024");
+    expect(out).toContain(note);
+    expect(await getMonster("Crypt Reprint", { source: "cos", rulesEdition: "2014" })).not.toContain("whatever rules_edition says");
+  });
+
   it("filters by source server-side, including source-only searches", async () => {
     const result = await searchMonsters({ source: "cos" });
     expect(result).toContain("Strahd Zombie");
