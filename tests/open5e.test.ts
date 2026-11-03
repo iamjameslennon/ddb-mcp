@@ -16,6 +16,7 @@ import {
   o5SearchSpells, o5SearchMonsters, o5SearchItems,
   o5SearchRaces, o5SearchClasses, o5SearchBackgrounds, o5SearchFeats,
   o5SearchRules, o5GetRule, o5GetMonsterStats, crText, castingTime, humanize, o5TwinNameFor, o5EquipmentKey, o5EquipmentGroupKey,
+  type O5Record,
 } from "../src/open5e.js";
 import { getMonsterStats } from "../src/tools/monster.js";
 import { rateEncounter } from "../src/tools/encounter.js";
@@ -524,6 +525,27 @@ describe("Open5e v2 equipment and options, fix round 1", () => {
     ["feats", () => o5SearchFeats({ name: "zzz" }, "unavailable"), "No feats found (SRD only)."],
   ])("a %s search with no match gives the plain message", async (_n, call, expected) => {
     expect(await call()).toBe(expected);
+  });
+});
+
+describe("Open5e hidden count against what the other edition lists", () => {
+  // SRD 5.1's "Playing card set" and SRD 5.2's "Gaming Set, Playing Cards" are one twin group, and a group
+  // matches the query when any member's name does ("cards" is in only one of them).
+  beforeEach(() => {
+    const v2 = o5FixtureFetch({
+      "srd-2014/items": [...o5Fixture("srd-2014", "items"), { ...o5Record<O5Record>("srd-2014", "items", "Abacus"), key: "srd-2014_playing-card-set", name: "Playing card set" }],
+      "srd-2024/items": [...o5Fixture("srd-2024", "items"), { ...o5Record<O5Record>("srd-2024", "items", "Rope"), key: "srd-2024_gaming-set-playing-cards", name: "Gaming Set, Playing Cards" }],
+    });
+    stubFetch(v2);
+  });
+
+  it("a hidden twin whose own name lacks the query is counted, and the other edition lists it", async () => {
+    const in2024 = (await o5SearchItems({ name: "cards", rulesEdition: "2024" }, "unavailable")).split("\n");
+    expect(in2024).toContain("• Gaming Set, Playing Cards [2024] (Adventuring Gear)");
+    expect(in2024.at(-1)).toBe("1 2014 version hidden — rules_edition: \"2014\" shows it.");
+    const in2014 = (await o5SearchItems({ name: "cards", rulesEdition: "2014" }, "unavailable")).split("\n");
+    expect(in2014).toContain("• Playing card set [2014] (Adventuring Gear)");
+    expect(in2014.at(-1)).toBe("1 2024 version hidden — omit rules_edition to show it.");
   });
 });
 
