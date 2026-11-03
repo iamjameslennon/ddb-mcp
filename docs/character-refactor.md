@@ -1,13 +1,13 @@
 # `parseCharacterData` Refactor Plan
 
 > **Status: complete (2026-05-16).** All 9 phases landed. `src/tools/character.ts`
-> is now a 219-line public-API/IO surface; the per-domain modules live under
+> is now a public-API/IO surface (about 380 lines at HEAD 74e090b, since it also holds the character cache, notices and the download/list tools); the per-domain modules live under
 > `src/tools/character/`. The "Post-refactor follow-ups" section at the bottom
 > of this doc lists the work that was intentionally deferred.
 
 The goal was to carve the ~1000-line `parseCharacterData` function into small,
 focused, independently testable modules under `src/tools/character/` — with
-**no behavior change**. The existing vitest tests (now 161) plus the
+**no behavior change**. The existing vitest tests (1,778 at HEAD 74e090b) plus the
 committed character snapshot + the live-character regression script were
 the contract.
 
@@ -37,7 +37,7 @@ canonical archive.
 
 ## Success criterion (binding gate)
 
-> **Every phase must leave all 156 vitest tests passing AND keep the manual
+> **Every phase must leave all vitest tests passing AND keep the manual
 > live-character regression output unchanged. No phase merges otherwise.**
 
 Concretely, before merging any phase:
@@ -55,26 +55,26 @@ diff /tmp/before.txt /tmp/after.txt                    # manual, required
 ## File structure (target)
 
 ```
-src/tools/character.ts                 ← public API only (~150 lines, network/IO)
+src/tools/character.ts                 ← public API only (network/IO, character cache; ~380 lines)
 src/tools/character/
-  types.ts                             ← Mod, ClassEntry, CoreStats, ParseSection
-  helpers.ts                           ← str/num/arr/obj/signed/modOf/capitalize/hasTag
+  types.ts                             ← CharData, Mod (+ typed mod interfaces, follow-up A), ClassEntry, InventoryItem, CoreStats, ParseSection
+  helpers.ts                           ← str/num/arr/obj/signed/modOf/capitalize/hasTag/stripHtml, mod guards (isBonusMod…), homebrew predicates (isHomebrewEntry, featureDefinition, isHomebrewClassFeature), statNames/statKeys, levenshteinDistance
   templates.ts                         ← makeResolveTemplates(profBonus, totalLevel)
   core.ts                              ← computeCoreStats(char, index) → CoreStats (index: SourceIndex, for editions)
   editions.ts                          ← computeCharacterEditions: main edition, `Rules:` line, inline-tag helpers (rules-edition phase 5)
   identity.ts                          ← race-variant detection + formatHeaderBlock
-  vitals.ts                            ← HP/HitDice/Speed/Init/DeathSaves + formatVitalsBlock
-  ac.ts                                ← computeAc (the most rule-tangled single calc)
+  vitals.ts                            ← HP/HitDice/Speed/Init/DeathSaves + formatVitalsBlock(vitals, ac, profBonus)
+  ac.ts                                ← computeAc (the most rule-tangled single calc; no block of its own, its value is printed by the vitals block)
   stats.ts                             ← Abilities/Saves/Skills/Senses/Profs + formatStatsBlock
   defenses.ts                          ← Resistances/Immunities/Conditions + formatDefensesBlock
   features.ts                          ← Feats/ClassFeatures/RacialTraits/Background + block
-  weapons.ts                           ← Weapon attack rolls (martial arts, finesse, magic)
+  weapons.ts                           ← computeWeaponAttacks: weapon attack rolls (martial arts, finesse, magic)
   actions.ts                           ← Actions/Bonus/Reactions/LimitedUse + formatCombatBlock
-  spells.ts                            ← Spellcasting/Slots/Spells/Concentration + 2 blocks
+  spells.ts                            ← computeSpells: Spellcasting/Slots/Spells/Concentration + formatSpellsBlock / formatConcentrationBlock; shownSpellDefinitions
   inventory.ts                         ← Equipped/Carried/Attunement/Currency + block
   notes.ts                             ← Traits/Backstory/Allies + formatNotesBlock
-  parse.ts                             ← parseCharacterData(raw, sections, index) orchestrator (~80 lines)
-  definition.ts                        ← getDefinition (separate concern, also long today)
+  parse.ts                             ← parseCharacterData(raw, sections, index = peekSourceIndex()) orchestrator (~110 lines)
+  definition.ts                        ← getDefinition and formatCharacterLookup (behind ddb_character_lookup); separate concern
 ```
 
 Each module owns one slice of output **end-to-end** — both the computation and
@@ -108,6 +108,15 @@ Most modules become `(core: CoreStats) → DomainResult` pure functions.
 ---
 
 ## The orchestrator (target shape)
+
+> The snippet below is the original *target* design, kept as the design record.
+> The code at HEAD differs: `parseCharacterData(raw, sections, index = peekSourceIndex())`
+> computes every domain up front (`computeSpells` returns one `Spells` object;
+> there is no `collectSpellSources`/`SECTION_INCLUDES`; `formatVitalsBlock`
+> also takes the AC from `computeAc`) and then a `switch (sections)` picks which
+> blocks to join. `summary` = header + vitals + stats; `combat` adds defenses
+> and the combat block; `full` is header, vitals, stats, defenses, features,
+> combat, spells, inventory, notes. See `src/tools/character/parse.ts`.
 
 ```ts
 // src/tools/character/parse.ts
@@ -183,7 +192,7 @@ same PR.** That's how the next agent knows where things stand.
 
 Three layers, in increasing thoroughness:
 
-### Layer 1 — Existing 156 unit tests (always required)
+### Layer 1 — Existing unit tests (always required)
 
 ```bash
 npm test
@@ -196,7 +205,7 @@ These exercise specific edge cases (Remarkable Athlete, JoAT, weapon mastery,
 
 `tests/character-snapshot.test.ts` runs `parseCharacterData("full")` against
 the small hand-built fixtures (`FIGHTER_5`, `MONK_3_HANDAXE`,
-`ARCANE_TRICKSTER_9`) exported from `character-parser.test.ts`. Output is
+`ARCANE_TRICKSTER_9`) exported from `tests/fixtures/character-fixtures.ts`. Output is
 diffed against `tests/__snapshots__/character-snapshot.test.ts.snap` (committed).
 
 Catches **holistic** regressions — section ordering, blank-line spacing,
@@ -230,14 +239,20 @@ npx tsx scripts/snapshot-live-characters.mts > /tmp/after.txt
 diff /tmp/before.txt /tmp/after.txt    # must be empty
 ```
 
-The curated subset (defined inside the script) covers: high-level full caster
-(Calderax, L12 Cleric), multiclass (Xarius, L10 Barb/Rogue), Monk + darkvision
-(Flemin), Gloom Stalker initiative (Aerin), 2024 race variant header (Clover),
-Draconic Resilience unarmored AC (Caikrana), Remarkable Athlete (Ethelrede),
-Artificer (Vi). 8 characters keeps the run under ~30s with the cobalt cache warm.
+The curated subset (the `TARGETS` array inside the script, 15 characters at HEAD)
+began as: high-level full caster (Calderax, L12 Cleric), multiclass (Xarius,
+L10 Barb/Rogue), Monk + darkvision (Flemin), Gloom Stalker initiative (Aerin),
+2024 race variant header (Clover), Draconic Resilience unarmored AC (Caikrana),
+Remarkable Athlete (Ethelrede), Artificer (Vi), and later gained regression
+cases for 2024 vestigial ASIs, Scout speed, the orphan Roving speed modifier,
+Jack of All Trades initiative, HP override, and the two custom/value language
+paths. Keep it small so a run completes in about 30 s with the cobalt cache
+warm. The script calls `parseCharacter`, so output includes the `Rules:` line
+and edition tags (since rules-edition phase 5); capture `before.txt` from the
+same code generation as `after.txt`.
 
 Requires `ddb_login` to have been run at least once on the local machine.
-Skips silently if no session is present.
+Exits with status 2 and a message on stderr if no session is present.
 
 ---
 

@@ -193,9 +193,9 @@ Can a character use the Help action to assist with a skill check?
 |------|-------------|
 | `ddb_search_monsters` | Search the D&D Beyond monster compendium by name, CR, type, size, or `source` (a book's short code such as `mm-2024` or `cos`, its short name, or its title). Each result names its book and carries an edition tag (`[2024]`, `[2014]`, `[homebrew]`, …). Where a monster exists in both editions, only the 2024 version is listed (`rules_edition: "2014"` lists the 2014 one), and the last line counts the hidden versions. When the requested version isn't available to your account but the other edition's is, that one is listed with a note saying so; entries that aren't available at all are counted under the header. A `source` lists every entry in that book, of either edition, and wins over `rules_edition`; a book of the other edition adds a note. `source: "homebrew"` lists homebrew entries only (requires login). Works without logging in: free D&D Beyond content is listed as usual, and the rest is marked as not available without logging in. A `cr` other than 0, 0.125, 0.25, 0.5 or 1–30 is an error. Falls back to the Open5e SRD when D&D Beyond can't be reached. |
 | `ddb_get_monster` | Get the full formatted stat block for a monster by name, with a `Rules:` line naming its edition and book. When a monster exists in both editions, the 2024 version is shown (`rules_edition: "2014"` shows the 2014 one); when the requested version isn't available to your account but the other edition's is, that one is shown and the output says so. Pass `source` (e.g. `basic-rules-2014`) for a specific book; it wins over `rules_edition`, and a book of the other edition adds a note. If that book's version isn't available to your account, the output names a book where an available version is. A book without that exact monster returns an error naming the books that do have it — never a different edition. `source: "homebrew"` looks up a homebrew entry only (requires login). Works without logging in: free D&D Beyond content is shown as usual; for locked content you get the SRD text when the SRD has it in the requested edition, else the free other-edition version or the stat block's header with a note to log in. Falls back to the Open5e SRD when D&D Beyond can't be reached. |
-| `ddb_rate_encounter` | Rate encounter difficulty for a party. Defaults to 2024 XDMG rules (Low/Moderate/High). Set `rules_edition: "2014"` for classic DMG (Easy/Medium/Hard/Deadly), which also uses the 2014 stat block's CR. A `Rules:` line names the ruleset. Monsters are looked up automatically by exact or partial name (official entries only); a name that matches nothing is reported as not found rather than guessed. |
+| `ddb_rate_encounter` | Rate encounter difficulty for a party. Defaults to 2024 XDMG rules (Low/Moderate/High). Set `rules_edition: "2014"` for classic DMG (Easy/Medium/Hard/Deadly), which also uses the 2014 stat block's CR. A `Rules:` line names the ruleset. Monsters are looked up automatically by exact or partial name (official entries only); a name that matches nothing is reported as not found rather than guessed, a partial name that fits several different creatures (e.g. "Red Dragon") lists each candidate with its CR instead of picking one, and a monster whose CR isn't known asks you to supply `cr`. |
 | `ddb_encounter_cr` | Given a party and target difficulty, returns recommended CRs broken down by encounter shape: solo boss, duo, squad, horde. Takes `rules_edition` (default `"2024"`; `"2014"` uses the classic DMG thresholds) and prints a `Rules:` line. |
-| `ddb_roll_treasure` | Generate treasure using 2024 XDMG tables. `hoard` rolls once at the highest CR and includes magic items; `individual` rolls per monster. Monster names resolve the same way as in `ddb_rate_encounter`. Takes `rules_edition`; only 2024 tables exist, so the `Rules:` line names the 2024 DMG and `"2014"` says so. Limits: at most 20 monster entries, at most 100 per entry (applies to hoard too), at most 200 characters per monster name, and — for `individual` only — at most 100 total rolls across all entries. Over-budget requests are rejected with an error, never silently truncated. |
+| `ddb_roll_treasure` | Generate treasure using 2024 XDMG tables. `hoard` rolls once at the highest CR and includes magic items; `individual` rolls per monster. Monster names resolve the same way as in `ddb_rate_encounter`, including the ambiguous-name and unknown-CR messages. Takes `rules_edition`; only 2024 tables exist, so the `Rules:` line names the 2024 DMG and `"2014"` says so. Limits: at most 20 monster entries, at most 100 per entry (applies to hoard too), at most 200 characters per monster name, and — for `individual` only — at most 100 total rolls across all entries. Over-budget requests are rejected with an error, never silently truncated. |
 
 ### Spell & Reference Tools
 
@@ -222,12 +222,13 @@ In these searches, entries that aren't 2014 or 2024 content are tagged `[homebre
 | Tool | Description |
 |------|-------------|
 | `ddb_list_library` | List all sourcebooks you own, purchased, or have shared with you. Each book carries an edition tag (`[2024]`, `[2014]`, …). |
-| `ddb_read_book` | Read content from an owned sourcebook by book slug and optional chapter. A `Rules:` line under the title names the book's ruleset. |
+| `ddb_read_book` | Read content from an owned sourcebook by book slug (or plain title) and optional chapter. A `Rules:` line under the title names the book's ruleset. |
 | `ddb_search_site` | Search D&D Beyond by keyword across spells, monsters, items, races, classes, and feats. Defaults to 2024; set `rules_edition: "2014"` for the 2014 versions. Each result is tagged `[2024]` / `[2014]`. Across all categories the reply has one `Rules:` header and one last line counting the hidden other-edition versions. Takes no `source`; use the per-category search tools to pick a book. |
 | `ddb_navigate` | Navigate to any D&D Beyond URL and return its text content. Keeps the browser open for follow-up calls. |
 | `ddb_interact` | Click, fill (requires `confirm_fill: true`), or screenshot the currently loaded page. |
 | `ddb_get_page` | Return the text content of the currently loaded page. |
 | `ddb_close_browser` | Close the background browser window. Call this when done with `ddb_navigate`, `ddb_interact`, or `ddb_get_page`. |
+| `ddb_clear_cache` | Clear the server's in-memory caches so the next call re-fetches from D&D Beyond: `spells` (default; the reference compendium: spells, items, species, classes, backgrounds, feats, class features and racial traits), `characters`, `monsters` (stat blocks, the cached source list and the Open5e creature data), or `all` (everything, including the library list, campaigns and Open5e SRD data). Useful when results look like the SRD fallback right after logging in. |
 
 </details>
 
@@ -397,7 +398,8 @@ Read the Ranger class section from the 2024 Player's Handbook
 ```
 ═══════════════════════════════════════
   Claude Skamos
-  Tiefling | Wizard 2 | Level 2
+  Rules: 2024 · 2014 content: 1 item · third-party: Dark Bargain (feat)
+  Tiefling (Infernal) | Wizard 2 | Level 2
   Background: Sage | XP: 0
   Inspiration: No
 ═══════════════════════════════════════
@@ -443,9 +445,12 @@ DEFENSES
   Vulnerabilities: (none)
 CONDITIONS: (none)
 
-FEATS (2)
+FEATS (1)
 • Magic Initiate (Wizard): Two Cantrips. You learn two cantrips of your choice...
-• Sage Ability Score Improvements: ...
+
+OTHER FEATURES (stored as feats in API but NOT player-chosen feats)
+• Dark Bargain [third-party]
+• Circle Magic (Intelligence)
 
 CLASS FEATURES
 • Core Wizard Traits (Wizard 1)
@@ -453,6 +458,12 @@ CLASS FEATURES
 • Ritual Adept (Wizard 1)
 • Arcane Recovery (Wizard 1)
 • Scholar (Wizard 2)
+
+RACIAL TRAITS
+• Darkvision
+• Otherworldly Presence
+• Fiendish Legacy
+• ...
 
 ACTIONS
 • Dagger           +2 to hit   1d4 piercing   reach 5 ft.   Finesse, Light, Thrown, Nick
@@ -483,7 +494,7 @@ SPELLS
   From Feat: Dancing Lights, Mending, Tasha's Hideous Laughter (L1)
 
 INVENTORY
-  Spellbook, Parchment ×18, Backpack, Calligrapher's Supplies, Robe, ...
+  Potion of Healing ×2, Spellbook [2014], Parchment ×18, Backpack, Calligrapher's Supplies, Robe, ...
 
 ATTUNEMENT: 0/3 slots used
 CURRENCY: 34gp, 7sp
@@ -567,6 +578,7 @@ ddb_logout
 |----------|---------|-------------|
 | `DDB_CHARACTER_CACHE_TTL` | `60` | Character sheet cache lifetime in seconds. Lower values give fresher HP/spell slot data during live play at the cost of more API calls. Set to `10` for active sessions, leave at default for prep work. |
 | `DDB_NO_SANDBOX` | — | Set to `1` to disable Chromium sandboxing. Required in some container/CI environments. |
+| `DDB_USE_BUNDLED_CHROMIUM` | — | Set to `1` to skip your installed Google Chrome and use Playwright's bundled Chromium for `ddb_login` and the browser tools. |
 
 ---
 
@@ -589,7 +601,7 @@ The character is set to private on D&D Beyond. You must be logged in as the owne
 Run `/mcp` in Claude Code to reconnect. If it still doesn't appear, run `claude mcp list` to confirm the `dndbeyond` entry exists.
 
 **Server crashes on startup**
-Make sure you're running Node.js 20 or later: `node --version`.
+Make sure you're running Node.js 22 or later: `node --version`.
 
 ---
 
@@ -609,6 +621,10 @@ npm run dev
 
 # Build
 npm run build
+
+# Lint and type-check
+npm run lint
+npm run typecheck
 
 # Watch mode
 npm run build:watch

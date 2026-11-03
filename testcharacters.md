@@ -4,7 +4,7 @@ Public D&D Beyond characters used for regression testing. All verified accessibl
 
 To run a smoke test on any character:
 ```
-ddb_parse_character { character_id: "<ID>", sections: "summary" }
+ddb_get_character { character_id: "<ID>", sections: "summary" }
 ```
 
 ---

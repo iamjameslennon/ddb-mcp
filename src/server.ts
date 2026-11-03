@@ -633,7 +633,7 @@ server.tool(
 
 server.tool(
   "ddb_search_spells",
-  "Search the full D&D Beyond spell compendium by name, level, school, concentration, or ritual. First call builds the compendium (slow); subsequent calls are instant. Requires login. A source lists one book's entries and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
+  "Search the full D&D Beyond spell compendium by name, level, school, concentration, or ritual. First call builds the compendium (slow); subsequent calls are instant. Requires login for D&D Beyond content; without it, falls back to the Open5e SRD. A source lists one book's entries and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().optional().describe("Partial spell name (e.g. 'fire' finds Fireball, Fire Storm, etc.)"),
     level: z.number().int().min(0).max(9).optional().describe("Spell level (0 = cantrip)"),
@@ -660,7 +660,7 @@ server.tool(
 
 server.tool(
   "ddb_get_spell",
-  "Get the full description of any spell in the D&D Beyond compendium by name. Not limited to a character's known spells. Requires login. A source picks one book's version and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
+  "Get the full description of any spell in the D&D Beyond compendium by name. Not limited to a character's known spells. Requires login for D&D Beyond content; without it, falls back to the Open5e SRD. A source picks one book's version and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().min(1).describe("Spell name (e.g. 'Fireball', 'Hunter\\'s Mark')"),
     rules_edition: RULES_EDITION_PARAM,
@@ -682,7 +682,7 @@ server.tool(
 // ─── ddb_search_equipment ────────────────────────────────────────────────────
 server.tool(
   "ddb_search_equipment",
-  "Search the D&D Beyond item/equipment compendium by name, rarity, or type. Covers mundane weapons (Longsword, Shortbow), armour (Plate, Chain Mail), adventuring gear, and magic items. Filter by rarity='common' to see mundane equipment along with Common magic items (rarity matches exactly, so 'common' excludes Uncommon). Requires login. A source lists one book's entries and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
+  "Search the D&D Beyond item/equipment compendium by name, rarity, or type. Covers mundane weapons (Longsword, Shortbow), armour (Plate, Chain Mail), adventuring gear, and magic items. Filter by rarity='common' to see mundane equipment along with Common magic items (rarity matches exactly, so 'common' excludes Uncommon). Requires login for D&D Beyond content; without it, falls back to the Open5e SRD. A source lists one book's entries and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().optional().describe("Partial item name (e.g. 'sword', 'cloak')"),
     rarity: z.string().optional().describe("Rarity filter (e.g. 'rare', 'legendary', 'uncommon'); matches exact (rare does not include Very Rare)"),
@@ -706,7 +706,7 @@ server.tool(
 // ─── ddb_get_equipment ───────────────────────────────────────────────────────
 server.tool(
   "ddb_get_equipment",
-  "Get the full stats and description of any item or equipment in the D&D Beyond compendium by name. Works for mundane weapons (e.g. 'Longbow'), armour (e.g. 'Plate'), adventuring gear, and magic items. Requires login. A source picks one book's version and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
+  "Get the full stats and description of any item or equipment in the D&D Beyond compendium by name. Works for mundane weapons (e.g. 'Longbow'), armour (e.g. 'Plate'), adventuring gear, and magic items. Requires login for D&D Beyond content; without it, falls back to the Open5e SRD. A source picks one book's version and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().min(1).describe("Item name (e.g. 'Bag of Holding', 'Flame Tongue')"),
     rules_edition: RULES_EDITION_PARAM,
@@ -727,7 +727,7 @@ server.tool(
 
 server.tool(
   "ddb_search_races",
-  "Search all D&D Beyond races and subraces (including homebrew). Not character-specific. Requires login — run ddb_login first if you haven't already. A source lists one book's entries and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
+  "Search all D&D Beyond races and subraces (including homebrew). Not character-specific. Requires login for D&D Beyond content (run ddb_login); without it, falls back to the Open5e SRD. A source lists one book's entries and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().optional().describe("Partial race name (e.g. 'elf', 'tiefling')"),
     limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
@@ -750,7 +750,7 @@ server.tool(
 
 server.tool(
   "ddb_search_classes",
-  "Search all D&D Beyond classes with hit die and spellcasting. Requires login — run ddb_login first if you haven't already. A source lists one book's entries and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
+  "Search all D&D Beyond classes with hit die and spellcasting. Requires login for D&D Beyond content (run ddb_login); without it, falls back to the Open5e SRD. A source lists one book's entries and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().optional().describe("Partial class name (e.g. 'fighter', 'wizard')"),
     limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
@@ -773,7 +773,7 @@ server.tool(
 
 server.tool(
   "ddb_search_backgrounds",
-  "Search all D&D Beyond backgrounds (including homebrew). Requires login — run ddb_login first if you haven't already. A source lists one book's entries and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
+  "Search all D&D Beyond backgrounds (including homebrew). Requires login for D&D Beyond content (run ddb_login); without it, falls back to the Open5e SRD. A source lists one book's entries and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().optional().describe("Partial background name (e.g. 'sage', 'criminal')"),
     limit: z.number().int().min(1).max(100).default(30).describe("Max results (default 30)"),
@@ -796,7 +796,7 @@ server.tool(
 
 server.tool(
   "ddb_search_feats",
-  "Search feats by name or prerequisite text. Requires login — run ddb_login first if you haven't already. A source lists one book's entries and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
+  "Search feats by name or prerequisite text. Requires login for D&D Beyond content (run ddb_login); without it, falls back to the Open5e SRD. A source lists one book's entries and wins over rules_edition. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().optional().describe("Partial feat name (e.g. 'sharpshooter', 'magic')"),
     prerequisite: z.string().optional().describe("Filter by prerequisite text (e.g. 'spellcaster', 'level 4')"),
@@ -922,7 +922,7 @@ server.tool(
 // ─── ddb_rate_encounter ───────────────────────────────────────────────────────
 server.tool(
   "ddb_rate_encounter",
-  "Rate the difficulty of a D&D encounter. Defaults to 2024 XDMG rules (Low/Moderate/High, no multiplier). Set rules_edition to '2014' for the classic DMG XP threshold method (Easy/Medium/Hard/Deadly with encounter multiplier). Monsters are looked up in the compendium automatically — supply 'cr' directly for homebrew. " + RULES_EDITION_TOOL_NOTE,
+  "Rate the difficulty of a D&D encounter. Defaults to 2024 XDMG rules (Low/Moderate/High, no multiplier). Set rules_edition to '2014' for the classic DMG XP threshold method (Easy/Medium/Hard/Deadly with encounter multiplier). Monsters are looked up in the compendium automatically — supply 'cr' directly for homebrew. A name that is not found or has no known CR is listed with a note to supply 'cr'; one that matches several different creatures (e.g. 'Red Dragon') lists the candidates with their CRs and asks for the full name. Nothing is guessed. " + RULES_EDITION_TOOL_NOTE,
   {
     party: z.array(z.object({
       count: z.number().int().min(1).max(20)
@@ -990,7 +990,7 @@ server.tool(
 // ─── ddb_roll_treasure ───────────────────────────────────────────────────────
 server.tool(
   "ddb_roll_treasure",
-  `Generate a treasure reward using the 2024 XDMG treasure tables (default). Provide either a CR directly or a list of monster names — CR is resolved automatically by name (exact, then partial; official entries only — a name that matches nothing is reported as not found rather than guessed). treasure_type 'hoard' makes one roll using the highest CR and includes magic items (requires character_level); 'individual' rolls once per monster and sums the results. Limits (rejected requests return an error, never silently truncated): at most ${MAX_TREASURE_ENTRIES} monster entries, at most ${MAX_MONSTER_COUNT} per entry, and at most ${MAX_MONSTER_NAME_CHARS} characters per monster name — these per-entry restrictions apply to hoard requests too, not just individual. 'individual' additionally caps the total rolls (sum of all entry counts) at ${MAX_INDIVIDUAL_ROLLS}. ${RULES_EDITION_TOOL_NOTE} ${TREASURE_RULES_EDITION_NOTE}`,
+  `Generate a treasure reward using the 2024 XDMG treasure tables (default). Provide either a CR directly or a list of monster names — CR is resolved automatically by name (exact, then partial; official entries only — a name that matches nothing, several different creatures, or a creature with no known CR is reported rather than guessed). treasure_type 'hoard' makes one roll using the highest CR and includes magic items (requires character_level); 'individual' rolls once per monster and sums the results. Limits (rejected requests return an error, never silently truncated): at most ${MAX_TREASURE_ENTRIES} monster entries, at most ${MAX_MONSTER_COUNT} per entry, and at most ${MAX_MONSTER_NAME_CHARS} characters per monster name — these per-entry restrictions apply to hoard requests too, not just individual. 'individual' additionally caps the total rolls (sum of all entry counts) at ${MAX_INDIVIDUAL_ROLLS}. ${RULES_EDITION_TOOL_NOTE} ${TREASURE_RULES_EDITION_NOTE}`,
   {
     cr: z.number().min(0).max(30).optional()
       .describe("Challenge rating (0–30). Use instead of monsters for a direct CR lookup."),
