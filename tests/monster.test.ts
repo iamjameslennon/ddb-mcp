@@ -35,7 +35,7 @@ vi.mock("../src/open5e.js", () => ({
 import { getMonster, searchMonsters, searchMonstersSection, getMonsterStats, clearMonsterCache, statBlockText } from "../src/tools/monster.js";
 import { rateEncounter } from "../src/tools/encounter.js";
 import { generateTreasure } from "../src/tools/treasure.js";
-import { sessionFetch, hasValidSession, onSessionInvalidated, beginAuthenticatedSession, assertSessionCurrent, AnonymousFetchTimeoutError, NoSessionError, CobaltTokenError, CobaltTokenTimeoutError, MalformedCobaltTokenError } from "../src/session-fetch.js";
+import { sessionFetch, hasValidSession, onSessionInvalidated, beginAuthenticatedSession, captureSession, AnonymousFetchTimeoutError, NoSessionError, CobaltTokenError, CobaltTokenTimeoutError, MalformedCobaltTokenError } from "../src/session-fetch.js";
 import { SessionChangedError, SessionLayerError } from "../src/session-state.js";
 import { stripHtmlRich } from "../src/utils.js";
 import { o5SearchMonstersSection, o5GetMonster, o5GetMonsterStats, o5MonsterInEdition } from "../src/open5e.js";
@@ -2356,30 +2356,37 @@ describe("unavailable names in encounter and treasure output (review pins)", () 
 
 describe("getMonsterStats: session changes surface, lookup failures are logged", () => {
   const NOT_FOUND = { status: "not-found" } as const;
+  // The session generation captureSession reports; a lookup sees a change when it moves mid-lookup.
+  let generation = 1;
+  beforeEach(() => { generation = 1; vi.mocked(captureSession).mockImplementation((() => ({ generation })) as never); });
+  afterEach(() => { vi.mocked(captureSession).mockImplementation((() => ({})) as never); });
 
   /** monster-service list requests throw `error`; everything else keeps its route. */
-  function throwOnMonsterSearch(error: Error): void {
+  function throwOnMonsterSearch(error: Error, opts: { sessionChanges?: boolean } = {}): void {
     const route = vi.mocked(sessionFetch).getMockImplementation()!;
     vi.mocked(sessionFetch).mockImplementation(async (input: string | URL | Request, ...rest: unknown[]) => {
-      if (String(input).includes("/v1/Monster?search=")) throw error;
+      if (String(input).includes("/v1/Monster?search=")) {
+        if (opts.sessionChanges) generation += 1;
+        throw error;
+      }
       return (route as (...a: unknown[]) => Promise<Response>)(input, ...rest);
     });
   }
 
   it("a SessionChangedError is rethrown: no Open5e, no unavailable", async () => {
-    throwOnMonsterSearch(new SessionChangedError());
+    throwOnMonsterSearch(new SessionChangedError(), { sessionChanges: true });
     await expect(getMonsterStats("Goblin")).rejects.toBeInstanceOf(SessionChangedError);
     expect(o5GetMonsterStats).not.toHaveBeenCalled();
   });
 
   it("rateEncounter rejects cleanly with several lookups in flight", async () => {
-    throwOnMonsterSearch(new SessionChangedError());
+    throwOnMonsterSearch(new SessionChangedError(), { sessionChanges: true });
     const names = ["Goblin", "Orc", "Wolf", "Ogre", "Troll", "Zombie", "Lich"].map(name => ({ name }));
     await expect(rateEncounter([{ count: 4, level: 1 }], names, "2024")).rejects.toBeInstanceOf(SessionChangedError);
   });
 
   it("generateTreasure rejects with the session error too", async () => {
-    throwOnMonsterSearch(new SessionChangedError());
+    throwOnMonsterSearch(new SessionChangedError(), { sessionChanges: true });
     await expect(generateTreasure({ monsters: [{ name: "Goblin", count: 1 }, { name: "Orc", count: 1 }], treasureType: "hoard" }))
       .rejects.toBeInstanceOf(SessionChangedError);
   });
@@ -2396,6 +2403,13 @@ describe("getMonsterStats: session changes surface, lookup failures are logged",
       stdout.mockRestore();
     }
   }
+
+  it("the logged name is JSON-escaped, so it can't forge log lines", async () => {
+    throwOnMonsterSearch(new RangeError("boom"));
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce(NOT_FOUND);
+    const { lines } = await lookupLog("Gob\nlin\u001b[31m");
+    expect(lines).toEqual(['[ddb-mcp] monster lookup failed for "Gob\\nlin\\u001b[31m": boom\n']);
+  });
 
   it("a bug in the lookup still falls back to Open5e and logs one stderr line, never stdout", async () => {
     throwOnMonsterSearch(new RangeError("boom"));
@@ -2462,12 +2476,18 @@ describe("getMonsterStats: session changes surface, lookup failures are logged",
   });
 
   describe("a session change seen only as a failure", () => {
-    // The fetch dies with a plain error (an aborted request), and the session is no longer current.
+    // The fetch dies with a plain error (an aborted request) and the session generation moved meanwhile.
     function failBecauseSessionChanged(): void {
-      throwOnMonsterSearch(new DOMException("This operation was aborted", "AbortError"));
-      vi.mocked(assertSessionCurrent).mockImplementation(() => { throw new SessionChangedError(); });
+      throwOnMonsterSearch(new DOMException("This operation was aborted", "AbortError"), { sessionChanges: true });
     }
-    afterEach(() => { vi.mocked(assertSessionCurrent).mockReset(); });
+
+    it("a lookup that started already revoked (assertSessionCurrent throws, generation unchanged) falls back", async () => {
+      throwOnMonsterSearch(new SessionChangedError());
+      vi.mocked(o5GetMonsterStats).mockResolvedValueOnce(NOT_FOUND);
+      const { result, lines } = await lookupLog();
+      expect(result).toEqual({ status: "unavailable" });
+      expect(lines).toEqual([]);
+    });
 
     it("getMonsterStats rethrows SessionChangedError: no Open5e, no unavailable", async () => {
       failBecauseSessionChanged();

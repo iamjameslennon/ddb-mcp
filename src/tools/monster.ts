@@ -1285,15 +1285,16 @@ export async function getMonsterStats(name: string, opts: { rulesEdition?: Rules
       }
     }
   } catch (e) {
-    // An account change must surface, never be papered over with another account's
-    // (or Open5e's) answer.
-    if (e instanceof SessionChangedError) throw e;
-    // Also one that showed up as an aborted request rather than as the error itself.
-    assertSessionCurrent(snapshot);
+    // A session change DURING this lookup must surface, never be papered over with
+    // another account's (or Open5e's) answer, whether it arrived as the error itself
+    // or as an aborted request. A lookup that started already logged out or revoked
+    // is not a change: assertSessionCurrent throws for it, but its generation is
+    // still the one captured above, so it falls through to the logged-out path.
+    if (captureSession().generation !== snapshot.generation) throw e instanceof SessionChangedError ? e : new SessionChangedError();
     // Fall through to Open5e. Only a bug is logged (an outage is in the output); stderr, because stdout carries the MCP stream.
     ddbFailed = true;
-    if (!isExpectedOutage(e)) {
-      process.stderr.write(`[ddb-mcp] monster lookup failed for "${name}": ${e instanceof Error ? e.message : String(e)}\n`);
+    if (!(e instanceof SessionChangedError) && !isExpectedOutage(e)) {
+      process.stderr.write(`[ddb-mcp] monster lookup failed for ${JSON.stringify(name)}: ${e instanceof Error ? e.message : String(e)}\n`);
     }
   }
 

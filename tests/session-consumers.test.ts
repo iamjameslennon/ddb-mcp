@@ -729,3 +729,45 @@ describe("item compendium + character-seeded spell buffer", () => {
     expect(fetchMock.mock.calls.length).toBeGreaterThan(before);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// getMonsterStats and the session lifecycle (real session-state semantics).
+// A lookup that starts already revoked or logged out is not a session change
+// (it falls back as before); one whose session transitions during it is.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("getMonsterStats and the session lifecycle", () => {
+  const CONFIG = { data: { challengeRatings: [{ id: 3, value: 0.25, xp: 50, proficiencyBonus: 2 }], monsterTypes: [], alignments: [], senses: [], sources: [] } };
+
+  function serviceFetch(onMonsterList: () => Promise<Response>) {
+    return async (url: string): Promise<Response> => {
+      if (url === COBALT_URL) return jsonResponse({ token: makeJwt("99") });
+      if (url.includes("api/config/json")) return jsonResponse(CONFIG);
+      if (url.includes("/v1/Monster?search=")) return onMonsterList();
+      return jsonResponse({ results: [], count: 0 });
+    };
+  }
+
+  it("after ddb_logout (revoked from the start) a lookup falls back instead of throwing", async () => {
+    setSessionFile(sessionJson("SECRET_A"));
+    fetchMock.mockImplementation(serviceFetch(async () => jsonResponse({ pagination: { total: 0 }, data: [] })));
+    const ss = await import("../src/session-state.js");
+    await ss.revokeSession();
+    await expect(monster.getMonsterStats("Goblin")).resolves.toMatchObject({ status: expect.stringMatching(/not-found|unavailable/) });
+  });
+
+  it("a session file deleted before the lookup (logged out) falls back instead of throwing", async () => {
+    setSessionFile(null);
+    fetchMock.mockImplementation(serviceFetch(async () => jsonResponse({ pagination: { total: 0 }, data: [] })));
+    await expect(monster.getMonsterStats("Goblin")).resolves.toMatchObject({ status: expect.stringMatching(/not-found|unavailable/) });
+  });
+
+  it("an account swap during the lookup, seen only as a failed request, is rethrown", async () => {
+    setSessionFile(sessionJson("SECRET_A"));
+    fetchMock.mockImplementation(serviceFetch(async () => {
+      setSessionFile(sessionJson("SECRET_B"));
+      throw new DOMException("This operation was aborted", "AbortError");
+    }));
+    const ss = await import("../src/session-state.js");
+    await expect(monster.getMonsterStats("Goblin")).rejects.toBeInstanceOf(ss.SessionChangedError);
+  });
+});
