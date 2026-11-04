@@ -110,11 +110,12 @@ function encounterRulesLine(rulesEdition: RulesEdition): string {
 }
 
 /** The unresolved-name warnings under the result: not-found names, then each ambiguous or CR-less one. */
-function warningLines(notFound: string[], ambiguous: string[]): string[] {
-  if (!notFound.length && !ambiguous.length) return [];
+function warningLines(notFound: string[], unavailable: string[], ambiguous: string[]): string[] {
+  if (!notFound.length && !unavailable.length && !ambiguous.length) return [];
   return [
     ``,
     ...(notFound.length ? [`⚠ Not found in compendium (supply cr manually): ${notFound.join(", ")}`] : []),
+    ...(unavailable.length ? [`⚠ Couldn't look up — D&D Beyond unreachable (supply cr manually): ${unavailable.join(", ")}`] : []),
     ...ambiguous.map(a => `⚠ ${a}`),
   ];
 }
@@ -261,6 +262,7 @@ export async function rateEncounter(
   let totalMonsterCount = 0;
   const monsterLines: string[] = [];
   const notFound: string[] = [];
+  const unavailable: string[] = [];
   const ambiguous: string[] = [];
 
   // Distinct names resolve concurrently, MONSTER_LOOKUP_CONCURRENCY at a time; the loop below keeps input order.
@@ -288,6 +290,10 @@ export async function rateEncounter(
       const stats = lookups.get(m.name)!;
       if (stats.status === "not-found") {
         notFound.push(m.name);
+        continue;
+      }
+      if (stats.status === "unavailable") {
+        unavailable.push(m.name);
         continue;
       }
       if (stats.status === "ambiguous") {
@@ -320,7 +326,7 @@ export async function rateEncounter(
   }
 
   if (totalMonsterCount === 0) {
-    return ["No valid monsters provided. Check names or supply cr values directly.", ...warningLines(notFound, ambiguous)].join("\n");
+    return ["No valid monsters provided. Check names or supply cr values directly.", ...warningLines(notFound, unavailable, ambiguous)].join("\n");
   }
   const rules = encounterRulesLine(rulesEdition);
 
@@ -359,7 +365,7 @@ export async function rateEncounter(
       `Result: ${difficulty} — ${explanation}`,
     ];
 
-    lines.push(...warningLines(notFound, ambiguous));
+    lines.push(...warningLines(notFound, unavailable, ambiguous));
     return lines.join("\n");
 
   } else {
@@ -414,7 +420,7 @@ export async function rateEncounter(
       `Result: ${difficulty} — ${explanation}`,
     ];
 
-    lines.push(...warningLines(notFound, ambiguous));
+    lines.push(...warningLines(notFound, unavailable, ambiguous));
     return lines.join("\n");
   }
 }

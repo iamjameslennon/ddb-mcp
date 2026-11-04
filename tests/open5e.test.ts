@@ -585,9 +585,9 @@ describe("o5GetMonsterStats", () => {
     expect(await o5GetMonsterStats("Zzyzx", "2024")).toEqual({ status: "not-found" });
   });
 
-  it("is not-found when Open5e fails", async () => {
+  it("is unavailable when Open5e fails", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("down"); }));
-    expect(await o5GetMonsterStats("Wolf", "2024")).toEqual({ status: "not-found" });
+    expect(await o5GetMonsterStats("Wolf", "2024")).toEqual({ status: "unavailable" });
   });
 
   it("logged out, the encounter rater lists the Open5e candidates of an ambiguous name and rates the rest", async () => {

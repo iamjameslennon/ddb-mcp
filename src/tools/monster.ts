@@ -1152,6 +1152,8 @@ export async function getMonsterStats(name: string, opts: { rulesEdition?: Rules
   const asker = askerNow();
   // Set when D&D Beyond's only pick is another edition's entry with an unknown CR.
   let unknownElsewhere: UnknownCrResult | null = null;
+  // Set when D&D Beyond could not be asked (an error, a timeout, no game config).
+  let ddbFailed = false;
   try {
     const config = await configFor(asker);
     // No CR table, no CR: Open5e answers instead.
@@ -1221,12 +1223,20 @@ export async function getMonsterStats(name: string, opts: { rulesEdition?: Rules
     }
   } catch {
     // fall through to Open5e
+    ddbFailed = true;
   }
 
   const o5 = await o5GetMonsterStats(name, requested);
   // Assigned inside `settle`, which TypeScript's narrowing doesn't follow.
   const elsewhere = unknownElsewhere as UnknownCrResult | null;
-  if (!elsewhere) return o5;
+  if (!elsewhere) {
+    // Open5e's miss proves nothing while D&D Beyond could not be asked (the SRD is
+    // a small subset): unavailable. When D&D Beyond answered, an Open5e failure
+    // leaves its no-match standing.
+    if (o5.status === "unavailable") return ddbFailed ? o5 : { status: "not-found" };
+    if (o5.status === "not-found" && ddbFailed) return { status: "unavailable" };
+    return o5;
+  }
   // D&D Beyond identified the creature: only Open5e's record of that same
   // creature (same twin key) may answer for it, never a partial match on another.
   const same = (o5.status === "found" || o5.status === "unknown-cr") && monsterTwin(o5.name) === monsterTwin(elsewhere.name);

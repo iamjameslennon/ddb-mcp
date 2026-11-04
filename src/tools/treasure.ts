@@ -542,6 +542,7 @@ export async function generateTreasure(
     if (stats?.status === "ambiguous") {
       return `  ✗ ${ambiguityMessage(displayName(n), stats.candidates.map(c => ({ name: displayName(c.name), cr: c.crValue === null ? null : crDisplay(c.crValue) })))}`;
     }
+    if (stats?.status === "unavailable") return `  ✗ "${displayName(n)}" — couldn't look up: D&D Beyond unreachable (supply cr manually)`;
     if (stats?.status === "unknown-cr") return `  ✗ ${unknownCrMessage(displayName(stats.name))}`;
     return `  ✗ "${displayName(n)}" — not found in DDB or Open5e`;
   };

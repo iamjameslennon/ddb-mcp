@@ -683,3 +683,45 @@ describe("rules lines under a tight output budget", () => {
     expect(lines.slice(title + 1, title + 3)).toEqual([RULES_2024, NO_2014]);
   });
 });
+
+describe("unavailable monster names", () => {
+  const UNAVAILABLE: MonsterStatsResult = { status: "unavailable" };
+  const LINE = (n: string) => `  ✗ "${n}" — couldn't look up: D&D Beyond unreachable (supply cr manually)`;
+
+  it("lists an unavailable name beside a resolved one in the status block", async () => {
+    mockGetMonsterStats.mockImplementation(async (name: string) => (name === "Ogre" ? found("Ogre", 2, 450) : UNAVAILABLE));
+    const out = await generateTreasure({ monsters: [{ name: "Ogre", count: 1 }, { name: "Goblin", count: 1 }], treasureType: "hoard" });
+    expect(out.split("\n")).toContain(LINE("Goblin"));
+    expect(out).not.toContain("not found in DDB or Open5e");
+  });
+
+  it("lists it when nothing resolved", async () => {
+    mockGetMonsterStats.mockResolvedValue(UNAVAILABLE);
+    const out = await generateTreasure({ monsters: [{ name: "Goblin", count: 1 }], treasureType: "hoard" });
+    expect(out.split("\n")).toContain(LINE("Goblin"));
+    expect(out).toContain("No treasure rolled");
+  });
+
+  it("goes through the same budget as not-found names: omitted past the budget, closing kept", async () => {
+    mockGetMonsterStats.mockResolvedValue(UNAVAILABLE);
+    const monsters = Array.from({ length: 20 }, (_, i) => ({ name: `Fake Monster Number ${i}`, count: 1 }));
+    const maxOutputChars = 300;
+    const result = await generateTreasure({ monsters, treasureType: "hoard" }, { maxOutputChars });
+    expect(result.length).toBeLessThanOrEqual(maxOutputChars);
+    expect(result).toMatch(/omitted/i);
+    expect(result).toContain("No treasure rolled");
+  });
+
+  it("partial resolution under a tight budget: omits notes, still rolls, within budget", async () => {
+    mockGetMonsterStats.mockImplementation(async (name: string) => (name.startsWith("Found") ? found(name, 1, 200) : UNAVAILABLE));
+    const monsters = [
+      ...Array.from({ length: 10 }, (_, i) => ({ name: `Found Monster ${i}`, count: 1 })),
+      ...Array.from({ length: 10 }, (_, i) => ({ name: `Missing Monster ${i}`, count: 1 })),
+    ];
+    const maxOutputChars = 700;
+    const result = await generateTreasure({ monsters, treasureType: "hoard" }, { maxOutputChars });
+    expect(result.length).toBeLessThanOrEqual(maxOutputChars);
+    expect(result).toMatch(/omitted/i);
+    expect(result).toContain("TOTAL VALUE");
+  });
+});

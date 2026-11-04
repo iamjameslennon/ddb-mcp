@@ -1002,7 +1002,7 @@ describe("getMonsterStats result union", () => {
   it("a failed query for the typed name fails the DDB lookup, falling back to Open5e", async () => {
     extraMonsters = [TOUGH];
     failSearchTerms.add("tough");
-    expect(await getMonsterStats("Tough")).toEqual({ status: "not-found" });
+    expect(await getMonsterStats("Tough")).toEqual({ status: "unavailable" });
     expect(o5GetMonsterStats).toHaveBeenCalledWith("Tough", "2024");
   });
 
@@ -2214,5 +2214,90 @@ describe("fix round 1: a mistyped source is an error even with the config down",
 
   it("a valid source still answers from Open5e with the caveat", async () => {
     expect(await getMonster("Zombie", { source: "mm-2024" })).toContain("could not be honoured");
+  });
+});
+
+describe("a lookup that couldn't reach D&D Beyond is unavailable, not not-found", () => {
+  const UNAVAILABLE = { status: "unavailable" } as const;
+  const NOT_FOUND = { status: "not-found" } as const;
+
+  it("D&D Beyond failed and Open5e failed: unavailable", async () => {
+    failSearchTerms.add("goblin");
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce(UNAVAILABLE);
+    expect(await getMonsterStats("Goblin")).toEqual(UNAVAILABLE);
+  });
+
+  it("D&D Beyond failed and Open5e has no match: unavailable (the SRD is a small subset)", async () => {
+    failSearchTerms.add("goblin");
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce(NOT_FOUND);
+    expect(await getMonsterStats("Goblin")).toEqual(UNAVAILABLE);
+  });
+
+  it("D&D Beyond answered with no match and Open5e failed: not-found", async () => {
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce(UNAVAILABLE);
+    expect(await getMonsterStats("Zzyzx Nothing")).toEqual(NOT_FOUND);
+  });
+
+  it("D&D Beyond answered with no match and Open5e has none: not-found", async () => {
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce(NOT_FOUND);
+    expect(await getMonsterStats("Zzyzx Nothing")).toEqual(NOT_FOUND);
+  });
+
+  it("D&D Beyond failed but Open5e found it: found, unchanged", async () => {
+    failSearchTerms.add("wolf");
+    const wolf = { status: "found", name: "Wolf", crValue: 0.25, xp: 50, info: { ruleset: "2024", book: null } } as const;
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce(wolf);
+    expect(await getMonsterStats("Wolf")).toEqual(wolf);
+  });
+
+  it("no game config means D&D Beyond could not be asked: an Open5e miss is unavailable", async () => {
+    configAvailable = false;
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce(NOT_FOUND);
+    expect(await getMonsterStats("Wolf")).toEqual(UNAVAILABLE);
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce(UNAVAILABLE);
+    expect(await getMonsterStats("Wolf")).toEqual(UNAVAILABLE);
+  });
+
+  it("logged out, the anonymous monster-service fetch failing is unavailable", async () => {
+    goLoggedOut(true);
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce(NOT_FOUND);
+    expect(await getMonsterStats("Goblin")).toEqual(UNAVAILABLE);
+  });
+
+  it("logged out, monster-service answering with no match stays not-found", async () => {
+    goLoggedOut();
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce(UNAVAILABLE);
+    expect(await getMonsterStats("Zzyzx Nothing")).toEqual(NOT_FOUND);
+  });
+
+  it("rateEncounter prints the unavailable names on their own line after the not-found line", async () => {
+    failSearchTerms.add("goblin");
+    failSearchTerms.add("orc");
+    vi.mocked(o5GetMonsterStats).mockImplementation(async () => NOT_FOUND);
+    const out = await rateEncounter([{ count: 4, level: 1 }], [{ name: "Goblin" }, { name: "Orc" }, { name: "Zzyzx Nothing" }, { name: "Wolf" }], "2024");
+    const lines = out.split("\n");
+    const i = lines.indexOf("⚠ Not found in compendium (supply cr manually): Zzyzx Nothing");
+    expect(i).toBeGreaterThan(-1);
+    expect(lines[i + 1]).toBe("⚠ Couldn't look up — D&D Beyond unreachable (supply cr manually): Goblin, Orc");
+    expect(out).toContain("1 × Wolf [2024]");
+  });
+
+  it("rateEncounter with nothing resolved still shows the unavailable line", async () => {
+    failSearchTerms.add("goblin");
+    vi.mocked(o5GetMonsterStats).mockImplementation(async () => NOT_FOUND);
+    const out = await rateEncounter([{ count: 4, level: 1 }], [{ name: "Goblin" }], "2024");
+    expect(out).toBe([
+      "No valid monsters provided. Check names or supply cr values directly.",
+      "",
+      "⚠ Couldn't look up — D&D Beyond unreachable (supply cr manually): Goblin",
+    ].join("\n"));
+  });
+
+  it("generateTreasure lists an unavailable name as such, not as not found", async () => {
+    failSearchTerms.add("goblin");
+    vi.mocked(o5GetMonsterStats).mockImplementation(async () => NOT_FOUND);
+    const out = await generateTreasure({ monsters: [{ name: "Goblin", count: 1 }, { name: "Wolf", count: 1 }], treasureType: "individual" });
+    expect(out).toContain('  ✗ "Goblin" — couldn\'t look up: D&D Beyond unreachable (supply cr manually)');
+    expect(out).not.toContain("not found in DDB or Open5e");
   });
 });

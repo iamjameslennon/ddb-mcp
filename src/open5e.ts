@@ -1500,6 +1500,12 @@ const CR_XP_O5: Record<string, number> = {
 export type MonsterStatsResult =
   | { status: "found"; name: string; crValue: number; xp: number; info: EditionInfo }
   | { status: "not-found" }
+  /**
+   * The name couldn't be looked up: D&D Beyond could not be asked and Open5e had no answer.
+   * o5GetMonsterStats returns it when Open5e itself failed; getMonsterStats decides the
+   * final status (it alone knows whether D&D Beyond answered).
+   */
+  | { status: "unavailable" }
   /** The creature was identified (exact name, or the one group a partial name matches), but its CR isn't known. */
   | { status: "unknown-cr"; name: string; info: EditionInfo }
   | { status: "ambiguous"; candidates: Array<{ name: string; crValue: number | null; xp: number | null }> };
@@ -1512,7 +1518,8 @@ export type MonsterStatsResult =
  * the document the pick is in. A picked record with an unknown CR is
  * unknown-cr (exact or single group: never replaced by its other-edition twin)
  * or listed as "CR unknown", last, among ambiguous candidates (all unknown is
- * not-found); any Open5e failure is not-found.
+ * not-found). An Open5e failure is `unavailable`, which tells it apart from a
+ * genuine no-match (`not-found`); getMonsterStats decides what the caller sees.
  */
 export async function o5GetMonsterStats(name: string, rulesEdition: RulesEdition): Promise<MonsterStatsResult> {
   try {
@@ -1561,6 +1568,6 @@ export async function o5GetMonsterStats(name: string, rulesEdition: RulesEdition
     }
     return { status: "not-found" };
   } catch {
-    return { status: "not-found" };
+    return { status: "unavailable" };
   }
 }
