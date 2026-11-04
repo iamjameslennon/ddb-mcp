@@ -68,20 +68,22 @@ function grantingEntities(char: CharData, classes: readonly ClassEntry[]): Map<s
 }
 
 /**
- * Whether every entity that could have granted an action in `bucket` is
+ * Whether any entity that could have granted an action in `bucket` is
  * homebrew, for an action that names no entity on the sheet (e.g. a Tasha's
- * optional class feature that isn't in classFeatures). Only then is its
- * granting entity known to be homebrew; otherwise the line stays plain.
+ * optional class feature that isn't in classFeatures). The granting entity
+ * can't be told, so the line is wrapped when any candidate is homebrew
+ * (owner ruling, option C): a class or its subclass, the species, a feat, an
+ * item, or a homebrew or custom background.
  */
-function bucketAllHomebrew(char: CharData, classes: readonly ClassEntry[], bucket: string): boolean {
-  const owners: boolean[] =
-    bucket === "class" ? classes.map(c => isHomebrewEntry(c))
-    : bucket === "race" ? (char.race != null && typeof char.race === "object" ? [isHomebrewEntry(char.race)] : [])
-    : bucket === "feat" ? arr<Mod>(char.feats).map(f => isHomebrewEntry(f))
-    : bucket === "item" ? arr<InventoryItem>(char.inventory).map(i => isHomebrewEntry(i))
-    : bucket === "background" ? (char.background != null && typeof char.background === "object" ? [resolveBackground(char).untrusted] : [])
-    : [];
-  return owners.length > 0 && owners.every(Boolean);
+function bucketAnyHomebrew(char: CharData, classes: readonly ClassEntry[], bucket: string): boolean {
+  switch (bucket) {
+    case "class": return classes.some(c => isHomebrewEntry(c, c.subclassDefinition));
+    case "race": return isHomebrewEntry(char.race);
+    case "feat": return arr<Mod>(char.feats).some(f => isHomebrewEntry(f));
+    case "item": return arr<InventoryItem>(char.inventory).some(i => isHomebrewEntry(i));
+    case "background": return resolveBackground(char).untrusted;
+    default: return false;
+  }
 }
 
 // ── Action source extraction ─────────────────────────────────────────────────
@@ -98,7 +100,7 @@ function getAllActions(char: CharData, classes: readonly ClassEntry[]): CharActi
     .map(({ bucket, action }) => {
       const granted = entities.get(entityKey(action.componentId, action.componentTypeId));
       const homebrew = action.isHomebrew === true
-        || (granted ? granted.some(Boolean) : bucketAllHomebrew(char, classes, bucket));
+        || (granted ? granted.some(Boolean) : bucketAnyHomebrew(char, classes, bucket));
       return { action, homebrew };
     });
 }

@@ -174,17 +174,61 @@ describe("char.actions lines", () => {
     expect(block(out, "BONUS ACTIONS")).toBe(["BONUS ACTIONS", "• Second Wind"].join("\n"));
   });
 
-  it("an action with no linked entity is wrapped only when every possible owner in its bucket is homebrew", () => {
+  describe("an action with no linked entity is wrapped when its bucket has any homebrew owner (option C)", () => {
     // A Tasha's-style optional feature: its componentId is in no classFeatures list.
-    const orphan = actions({ class: [action("Hex Aim", 3035892, CLASS_FEATURE, BONUS)], race: [action("Hex Roar", 999, RACIAL_TRAIT, BONUS)] });
+    const orphan = (bucket: string) => actions({ [bucket]: [action("Hex Aim", 3035892, 77777, BONUS)] });
     const hbClass = fighter({ isHomebrew: true });
-    const homebrew = combat({ classes: [hbClass], race: { ...(BASE.race as Record<string, unknown>), isHomebrew: true }, ...orphan });
-    expect(homebrew).toContain(wrapUntrusted("• Hex Aim"));
-    expect(homebrew).toContain(wrapUntrusted("• Hex Roar"));
-    // Official owner, or a multiclass whose classes disagree: plain (the owner cannot be told).
-    expect(block(combat(orphan), "BONUS ACTIONS")).toBe(["BONUS ACTIONS", "• Hex Aim", "• Hex Roar"].join("\n"));
-    const mixed = combat({ classes: [hbClass, { ...FIGHTER, id: 2, definition: { name: "Rogue", sources: S(145) } }], ...orphan });
-    expect(mixed).toMatch(/^• Hex Aim$/m);
+    const rogue = { ...FIGHTER, id: 2, definition: { name: "Rogue", sources: S(145) } };
+    const wrapped = (out: string) => out.includes(wrapUntrusted("• Hex Aim"));
+
+    it("official owners only: plain", () => {
+      expect(block(combat(orphan("class")), "BONUS ACTIONS")).toBe(["BONUS ACTIONS", "• Hex Aim"].join("\n"));
+      for (const bucket of ["race", "feat", "item", "background"]) expect(wrapped(combat(orphan(bucket)))).toBe(false);
+    });
+
+    it("class bucket: a homebrew class", () => {
+      expect(wrapped(combat({ classes: [hbClass], ...orphan("class") }))).toBe(true);
+    });
+
+    it("class bucket: (a) an official class with a homebrew subclass", () => {
+      const sub = fighter({ subclassDefinition: { id: 77, name: "Hexblade Knight", isHomebrew: true, classFeatures: [] } });
+      expect(wrapped(combat({ classes: [sub], ...orphan("class") }))).toBe(true);
+    });
+
+    it("class bucket: (b) a multiclass mixing a homebrew and an official class", () => {
+      expect(wrapped(combat({ classes: [hbClass, rogue], ...orphan("class") }))).toBe(true);
+      expect(wrapped(combat({ classes: [rogue, hbClass], ...orphan("class") }))).toBe(true);
+    });
+
+    it("race bucket: a homebrew species", () => {
+      expect(wrapped(combat({ race: { ...(BASE.race as Record<string, unknown>), isHomebrew: true }, ...orphan("race") }))).toBe(true);
+    });
+
+    it("feat bucket: any homebrew feat among official ones", () => {
+      const feats = [
+        { definition: { id: 501, entityTypeId: FEAT, name: "Sentinel", categories: [], sources: S(145) } },
+        { isHomebrew: true, definition: { id: 502, entityTypeId: FEAT, name: "Hex Feat", categories: [] } },
+      ];
+      expect(wrapped(combat({ feats, ...orphan("feat") }))).toBe(true);
+    });
+
+    it("item bucket: any homebrew item among official ones", () => {
+      const inventory = [
+        { equipped: false, quantity: 1, definition: { id: 601, entityTypeId: ITEM, name: "Wand of Webs", filterType: "Wand", sources: S(145) } },
+        { equipped: false, quantity: 1, definition: { id: 600, entityTypeId: ITEM, name: "Hex Wand", filterType: "Wand", isHomebrew: true } },
+      ];
+      expect(wrapped(combat({ inventory, ...orphan("item") }))).toBe(true);
+    });
+
+    it("background bucket: a homebrew or a custom background", () => {
+      expect(wrapped(combat({ background: { definition: { id: 700, entityTypeId: BACKGROUND, name: "Hex Exile", isHomebrew: true } }, ...orphan("background") }))).toBe(true);
+      const custom = { definition: { id: 701, entityTypeId: BACKGROUND, name: "Soldier", sources: S(145) }, customBackground: { definition: { name: "My Past", featureName: "Mine" } } };
+      expect(wrapped(combat({ background: custom, ...orphan("background") }))).toBe(true);
+    });
+
+    it("a homebrew owner in another bucket does not wrap", () => {
+      expect(wrapped(combat({ classes: [hbClass], ...orphan("feat") }))).toBe(false);
+    });
   });
 });
 
