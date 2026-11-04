@@ -8,14 +8,20 @@
  * block (Phase 6a). Equipped armor is shown separately with its AC value;
  * everything else non-weapon is rolled into a single comma-separated
  * INVENTORY line with ×N consolidation.
+ *
+ * Homebrew items are other players' text: an EQUIPPED line is wrapped whole,
+ * and homebrew carried items leave the INVENTORY line for a wrapped list under
+ * an `INVENTORY (homebrew)` header (never merged with an official item).
  */
 
-import { num, obj, str } from "./helpers.js";
-import type { CharData, CoreStats } from "./types.js";
+import { wrapIfHomebrew, wrapUntrusted } from "../../utils.js";
+import { isHomebrewEntry, num, obj, str } from "./helpers.js";
+import type { CharData, CoreStats, ListEntry } from "./types.js";
 
 export interface Inventory {
-  equippedNonWeapons: string[];   // ["Leather Armor (AC 11)", "Shield (AC 2)"]
-  inventoryLine: string;           // "Backpack, Rations ×5, Torch ×3"
+  equippedNonWeapons: ListEntry[]; // [{ text: "Leather Armor (AC 11)", homebrew: false }, …]
+  inventoryLine: string;           // "Backpack, Rations ×5, Torch ×3" (official items)
+  homebrewInventoryLine: string;   // the homebrew carried items, same form; "" when none
   attuned: number;                 // count of attuned items
   currencyLine: string;            // "100gp, 5sp" or "none"
 }
@@ -30,28 +36,32 @@ function buildCurrencyLine(char: CharData): string {
 
 export function computeInventory(core: CoreStats): Inventory {
   const { char, inventory, editions } = core;
-  const equippedNonWeapons: string[] = [];
+  const equippedNonWeapons: ListEntry[] = [];
   const carriedItems = new Map<string, number>();
+  const homebrewItems = new Map<string, number>();
   let attuned = 0;
   for (const i of inventory) {
     const def = obj(i.definition);
     const iName = editions.named(str(def.name), def);
     const filterType = str(def.filterType);
     const qty = num(i.quantity) || 1;
+    const homebrew = isHomebrewEntry(i);
     if (i.isAttuned) attuned++;
     if (i.equipped && filterType === "Armor") {
       const ac2 = num(def.armorClass);
-      equippedNonWeapons.push(`${iName}${ac2 ? ` (AC ${ac2})` : ""}`);
+      equippedNonWeapons.push({ text: `${iName}${ac2 ? ` (AC ${ac2})` : ""}`, homebrew });
     } else if (filterType !== "Weapon") {
-      carriedItems.set(iName, (carriedItems.get(iName) ?? 0) + qty);
+      const items = homebrew ? homebrewItems : carriedItems;
+      items.set(iName, (items.get(iName) ?? 0) + qty);
     }
   }
-  const inventoryLine = [...carriedItems.entries()]
+  const line = (items: Map<string, number>) => [...items.entries()]
     .map(([n, q]) => q > 1 ? `${n} ×${q}` : n)
     .join(", ");
   return {
     equippedNonWeapons,
-    inventoryLine,
+    inventoryLine: line(carriedItems),
+    homebrewInventoryLine: line(homebrewItems),
     attuned,
     currencyLine: buildCurrencyLine(char),
   };
@@ -60,9 +70,11 @@ export function computeInventory(core: CoreStats): Inventory {
 export function formatInventoryBlock(inv: Inventory): string[] {
   return [
     ...(inv.equippedNonWeapons.length
-      ? [`EQUIPPED`, ...inv.equippedNonWeapons.map(e => `  ${e}`), ``]
+      ? [`EQUIPPED`, ...inv.equippedNonWeapons.map(e => wrapIfHomebrew(`  ${e.text}`, e.homebrew)), ``]
       : []),
-    ...(inv.inventoryLine ? [`INVENTORY`, `  ${inv.inventoryLine}`, ``] : []),
+    ...(inv.inventoryLine ? [`INVENTORY`, `  ${inv.inventoryLine}`] : []),
+    ...(inv.homebrewInventoryLine ? [`INVENTORY (homebrew)`, wrapUntrusted(`  ${inv.homebrewInventoryLine}`)] : []),
+    ...(inv.inventoryLine || inv.homebrewInventoryLine ? [``] : []),
     `ATTUNEMENT: ${inv.attuned}/3 slots used`,
     ``,
     `CURRENCY: ${inv.currencyLine}`,

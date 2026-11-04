@@ -9,7 +9,8 @@
  * to preserve byte-for-byte parity with the original inline code.
  */
 
-import { arr, isBonusMod, isProficiencyMod, num, obj, signed, str } from "./helpers.js";
+import { wrapIfHomebrew } from "../../utils.js";
+import { arr, isBonusMod, isHomebrewEntry, isProficiencyMod, num, obj, signed, str } from "./helpers.js";
 import type { CoreStats } from "./types.js";
 
 export function computeWeaponAttacks(core: CoreStats): string[] {
@@ -37,7 +38,7 @@ export function computeWeaponAttacks(core: CoreStats): string[] {
       )
     );
 
-  const weaponInventoryMap = new Map<string, { lines: string[]; qty: number }>();
+  const weaponInventoryMap = new Map<string, { lines: string[]; qty: number; homebrew: boolean }>();
   for (const i of inventory) {
     const def = obj(i.definition);
     if (str(def.filterType) !== "Weapon") continue;
@@ -78,19 +79,22 @@ export function computeWeaponAttacks(core: CoreStats): string[] {
 
     const line = `• ${wLabel.padEnd(16)} ${signed(hitBonus)} to hit   ${dmgStr} ${dmgType}   ${rangeStr}${propsStr ? `   ${propsStr}` : ""}`;
 
-    // Consolidate duplicates by key
-    const key = wLabel + dmgDice;
+    // Consolidate duplicates by key. A homebrew weapon is never merged with
+    // an official one, so its line can be wrapped on its own.
+    const homebrew = isHomebrewEntry(i);
+    const key = `${Number(homebrew)}|${wLabel}${dmgDice}`;
     const existing = weaponInventoryMap.get(key);
     if (existing) {
       existing.qty += num(i.quantity) || 1;
     } else {
-      weaponInventoryMap.set(key, { lines: [line], qty: num(i.quantity) || 1 });
+      weaponInventoryMap.set(key, { lines: [line], qty: num(i.quantity) || 1, homebrew });
     }
   }
 
+  // A homebrew weapon's name is other players' text: its whole line is wrapped.
   const weaponAttacks: string[] = [];
-  for (const { lines, qty } of weaponInventoryMap.values()) {
-    weaponAttacks.push(qty > 1 ? lines[0].replace("•", `• ×${qty}`) : lines[0]);
+  for (const { lines, qty, homebrew } of weaponInventoryMap.values()) {
+    weaponAttacks.push(wrapIfHomebrew(qty > 1 ? lines[0].replace("•", `• ×${qty}`) : lines[0], homebrew));
   }
   return weaponAttacks;
 }

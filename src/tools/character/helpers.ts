@@ -5,7 +5,8 @@
  * No business logic — pure type/string/number utilities.
  */
 
-import type { Mod, ProficiencyMod, ExpertiseMod, HalfProficiencyMod, BonusMod, SetMod, SetBaseMod, SenseMod, ResistanceMod, ImmunityMod, VulnerabilityMod, LanguageMod } from "./types.js";
+import { wrapUntrusted } from "../../utils.js";
+import type { ListEntry, Mod, ProficiencyMod, ExpertiseMod, HalfProficiencyMod, BonusMod, SetMod, SetBaseMod, SenseMod, ResistanceMod, ImmunityMod, VulnerabilityMod, LanguageMod } from "./types.js";
 
 export const str = (v: unknown): string => (v != null ? String(v) : "");
 export const num = (v: unknown): number => (typeof v === "number" ? v : 0);
@@ -69,6 +70,21 @@ export const isHomebrewClassFeature = (feature: unknown, cls: unknown): boolean 
   const subclass = obj(obj(cls).subclassDefinition);
   return isHomebrewEntry(feature, cls, isSubclassFeature(feature, subclass) ? subclass : null);
 };
+
+/**
+ * A comma list split by homebrew: `<indent><label>: a, b` with the official
+ * entries, then the homebrew ones on a wrapped `<indent><label> (homebrew): c`
+ * line. A line is printed when it has any entries (a nameless entry keeps its
+ * empty slot, as the sheet always has); order is kept within each.
+ */
+export function splitListLines(indent: string, label: string, entries: readonly ListEntry[]): string[] {
+  const plain = entries.filter(e => !e.homebrew).map(e => e.text);
+  const homebrew = entries.filter(e => e.homebrew).map(e => e.text);
+  return [
+    ...(plain.length ? [`${indent}${label}: ${plain.join(", ")}`] : []),
+    ...(homebrew.length ? [wrapUntrusted(`${indent}${label} (homebrew): ${homebrew.join(", ")}`)] : []),
+  ];
+}
 
 /** Returns true if the feat has the given category tagName. */
 export const hasTag = (feat: Mod, tag: string): boolean =>

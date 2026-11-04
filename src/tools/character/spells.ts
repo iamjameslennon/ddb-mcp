@@ -15,15 +15,16 @@
  */
 
 import { isConcentrationSpell } from "../reference.js";
-import { arr, num, obj, signed, statNames, str } from "./helpers.js";
-import type { CharData, ClassEntry, CoreStats } from "./types.js";
+import { wrapIfHomebrew } from "../../utils.js";
+import { arr, isHomebrewEntry, num, obj, signed, splitListLines, statNames, str } from "./helpers.js";
+import type { CharData, ClassEntry, CoreStats, ListEntry } from "./types.js";
 import type { CharacterEditions } from "./editions.js";
 
 export interface Spells {
   spellcastingLines: string[];                  // "  Wizard: INT  Spell Attack: +5  Save DC: 13"
   slotLines: string[];                          // "  Level 1: 4/4"
-  spellSections: string[];                      // "  Cantrips: ...", "  Spells: ...", "  From Racial Trait: ...", duplicate warnings
-  concentrationByLevel: Map<number, string[]>;  // level → ordered spell names
+  spellSections: string[];                      // "  Cantrips: ...", "  Spells: ...", "  From Racial Trait: ...", duplicate warnings; homebrew entries on wrapped "(homebrew)" lines
+  concentrationByLevel: Map<number, ListEntry[]>;  // level → ordered spell names, each flagged homebrew or not
 }
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -162,16 +163,16 @@ function buildSpellSections(
   for (const { isSpellbook, spells: allSpells } of classSpellLists(char, classes)) {
     const cantrips = allSpells
       .filter(s => num(obj(s.definition).level) === 0)
-      .map(s => editions.named(str(obj(s.definition).name), s.definition));
+      .map(s => ({ text: editions.named(str(obj(s.definition).name), s.definition), homebrew: isHomebrewEntry(s) }));
     const leveled = allSpells
       .filter(s => num(obj(s.definition).level) > 0 && isShownClassSpell(s, isSpellbook))
       .map(s => {
         const def = obj(s.definition);
         const ritual = isSpellbook && def.ritual ? " [ritual]" : "";
-        return `${editions.named(str(def.name), def)} (L${num(def.level)}${ritual})`;
+        return { text: `${editions.named(str(def.name), def)} (L${num(def.level)}${ritual})`, homebrew: isHomebrewEntry(s) };
       });
-    if (cantrips.length) sections.push(`  Cantrips: ${cantrips.join(", ")}`);
-    if (leveled.length) sections.push(`  Spells: ${leveled.join(", ")}`);
+    // Homebrew spells are other players' text: they leave the list for a wrapped line below it.
+    sections.push(...splitListLines("  ", "Cantrips", cantrips), ...splitListLines("  ", "Spells", leveled));
     // Pre-seed duplicate detection in the same pass, from the gated list the
     // section prints: an unprepared spellbook spell is not shown, so it can't
     // be "already granted".
@@ -189,8 +190,8 @@ function buildSpellSections(
   for (const [key, label] of Object.entries(SOURCE_LABELS)) {
     const spellList = arr<Record<string, unknown>>(spellsObj[key]);
     if (!spellList.length) continue;
-    const names = [...new Set(
-      spellList
+    const seen = new Set<string>();
+    const names = spellList
         .filter(s => {
           const def = obj(s.definition);
           const spellId = num(def.id);
@@ -200,7 +201,7 @@ function buildSpellSections(
             const spellName = editions.named(str(def.name), def);
             const lvl = num(def.level);
             const spellStr = lvl === 0 ? spellName : `${spellName} (L${lvl})`;
-            duplicateWarnings.push(`  • ${spellStr} — already granted by ${firstLabel}, also in ${label}`);
+            duplicateWarnings.push(wrapIfHomebrew(`  • ${spellStr} — already granted by ${firstLabel}, also in ${label}`, isHomebrewEntry(s)));
             return false;
           }
           seenSpellIds.set(spellId, label);
@@ -209,11 +210,16 @@ function buildSpellSections(
         .map(s => {
           const def = obj(s.definition);
           const n = editions.named(str(def.name), def);
-          return n ? (num(def.level) === 0 ? n : `${n} (L${num(def.level)})`) : "";
+          return { text: n ? (num(def.level) === 0 ? n : `${n} (L${num(def.level)})`) : "", homebrew: isHomebrewEntry(s) };
         })
-        .filter(n => n.length > 0)
-    )];
-    if (names.length) sections.push(`  From ${label}: ${names.join(", ")}`);
+        // Nameless entries are dropped; duplicates by text within the official and the homebrew entries.
+        .filter(e => {
+          const key = `${e.homebrew}:${e.text}`;
+          if (!e.text || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+    sections.push(...splitListLines("  ", `From ${label}`, names));
   }
 
   if (duplicateWarnings.length) {
@@ -235,17 +241,18 @@ function buildConcentrationByLevel(
   char: CharData,
   classes: readonly ClassEntry[],
   editions: CharacterEditions,
-): Map<number, string[]> {
-  const concByLevel = new Map<number, string[]>();
+): Map<number, ListEntry[]> {
+  const concByLevel = new Map<number, ListEntry[]>();
   const addConcSpell = (s: Record<string, unknown>) => {
     const def = obj(s.definition);
     if (!str(def.name)) return;
-    const name = editions.named(str(def.name), def);
+    const text = editions.named(str(def.name), def);
+    const homebrew = isHomebrewEntry(s);
     const level = num(def.level);
     const isConc = isConcentrationSpell(def) ?? false;
     if (!isConc) return;
     const bucket = concByLevel.get(level) ?? [];
-    if (!bucket.includes(name)) { bucket.push(name); concByLevel.set(level, bucket); }
+    if (!bucket.some(e => e.text === text && e.homebrew === homebrew)) { bucket.push({ text, homebrew }); concByLevel.set(level, bucket); }
   };
   for (const { isSpellbook, spells } of classSpellLists(char, classes)) {
     for (const s of spells) if (isShownClassSpell(s, isSpellbook)) addConcSpell(s);
@@ -282,8 +289,8 @@ export function formatConcentrationBlock(s: Spells): string[] {
   const out: string[] = ["CONCENTRATION SPELLS"];
   for (const lvl of [...s.concentrationByLevel.keys()].sort((a, b) => a - b)) {
     out.push(lvl === 0 ? "  Cantrips (no slot required):" : `  Level ${lvl}:`);
-    for (const name of s.concentrationByLevel.get(lvl)!) {
-      out.push(`    • ${name}${lvl > 0 ? ` [${slotOrdinal(lvl)}-level slot]` : ""}`);
+    for (const { text, homebrew } of s.concentrationByLevel.get(lvl)!) {
+      out.push(wrapIfHomebrew(`    • ${text}${lvl > 0 ? ` [${slotOrdinal(lvl)}-level slot]` : ""}`, homebrew));
     }
   }
   out.push("");

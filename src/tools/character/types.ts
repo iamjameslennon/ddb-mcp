@@ -16,6 +16,9 @@ export type Mod = Record<string, unknown>;
 export type ClassEntry = Record<string, unknown>;
 export type InventoryItem = Record<string, unknown>;
 
+/** One entry of a printed list (a spell, item or name): its formatted text and whether it is homebrew (`isHomebrewEntry`). */
+export interface ListEntry { text: string; homebrew: boolean }
+
 // ── Mod discriminated-union shapes (follow-up A) ──────────────────────────────
 // Tightened incrementally — one mod-type at a time. Each shape is narrow on
 // purpose: only the fields the consumers actually read. Type guards live in
