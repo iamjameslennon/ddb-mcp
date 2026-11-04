@@ -128,6 +128,12 @@ for (const endpoint of ENDPOINTS) {
 for (const endpoint of EQUIPMENT) {
   for (const [names, otherDoc] of [[NAMES[endpoint].only2024, "srd-2014"], [NAMES[endpoint].only2014, "srd-2024"]] as const) {
     for (const name of names) {
+      // A skip whose allowed copy is gone is dead; warn only, never fail.
+      for (const skip of CROSS_CHECK_SKIP[endpoint] ?? []) {
+        if (skip.name === name && !has(otherDoc, skip.in, name)) {
+          console.warn(`WARN skip ${endpoint}/${name}: ${otherDoc}/${skip.in} no longer has "${name}"; the skip is stale`);
+        }
+      }
       for (const other of EQUIPMENT) {
         if (CROSS_CHECK_SKIP[endpoint]?.some(s => s.name === name && s.in === other)) continue;
         if (has(otherDoc, other, name)) fail(`${otherDoc}/${other}: has "${name}", which ${endpoint} treats as the other edition's only`);
