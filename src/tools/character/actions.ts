@@ -37,35 +37,67 @@ export interface Actions {
 // Matching both fields matters: ids repeat across entity types.
 const entityKey = (id: unknown, typeId: unknown): string => `${num(typeId)}:${num(id)}`;
 
-/** Every definition an action can name, keyed by entityKey, with whether it is homebrew (as features.ts decides). */
-function grantingEntities(char: CharData, classes: readonly ClassEntry[]): Map<string, boolean[]> {
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  v != null && typeof v === "object" && !Array.isArray(v);
+
+/** Records `homebrew` under the definition's entityKey; a definition without an id or entity type is skipped. */
+function addEntity(entities: Map<string, boolean[]>, def: unknown, homebrew: boolean): void {
+  const d = obj(def);
+  if (!num(d.id) || !num(d.entityTypeId)) return;
+  const key = entityKey(d.id, d.entityTypeId);
+  entities.set(key, [...(entities.get(key) ?? []), homebrew]);
+}
+
+/**
+ * Every definition an action can name, keyed by entityKey, with whether it is
+ * homebrew (as features.ts decides). Several entities can share a key; the
+ * caller treats the key as homebrew when any of them is. Exported for tests.
+ */
+export function grantingEntities(char: CharData, classes: readonly ClassEntry[]): Map<string, boolean[]> {
   const entities = new Map<string, boolean[]>();
-  const add = (def: unknown, homebrew: boolean) => {
-    const d = obj(def);
-    if (!num(d.id) || !num(d.entityTypeId)) return;
-    const key = entityKey(d.id, d.entityTypeId);
-    entities.set(key, [...(entities.get(key) ?? []), homebrew]);
-  };
+  const add = (def: unknown, homebrew: boolean) => addEntity(entities, def, homebrew);
+  // Null or non-object entries are skipped.
   for (const cls of classes) {
-    for (const cf of arr<unknown>(cls.classFeatures)) add(featureDefinition(cf), isHomebrewClassFeature(cf, cls));
+    for (const cf of arr<unknown>(cls.classFeatures).filter(isRecord)) add(featureDefinition(cf), isHomebrewClassFeature(cf, cls));
   }
   const race = obj(char.race);
-  for (const t of arr<Record<string, unknown>>(race.racialTraits)) add(t.definition, isHomebrewEntry(t, race));
-  for (const f of arr<Mod>(char.feats)) add(f.definition, isHomebrewEntry(f));
-  for (const i of arr<InventoryItem>(char.inventory)) add(i.definition, isHomebrewEntry(i));
+  for (const t of arr<unknown>(race.racialTraits).filter(isRecord)) add(t.definition, isHomebrewEntry(t, race));
+  for (const f of arr<unknown>(char.feats).filter(isRecord)) add(f.definition, isHomebrewEntry(f));
+  for (const i of arr<unknown>(char.inventory).filter(isRecord)) add(i.definition, isHomebrewEntry(i));
   const { bgDef, untrusted } = resolveBackground(char);
   add(bgDef, untrusted);
+  // A custom background shows its own definition; an action can still name the stock one.
   if (obj(obj(char.background).definition) !== bgDef) add(obj(char.background).definition, untrusted);
-  // An option (a choice made under a class feature, racial trait or feat) is
-  // linked to that entity the same way; it is homebrew when it or its owner is.
-  for (const options of Object.values(obj(char.options))) {
-    for (const o of arr<Record<string, unknown>>(options)) {
+  return withOptions(char, entities);
+}
+
+/**
+ * Adds the options (a choice made under a class feature, racial trait, feat or
+ * another option, linked to it the same way): an option is homebrew when it
+ * or its owner is. Options can chain in any order across buckets, so they are
+ * resolved to a fixed point: each round recomputes every option's flag from
+ * the entities known so far. A flag only moves from unknown to false to true,
+ * so it settles within 2 × options + 1 rounds. An option whose owner is never
+ * found is added only when it is itself homebrew.
+ */
+function withOptions(char: CharData, base: Map<string, boolean[]>): Map<string, boolean[]> {
+  const options = Object.values(obj(char.options)).flatMap(v => arr<unknown>(v)).filter(isRecord);
+  const known = (flags: readonly (boolean | undefined)[]) => {
+    const entities = new Map(base);
+    options.forEach((o, i) => { if (flags[i] !== undefined) addEntity(entities, o.definition, flags[i]); });
+    return entities;
+  };
+  let flags: (boolean | undefined)[] = options.map(() => undefined);
+  for (let round = 0; round <= 2 * options.length; round++) {
+    const entities = known(flags);
+    const next = options.map(o => {
       const owner = entities.get(entityKey(o.componentId, o.componentTypeId));
-      if (owner) add(o.definition, isHomebrewEntry(o) || owner.some(Boolean));
-      else if (isHomebrewEntry(o)) add(o.definition, true);
-    }
+      return owner ? isHomebrewEntry(o) || owner.some(Boolean) : isHomebrewEntry(o) ? true : undefined;
+    });
+    if (next.every((f, i) => f === flags[i])) break;
+    flags = next;
   }
-  return entities;
+  return known(flags);
 }
 
 /**

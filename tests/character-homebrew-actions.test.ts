@@ -11,6 +11,7 @@
 import { describe, expect, it } from "vitest";
 import { parseCharacterData } from "../src/tools/character.js";
 import { wrapUntrusted } from "../src/utils.js";
+import { grantingEntities } from "../src/tools/character/actions.js";
 import { FIGHTER_5 } from "./fixtures/character-fixtures.js";
 import { INDEX, S } from "./fixtures/character-edition-helpers.js";
 
@@ -283,6 +284,67 @@ describe("char.actions lines", () => {
     it("a homebrew owner in another bucket does not wrap", () => {
       expect(wrapped(combat({ classes: [hbClass], ...orphan("feat") }))).toBe(false);
     });
+  });
+});
+
+describe("action resolution edge cases", () => {
+  it("a null or non-object entry in an options bucket is skipped, not a crash", () => {
+    const out = combat({
+      classes: [fighter({ classFeatures: [feature(900, "Hex Styles", { isHomebrew: true })] })],
+      options: { class: [null, 7, "x", { componentId: 900, componentTypeId: CLASS_FEATURE, definition: { id: 55, entityTypeId: OPTION, name: "Hex Step" } }], race: null },
+      ...actions({ class: [action("Hex Step", 55, OPTION, BONUS)] }),
+    });
+    expect(out).toContain(wrapUntrusted("• Hex Step"));
+  });
+
+  it("grantingEntities skips null entries in classFeatures, racialTraits, feats and inventory", () => {
+    const char = {
+      classes: [{ ...FIGHTER, classFeatures: [null, feature(900, "Hex Surge", { isHomebrew: true })] }],
+      race: { isHomebrew: false, racialTraits: [null, { definition: { id: 300, entityTypeId: RACIAL_TRAIT, name: "Hex Breath", isHomebrew: true } }] },
+      feats: [null, { definition: { id: 500, entityTypeId: FEAT, name: "Hex Feat", isHomebrew: true } }],
+      inventory: [null, { definition: { id: 600, entityTypeId: ITEM, name: "Hex Wand", isHomebrew: true } }],
+      options: {},
+    };
+    const entities = grantingEntities(char, char.classes);
+    expect(entities.get(`${CLASS_FEATURE}:900`)).toEqual([true]);
+    expect(entities.get(`${RACIAL_TRAIT}:300`)).toEqual([true]);
+    expect(entities.get(`${FEAT}:500`)).toEqual([true]);
+    expect(entities.get(`${ITEM}:600`)).toEqual([true]);
+  });
+
+  it("chained options resolve whatever their order: an option chosen under a later option of a homebrew feat", () => {
+    const out = combat({
+      feats: [{ definition: { id: 500, entityTypeId: FEAT, name: "Hex Adept", isHomebrew: true, categories: [] } }],
+      options: {
+        class: [{ componentId: 55, componentTypeId: OPTION, definition: { id: 56, entityTypeId: OPTION, name: "Chained" } }],
+        feat: [{ componentId: 500, componentTypeId: FEAT, definition: { id: 55, entityTypeId: OPTION, name: "Hex Choice" } }],
+      },
+      // The class bucket has no homebrew owner, so only the chain can wrap it.
+      ...actions({ class: [action("Chained", 56, OPTION, BONUS)] }),
+    });
+    expect(out).toContain(wrapUntrusted("• Chained"));
+  });
+
+  it("an entity key shared by a homebrew and an official entity wraps (any, not every)", () => {
+    const out = combat({
+      inventory: [
+        { equipped: false, quantity: 1, definition: { id: 600, entityTypeId: ITEM, name: "Wand of Webs", filterType: "Wand", sources: S(145) } },
+        { equipped: false, quantity: 1, isHomebrew: true, definition: { id: 600, entityTypeId: ITEM, name: "Wand of Webs", filterType: "Wand", sources: S(145) } },
+      ],
+      // The class bucket has no homebrew owner, so only the link can wrap it.
+      ...actions({ class: [action("Web", 600, ITEM, BONUS)] }),
+    });
+    expect(out).toContain(wrapUntrusted("• Web"));
+  });
+
+  it("an action naming the stock definition of a custom background is linked to the (untrusted) background", () => {
+    const background = {
+      definition: { id: 701, entityTypeId: BACKGROUND, name: "Soldier", sources: S(145) },
+      customBackground: { definition: { id: 702, entityTypeId: BACKGROUND, name: "My Past", featureName: "Mine" } },
+    };
+    // In the class bucket, which has no homebrew owner, so only the link can wrap it.
+    const out = combat({ background, ...actions({ class: [action("Rally", 701, BACKGROUND, BONUS)] }) });
+    expect(out).toContain(wrapUntrusted("• Rally"));
   });
 });
 
