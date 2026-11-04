@@ -14,6 +14,7 @@
 import {
   beginAuthenticatedSession, anonymousFetch, hasValidSession,
   captureSession, assertSessionCurrent, onSessionInvalidated, SessionChangedError, type SessionSnapshot,
+  AnonymousFetchTimeoutError, CobaltTokenError, CobaltTokenTimeoutError, MalformedCobaltTokenError,
 } from "../session-fetch.js";
 import { getGameConfig, getPublicGameConfig, getSourceIndex, type GameConfig } from "../game-config.js";
 import {
@@ -295,6 +296,40 @@ interface Asker {
 const LOGGED_IN: Asker = { anonymous: false };
 
 /** The asker for a call starting now. */
+/** monster-service answered with a non-OK status: an outage-class failure. */
+class MonsterServiceHttpError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MonsterServiceHttpError";
+  }
+}
+
+/** The game config (CR tables) could not be had, so the D&D Beyond branch can't run. */
+class GameConfigUnavailableError extends Error {
+  constructor() {
+    super("Game config unavailable");
+    this.name = "GameConfigUnavailableError";
+  }
+}
+
+/**
+ * A failure of D&D Beyond being unreachable, as opposed to a bug: a network
+ * error (undici's `TypeError` carries the socket error as `cause`), an abort or
+ * timeout, an HTTP error status, a failed cobalt-token exchange, or no game
+ * config. The "Couldn't look up" output already reports these, so they are not
+ * logged.
+ */
+function isExpectedOutage(e: unknown): boolean {
+  return (e instanceof TypeError && e.cause instanceof Error)
+    || (e instanceof DOMException && (e.name === "AbortError" || e.name === "TimeoutError"))
+    || e instanceof AnonymousFetchTimeoutError
+    || e instanceof MonsterServiceHttpError
+    || e instanceof GameConfigUnavailableError
+    || e instanceof CobaltTokenError
+    || e instanceof CobaltTokenTimeoutError
+    || e instanceof MalformedCobaltTokenError;
+}
+
 function askerNow(): Asker {
   return hasValidSession() ? LOGGED_IN : { anonymous: true };
 }
@@ -351,7 +386,7 @@ async function fetchMonsterList(search: string, take: number, opts: ListOptions 
   if (cached !== undefined) return JSON.parse(cached) as MonsterListResponse;
 
   const resp = await monsterFetch(url, asker);
-  if (!resp.ok) throw new Error(`Monster search failed: ${resp.status} ${resp.statusText}`);
+  if (!resp.ok) throw new MonsterServiceHttpError(`Monster search failed: ${resp.status} ${resp.statusText}`);
   const list = await resp.json() as MonsterListResponse;
   assertSessionCurrent(bound ?? snapshot);
   monsterCache.set(cacheKey, JSON.stringify(list));
@@ -1160,6 +1195,8 @@ export async function getMonsterStats(name: string, opts: { rulesEdition?: Rules
   const requested = opts.rulesEdition ?? "2024";
   // Logged out, monster-service is still asked, anonymously.
   const asker = askerNow();
+  // The session this lookup runs under: a failure after it changed is an account change, not an outage.
+  const snapshot = captureSession();
   // Set when D&D Beyond's only pick is another edition's entry with an unknown CR.
   let unknownElsewhere: UnknownCrResult | null = null;
   // Set when D&D Beyond could not be asked (an error, a timeout, no game config).
@@ -1167,7 +1204,7 @@ export async function getMonsterStats(name: string, opts: { rulesEdition?: Rules
   try {
     const config = await configFor(asker);
     // No CR table, no CR: Open5e answers instead.
-    if (!config) throw new Error("Game config unavailable");
+    if (!config) throw new GameConfigUnavailableError();
     // No extra request: getGameConfig() serves this call from its cache (or its failure cache).
     const index = await getSourceIndex();
     const info = (m: DdbMonster) => classifyEdition(m, index);
@@ -1235,9 +1272,13 @@ export async function getMonsterStats(name: string, opts: { rulesEdition?: Rules
     // An account change must surface, never be papered over with another account's
     // (or Open5e's) answer.
     if (e instanceof SessionChangedError) throw e;
-    // Fall through to Open5e. Stderr only: stdout carries the MCP stream.
+    // Also one that showed up as an aborted request rather than as the error itself.
+    assertSessionCurrent(snapshot);
+    // Fall through to Open5e. Only a bug is logged (an outage is in the output); stderr, because stdout carries the MCP stream.
     ddbFailed = true;
-    process.stderr.write(`[ddb-mcp] monster lookup failed for "${name}": ${e instanceof Error ? e.message : String(e)}\n`);
+    if (!isExpectedOutage(e)) {
+      process.stderr.write(`[ddb-mcp] monster lookup failed for "${name}": ${e instanceof Error ? e.message : String(e)}\n`);
+    }
   }
 
   const o5 = await o5GetMonsterStats(name, requested);

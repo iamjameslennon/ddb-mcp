@@ -14,6 +14,10 @@ vi.mock("../src/session-fetch.js", async (orig) => {
     assertSessionCurrent: vi.fn(),
     onSessionInvalidated: vi.fn(),
     SessionChangedError: real.SessionChangedError,
+    AnonymousFetchTimeoutError: real.AnonymousFetchTimeoutError,
+    CobaltTokenError: real.CobaltTokenError,
+    CobaltTokenTimeoutError: real.CobaltTokenTimeoutError,
+    MalformedCobaltTokenError: real.MalformedCobaltTokenError,
     // The real credential-free fetch: logged-out tests route global fetch and inspect its headers.
     anonymousFetch: real.anonymousFetch,
   };
@@ -29,7 +33,7 @@ vi.mock("../src/open5e.js", () => ({
 import { getMonster, searchMonsters, searchMonstersSection, getMonsterStats, clearMonsterCache, statBlockText } from "../src/tools/monster.js";
 import { rateEncounter } from "../src/tools/encounter.js";
 import { generateTreasure } from "../src/tools/treasure.js";
-import { sessionFetch, hasValidSession, onSessionInvalidated, beginAuthenticatedSession } from "../src/session-fetch.js";
+import { sessionFetch, hasValidSession, onSessionInvalidated, beginAuthenticatedSession, assertSessionCurrent, AnonymousFetchTimeoutError, CobaltTokenError, CobaltTokenTimeoutError, MalformedCobaltTokenError } from "../src/session-fetch.js";
 import { SessionChangedError } from "../src/session-state.js";
 import { stripHtmlRich } from "../src/utils.js";
 import { o5SearchMonstersSection, o5GetMonster, o5GetMonsterStats, o5MonsterInEdition } from "../src/open5e.js";
@@ -2378,20 +2382,77 @@ describe("getMonsterStats: session changes surface, lookup failures are logged",
       .rejects.toBeInstanceOf(SessionChangedError);
   });
 
-  it("any other failure still falls back to Open5e and logs one stderr line", async () => {
-    throwOnMonsterSearch(new TypeError("fetch failed"));
-    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce(NOT_FOUND);
+  /** Runs a lookup and returns the "monster lookup failed" stderr lines it wrote. */
+  async function lookupLog(name = "Goblin"): Promise<{ result: unknown; lines: string[]; stdoutWrites: number }> {
     const write = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     try {
-      expect(await getMonsterStats("Goblin")).toEqual({ status: "unavailable" });
-      const lines = write.mock.calls.map(c => String(c[0])).filter(l => l.includes("monster lookup failed"));
-      expect(lines).toEqual(['[ddb-mcp] monster lookup failed for "Goblin": fetch failed\n']);
-      expect(stdout).not.toHaveBeenCalled();
+      const result = await getMonsterStats(name);
+      return { result, lines: write.mock.calls.map(c => String(c[0])).filter(l => l.includes("monster lookup failed")), stdoutWrites: stdout.mock.calls.length };
     } finally {
       write.mockRestore();
       stdout.mockRestore();
     }
+  }
+
+  it("a bug in the lookup still falls back to Open5e and logs one stderr line, never stdout", async () => {
+    throwOnMonsterSearch(new RangeError("boom"));
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce(NOT_FOUND);
+    const { result, lines, stdoutWrites } = await lookupLog();
+    expect(result).toEqual({ status: "unavailable" });
+    expect(lines).toEqual(['[ddb-mcp] monster lookup failed for "Goblin": boom\n']);
+    expect(stdoutWrites).toBe(0);
+  });
+
+  it.each([
+    ["a network error", () => new TypeError("fetch failed", { cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }) })],
+    ["a cobalt-token HTTP error", () => new CobaltTokenError(503)],
+    ["a cobalt-token timeout", () => new CobaltTokenTimeoutError(30_000)],
+    ["a malformed cobalt token", () => new MalformedCobaltTokenError("not a JWT")],
+    ["an anonymous-fetch timeout", () => new AnonymousFetchTimeoutError(20_000)],
+    ["an abort", () => new DOMException("This operation was aborted", "AbortError")],
+  ])("%s is an expected outage: unavailable, no stderr line", async (_label, make) => {
+    throwOnMonsterSearch(make());
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce(NOT_FOUND);
+    const { result, lines } = await lookupLog();
+    expect(result).toEqual({ status: "unavailable" });
+    expect(lines).toEqual([]);
+  });
+
+  it("an HTTP error from monster-service is an expected outage: no stderr line", async () => {
+    failSearchTerms.add("goblin");
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce(NOT_FOUND);
+    const { result, lines } = await lookupLog();
+    expect(result).toEqual({ status: "unavailable" });
+    expect(lines).toEqual([]);
+  });
+
+  it("no game config is an expected outage: no stderr line", async () => {
+    configAvailable = false;
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce(NOT_FOUND);
+    const { result, lines } = await lookupLog("Wolf");
+    expect(result).toEqual({ status: "unavailable" });
+    expect(lines).toEqual([]);
+  });
+
+  describe("a session change seen only as a failure", () => {
+    // The fetch dies with a plain error (an aborted request), and the session is no longer current.
+    function failBecauseSessionChanged(): void {
+      throwOnMonsterSearch(new DOMException("This operation was aborted", "AbortError"));
+      vi.mocked(assertSessionCurrent).mockImplementation(() => { throw new SessionChangedError(); });
+    }
+    afterEach(() => { vi.mocked(assertSessionCurrent).mockReset(); });
+
+    it("getMonsterStats rethrows SessionChangedError: no Open5e, no unavailable", async () => {
+      failBecauseSessionChanged();
+      await expect(getMonsterStats("Goblin")).rejects.toBeInstanceOf(SessionChangedError);
+      expect(o5GetMonsterStats).not.toHaveBeenCalled();
+    });
+
+    it("rateEncounter rejects with it too", async () => {
+      failBecauseSessionChanged();
+      await expect(rateEncounter([{ count: 4, level: 1 }], [{ name: "Goblin" }, { name: "Orc" }], "2024")).rejects.toBeInstanceOf(SessionChangedError);
+    });
   });
 
   it("a lookup that D&D Beyond answers writes nothing", async () => {

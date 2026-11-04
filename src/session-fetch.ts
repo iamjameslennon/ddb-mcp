@@ -94,6 +94,14 @@ export class MalformedCobaltTokenError extends Error {
   }
 }
 
+/** An anonymous request did not finish within ANONYMOUS_FETCH_TIMEOUT_MS (the abort reason of its deadline). */
+export class AnonymousFetchTimeoutError extends Error {
+  constructor(readonly timeoutMs: number) {
+    super(`request timed out after ${timeoutMs / 1000} s`);
+    this.name = "AnonymousFetchTimeoutError";
+  }
+}
+
 /**
  * The cobalt-token exchange (all its retries included) did not finish within
  * COBALT_TOKEN_TIMEOUT_MS. Callers treat it like an unreachable auth service.
@@ -539,7 +547,7 @@ export async function anonymousFetch(url: string, options: { signal?: AbortSigna
   const timeout = new AbortController();
   // Not cleared on return: the deadline also bounds the caller's body read. Unref'd, so it never holds the process open.
   const timer = setTimeout(
-    () => timeout.abort(new Error(`request timed out after ${ANONYMOUS_FETCH_TIMEOUT_MS / 1000} s`)),
+    () => timeout.abort(new AnonymousFetchTimeoutError(ANONYMOUS_FETCH_TIMEOUT_MS)),
     ANONYMOUS_FETCH_TIMEOUT_MS,
   );
   timer.unref?.();
