@@ -2301,3 +2301,47 @@ describe("a lookup that couldn't reach D&D Beyond is unavailable, not not-found"
     expect(out).not.toContain("not found in DDB or Open5e");
   });
 });
+
+describe("unavailable names in encounter and treasure output (review pins)", () => {
+  const NOT_FOUND = { status: "not-found" } as const;
+  const strip = (out: string) => out.split("\n").filter(l => !l.startsWith("⚠")).join("\n").trim();
+
+  it.each(["2024", "2014"] as const)("%s: an unavailable name adds no XP and no monster count, exactly like a not-found one", async (edition) => {
+    vi.mocked(o5GetMonsterStats).mockImplementation(async () => NOT_FOUND);
+    const party = [{ count: 4, level: 1 }];
+    const baseline = await rateEncounter(party, [{ name: "Zzyzx Nothing" }, { name: "Wolf", count: 2 }], edition);
+    failSearchTerms.add("goblin");
+    const out = await rateEncounter(party, [{ name: "Goblin" }, { name: "Wolf", count: 2 }], edition);
+    expect(out).toContain("Couldn't look up");
+    expect(strip(out)).toBe(strip(baseline));
+    const alone = await rateEncounter(party, [{ name: "Wolf", count: 2 }], edition);
+    expect(strip(out)).toBe(strip(alone));
+    if (edition === "2024") expect(out).toContain("Total XP: 100");
+    else expect(out).toContain("Multiplier:   ×1.5 (2 monsters)");
+  });
+
+  it("warns in the order not-found, unavailable, ambiguous", async () => {
+    extraMonsters = [
+      monster({ id: 8_000_300, name: "Adult Red Dragon", sourceId: 147, sources: sources(147), challengeRatingId: 21 }),
+      monster({ id: 8_000_301, name: "Red Dragon Wyrmling", sourceId: 147, sources: sources(147), challengeRatingId: 8 }),
+    ];
+    failSearchTerms.add("goblin");
+    vi.mocked(o5GetMonsterStats).mockImplementation(async () => NOT_FOUND);
+    const out = await rateEncounter([{ count: 4, level: 5 }], [{ name: "Red Dragon" }, { name: "Goblin" }, { name: "Zzyzx Nothing" }, { name: "Wolf" }], "2024");
+    const warnings = out.split("\n").filter(l => l.startsWith("⚠"));
+    expect(warnings).toHaveLength(3);
+    expect(warnings[0]).toMatch(/^⚠ Not found in compendium .*: Zzyzx Nothing$/);
+    expect(warnings[1]).toBe("⚠ Couldn't look up — D&D Beyond unreachable (supply cr manually): Goblin");
+    expect(warnings[2]).toMatch(/^⚠ Ambiguous: "Red Dragon"/);
+  });
+
+  it("treasure: a real D&D Beyond failure plus an Open5e miss reaches the rendered line through getMonsterStats", async () => {
+    // generateTreasure here uses the real getMonsterStats (this file mocks only the network).
+    failSearchTerms.add("goblin");
+    vi.mocked(o5GetMonsterStats).mockImplementation(async () => NOT_FOUND);
+    const out = await generateTreasure({ monsters: [{ name: "Goblin", count: 1 }], treasureType: "hoard" });
+    expect(out.split("\n")).toContain('  ✗ "Goblin" — couldn\'t look up: D&D Beyond unreachable (supply cr manually)');
+    expect(out).toContain("No treasure rolled");
+    expect(out).not.toContain("not found in DDB or Open5e");
+  });
+});

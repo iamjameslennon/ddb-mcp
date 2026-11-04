@@ -1143,6 +1143,16 @@ type UnknownCrResult = Extract<MonsterStatsResult, { status: "unknown-cr" }>;
  * ambiguous with each candidate's CR instead of picked. Homebrew is skipped too:
  * callers print the returned name as trusted text, and the rating should use
  * official CRs.
+ *
+ * Returns `found`, `not-found`, `unknown-cr` (identified, CR not known),
+ * `ambiguous`, or `unavailable`: the name couldn't be looked up because D&D
+ * Beyond could not be asked (its branch threw: a network or HTTP error, a
+ * timeout, no game config, the typed name's own query failing, or, logged out,
+ * the anonymous fetch failing) AND Open5e did not find it, whether Open5e
+ * failed or simply has no match (the SRD is a small subset, so a miss proves
+ * nothing). When D&D Beyond answered, even with no match, a name Open5e doesn't
+ * find stays `not-found`, even if Open5e itself failed. found, unknown-cr and
+ * ambiguous are unchanged on every path.
  */
 export async function getMonsterStats(name: string, opts: { rulesEdition?: RulesEdition } = {}): Promise<MonsterStatsResult> {
   name = name.trim();
