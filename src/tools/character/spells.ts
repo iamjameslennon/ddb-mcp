@@ -205,7 +205,7 @@ function buildSpellSections(
             const spellName = editions.named(str(def.name), def);
             const lvl = num(def.level);
             const spellStr = lvl === 0 ? spellName : `${spellName} (L${lvl})`;
-            duplicateWarnings.push(wrapIfHomebrew(`  • ${spellStr} — already granted by ${firstLabel}, also in ${label}`, isHomebrewEntry(s)));
+            duplicateWarnings.push(wrapIfHomebrew(`  • ${spellStr} — already granted by ${firstLabel}, also in ${label}`, shownHomebrew(s, spellName)));
             return false;
           }
           seenSpellIds.set(spellId, label);

@@ -16,7 +16,7 @@
  */
 
 import { wrapIfHomebrew } from "../../utils.js";
-import { arr, featureDefinition, isHomebrewClassFeature, isHomebrewEntry, num, obj, signed, str } from "./helpers.js";
+import { arr, featureDefinition, isHomebrewClassFeature, isHomebrewEntry, num, obj, shownHomebrew, signed, str } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, InventoryItem, Mod } from "./types.js";
 import { resolveBackground } from "./features.js";
 import { classSpellLists, isShownClassSpell } from "./spells.js";
@@ -100,8 +100,9 @@ function getAllActions(char: CharData, classes: readonly ClassEntry[]): CharActi
     .filter(({ action: a }) => a != null && !str(a.name).startsWith("Circle Spell") && str(a.name) !== "Initiate a Circle Spell")
     .map(({ bucket, action }) => {
       const granted = entities.get(entityKey(action.componentId, action.componentTypeId));
-      const homebrew = action.isHomebrew === true
-        || (granted ? granted.some(Boolean) : bucketAnyHomebrew(char, classes, bucket));
+      // A nameless action carries no text: it stays plain, as every nameless entry does.
+      const homebrew = str(action.name) !== "" && (action.isHomebrew === true
+        || (granted ? granted.some(Boolean) : bucketAnyHomebrew(char, classes, bucket)));
       return { action, homebrew };
     });
 }
@@ -139,7 +140,7 @@ function formatSpellAction(s: Record<string, unknown>): string {
   const lvl = num(def.level);
   const slotStr = lvl === 0 ? "cantrip" : `${lvl === 1 ? "1st" : lvl === 2 ? "2nd" : lvl === 3 ? "3rd" : `${lvl}th`}-level slot`;
   // A homebrew spell's name is other players' text: the whole line is wrapped.
-  return wrapIfHomebrew(`• ${str(def.name)} (spell, ${slotStr})`, isHomebrewEntry(s));
+  return wrapIfHomebrew(`• ${str(def.name)} (spell, ${slotStr})`, shownHomebrew(s, str(def.name)));
 }
 
 /** `• <name>` for an action, wrapped whole when its granting entity is homebrew. */

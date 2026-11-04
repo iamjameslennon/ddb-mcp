@@ -71,6 +71,31 @@ describe("a nameless homebrew entry keeps its plain empty slot", () => {
     expect(out).not.toContain(OPEN);
   });
 
+  it("as a duplicate spell-grant warning line", () => {
+    const out = sheet({ classSpells: classSpells(spell(3, "", 1, hb)), spells: { race: [spell(3, "", 1, hb)] } }, "spells");
+    expect(out).toContain("\n  •  (L1) — already granted by Spells, also in Racial Trait");
+    expect(out).not.toContain(OPEN);
+  });
+
+  it("as a bonus-action spell line", () => {
+    const out = sheet({ classSpells: classSpells(spell(5, "", 1, { ...hb, activation: { activationType: 3 } })) }, "combat");
+    expect(block(out, "BONUS ACTIONS")).toBe(["BONUS ACTIONS", "•  (spell, 1st-level slot)"].join("\n"));
+    expect(out).not.toContain(OPEN);
+  });
+
+  it("as an action line in REACTIONS and LIMITED USE", () => {
+    const out = sheet({
+      feats: [{ definition: { id: 500, entityTypeId: 1088085227, name: "Hex Sentinel", isHomebrew: true, categories: [] } }],
+      actions: { class: [], race: [], background: null, item: null, feat: [{
+        componentId: 500, componentTypeId: 1088085227, name: "", activation: { activationType: 4 },
+        limitedUse: { maxUses: 2, numberUsed: 0, resetType: 1 },
+      }] },
+    }, "combat");
+    expect(block(out, "REACTIONS")).toBe(["REACTIONS", "• Opportunity Attack", "• "].join("\n"));
+    expect(block(out, "LIMITED USE")).toBe(["LIMITED USE", "•    0 used / 2 max   (Short Rest)"].join("\n"));
+    expect(out).not.toContain(OPEN);
+  });
+
   it("in INVENTORY, including the ×N case merged with an official nameless item", () => {
     const out = sheet({ inventory: [gear(1, "Backpack"), gear(2, "", hb, 3), gear(3, "", {}, 2)] }, "inventory");
     expect(block(out, "INVENTORY")).toBe(["INVENTORY", "  Backpack,  ×5"].join("\n"));
