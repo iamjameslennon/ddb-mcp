@@ -771,3 +771,92 @@ describe("getMonsterStats and the session lifecycle", () => {
     await expect(monster.getMonsterStats("Goblin")).rejects.toBeInstanceOf(ss.SessionChangedError);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// After ddb_logout the monster tools behave as for a never-logged-in user:
+// the anonymous monster-service answer is used, then Open5e. An anonymous answer
+// carries no account data, so a session transition mid-request does not discard
+// it; an authenticated one is still rejected and never cached.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("monster tools after ddb_logout and across session changes (anonymous path)", () => {
+  const CONFIG_URL = "https://www.dndbeyond.com/api/config/json";
+  const config = {
+    challengeRatings: [{ id: 1, value: 1, xp: 200, proficiencyBonus: 2 }],
+    monsterTypes: [{ id: 1, name: "Humanoid" }],
+    alignments: [{ id: 1, name: "Neutral" }],
+    senses: [],
+  };
+  const entry = (name: string) => ({
+    id: 1, name, alignmentId: 1, sizeId: 4, typeId: 1, armorClass: 15,
+    armorClassDescription: "", averageHitPoints: 7, hitPointDice: null,
+    passivePerception: 10, challengeRatingId: 1, isHomebrew: false,
+    isLegendary: false, isMythic: false, stats: [], savingThrows: [],
+    senses: [], movements: [], languageDescription: "", languageNote: "",
+    skillsHtml: "", specialTraitsDescription: "", actionsDescription: "",
+    reactionsDescription: "", legendaryActionsDescription: "",
+    mythicActionsDescription: "", bonusActionsDescription: "",
+  });
+  let urls: string[] = [];
+  /** Names the monster after who asked: no cookie is the anonymous caller. */
+  function serve(onMonsterRequest: () => void = () => {}) {
+    urls = [];
+    fetchMock.mockImplementation(async (url: string, opts?: RequestInit) => {
+      urls.push(url);
+      const cookie = ((opts?.headers ?? {}) as Record<string, string>).Cookie ?? "";
+      const name = cookie.includes("SECRET_A") ? "GoblinAuth" : "GoblinAnon";
+      if (url === COBALT_URL) return jsonResponse({ token: makeJwt("99") });
+      if (url === CONFIG_URL) return jsonResponse({ data: config });
+      if (url.includes(`${MONSTER_SERVICE}/v1/Monster?search=`)) {
+        onMonsterRequest();
+        return jsonResponse({ pagination: { total: 1, currentPage: 1, pages: 1 }, data: [entry(name)] });
+      }
+      if (url.includes(`${MONSTER_SERVICE}/v1/Monster/`)) return jsonResponse({ data: entry(name) });
+      if (url.includes("api.open5e.com")) return jsonResponse({ count: 0, results: [] });
+      return jsonResponse({});
+    });
+  }
+  const open5eRequests = () => urls.filter(u => u.includes("api.open5e.com")).length;
+
+  it("after revoke, searchMonsters uses the anonymous monster-service answer, not Open5e", async () => {
+    setSessionFile(sessionJson("SECRET_A"));
+    serve();
+    const ss = await import("../src/session-state.js");
+    await ss.revokeSession();
+    const out = await monster.searchMonsters({ name: "goblin" });
+    expect(out).toContain("GoblinAnon");
+    expect(open5eRequests()).toBe(0);
+  });
+
+  it("after revoke, getMonster uses the anonymous monster-service answer, not Open5e", async () => {
+    setSessionFile(sessionJson("SECRET_A"));
+    serve();
+    const ss = await import("../src/session-state.js");
+    await ss.revokeSession();
+    const out = await monster.getMonster("GoblinAnon");
+    expect(out).toContain("GoblinAnon");
+    expect(open5eRequests()).toBe(0);
+  });
+
+  it("an authenticated request whose session changes mid-request is still rejected and not cached", async () => {
+    setSessionFile(sessionJson("SECRET_A"));
+    serve(() => setSessionFile(sessionJson("SECRET_B")));
+    const first = await monster.searchMonsters({ name: "goblin" });
+    expect(first).not.toContain("GoblinAuth");
+    serve();
+    const second = await monster.searchMonsters({ name: "goblin" });
+    expect(second).toContain("GoblinAnon"); // account B has no SECRET_A cookie; nothing of A's was cached
+    expect(second).not.toContain("GoblinAuth");
+  });
+
+  it("an anonymous answer survives a login landing mid-request, and is not cached for the logged-in account", async () => {
+    setSessionFile(null);
+    serve(() => setSessionFile(sessionJson("SECRET_A")));
+    const anon = await monster.searchMonsters({ name: "goblin" });
+    expect(anon).toContain("GoblinAnon");
+    expect(open5eRequests()).toBe(0);
+    // Logged in now: the cache must not serve the anonymous accessType map under the logged-in key.
+    serve();
+    const authed = await monster.searchMonsters({ name: "goblin" });
+    expect(authed).toContain("GoblinAuth");
+  });
+});

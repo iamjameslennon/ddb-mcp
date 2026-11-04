@@ -353,6 +353,18 @@ async function monsterFetch(url: string, asker: Asker): Promise<Response> {
 }
 
 /**
+ * The post-fetch session check. An anonymous answer carries no account data and is
+ * cached under its own `anon:` keys (chosen from the asker before the request, so a
+ * login landing mid-request can't move it under a logged-in key), so a session
+ * transition does not invalidate it — and after ddb_logout, when every snapshot
+ * reads as changed, the check would discard a good anonymous answer. An
+ * authenticated answer is still held to its snapshot.
+ */
+function assertCurrentAfter(snapshot: SessionSnapshot, asker: Asker): void {
+  if (!asker.anonymous) assertSessionCurrent(snapshot);
+}
+
+/**
  * Anonymous answers carry a different accessType map (everything not free is
  * locked), so they are cached under their own keys; logged-in keys are unchanged.
  */
@@ -404,7 +416,7 @@ async function fetchMonsterList(search: string, take: number, opts: ListOptions 
     // Only the body parse: a SyntaxError anywhere else is not an outage.
     throw e instanceof SyntaxError ? new MonsterServiceParseError(e.message, { cause: e }) : e;
   }
-  assertSessionCurrent(bound ?? snapshot);
+  assertCurrentAfter(bound ?? snapshot, asker);
   monsterCache.set(cacheKey, JSON.stringify(list));
   return list;
 }
@@ -427,7 +439,7 @@ async function fetchCandidates(
     fetchMonsterList(typed, take, { sourceIds, asker, bound }),
     ...others.map(alias => fetchMonsterList(alias, take, { sourceIds, asker, bound }).catch(() => null)),
   ]);
-  assertSessionCurrent(snapshot);
+  assertCurrentAfter(snapshot, asker);
   const access: AccessMap = new Map();
   for (const list of [first, ...rest]) mergeAccess(access, list);
   return { data: dedupeById([first, ...rest].flatMap(list => list?.data ?? [])), access, snapshot };
@@ -455,7 +467,7 @@ async function fetchMonsterPages(
   const skips: number[] = [];
   for (let skip = PAGE_SIZE; skip < Math.min(first.pagination.total, limit); skip += PAGE_SIZE) skips.push(skip);
   const rest = await Promise.all(skips.map(skip => fetchMonsterList(search, PAGE_SIZE, { sourceIds, skip, asker })));
-  assertSessionCurrent(snapshot);
+  assertCurrentAfter(snapshot, asker);
   const seen = new Set<number>();
   const data = [first, ...rest].flatMap(page => page.data ?? []).filter(m => !seen.has(m.id) && seen.add(m.id));
   const access: AccessMap = new Map();
@@ -484,7 +496,7 @@ async function fetchMonsterDetail(id: number, asker: Asker): Promise<MonsterSing
   const resp = await monsterFetch(`${MONSTER_SERVICE}/v1/Monster/${id}`, asker);
   if (!resp.ok) throw new Error(`Monster fetch failed: ${resp.status} ${resp.statusText}`);
   const detail = await resp.json() as MonsterSingleResponse;
-  assertSessionCurrent(snapshot);
+  assertCurrentAfter(snapshot, asker);
   monsterCache.set(cacheKey, JSON.stringify(detail));
   return detail;
 }
@@ -745,7 +757,7 @@ async function monsterSearchParts(params: MonsterSearchParams): Promise<string |
   const snapshot = captureSession();
   const [typed, ...aliases] = searchTerm ? twinAliases(searchTerm, monsterTwin) : [""];
   const results = await Promise.all([fetchTerm(typed), ...aliases.map(alias => fetchTerm(alias).catch(() => null))]);
-  assertSessionCurrent(snapshot);
+  assertCurrentAfter(snapshot, asker);
   // `total` is the alias totals' sum minus the duplicates met while merging:
   // exact when every scan is complete, an upper bound otherwise.
   const seen = new Set<number>();
