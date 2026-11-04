@@ -13,6 +13,7 @@ vi.mock("../src/session-fetch.js", async (orig) => {
     captureSession: vi.fn(() => ({})),
     assertSessionCurrent: vi.fn(),
     onSessionInvalidated: vi.fn(),
+    SessionChangedError: real.SessionChangedError,
     // The real credential-free fetch: logged-out tests route global fetch and inspect its headers.
     anonymousFetch: real.anonymousFetch,
   };
@@ -29,6 +30,7 @@ import { getMonster, searchMonsters, searchMonstersSection, getMonsterStats, cle
 import { rateEncounter } from "../src/tools/encounter.js";
 import { generateTreasure } from "../src/tools/treasure.js";
 import { sessionFetch, hasValidSession, onSessionInvalidated, beginAuthenticatedSession } from "../src/session-fetch.js";
+import { SessionChangedError } from "../src/session-state.js";
 import { stripHtmlRich } from "../src/utils.js";
 import { o5SearchMonstersSection, o5GetMonster, o5GetMonsterStats, o5MonsterInEdition } from "../src/open5e.js";
 
@@ -2343,5 +2345,62 @@ describe("unavailable names in encounter and treasure output (review pins)", () 
     expect(out.split("\n")).toContain('  ✗ "Goblin" — couldn\'t look up: D&D Beyond unreachable (supply cr manually)');
     expect(out).toContain("No treasure rolled");
     expect(out).not.toContain("not found in DDB or Open5e");
+  });
+});
+
+describe("getMonsterStats: session changes surface, lookup failures are logged", () => {
+  const NOT_FOUND = { status: "not-found" } as const;
+
+  /** monster-service list requests throw `error`; everything else keeps its route. */
+  function throwOnMonsterSearch(error: Error): void {
+    const route = vi.mocked(sessionFetch).getMockImplementation()!;
+    vi.mocked(sessionFetch).mockImplementation(async (input: string | URL | Request, ...rest: unknown[]) => {
+      if (String(input).includes("/v1/Monster?search=")) throw error;
+      return (route as (...a: unknown[]) => Promise<Response>)(input, ...rest);
+    });
+  }
+
+  it("a SessionChangedError is rethrown: no Open5e, no unavailable", async () => {
+    throwOnMonsterSearch(new SessionChangedError());
+    await expect(getMonsterStats("Goblin")).rejects.toBeInstanceOf(SessionChangedError);
+    expect(o5GetMonsterStats).not.toHaveBeenCalled();
+  });
+
+  it("rateEncounter rejects cleanly with several lookups in flight", async () => {
+    throwOnMonsterSearch(new SessionChangedError());
+    const names = ["Goblin", "Orc", "Wolf", "Ogre", "Troll", "Zombie", "Lich"].map(name => ({ name }));
+    await expect(rateEncounter([{ count: 4, level: 1 }], names, "2024")).rejects.toBeInstanceOf(SessionChangedError);
+  });
+
+  it("generateTreasure rejects with the session error too", async () => {
+    throwOnMonsterSearch(new SessionChangedError());
+    await expect(generateTreasure({ monsters: [{ name: "Goblin", count: 1 }, { name: "Orc", count: 1 }], treasureType: "hoard" }))
+      .rejects.toBeInstanceOf(SessionChangedError);
+  });
+
+  it("any other failure still falls back to Open5e and logs one stderr line", async () => {
+    throwOnMonsterSearch(new TypeError("fetch failed"));
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce(NOT_FOUND);
+    const write = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      expect(await getMonsterStats("Goblin")).toEqual({ status: "unavailable" });
+      const lines = write.mock.calls.map(c => String(c[0])).filter(l => l.includes("monster lookup failed"));
+      expect(lines).toEqual(['[ddb-mcp] monster lookup failed for "Goblin": fetch failed\n']);
+      expect(stdout).not.toHaveBeenCalled();
+    } finally {
+      write.mockRestore();
+      stdout.mockRestore();
+    }
+  });
+
+  it("a lookup that D&D Beyond answers writes nothing", async () => {
+    const write = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await getMonsterStats("Zzyzx Nothing");
+      expect(write.mock.calls.map(c => String(c[0])).filter(l => l.includes("monster lookup failed"))).toEqual([]);
+    } finally {
+      write.mockRestore();
+    }
   });
 });

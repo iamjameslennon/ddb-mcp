@@ -13,7 +13,7 @@
 
 import {
   beginAuthenticatedSession, anonymousFetch, hasValidSession,
-  captureSession, assertSessionCurrent, onSessionInvalidated, type SessionSnapshot,
+  captureSession, assertSessionCurrent, onSessionInvalidated, SessionChangedError, type SessionSnapshot,
 } from "../session-fetch.js";
 import { getGameConfig, getPublicGameConfig, getSourceIndex, type GameConfig } from "../game-config.js";
 import {
@@ -1231,9 +1231,13 @@ export async function getMonsterStats(name: string, opts: { rulesEdition?: Rules
         }
       }
     }
-  } catch {
-    // fall through to Open5e
+  } catch (e) {
+    // An account change must surface, never be papered over with another account's
+    // (or Open5e's) answer.
+    if (e instanceof SessionChangedError) throw e;
+    // Fall through to Open5e. Stderr only: stdout carries the MCP stream.
     ddbFailed = true;
+    process.stderr.write(`[ddb-mcp] monster lookup failed for "${name}": ${e instanceof Error ? e.message : String(e)}\n`);
   }
 
   const o5 = await o5GetMonsterStats(name, requested);
