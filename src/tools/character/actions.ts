@@ -9,10 +9,16 @@
  * spellbook prepared/ritual gate applied), and computes "X used / Y max"
  * for limited-use features (including stat-mod-keyed uses like Bardic
  * Inspiration). Output is pre-formatted lines.
+ *
+ * A homebrew spell's line, and the line of an action granted by a homebrew
+ * entity (resolved by componentId / componentTypeId, see grantingEntities),
+ * is other players' text and is wrapped whole.
  */
 
-import { arr, num, obj, signed, str } from "./helpers.js";
-import type { CharData, ClassEntry, CoreStats } from "./types.js";
+import { wrapIfHomebrew } from "../../utils.js";
+import { arr, featureDefinition, isHomebrewClassFeature, isHomebrewEntry, num, obj, signed, str } from "./helpers.js";
+import type { CharData, ClassEntry, CoreStats, InventoryItem, Mod } from "./types.js";
+import { resolveBackground } from "./features.js";
 import { computeWeaponAttacks } from "./weapons.js";
 
 export interface Actions {
@@ -22,14 +28,79 @@ export interface Actions {
   limitedUseFeatures: string[];   // ["• Action Surge   0 used / 1 max   (Short Rest)", …]
 }
 
+// ── Granting entities ────────────────────────────────────────────────────────
+// D&D Beyond links an action to the definition that grants it: the action's
+// componentId / componentTypeId are that definition's id / entityTypeId (live
+// 2026-11-04, 56 characters: class features 12168134, racial traits 1960452172,
+// feats 1088085227, class and feat options 258900837, race options 306912077).
+// Matching both fields matters: ids repeat across entity types.
+const entityKey = (id: unknown, typeId: unknown): string => `${num(typeId)}:${num(id)}`;
+
+/** Every definition an action can name, keyed by entityKey, with whether it is homebrew (as features.ts decides). */
+function grantingEntities(char: CharData, classes: readonly ClassEntry[]): Map<string, boolean[]> {
+  const entities = new Map<string, boolean[]>();
+  const add = (def: unknown, homebrew: boolean) => {
+    const d = obj(def);
+    if (!num(d.id) || !num(d.entityTypeId)) return;
+    const key = entityKey(d.id, d.entityTypeId);
+    entities.set(key, [...(entities.get(key) ?? []), homebrew]);
+  };
+  for (const cls of classes) {
+    for (const cf of arr<unknown>(cls.classFeatures)) add(featureDefinition(cf), isHomebrewClassFeature(cf, cls));
+  }
+  const race = obj(char.race);
+  for (const t of arr<Record<string, unknown>>(race.racialTraits)) add(t.definition, isHomebrewEntry(t, race));
+  for (const f of arr<Mod>(char.feats)) add(f.definition, isHomebrewEntry(f));
+  for (const i of arr<InventoryItem>(char.inventory)) add(i.definition, isHomebrewEntry(i));
+  const { bgDef, untrusted } = resolveBackground(char);
+  add(bgDef, untrusted);
+  if (obj(obj(char.background).definition) !== bgDef) add(obj(char.background).definition, untrusted);
+  // An option (a choice made under a class feature, racial trait or feat) is
+  // linked to that entity the same way; it is homebrew when it or its owner is.
+  for (const options of Object.values(obj(char.options))) {
+    for (const o of arr<Record<string, unknown>>(options)) {
+      const owner = entities.get(entityKey(o.componentId, o.componentTypeId));
+      if (owner) add(o.definition, isHomebrewEntry(o) || owner.some(Boolean));
+      else if (isHomebrewEntry(o)) add(o.definition, true);
+    }
+  }
+  return entities;
+}
+
+/**
+ * Whether every entity that could have granted an action in `bucket` is
+ * homebrew, for an action that names no entity on the sheet (e.g. a Tasha's
+ * optional class feature that isn't in classFeatures). Only then is its
+ * granting entity known to be homebrew; otherwise the line stays plain.
+ */
+function bucketAllHomebrew(char: CharData, classes: readonly ClassEntry[], bucket: string): boolean {
+  const owners: boolean[] =
+    bucket === "class" ? classes.map(c => isHomebrewEntry(c))
+    : bucket === "race" ? (char.race != null && typeof char.race === "object" ? [isHomebrewEntry(char.race)] : [])
+    : bucket === "feat" ? arr<Mod>(char.feats).map(f => isHomebrewEntry(f))
+    : bucket === "item" ? arr<InventoryItem>(char.inventory).map(i => isHomebrewEntry(i))
+    : bucket === "background" ? (char.background != null && typeof char.background === "object" ? [resolveBackground(char).untrusted] : [])
+    : [];
+  return owners.length > 0 && owners.every(Boolean);
+}
+
 // ── Action source extraction ─────────────────────────────────────────────────
-function getAllActions(char: CharData): Record<string, unknown>[] {
+interface CharAction { action: Record<string, unknown>; homebrew: boolean }
+
+function getAllActions(char: CharData, classes: readonly ClassEntry[]): CharAction[] {
   // activation.activationType: 1=action, 3=bonus action, 4=reaction, 8=special (skip)
   // Filter Circle Spell entries — these leak from the Dark Bargain campaign feature
   // and don't represent real character abilities on the website.
-  return Object.values(obj(char.actions))
-    .flatMap(v => arr<Record<string, unknown>>(v))
-    .filter(a => a != null && !str(a.name).startsWith("Circle Spell") && str(a.name) !== "Initiate a Circle Spell");
+  const entities = grantingEntities(char, classes);
+  return Object.entries(obj(char.actions))
+    .flatMap(([bucket, v]) => arr<Record<string, unknown>>(v).map(action => ({ bucket, action })))
+    .filter(({ action: a }) => a != null && !str(a.name).startsWith("Circle Spell") && str(a.name) !== "Initiate a Circle Spell")
+    .map(({ bucket, action }) => {
+      const granted = entities.get(entityKey(action.componentId, action.componentTypeId));
+      const homebrew = action.isHomebrew === true
+        || (granted ? granted.some(Boolean) : bucketAllHomebrew(char, classes, bucket));
+      return { action, homebrew };
+    });
 }
 
 const activationType = (a: Record<string, unknown>): number =>
@@ -59,21 +130,25 @@ function formatSpellAction(s: Record<string, unknown>): string {
   const def = obj(s.definition);
   const lvl = num(def.level);
   const slotStr = lvl === 0 ? "cantrip" : `${lvl === 1 ? "1st" : lvl === 2 ? "2nd" : lvl === 3 ? "3rd" : `${lvl}th`}-level slot`;
-  return `• ${str(def.name)} (spell, ${slotStr})`;
+  // A homebrew spell's name is other players' text: the whole line is wrapped.
+  return wrapIfHomebrew(`• ${str(def.name)} (spell, ${slotStr})`, isHomebrewEntry(s));
 }
+
+/** `• <name>` for an action, wrapped whole when its granting entity is homebrew. */
+const actionLine = ({ action, homebrew }: CharAction): string => wrapIfHomebrew(`• ${str(action.name)}`, homebrew);
 
 // ── Limited-use features ─────────────────────────────────────────────────────
 function buildLimitedUseLines(
-  allActions: readonly Record<string, unknown>[],
+  allActions: readonly CharAction[],
   statMods: readonly number[],
 ): string[] {
   return allActions
-    .filter(a => {
+    .filter(({ action: a }) => {
       const lu = obj(a.limitedUse);
       // maxUses=0 with statModifierUsesId means uses = that stat modifier (e.g. CHA for Bardic Inspiration)
       return lu.maxUses !== undefined && (num(lu.maxUses) > 0 || lu.statModifierUsesId != null);
     })
-    .map(a => {
+    .map(({ action: a, homebrew }) => {
       const lu = obj(a.limitedUse);
       const resetLabels: Record<number, string> = { 1: "Short Rest", 2: "Long Rest" };
       const reset = resetLabels[num(lu.resetType)] ?? "Rest";
@@ -83,14 +158,14 @@ function buildLimitedUseLines(
           ? `${signed(statMods[num(lu.statModifierUsesId) - 1])} (stat)`
           : "?";
       const used = num(lu.numberUsed);
-      return `• ${str(a.name)}   ${used} used / ${maxStr} max   (${reset})`;
+      return wrapIfHomebrew(`• ${str(a.name)}   ${used} used / ${maxStr} max   (${reset})`, homebrew);
     });
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
 export function computeActions(core: CoreStats): Actions {
   const { char, classes, statMods } = core;
-  const allActions = getAllActions(char);
+  const allActions = getAllActions(char, classes);
   const allCharSpells = getCharSpellsForActions(char, classes);
 
   // Spell activationTypes (from rule-data): 1=Action, 2=No Action, 3=Bonus Action, 4=Reaction, 8=Special
@@ -101,13 +176,13 @@ export function computeActions(core: CoreStats): Actions {
   // activationType 1 = action (weapon masteries — skip, shown in ACTIONS already)
   // activationType 8 = special/passive — skip
   const bonusActions = [
-    ...allActions.filter(a => activationType(a) === 3).map(a => `• ${str(a.name)}`),
+    ...allActions.filter(a => activationType(a.action) === 3).map(actionLine),
     ...bonusActionSpells,
   ];
   // Reactions: Opportunity Attack is universal, then class reactions, then reaction spells
   const reactions: string[] = [
     "• Opportunity Attack",
-    ...allActions.filter(a => activationType(a) === 4).map(a => `• ${str(a.name)}`),
+    ...allActions.filter(a => activationType(a.action) === 4).map(actionLine),
     ...reactionSpells,
   ];
   const limitedUseFeatures = buildLimitedUseLines(allActions, statMods);

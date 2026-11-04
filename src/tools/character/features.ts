@@ -83,7 +83,12 @@ function buildRacialTraitLines(char: CharData): string[] {
 }
 
 // ── Background feature ───────────────────────────────────────────────────────
-function buildBackgroundFeature(char: CharData, resolveTemplates: TemplateResolver): BackgroundFeature {
+/**
+ * The background definition the sheet shows, and whether its text is
+ * untrusted: a custom background the player wrote, or a homebrew one (it can
+ * come from someone else's shared collection).
+ */
+export function resolveBackground(char: CharData): { bgDef: Record<string, unknown>; untrusted: boolean } {
   // For custom backgrounds, featureName may reflect a feat name rather than
   // the actual background feature. Check customBackground first if present.
   const bgObj = obj(char.background);
@@ -94,15 +99,18 @@ function buildBackgroundFeature(char: CharData, resolveTemplates: TemplateResolv
     : obj(customBg.definition);
   const usedCustom = Object.keys(customBgDef).length > 0;
   const bgDef = usedCustom ? customBgDef : obj(bgObj.definition);
+  return { bgDef, untrusted: usedCustom || isHomebrewEntry(bgObj, bgDef) };
+}
+
+function buildBackgroundFeature(char: CharData, resolveTemplates: TemplateResolver): BackgroundFeature {
+  const { bgDef, untrusted } = resolveBackground(char);
   return {
     name: str(bgDef.featureName),
     isFeat: bgDef.featureIsFeat === true,
     descSnippet: bgDef.featureDescription
       ? resolveTemplates(stripHtml(str(bgDef.featureDescription))).slice(0, 300)
       : "",
-    // A custom background's feature text is written by the player. Homebrew
-    // backgrounds can come from someone else's shared collection.
-    untrusted: usedCustom || isHomebrewEntry(bgObj, bgDef),
+    untrusted,
   };
 }
 
