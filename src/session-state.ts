@@ -178,7 +178,7 @@ export function writeSessionFile(json: string, expected?: string): void {
     // it) since `expected` was read: renaming now would put the old account's
     // session back. Drop the temp file and leave the session file alone.
     try { rmSync(tmpPath, { force: true }); } catch { /* best-effort */ }
-    throw new Error("Session file changed before the rewrite; not replaced.");
+    throw new SessionLayerError("Session file changed before the rewrite; not replaced.");
   }
   renameSync(tmpPath, SESSION_PATH);
 }
@@ -235,6 +235,22 @@ function readSessionFileOrNull(): string | null {
 }
 
 // ── Typed cancellation ────────────────────────────────────────────────────────
+
+/** Base of the errors the session layer raises about the session itself (not about a request). */
+export class SessionLayerError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "SessionLayerError";
+  }
+}
+
+/** No saved session (or none usable): the caller must run ddb_login. */
+export class NoSessionError extends SessionLayerError {
+  constructor(message = "No session found. Please run ddb_login first to authenticate.") {
+    super(message);
+    this.name = "NoSessionError";
+  }
+}
 
 /**
  * Thrown when an operation's captured session snapshot is no longer the
@@ -532,7 +548,7 @@ export async function revokeSession(): Promise<void> {
     const detail = errors
       .map(e => (e instanceof Error ? e.message : String(e)))
       .join("; ");
-    throw new Error(`Session revocation completed with cleanup errors: ${detail}`, {
+    throw new SessionLayerError(`Session revocation completed with cleanup errors: ${detail}`, {
       cause: errors[0],
     });
   }

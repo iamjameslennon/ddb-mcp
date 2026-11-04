@@ -25,6 +25,8 @@ import { join } from "path";
 import { homedir } from "os";
 import {
   SESSION_PATH,
+  SessionLayerError,
+  NoSessionError,
   captureSession,
   assertSessionCurrent,
   invalidateSessionState,
@@ -45,6 +47,8 @@ export {
   SESSION_PATH,
   tightenSessionPermissions,
   SessionChangedError,
+  SessionLayerError,
+  NoSessionError,
   onSessionInvalidated,
   captureSession,
   assertSessionCurrent,
@@ -270,7 +274,7 @@ async function fetchWithRetry(
 
     return resp;
   }
-  throw new Error("Unreachable");
+  throw new SessionLayerError("Unreachable");
 }
 
 /**
@@ -288,7 +292,7 @@ async function snapshotFetch(
   hooks: FetchHooks = {},
 ): Promise<Response> {
   if (snapshot.state.kind !== "authenticated") {
-    throw new Error("No session found. Please run ddb_login first to authenticate.");
+    throw new NoSessionError();
   }
   const cookieHeader = buildCookieHeader(snapshot.state.cookies, url);
   const signal = mergeSignals(snapshot.signal, options.signal ?? null);
@@ -491,7 +495,7 @@ export interface AuthenticatedSession {
 export async function beginAuthenticatedSession(): Promise<AuthenticatedSession> {
   const snapshot = captureSession();
   if (snapshot.state.kind !== "authenticated") {
-    throw new Error("No session found. Please run ddb_login first to authenticate.");
+    throw new NoSessionError();
   }
   const { token, userId } = await getCobaltTokenForSnapshot(snapshot);
   return {
@@ -510,7 +514,7 @@ export async function beginAuthenticatedSession(): Promise<AuthenticatedSession>
 export async function getCobaltToken(): Promise<{ token: string; userId: string }> {
   const snapshot = captureSession();
   if (snapshot.state.kind !== "authenticated") {
-    throw new Error("No session found. Please run ddb_login first to authenticate.");
+    throw new NoSessionError();
   }
   return getCobaltTokenForSnapshot(snapshot);
 }
@@ -525,7 +529,7 @@ export async function getCobaltToken(): Promise<{ token: string; userId: string 
 export async function sessionFetch(url: string, options: RequestInit = {}, hooks: FetchHooks = {}): Promise<Response> {
   const snapshot = captureSession();
   if (snapshot.state.kind !== "authenticated") {
-    throw new Error("No session found. Please run ddb_login first to authenticate.");
+    throw new NoSessionError();
   }
   return snapshotFetch(snapshot, url, options, undefined, hooks);
 }

@@ -15,6 +15,8 @@ vi.mock("../src/session-fetch.js", async (orig) => {
     onSessionInvalidated: vi.fn(),
     SessionChangedError: real.SessionChangedError,
     AnonymousFetchTimeoutError: real.AnonymousFetchTimeoutError,
+    NoSessionError: real.NoSessionError,
+    SessionLayerError: real.SessionLayerError,
     CobaltTokenError: real.CobaltTokenError,
     CobaltTokenTimeoutError: real.CobaltTokenTimeoutError,
     MalformedCobaltTokenError: real.MalformedCobaltTokenError,
@@ -33,8 +35,8 @@ vi.mock("../src/open5e.js", () => ({
 import { getMonster, searchMonsters, searchMonstersSection, getMonsterStats, clearMonsterCache, statBlockText } from "../src/tools/monster.js";
 import { rateEncounter } from "../src/tools/encounter.js";
 import { generateTreasure } from "../src/tools/treasure.js";
-import { sessionFetch, hasValidSession, onSessionInvalidated, beginAuthenticatedSession, assertSessionCurrent, AnonymousFetchTimeoutError, CobaltTokenError, CobaltTokenTimeoutError, MalformedCobaltTokenError } from "../src/session-fetch.js";
-import { SessionChangedError } from "../src/session-state.js";
+import { sessionFetch, hasValidSession, onSessionInvalidated, beginAuthenticatedSession, assertSessionCurrent, AnonymousFetchTimeoutError, NoSessionError, CobaltTokenError, CobaltTokenTimeoutError, MalformedCobaltTokenError } from "../src/session-fetch.js";
+import { SessionChangedError, SessionLayerError } from "../src/session-state.js";
 import { stripHtmlRich } from "../src/utils.js";
 import { o5SearchMonstersSection, o5GetMonster, o5GetMonsterStats, o5MonsterInEdition } from "../src/open5e.js";
 
@@ -2410,6 +2412,9 @@ describe("getMonsterStats: session changes surface, lookup failures are logged",
     ["a cobalt-token timeout", () => new CobaltTokenTimeoutError(30_000)],
     ["a malformed cobalt token", () => new MalformedCobaltTokenError("not a JWT")],
     ["an anonymous-fetch timeout", () => new AnonymousFetchTimeoutError(20_000)],
+    ["a bare TypeError", () => new TypeError("fetch failed")],
+    ["a no-session error", () => new NoSessionError()],
+    ["another session-layer error", () => new SessionLayerError("Session file changed before the rewrite; not replaced.")],
     ["an abort", () => new DOMException("This operation was aborted", "AbortError")],
   ])("%s is an expected outage: unavailable, no stderr line", async (_label, make) => {
     throwOnMonsterSearch(make());
@@ -2417,6 +2422,27 @@ describe("getMonsterStats: session changes surface, lookup failures are logged",
     const { result, lines } = await lookupLog();
     expect(result).toEqual({ status: "unavailable" });
     expect(lines).toEqual([]);
+  });
+
+  it("a body that isn't JSON is an expected outage: no stderr line", async () => {
+    const route = vi.mocked(sessionFetch).getMockImplementation()!;
+    vi.mocked(sessionFetch).mockImplementation(async (input: string | URL | Request, ...rest: unknown[]) => {
+      if (String(input).includes("/v1/Monster?search=")) {
+        return { ok: true, status: 200, statusText: "", json: async () => { throw new SyntaxError("Unexpected token < in JSON"); } } as unknown as Response;
+      }
+      return (route as (...a: unknown[]) => Promise<Response>)(input, ...rest);
+    });
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce(NOT_FOUND);
+    const { result, lines } = await lookupLog();
+    expect(result).toEqual({ status: "unavailable" });
+    expect(lines).toEqual([]);
+  });
+
+  it("a SyntaxError from anywhere else is a bug and is logged", async () => {
+    throwOnMonsterSearch(new SyntaxError("bad code"));
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce(NOT_FOUND);
+    const { lines } = await lookupLog();
+    expect(lines).toEqual(['[ddb-mcp] monster lookup failed for "Goblin": bad code\n']);
   });
 
   it("an HTTP error from monster-service is an expected outage: no stderr line", async () => {

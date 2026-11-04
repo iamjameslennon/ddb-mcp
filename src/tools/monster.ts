@@ -14,7 +14,7 @@
 import {
   beginAuthenticatedSession, anonymousFetch, hasValidSession,
   captureSession, assertSessionCurrent, onSessionInvalidated, SessionChangedError, type SessionSnapshot,
-  AnonymousFetchTimeoutError, CobaltTokenError, CobaltTokenTimeoutError, MalformedCobaltTokenError,
+  AnonymousFetchTimeoutError, SessionLayerError, CobaltTokenError, CobaltTokenTimeoutError, MalformedCobaltTokenError,
 } from "../session-fetch.js";
 import { getGameConfig, getPublicGameConfig, getSourceIndex, type GameConfig } from "../game-config.js";
 import {
@@ -304,6 +304,14 @@ class MonsterServiceHttpError extends Error {
   }
 }
 
+/** monster-service's response body was not valid JSON (an error page, say): an outage-class failure. */
+class MonsterServiceParseError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "MonsterServiceParseError";
+  }
+}
+
 /** The game config (CR tables) could not be had, so the D&D Beyond branch can't run. */
 class GameConfigUnavailableError extends Error {
   constructor() {
@@ -314,13 +322,15 @@ class GameConfigUnavailableError extends Error {
 
 /**
  * A failure of D&D Beyond being unreachable, as opposed to a bug: a network
- * error (undici's `TypeError` carries the socket error as `cause`), an abort or
+ * error (a `TypeError`), an unparseable response body, a session-layer error, an abort or
  * timeout, an HTTP error status, a failed cobalt-token exchange, or no game
  * config. The "Couldn't look up" output already reports these, so they are not
  * logged.
  */
 function isExpectedOutage(e: unknown): boolean {
-  return (e instanceof TypeError && e.cause instanceof Error)
+  return e instanceof TypeError // undici's network failure; a bare one is counted too (owner ruling)
+    || e instanceof SessionLayerError // no session, a rewrite race, a revoke cleanup: the session layer, not our logic
+    || e instanceof MonsterServiceParseError
     || (e instanceof DOMException && (e.name === "AbortError" || e.name === "TimeoutError"))
     || e instanceof AnonymousFetchTimeoutError
     || e instanceof MonsterServiceHttpError
@@ -387,7 +397,13 @@ async function fetchMonsterList(search: string, take: number, opts: ListOptions 
 
   const resp = await monsterFetch(url, asker);
   if (!resp.ok) throw new MonsterServiceHttpError(`Monster search failed: ${resp.status} ${resp.statusText}`);
-  const list = await resp.json() as MonsterListResponse;
+  let list: MonsterListResponse;
+  try {
+    list = await resp.json() as MonsterListResponse;
+  } catch (e) {
+    // Only the body parse: a SyntaxError anywhere else is not an outage.
+    throw e instanceof SyntaxError ? new MonsterServiceParseError(e.message, { cause: e }) : e;
+  }
   assertSessionCurrent(bound ?? snapshot);
   monsterCache.set(cacheKey, JSON.stringify(list));
   return list;
