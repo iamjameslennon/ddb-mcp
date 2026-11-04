@@ -403,7 +403,7 @@ async function fetchMonsterList(search: string, take: number, opts: ListOptions 
   // Boundary check before the cache read, so a pending account change clears
   // the cache rather than serving the previous account's list.
   const snapshot = captureSession();
-  if (bound) assertSessionCurrent(bound);
+  if (bound && !asker.anonymous) assertSessionCurrent(bound);
   const cached = monsterCache.get(cacheKey);
   if (cached !== undefined) return JSON.parse(cached) as MonsterListResponse;
 

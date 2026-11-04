@@ -860,3 +860,46 @@ describe("monster tools after ddb_logout and across session changes (anonymous p
     expect(authed).toContain("GoblinAuth");
   });
 });
+
+describe("the available-sources hint after ddb_logout", () => {
+  const CONFIG_URL = "https://www.dndbeyond.com/api/config/json";
+  const config = {
+    challengeRatings: [{ id: 1, value: 1, xp: 200, proficiencyBonus: 2 }],
+    monsterTypes: [{ id: 1, name: "Humanoid" }],
+    alignments: [{ id: 1, name: "Neutral" }],
+    senses: [],
+    sourceCategories: [{ id: 24, name: "5.5e Core Rules" }],
+    sources: [
+      { id: 147, name: "MM-2024", description: "Monster Manual", sourceURL: "sources/dnd/mm-2024", sourceCategoryId: 24 },
+      { id: 148, name: "br-2024", description: "D&D Beyond Basic Rules", sourceURL: "sources/dnd/br-2024", sourceCategoryId: 24 },
+    ],
+  };
+  const goblin = {
+    id: 1, name: "Goblin", alignmentId: 1, sizeId: 4, typeId: 1, armorClass: 15,
+    armorClassDescription: "", averageHitPoints: 7, hitPointDice: null,
+    passivePerception: 10, challengeRatingId: 1, isHomebrew: false,
+    isLegendary: false, isMythic: false, stats: [], savingThrows: [],
+    senses: [], movements: [], languageDescription: "", languageNote: "",
+    skillsHtml: "", sourceId: 147, sources: [{ sourceId: 147, pageNumber: 1, sourceType: 1 }],
+  };
+
+  it("after revoke, a name missing from the requested book still lists where it is available", async () => {
+    setSessionFile(sessionJson("SECRET_A"));
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === COBALT_URL) return jsonResponse({ token: makeJwt("99") });
+      if (url === CONFIG_URL) return jsonResponse({ data: config });
+      if (url.includes(`${MONSTER_SERVICE}/v1/Monster?search=`)) {
+        // Filtered by the requested book: nothing. Unfiltered: the Goblin in the Monster Manual.
+        const data = url.includes("sources=") ? [] : [goblin];
+        return jsonResponse({ pagination: { total: data.length, currentPage: 1, pages: 1 }, data });
+      }
+      return jsonResponse({ count: 0, results: [] });
+    });
+    const ss = await import("../src/session-state.js");
+    await ss.revokeSession();
+    const out = await monster.getMonster("Goblin", { source: "br-2024" });
+    expect(out).toContain('No "Goblin" entry found in source "br-2024".');
+    expect(out).toContain('Available sources for "Goblin": Monster Manual');
+    expect(out).not.toContain("Try ddb_search_monsters");
+  });
+});
