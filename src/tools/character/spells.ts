@@ -16,7 +16,7 @@
 
 import { isConcentrationSpell } from "../reference.js";
 import { wrapIfHomebrew } from "../../utils.js";
-import { arr, isHomebrewEntry, num, obj, signed, splitListLines, statNames, str } from "./helpers.js";
+import { arr, isHomebrewEntry, num, obj, shownHomebrew, signed, splitListLines, statNames, str } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, ListEntry } from "./types.js";
 import type { CharacterEditions } from "./editions.js";
 
@@ -163,13 +163,17 @@ function buildSpellSections(
   for (const { isSpellbook, spells: allSpells } of classSpellLists(char, classes)) {
     const cantrips = allSpells
       .filter(s => num(obj(s.definition).level) === 0)
-      .map(s => ({ text: editions.named(str(obj(s.definition).name), s.definition), homebrew: isHomebrewEntry(s) }));
+      .map(s => {
+        const name = editions.named(str(obj(s.definition).name), s.definition);
+        return { text: name, homebrew: shownHomebrew(s, name) };
+      });
     const leveled = allSpells
       .filter(s => num(obj(s.definition).level) > 0 && isShownClassSpell(s, isSpellbook))
       .map(s => {
         const def = obj(s.definition);
         const ritual = isSpellbook && def.ritual ? " [ritual]" : "";
-        return { text: `${editions.named(str(def.name), def)} (L${num(def.level)}${ritual})`, homebrew: isHomebrewEntry(s) };
+        const name = editions.named(str(def.name), def);
+        return { text: `${name} (L${num(def.level)}${ritual})`, homebrew: shownHomebrew(s, name) };
       });
     // Homebrew spells are other players' text: they leave the list for a wrapped line below it.
     sections.push(...splitListLines("  ", "Cantrips", cantrips), ...splitListLines("  ", "Spells", leveled));
@@ -210,7 +214,7 @@ function buildSpellSections(
         .map(s => {
           const def = obj(s.definition);
           const n = editions.named(str(def.name), def);
-          return { text: n ? (num(def.level) === 0 ? n : `${n} (L${num(def.level)})`) : "", homebrew: isHomebrewEntry(s) };
+          return { text: n ? (num(def.level) === 0 ? n : `${n} (L${num(def.level)})`) : "", homebrew: shownHomebrew(s, n) };
         })
         // Nameless entries are dropped; duplicates by text within the official and the homebrew entries.
         .filter(e => {

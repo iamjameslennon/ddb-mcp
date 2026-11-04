@@ -15,7 +15,7 @@
  */
 
 import { wrapIfHomebrew, wrapUntrusted } from "../../utils.js";
-import { isHomebrewEntry, num, obj, str } from "./helpers.js";
+import { num, obj, shownHomebrew, str } from "./helpers.js";
 import type { CharData, CoreStats, ListEntry } from "./types.js";
 
 export interface Inventory {
@@ -45,7 +45,7 @@ export function computeInventory(core: CoreStats): Inventory {
     const iName = editions.named(str(def.name), def);
     const filterType = str(def.filterType);
     const qty = num(i.quantity) || 1;
-    const homebrew = isHomebrewEntry(i);
+    const homebrew = shownHomebrew(i, iName);
     if (i.isAttuned) attuned++;
     if (i.equipped && filterType === "Armor") {
       const ac2 = num(def.armorClass);

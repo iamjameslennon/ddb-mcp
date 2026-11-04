@@ -10,7 +10,7 @@
  */
 
 import { wrapIfHomebrew } from "../../utils.js";
-import { arr, isBonusMod, isHomebrewEntry, isProficiencyMod, num, obj, signed, str } from "./helpers.js";
+import { arr, isBonusMod, isProficiencyMod, num, obj, shownHomebrew, signed, str } from "./helpers.js";
 import type { CoreStats } from "./types.js";
 
 export function computeWeaponAttacks(core: CoreStats): string[] {
@@ -81,7 +81,7 @@ export function computeWeaponAttacks(core: CoreStats): string[] {
 
     // Consolidate duplicates by key. A homebrew weapon is never merged with
     // an official one, so its line can be wrapped on its own.
-    const homebrew = isHomebrewEntry(i);
+    const homebrew = shownHomebrew(i, wLabel);
     const key = `${Number(homebrew)}|${wLabel}${dmgDice}`;
     const existing = weaponInventoryMap.get(key);
     if (existing) {

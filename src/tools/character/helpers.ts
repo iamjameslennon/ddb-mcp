@@ -72,6 +72,14 @@ export const isHomebrewClassFeature = (feature: unknown, cls: unknown): boolean 
 };
 
 /**
+ * Whether a printed entry is placed as homebrew: the record is homebrew and
+ * the name the line prints is not empty. A nameless entry carries no text, so
+ * it keeps its plain empty slot (owner ruling).
+ */
+export const shownHomebrew = (record: unknown, printedName: string): boolean =>
+  printedName !== "" && isHomebrewEntry(record);
+
+/**
  * A comma list split by homebrew: `<indent><label>: a, b` with the official
  * entries, then the homebrew ones on a wrapped `<indent><label> (homebrew): c`
  * line. A line is printed when it has any entries (a nameless entry keeps its
