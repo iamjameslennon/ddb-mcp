@@ -1,7 +1,21 @@
-// `<` or an entity-encoded `<`, optional `/` (whitespace either side), then
-// the tag name; `[^<>]*>` after a literal `<` form is consumed when present.
-// The scan stops at the next `<`, so it stays linear.
-const DELIMITER_RE = /<\s*\/?\s*untrusted_dndbeyond_content(?:[^<>]*>)?|(?:&lt;|&#60;|&#x3c;)\s*\/?\s*untrusted_dndbeyond_content/gi;
+// A `<` (literal, or `&lt;` / `&lt` / `&#0*60;` / `&#x0*3c;`), optional
+// whitespace, an optional slash (literal, or `&#0*47;` / `&#x0*2f;` /
+// `&sol;`) and whitespace, then the tag name, case-insensitive.
+// - No word boundary after the name: `<untrusted_dndbeyond_contentX` is
+//   neutralised too (fails closed; owner ruling).
+// - After a literal `<` form a following `[^<>]*>` is consumed, so an ordinary
+//   tag reads as one marker. After an entity form nothing more is consumed: a
+//   trailing `&gt;` stays in place (owner ruling), since scanning on to a `>`
+//   could swallow unrelated text.
+// Linear time: the second whitespace run sits inside the optional slash group
+// (adjacent `\s*\/?\s*` was quadratic on a `<` followed by a long whitespace
+// run), and the `[^<>]*` scan stops at the next `<`.
+const SLASH = String.raw`(?:\/|&#0*47;|&#x0*2f;|&sol;)`;
+const TAG_NAME = String.raw`\s*(?:${SLASH}\s*)?untrusted_dndbeyond_content`;
+const DELIMITER_RE = new RegExp(
+  String.raw`<${TAG_NAME}(?:[^<>]*>)?|(?:&lt;?|&#0*60;|&#x0*3c;)${TAG_NAME}`,
+  "gi",
+);
 
 /**
  * Wrap free-text content that originates from D&D Beyond users — scraped page
@@ -11,12 +25,9 @@ const DELIMITER_RE = /<\s*\/?\s*untrusted_dndbeyond_content(?:[^<>]*>)?|(?:&lt;|
  * content can't close the block early and pose as trusted output.
  */
 export function wrapUntrusted(text: string): string {
-  // Neutralises the tag name whatever follows it: `<`, optional whitespace,
-  // optional `/`, optional whitespace, then the name, with or without a `>`
-  // (an attribute holding `<`, or a name split across joined list entries,
-  // could otherwise keep it). A following `[^<>]*>` is consumed so an ordinary
-  // tag still reads as one marker. The entity-encoded `<` forms (`&lt;`,
-  // `&#60;`, `&#x3c;`) are neutralised too.
+  // Neutralises the tag name whatever follows it, with or without a `>` (an
+  // attribute holding `<`, or a name split across joined list entries, could
+  // otherwise keep it), in its literal and entity-encoded forms (DELIMITER_RE).
   const sanitized = text.replace(DELIMITER_RE, "[removed-delimiter]");
   return `<untrusted_dndbeyond_content>\n${sanitized}\n</untrusted_dndbeyond_content>`;
 }
