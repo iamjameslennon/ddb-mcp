@@ -19,6 +19,7 @@ import { wrapIfHomebrew } from "../../utils.js";
 import { arr, featureDefinition, isHomebrewClassFeature, isHomebrewEntry, num, obj, signed, str } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, InventoryItem, Mod } from "./types.js";
 import { resolveBackground } from "./features.js";
+import { classSpellLists, isShownClassSpell } from "./spells.js";
 import { computeWeaponAttacks } from "./weapons.js";
 
 export interface Actions {
@@ -111,18 +112,23 @@ const activationType = (a: Record<string, unknown>): number =>
 // ── Bonus-action and reaction spells ─────────────────────────────────────────
 function getCharSpellsForActions(char: CharData, classes: readonly ClassEntry[]): Record<string, unknown>[] {
   // Bonus-action and reaction spells — activationType 3=bonus action, 4=reaction.
-  // Apply the same prepared/ritual filter used in the main SPELLS section for spellbook
-  // classes (Wizards) so unprepared non-ritual spells don't bleed into these sections.
+  // The class spells are read as the SPELLS section reads them (classSpellLists:
+  // `spells`, else the 2024 `classSpells` shape) with its spellbook gate
+  // (isShownClassSpell), so unprepared non-ritual Wizard spells don't bleed in.
+  // A spell granted twice (two classes, or a class and a racial trait) is
+  // listed once: the first by definition id, else by name.
+  const seen = new Set<string>();
   return [
-    ...arr<Record<string, unknown>>(char.classSpells).flatMap(cs => {
-      const classEntry = classes.find(c => c.id === cs.characterClassId);
-      const isSpellbook = str(obj(classEntry?.definition ?? {}).name) === "Wizard";
-      return arr<Record<string, unknown>>(cs.spells).filter(s =>
-        !isSpellbook || s.prepared === true || obj(s.definition).ritual === true
-      );
-    }),
+    ...classSpellLists(char, classes).flatMap(({ isSpellbook, spells }) => spells.filter(s => isShownClassSpell(s, isSpellbook))),
     ...Object.values(obj(char.spells)).flatMap(v => arr<Record<string, unknown>>(v)),
-  ].filter(Boolean);
+  ].filter(s => {
+    if (!s) return false;
+    const def = obj(s.definition);
+    const key = num(def.id) ? `id:${num(def.id)}` : `name:${str(def.name)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 const spellActivationType = (s: Record<string, unknown>): number =>

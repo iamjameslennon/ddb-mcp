@@ -97,7 +97,7 @@ function buildSlotLines(char: CharData, classes: readonly ClassEntry[]): string[
 }
 
 // ── Class spell lists ────────────────────────────────────────────────────────
-interface ClassSpellList {
+export interface ClassSpellList {
   className: string;
   isSpellbook: boolean;
   spells: Record<string, unknown>[];
@@ -105,7 +105,7 @@ interface ClassSpellList {
 
 // Each char.classSpells entry with its class's name. Ungated: callers apply the
 // spellbook gate (isShownClassSpell) themselves.
-function classSpellLists(char: CharData, classes: readonly ClassEntry[]): ClassSpellList[] {
+export function classSpellLists(char: CharData, classes: readonly ClassEntry[]): ClassSpellList[] {
   return arr<Record<string, unknown>>(char.classSpells).map(cs => {
     // Try characterClassId first; fall back to id/classId for 2024-rules format
     const classEntry = classes.find(c =>
@@ -124,7 +124,7 @@ function classSpellLists(char: CharData, classes: readonly ClassEntry[]): ClassS
 
 // Spellbook (Wizard) gate: a leveled spell shows only when prepared or a
 // ritual; cantrips always show.
-function isShownClassSpell(s: Record<string, unknown>, isSpellbook: boolean): boolean {
+export function isShownClassSpell(s: Record<string, unknown>, isSpellbook: boolean): boolean {
   const def = obj(s.definition);
   if (num(def.level) === 0 || !isSpellbook) return true;
   return s.prepared === true || def.ritual === true;

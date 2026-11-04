@@ -76,6 +76,47 @@ describe("bonus-action and reaction spell lines", () => {
   });
 });
 
+describe("bonus-action and reaction spells read the class spells as the SPELLS section does", () => {
+  const spell = (id: number, name: string, level: number, activationType: number, extra: Record<string, unknown> = {}) =>
+    ({ definition: { id, name, level, activation: { activationType }, sources: S(145), ...extra } });
+  const wizard = { ...FIGHTER, definition: { ...(FIGHTER.definition as Record<string, unknown>), name: "Wizard" } };
+
+  it("reads the 2024 classSpells[].classSpells shape, wrapping a homebrew spell", () => {
+    const out = combat({ classSpells: [{ characterClassId: 1, spells: [], classSpells: [
+      spell(1, "Misty Step", 2, BONUS),
+      spell(2, "Hex Dash", 1, BONUS, { isHomebrew: true }),
+      spell(3, "Shield", 1, REACTION),
+    ] }] });
+    expect(block(out, "BONUS ACTIONS")).toBe([
+      "BONUS ACTIONS", "• Misty Step (spell, 2nd-level slot)", wrapUntrusted("• Hex Dash (spell, 1st-level slot)"),
+    ].join("\n"));
+    expect(block(out, "REACTIONS")).toBe(["REACTIONS", "• Opportunity Attack", "• Shield (spell, 1st-level slot)"].join("\n"));
+  });
+
+  it("matches the class by the 2024 entry's id, and applies the spellbook gate: cantrips always, leveled spells when prepared or a ritual", () => {
+    const out = combat({ classes: [wizard], classSpells: [{ id: 1, spells: [], classSpells: [
+      spell(1, "Unprepared Step", 2, BONUS),
+      { ...spell(2, "Prepared Step", 2, BONUS), prepared: true },
+      spell(3, "Ritual Step", 1, BONUS, { ritual: true }),
+      spell(4, "Quick Spark", 0, BONUS),
+    ] }] });
+    expect(block(out, "BONUS ACTIONS")).toBe([
+      "BONUS ACTIONS",
+      "• Prepared Step (spell, 2nd-level slot)",
+      "• Ritual Step (spell, 1st-level slot)",
+      "• Quick Spark (spell, cantrip)",
+    ].join("\n"));
+  });
+
+  it("lists a spell granted by a class and by another source once", () => {
+    const out = combat({
+      classSpells: [{ characterClassId: 1, spells: [], classSpells: [spell(3, "Shield", 1, REACTION)] }],
+      spells: { race: [spell(3, "Shield", 1, REACTION)], item: [spell(3, "Shield", 1, REACTION)] },
+    });
+    expect(block(out, "REACTIONS")).toBe(["REACTIONS", "• Opportunity Attack", "• Shield (spell, 1st-level slot)"].join("\n"));
+  });
+});
+
 // ── char.actions lines, by granting entity ──────────────────────────────────
 describe("char.actions lines", () => {
   it("a homebrew class feature's action is wrapped in BONUS ACTIONS and LIMITED USE; an official one stays plain", () => {
