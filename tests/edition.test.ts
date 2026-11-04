@@ -4,7 +4,7 @@ import {
   normalizeName, createTwinNamer, twinNames, twinAliases, classOwnerTwinKey, editionSourceId, entrySourceIds, bookChoiceNote, alsoInLine,
   dedupeById, dedupeByKey, definitionTiebreak, monsterTiebreak,
   selectByEdition, lookupByName, groupAndSelect,
-  cappedList, rulesLine, reasonLine, renameLine, RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, PARTY_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, editionTag, searchHeader, open5eSearchHeader, searchFooter, ambiguityMessage,
+  cappedList, rulesLine, reasonLine, renameLine, RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, PARTY_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, lookupSourceNote, editionTag, searchHeader, open5eSearchHeader, searchFooter, ambiguityMessage,
   lockedLineSuffix, lockedSwapSummary, lockedEntriesNote, availableElsewhereHint, HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO,
   loggedOutReason, LOGGED_OUT_RESTRICTED_NOTE, NOT_LOGGED_IN_SUFFIX,
   characterMainEdition, characterTag, characterRulesLine, classifyForEdition,
@@ -768,6 +768,37 @@ describe("other single-lookup lines", () => {
     expect(sourceNote("xgte", "2014", "2024")).toBe(`(source "xgte" is a 2014 book — its entries are listed whatever rules_edition says)`);
     expect(sourceNote("mm-2024", "2024", "2024")).toBeNull();
     expect(sourceNote("mm-2014", "2014", "2014")).toBeNull();
+  });
+
+  describe("lookupSourceNote (a source get: the shown entry against the request)", () => {
+    it("is silent when the shown entry is the requested edition, whatever the book's edition", () => {
+      expect(lookupSourceNote("cos", "2014", "2024", "2024")).toBeNull();
+      expect(lookupSourceNote("mm-2024", "2024", "2024", "2024")).toBeNull();
+      expect(lookupSourceNote("mm-2024", "2024", "2014", "2014")).toBeNull();
+    });
+
+    it("keeps sourceNote's wording when the shown entry is the book's edition", () => {
+      expect(lookupSourceNote("xgte", "2014", "2014", "2024")).toBe(sourceNote("xgte", "2014", "2024"));
+      expect(lookupSourceNote("mm-2024", "2024", "2024", "2014")).toBe(sourceNote("mm-2024", "2024", "2014"));
+    });
+
+    it("names both editions for a reprint of the other edition", () => {
+      expect(lookupSourceNote("cos", "2014", "2024", "2014"))
+        .toBe(`(source "cos" is a 2014 book, but this entry is 2024 text — shown whatever rules_edition says)`);
+      expect(lookupSourceNote("mm-2024", "2024", "2014", "2024"))
+        .toBe(`(source "mm-2024" is a 2024 book, but this entry is 2014 text — shown whatever rules_edition says)`);
+    });
+
+    it("names only the entry's edition when the book's is not 2014/2024", () => {
+      expect(lookupSourceNote("mixed", "unstated", "2014", "2024"))
+        .toBe(`(this entry from source "mixed" is 2014 text — shown whatever rules_edition says)`);
+    });
+
+    it("falls back to the book's note when the shown entry is not 2014/2024", () => {
+      expect(lookupSourceNote("xgte", "2014", "third-party", "2024")).toBe(sourceNote("xgte", "2014", "2024"));
+      expect(lookupSourceNote("xgte", "2014", "unstated", "2014")).toBeNull();
+      expect(lookupSourceNote("odd", "unstated", "third-party", "2024")).toBeNull();
+    });
   });
 
   it("ambiguityMessage lists at most 20 and counts the rest", () => {

@@ -231,14 +231,18 @@ describe("dual-edition entries (adapter.dualEdition, decision 4)", () => {
     ]);
   });
 
-  it("lookupCatalog: the note names the book's edition, not the shown entry's (a 2024 reprint in a 2014 book)", () => {
-    // The entry is in a 2014 book but is 2024 text, so rules_edition 2024 is honoured.
+  it("lookupCatalog: a 2024 reprint in a 2014 book gets a note only when 2024 is not what was asked (carry-over ap)", () => {
     const reprint = entry(40, "Reprinted Blade", [148, 1]);
     const book = resolveSource(INDEX, "basic-rules-2014")!;
-    const noted = lookupCatalog([reprint], "Reprinted Blade", "2024", flat(), INDEX, book);
-    expect(noted?.info.ruleset).toBe("2024");
-    expect(noted?.rulesLines).toContain('(source "basic-rules-2014" is a 2014 book — its entries are listed whatever rules_edition says)');
-    expect(lookupCatalog([reprint], "Reprinted Blade", "2014", flat(), INDEX, book)?.rulesLines.join("\n")).not.toContain("whatever rules_edition says");
+    // rules_edition 2024 is honoured by the 2024 text, so there is nothing to say.
+    const met = lookupCatalog([reprint], "Reprinted Blade", "2024", flat(), INDEX, book);
+    expect(met?.info.ruleset).toBe("2024");
+    expect(met?.rulesLines.join("\n")).not.toContain("whatever rules_edition says");
+    // rules_edition 2014 is not met: the note says so and names the book's real edition.
+    expect(lookupCatalog([reprint], "Reprinted Blade", "2014", flat(), INDEX, book)?.rulesLines).toEqual([
+      "Rules: 2024 · D&D Beyond Basic Rules",
+      '(source "basic-rules-2014" is a 2014 book, but this entry is 2024 text — shown whatever rules_edition says)',
+    ]);
   });
 
   // The real snapshot ids of the two Dungeon Master's Guides.

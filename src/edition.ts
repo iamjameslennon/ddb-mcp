@@ -639,6 +639,25 @@ export function sourceNote(source: string, bookRuleset: RulesEdition, requested:
   return `(source "${source}" is a ${bookRuleset} book — its entries are listed whatever rules_edition says)`;
 }
 
+/**
+ * The source note of a single lookup (a get given `source`): a note only when
+ * the shown entry is not the requested edition, since `source` won. When the
+ * entry is the book's edition the wording is sourceNote's; a reprint of the
+ * other edition names both, and a 2014/2024 entry in a book that is neither
+ * (live: Legacy Bullywug in egtw, category 2, [third-party]) names the entry's
+ * only (carry-over ap). A shown entry that is not 2014/2024 keeps the book's
+ * note, as searches do, so a third-party book's own entries get none.
+ */
+export function lookupSourceNote(source: string, bookRuleset: Ruleset, shown: Ruleset, requested: RulesEdition): string | null {
+  if (!isEdition(shown)) return isEdition(bookRuleset) ? sourceNote(source, bookRuleset, requested) : null;
+  if (shown === requested) return null;
+  if (bookRuleset === shown) return sourceNote(source, bookRuleset, requested);
+  const tail = `is ${shown} text — shown whatever rules_edition says)`;
+  return isEdition(bookRuleset)
+    ? `(source "${source}" is a ${bookRuleset} book, but this entry ${tail}`
+    : `(this entry from source "${source}" ${tail}`;
+}
+
 /** Inline tag placed immediately after an entry's name: "[2024]", "[edition not stated]", … */
 export function editionTag(info: EditionInfo): string {
   return `[${info.ruleset === "unstated" ? NOT_STATED : info.ruleset}]`;

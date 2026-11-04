@@ -359,7 +359,7 @@ server.tool(
 // ─── ddb_get_monster ──────────────────────────────────────────────────────────
 server.tool(
   "ddb_get_monster",
-  "Get the full stat block for a specific monster from the D&D Beyond compendium. Matches by name: exact, then partial, then D&D Beyond's closest hit (with source, only an exact name in that book counts). Shows the rules_edition version, or the other edition when that is the only one found or the only one available to the account (the output says which). A source picks a specific book and wins over rules_edition; a book of the other edition adds a note. Works logged out (free D&D Beyond content; locked content shows the SRD text when there is one, else a notice to log in), and falls back to the Open5e SRD when D&D Beyond can't be reached. source: \"homebrew\" requires login. " + RULES_EDITION_TOOL_NOTE,
+  "Get the full stat block for a specific monster from the D&D Beyond compendium. Matches by name: exact, then partial, then D&D Beyond's closest hit (with source, only an exact name in that book counts). Shows the rules_edition version, or the other edition when that is the only one found or the only one available to the account (the output says which). A source picks a specific book and wins over rules_edition; when the version shown is not the rules_edition one, a note says so. Works logged out (free D&D Beyond content; locked content shows the SRD text when there is one, else a notice to log in), and falls back to the Open5e SRD when D&D Beyond can't be reached. source: \"homebrew\" requires login. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().min(1).describe("Monster name (e.g. 'Beholder', 'Adult Red Dragon')"),
     source: z.string().optional()

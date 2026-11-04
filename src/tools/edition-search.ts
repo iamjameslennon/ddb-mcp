@@ -29,8 +29,8 @@
 
 import {
   classifyEdition, classifyForEdition, editionSourceId, editionSourceIdFor, editionTag, isDualEdition, isEdition, groupAndSelect, lookupByName, definitionTiebreak,
-  rulesLine, renameLine, sourceNote, searchHeader, bookChoiceNote, alsoInLine, HOMEBREW_INFO, HOMEBREW_SOURCE_BOOK,
-  type EditionInfo, type EditionMarkers, type RulesEdition, type SourceIndex, type TiebreakFields, type TwinNamer,
+  rulesLine, renameLine, sourceNote, lookupSourceNote, searchHeader, bookChoiceNote, alsoInLine, HOMEBREW_INFO, HOMEBREW_SOURCE_BOOK,
+  type EditionInfo, type EditionMarkers, type RulesEdition, type Ruleset, type SourceIndex, type TiebreakFields, type TwinNamer,
 } from "../edition.js";
 import { inSources, sourceLabel, withSourceCaveat, type ResolvedSource } from "../source-filter.js";
 
@@ -269,15 +269,20 @@ function bookNoteSuffix<U>(
 // ── Selection ─────────────────────────────────────────────────────────────────
 
 /**
- * The source note of a `source` call: the book's edition against `requested`,
- * or null. Both gets and searches describe the book, not the entry shown.
+ * The source note of a `source` call, or null. A search (no `shown`) compares
+ * the book's edition with `requested`, since its lines carry their own tags. A
+ * get passes the shown entry's ruleset and is noted only when that entry is not
+ * the requested edition, the wording naming the book's real edition
+ * (lookupSourceNote, carry-over ap).
  */
 export function sourceNoteFor(
   source: Pick<ResolvedSource, "query" | "ids">,
   requested: RulesEdition,
   index: SourceIndex,
+  shown?: Ruleset,
 ): string | null {
   const bookRuleset = sourceRuleset(source, index);
+  if (shown !== undefined) return lookupSourceNote(source.query, bookRuleset, shown, requested);
   return isEdition(bookRuleset) ? sourceNote(source.query, bookRuleset, requested) : null;
 }
 
@@ -508,8 +513,8 @@ function selectNested<T>(
  * A single lookup (get_*): lookupByName over the catalog, or over the book's
  * entries when `source` is given. `rulesLines` go directly under the title, one
  * line per element: the rules line (and, without `source`, its reason), a
- * rename line, then either the source note (the book's edition against
- * `requested`) or an "also in" line naming other books with a same-edition version.
+ * rename line, then either the source note (the shown entry's edition against
+ * `requested`, naming the book's: lookupSourceNote) or an "also in" line naming other books with a same-edition version.
  */
 export function lookupCatalog<T>(
   all: readonly T[],
@@ -536,7 +541,7 @@ export function lookupCatalog<T>(
   const rulesLines = rulesLine(shown, { reason: source ? undefined : found.reason }).split("\n");
   if (found.renamed) rulesLines.push(renameLine(found.renamed.name2014, found.renamed.name2024));
   if (source) {
-    const note = sourceNoteFor(source, requested, index);
+    const note = sourceNoteFor(source, requested, index, shown.ruleset);
     if (note) rulesLines.push(note);
   } else {
     const choice = bookChoice(found.entry, found.alternatives, classify.sourceId, index);

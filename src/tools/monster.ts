@@ -470,7 +470,7 @@ async function availableSourcesFor(name: string, index: SourceIndex, asker: Aske
 interface StatBlockExtras {
   reason?: RulesLineReason;
   renamed?: { name2014: string; name2024: string };
-  /** A sourceNote() line. */
+  /** A source note (sourceNoteFor with the shown entry: lookupSourceNote). */
   note?: string | null;
   /** An availableElsewhereHint() line. */
   hint?: string | null;
@@ -951,7 +951,7 @@ export async function getMonster(
       detail = await fetchMonsterDetail(picked.entry.id, asker);
       const shown = info(detail.data);
       extras = {
-        note: sourceNoteFor({ query: source, ids: sourceIds }, requested, index),
+        note: sourceNoteFor({ query: source, ids: sourceIds }, requested, index, shown.ruleset),
         // Only 2014/2024 entries are twins, so only they can be shown under
         // another name than the query's (as in lookupByName).
         renamed: isEdition(shown.ruleset) ? renamedFromQuery(monsterName, detail.data.name) : undefined,

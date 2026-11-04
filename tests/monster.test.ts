@@ -631,13 +631,29 @@ describe("searchMonsters", () => {
     expect(await getMonster("Zombie", { source: "mm-2024" })).not.toContain("whatever rules_edition says");
   });
 
-  it("a get's source note names the book's edition, not the shown entry's (a 2024 reprint in a 2014 book)", async () => {
+  it("a get of a 2024 reprint in a 2014 book notes only an unmet rules_edition (carry-over ap)", async () => {
     extraMonsters = [monster({ id: 8_000_310, name: "Crypt Reprint", sourceId: 147, sources: sources(147, 6) })];
-    const note = '(source "cos" is a 2014 book — its entries are listed whatever rules_edition says)';
-    const out = await getMonster("Crypt Reprint", { source: "cos" });
-    expect(out).toContain("Rules: 2024");
-    expect(out).toContain(note);
-    expect(await getMonster("Crypt Reprint", { source: "cos", rulesEdition: "2014" })).not.toContain("whatever rules_edition says");
+    const met = await getMonster("Crypt Reprint", { source: "cos" });
+    expect(met).toContain("Rules: 2024");
+    expect(met).not.toContain("whatever rules_edition says");
+    const unmet = await getMonster("Crypt Reprint", { source: "cos", rulesEdition: "2014" });
+    expect(unmet).toContain("Rules: 2024");
+    expect(unmet).toContain('(source "cos" is a 2014 book, but this entry is 2024 text — shown whatever rules_edition says)');
+    // A search still describes the book: its lines carry their own tags.
+    expect((await searchMonsters({ name: "Crypt Reprint", source: "cos" })).split("\n")[1])
+      .toBe('(source "cos" is a 2014 book — its entries are listed whatever rules_edition says)');
+  });
+
+  it("a get of a Legacy entry in a book that is not 2014/2024 notes the unmet rules_edition (live: Bullywug in egtw)", async () => {
+    // Explorer's Guide to Wildemount (id 59) is in category 2, which classifies [third-party].
+    extraMonsters = [monster({ id: 8_000_320, name: "Wildemount Bullywug", isLegacy: true, sourceId: 59, sources: sources(59) })];
+    const unmet = await getMonster("Wildemount Bullywug", { source: "egtw" });
+    expect(unmet).toContain("Rules: 2014");
+    expect(unmet).toContain('(this entry from source "egtw" is 2014 text — shown whatever rules_edition says)');
+    expect(await getMonster("Wildemount Bullywug", { source: "egtw", rulesEdition: "2014" })).not.toContain("whatever rules_edition says");
+    // The book's own (third-party) entries get no note: there is no edition to contradict.
+    extraMonsters = [monster({ id: 8_000_321, name: "Wildemount Native", sourceId: 59, sources: sources(59) })];
+    expect(await getMonster("Wildemount Native", { source: "egtw" })).not.toContain("whatever rules_edition says");
   });
 
   it("filters by source server-side, including source-only searches", async () => {
