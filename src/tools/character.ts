@@ -14,7 +14,7 @@ import {
 } from "../session-fetch.js";
 import type { AuthenticatedSession } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
-import { getSourceIndex } from "../game-config.js";
+import { getSourceIndex, LOGGED_OUT_CHARACTER_INDEX_WAIT_MS } from "../game-config.js";
 import { writeFileSync, mkdirSync, realpathSync } from "fs";
 import { join, resolve, relative, basename, dirname, isAbsolute } from "path";
 import { homedir } from "os";
@@ -104,7 +104,7 @@ export async function parseCharacter(
   // The index fetch runs alongside the character fetch (getSourceIndex never
   // rejects); a failed fetch withdraws it, as nothing will read it.
   const indexCtl = new AbortController();
-  const indexPromise = getSourceIndex({ signal: indexCtl.signal });
+  const indexPromise = getSourceIndex({ signal: indexCtl.signal, loggedOutWaitMs: LOGGED_OUT_CHARACTER_INDEX_WAIT_MS });
   const { json, notice } = await fetchCharacter(characterId).catch((err: unknown) => { indexCtl.abort(); throw err; });
   const raw = JSON.parse(json) as Record<string, unknown>;
   return withNotice(parseCharacterData(raw, sections, await indexPromise), notice);

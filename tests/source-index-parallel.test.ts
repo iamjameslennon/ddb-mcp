@@ -96,3 +96,23 @@ describe("a failed load withdraws the index it started (minors C #4)", () => {
     expect(signal?.aborted).toBe(true);
   });
 });
+
+describe("a character call caps its logged-out index wait", () => {
+  const sites: Array<[string, () => Promise<unknown>, boolean]> = [
+    ["parseCharacter", async () => (await import("../src/tools/character.js")).parseCharacter("12345678"), true],
+    ["getDefinition", async () => (await import("../src/tools/character.js")).getDefinition("12345678", "sword"), true],
+    // getParty needs a login, so it keeps the plain wait.
+    ["getParty", async () => (await import("../src/tools/party.js")).getParty("999"), false],
+    ["searchRaces", async () => (await import("../src/tools/reference.js")).searchRaces({ name: "elf" }), false],
+  ];
+
+  it.each(sites)("%s", async (_name, call, capped) => {
+    index.getSourceIndex.mockReturnValue(new Promise(() => {}));
+    fetchMock.mockImplementation(async (url: unknown) =>
+      new Response("{}", { status: String(url) === COBALT_URL ? 401 : 404 }));
+    await call().catch(() => undefined);
+    const opts = index.getSourceIndex.mock.calls[0][0] as { loggedOutWaitMs?: number } | undefined;
+    const { LOGGED_OUT_CHARACTER_INDEX_WAIT_MS } = await import("../src/game-config.js");
+    expect(opts?.loggedOutWaitMs).toBe(capped ? LOGGED_OUT_CHARACTER_INDEX_WAIT_MS : undefined);
+  });
+});

@@ -13,7 +13,7 @@
 
 import { stripHtml as stripHtmlFull, wrapIfHomebrew } from "../../utils.js";
 import { classifyEdition, editionTag, rulesLine, type EditionInfo, type EditionMarkers, type SourceIndex } from "../../edition.js";
-import { getSourceIndex } from "../../game-config.js";
+import { getSourceIndex, LOGGED_OUT_CHARACTER_INDEX_WAIT_MS } from "../../game-config.js";
 import { fetchCharacter, withNotice } from "../character.js";
 import { computeCharacterEditions, type CharacterEditions } from "./editions.js";
 import { featureDefinition, isHomebrewClassFeature, isHomebrewEntry, levenshteinDistance } from "./helpers.js";
@@ -276,7 +276,7 @@ export async function getDefinition(
 ): Promise<string> {
   // Alongside the character fetch; a failed fetch withdraws it, as nothing will read it.
   const indexCtl = new AbortController();
-  const indexPromise = getSourceIndex({ signal: indexCtl.signal });
+  const indexPromise = getSourceIndex({ signal: indexCtl.signal, loggedOutWaitMs: LOGGED_OUT_CHARACTER_INDEX_WAIT_MS });
   const { json, notice } = await fetchCharacter(characterId).catch((err: unknown) => { indexCtl.abort(); throw err; });
   const raw = JSON.parse(json) as Record<string, unknown>;
   const char = (raw?.data ?? raw) as Record<string, unknown>;

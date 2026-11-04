@@ -59,6 +59,13 @@ const CONFIG_FAILURE_TTL_MS = 60_000;
  * whatever it settles with later records nothing.
  */
 export const CONFIG_FETCH_TIMEOUT_MS = 10_000;
+/**
+ * How long a logged-out character call (ddb_get_character, ddb_character_lookup)
+ * waits for the public-config source index before it carries on with
+ * peekSourceIndex(). Only the wait is cut short: the shared public fetch keeps
+ * running and fills the cache for the next call. A logged-in call is unaffected.
+ */
+export const LOGGED_OUT_CHARACTER_INDEX_WAIT_MS = 2_000;
 let configFailure: { until: number; generation: number } | null = null;
 
 // The one in-flight config fetch, shared by every cold caller of the same
@@ -332,26 +339,46 @@ export function peekSourceIndex(): SourceIndex {
  * The source index: the live config (the public one with no valid session)
  * merged over the snapshot. Never rejects. Callers start it alongside a data
  * load; `signal` withdraws it when that load fails (see getGameConfig), and a
- * withdrawn call resolves to the snapshot index.
+ * withdrawn call resolves to the snapshot index. `loggedOutWaitMs`: with no
+ * valid session, stop waiting for the public config after this long and resolve
+ * to peekSourceIndex() (the shared fetch is left to finish); ignored with a session.
  */
-export async function getSourceIndex(opts: { signal?: AbortSignal } = {}): Promise<SourceIndex> {
+export async function getSourceIndex(opts: { signal?: AbortSignal; loggedOutWaitMs?: number } = {}): Promise<SourceIndex> {
   // Callers start this early and may not await it (a failing load returns
   // first), so it must never reject: any failure degrades to the snapshot.
   try {
-    return await buildLiveSourceIndex(opts.signal);
+    return await buildLiveSourceIndex(opts.signal, opts.loggedOutWaitMs);
   } catch {
     return peekSourceIndex();
   }
 }
 
-async function buildLiveSourceIndex(signal: AbortSignal | undefined): Promise<SourceIndex> {
+async function buildLiveSourceIndex(callerSignal: AbortSignal | undefined, loggedOutWaitMs?: number): Promise<SourceIndex> {
   // Capture before the work, assert before caching: a session change while the
   // index is built must not leave one account's index in the cache.
   const snapshot = captureSession();
   // Logged out (no valid session), monster lookups and public characters still
   // answer, so the index comes from the public config: the one the logged-out
   // monster path fetches anyway, shared through its in-flight and cached entry.
-  const config = hasValidSession() ? await getGameConfig({ signal }) : await publicConfigUntilAborted(signal);
+  let signal = callerSignal;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const loggedOut = !hasValidSession();
+  if (loggedOut && loggedOutWaitMs !== undefined) {
+    // The wait is a withdrawal like the caller's own: publicConfigUntilAborted
+    // stops waiting and leaves the shared fetch (and its cache fill) alone.
+    const ctl = new AbortController();
+    if (callerSignal?.aborted) ctl.abort();
+    else callerSignal?.addEventListener("abort", () => ctl.abort(), { once: true });
+    timer = setTimeout(() => ctl.abort(), loggedOutWaitMs);
+    timer.unref?.();
+    signal = ctl.signal;
+  }
+  let config: GameConfig | null;
+  try {
+    config = loggedOut ? await publicConfigUntilAborted(signal) : await getGameConfig({ signal });
+  } finally {
+    clearTimeout(timer);
+  }
   if (signal?.aborted) return peekSourceIndex();
   if (indexCache && indexCache.config === config) return indexCache.index;
   let index: SourceIndex;

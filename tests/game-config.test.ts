@@ -27,7 +27,7 @@ vi.mock("../src/source-snapshot.js", () => ({
   ],
 }));
 
-import { getGameConfig, clearGameConfig, getPublicGameConfig, clearPublicGameConfig, getSourceIndex, peekSourceIndex, CONFIG_FETCH_TIMEOUT_MS } from "../src/game-config.js";
+import { getGameConfig, clearGameConfig, getPublicGameConfig, clearPublicGameConfig, getSourceIndex, peekSourceIndex, CONFIG_FETCH_TIMEOUT_MS, LOGGED_OUT_CHARACTER_INDEX_WAIT_MS } from "../src/game-config.js";
 import { sessionFetch, anonymousFetch, assertSessionCurrent, captureSession, hasValidSession } from "../src/session-fetch.js";
 import { classifyEdition } from "../src/edition.js";
 import { resolveSource } from "../src/source-filter.js";
@@ -678,6 +678,96 @@ describe("logged out, the source index comes from the public config (ag)", () =>
     expect((await getSourceIndex()).sources.has(300)).toBe(true);
     expect(sessionFetch).toHaveBeenCalledTimes(1);
     expect(anonymousFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("a logged-out character waits at most LOGGED_OUT_CHARACTER_INDEX_WAIT_MS for the index", () => {
+  const WAIT = LOGGED_OUT_CHARACTER_INDEX_WAIT_MS;
+  let settle!: (r: Response) => void;
+  let seen: AbortSignal | undefined;
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.mocked(hasValidSession).mockReturnValue(false);
+    vi.mocked(sessionFetch).mockRejectedValue(new Error("No session found."));
+    vi.mocked(anonymousFetch).mockImplementation((_url, init) => new Promise<Response>(r => {
+      seen = init?.signal ?? undefined;
+      settle = r;
+    }));
+  });
+  afterEach(() => { vi.useRealTimers(); vi.mocked(hasValidSession).mockReturnValue(true); });
+
+  it("is 2 s, well inside the 10 s fetch deadline", () => {
+    expect(WAIT).toBe(2_000);
+    expect(WAIT).toBeLessThan(CONFIG_FETCH_TIMEOUT_MS);
+  });
+
+  it("falls back to the snapshot index after the wait, while the public config hangs", async () => {
+    let done = false;
+    const p = getSourceIndex({ loggedOutWaitMs: WAIT }).then(i => { done = true; return i; });
+    await vi.advanceTimersByTimeAsync(WAIT - 1);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const index = await p;
+    expect(done).toBe(true);
+    expect(index).toBe(peekSourceIndex());
+    expect(index.sources.has(300)).toBe(false);
+  });
+
+  it("leaves the shared fetch running, then the next call gets the live index with no new request", async () => {
+    const p = getSourceIndex({ loggedOutWaitMs: WAIT });
+    await vi.advanceTimersByTimeAsync(WAIT);
+    await p;
+    expect(seen?.aborted).toBe(false);
+    settle(response({ data: LIVE }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect((await getSourceIndex({ loggedOutWaitMs: WAIT })).sources.has(300)).toBe(true);
+    expect(peekSourceIndex().sources.has(300)).toBe(true);
+    expect(anonymousFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("records no failure memo: the next call joins the same fetch rather than being refused", async () => {
+    const p = getSourceIndex({ loggedOutWaitMs: WAIT });
+    await vi.advanceTimersByTimeAsync(WAIT);
+    await p;
+    // A memo would make this null at once without joining; it joins and waits.
+    let done = false;
+    const second = getSourceIndex({ loggedOutWaitMs: WAIT }).then(i => { done = true; return i; });
+    await vi.advanceTimersByTimeAsync(WAIT - 1);
+    expect(done).toBe(false);
+    settle(response({ data: LIVE }));
+    expect((await second).sources.has(300)).toBe(true);
+    expect(anonymousFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("an index that arrives within the wait is used, and the timer is cleared", async () => {
+    const p = getSourceIndex({ loggedOutWaitMs: WAIT });
+    await vi.advanceTimersByTimeAsync(500);
+    settle(response({ data: LIVE }));
+    expect((await p).sources.has(300)).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("an abort of the caller's own signal still wins", async () => {
+    const ctl = new AbortController();
+    const p = getSourceIndex({ signal: ctl.signal, loggedOutWaitMs: WAIT });
+    await vi.advanceTimersByTimeAsync(10);
+    ctl.abort();
+    expect(await p).toBe(peekSourceIndex());
+    expect(vi.getTimerCount()).toBe(1); // only the shared fetch's own deadline: the 2 s wait timer is cleared
+  });
+
+  it("with a valid session the option is ignored: it waits up to the 10 s deadline", async () => {
+    vi.mocked(hasValidSession).mockReturnValue(true);
+    let seenSession = false;
+    vi.mocked(sessionFetch).mockImplementation(() => { seenSession = true; return new Promise<Response>(() => {}); });
+    let done = false;
+    const p = getSourceIndex({ loggedOutWaitMs: WAIT }).then(i => { done = true; return i; });
+    await vi.advanceTimersByTimeAsync(WAIT * 3);
+    expect(seenSession).toBe(true);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(CONFIG_FETCH_TIMEOUT_MS);
+    expect(await p).toBe(peekSourceIndex());
+    expect(done).toBe(true);
   });
 });
 
