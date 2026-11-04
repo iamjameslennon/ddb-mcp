@@ -1,3 +1,8 @@
+// `<` or an entity-encoded `<`, optional `/` (whitespace either side), then
+// the tag name; `[^<>]*>` after a literal `<` form is consumed when present.
+// The scan stops at the next `<`, so it stays linear.
+const DELIMITER_RE = /<\s*\/?\s*untrusted_dndbeyond_content(?:[^<>]*>)?|(?:&lt;|&#60;|&#x3c;)\s*\/?\s*untrusted_dndbeyond_content/gi;
+
 /**
  * Wrap free-text content that originates from D&D Beyond users — scraped page
  * text, book chapters, character notes/backstories, homebrew descriptions —
@@ -6,9 +11,13 @@
  * content can't close the block early and pose as trusted output.
  */
 export function wrapUntrusted(text: string): string {
-  // Also catches near-miss variants (inner whitespace, attributes) that a model
-  // could still read as our delimiter.
-  const sanitized = text.replace(/<\s*\/?\s*untrusted_dndbeyond_content\b[^<>]*>/gi, "[removed-delimiter]");
+  // Neutralises the tag name whatever follows it: `<`, optional whitespace,
+  // optional `/`, optional whitespace, then the name, with or without a `>`
+  // (an attribute holding `<`, or a name split across joined list entries,
+  // could otherwise keep it). A following `[^<>]*>` is consumed so an ordinary
+  // tag still reads as one marker. The entity-encoded `<` forms (`&lt;`,
+  // `&#60;`, `&#x3c;`) are neutralised too.
+  const sanitized = text.replace(DELIMITER_RE, "[removed-delimiter]");
   return `<untrusted_dndbeyond_content>\n${sanitized}\n</untrusted_dndbeyond_content>`;
 }
 
