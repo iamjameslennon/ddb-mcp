@@ -2,6 +2,7 @@
 // API, and re-prove the live facts the Open5e loader (src/open5e.ts) relies on.
 //
 //   npx tsx scripts/record-open5e-fixtures.mts      # needs no login
+//   npx tsx scripts/record-open5e-fixtures.mts --check  # assert only; writes nothing
 //
 // Drift in a document's record count (more than 10%) only warns, since Open5e
 // edits content. Any other failed assertion exits 1 and writes nothing: the
@@ -9,6 +10,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+const CHECK = process.argv.includes("--check");
 const API = "https://api.open5e.com/v2";
 const DOCS = ["srd-2024", "srd-2014"] as const;
 type Doc = typeof DOCS[number];
@@ -51,12 +53,24 @@ const NAMES: Record<Endpoint, Names> = {
   feats: { both: ["Grappler"], only2024: ["Alert"], only2014: [] },
   rulesets: { both: ["Damage and Healing"], only2024: ["Combat", "D20 Tests", "Social Interaction"], only2014: ["Attacking", "Cover", "Madness"] },
 };
-// Net is 2014 weapons only (SRD 5.2 lists it under items) and Musket is 2024
-// only but also in 2024 items; neither is an equipment fallback case. Hide
-// Armor and Shield are 2024 armor, but srd-2014 items has both (live
-// 2026-10-21; srd-2014 armor has only "Hide" and "Chain mail").
-// Potion of Healing is srd-2014 magicitems and srd-2024 items (live 2026-10-23).
-const CROSS_CHECK_SKIP = new Set(["Net", "Musket", "Hide Armor", "Shield", "Potion of Healing"]);
+// Skips are scoped to the endpoint whose "other edition's only" list holds the
+// name: each entry is a name that genuinely appears in the other document under
+// a different equipment endpoint, so the cross-check cannot demand its absence.
+const CROSS_CHECK_SKIP: Partial<Record<Endpoint, ReadonlySet<string>>> = {
+  items: new Set([
+    "Potion of Healing", // srd-2014/magicitems has it.
+  ]),
+  magicitems: new Set([
+    "Potion of Healing", // srd-2024/items has it.
+  ]),
+  weapons: new Set([
+    "Net", // srd-2024/items has it (SRD 5.2 lists Net under items).
+  ]),
+  armor: new Set([
+    "Hide Armor", // srd-2014/items has it.
+    "Shield", // srd-2014/items has it.
+  ]),
+};
 
 type Rec = { name: string; document: { key: string; name?: string } | string; [k: string]: unknown };
 const docKey = (r: Rec): string => (typeof r.document === "string" ? r.document : r.document.key);
@@ -109,7 +123,7 @@ for (const endpoint of ENDPOINTS) {
 for (const endpoint of EQUIPMENT) {
   for (const [names, otherDoc] of [[NAMES[endpoint].only2024, "srd-2014"], [NAMES[endpoint].only2014, "srd-2024"]] as const) {
     for (const name of names) {
-      if (CROSS_CHECK_SKIP.has(name)) continue;
+      if (CROSS_CHECK_SKIP[endpoint]?.has(name)) continue;
       for (const other of EQUIPMENT) if (has(otherDoc, other, name)) fail(`${otherDoc}/${other}: has "${name}", which ${endpoint} treats as the other edition's only`);
     }
   }
@@ -126,8 +140,16 @@ if (loose.results.some(r => docKey(r) === "srd-2024")) {
 }
 
 if (failures.length) {
+  if (CHECK) {
+    console.error(`check: ${failures.length} assertion(s) failed`);
+    process.exit(1);
+  }
   console.error(`${failures.length} assertion(s) failed; fixtures not written`);
   process.exit(1);
+}
+if (CHECK) {
+  console.log("check: all assertions passed; nothing written");
+  process.exit(0);
 }
 
 for (const doc of DOCS) {
