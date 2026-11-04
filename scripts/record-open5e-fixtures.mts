@@ -53,23 +53,28 @@ const NAMES: Record<Endpoint, Names> = {
   feats: { both: ["Grappler"], only2024: ["Alert"], only2014: [] },
   rulesets: { both: ["Damage and Healing"], only2024: ["Combat", "D20 Tests", "Social Interaction"], only2014: ["Attacking", "Cover", "Madness"] },
 };
-// Skips are scoped to the endpoint whose "other edition's only" list holds the
-// name: each entry is a name that genuinely appears in the other document under
-// a different equipment endpoint, so the cross-check cannot demand its absence.
-const CROSS_CHECK_SKIP: Partial<Record<Endpoint, ReadonlySet<string>>> = {
-  items: new Set([
-    "Potion of Healing", // srd-2014/magicitems has it.
-  ]),
-  magicitems: new Set([
-    "Potion of Healing", // srd-2024/items has it.
-  ]),
-  weapons: new Set([
-    "Net", // srd-2024/items has it (SRD 5.2 lists Net under items).
-  ]),
-  armor: new Set([
-    "Hide Armor", // srd-2014/items has it.
-    "Shield", // srd-2014/items has it.
-  ]),
+// Each skip names the one other equipment endpoint that legitimately holds the
+// name, so the cross-check still demands the name's absence from the other
+// three: a new copy elsewhere cannot hide behind the skip. Net is 2014 weapons
+// only (SRD 5.2 lists it under items); Hide Armor and Shield are 2024 armor but
+// srd-2014 items has both; Potion of Healing is srd-2014 magicitems and
+// srd-2024 items. Verified live 2026-10-21 (Net, Hide Armor, Shield) and
+// 2026-10-23 (Potion of Healing), re-checked 2026-11-04; srd-2014 armor has
+// only "Hide" and "Chain mail".
+const CROSS_CHECK_SKIP: Partial<Record<Endpoint, ReadonlyArray<{ name: string; in: Endpoint }>>> = {
+  items: [
+    { name: "Potion of Healing", in: "magicitems" }, // srd-2014/magicitems has it.
+  ],
+  magicitems: [
+    { name: "Potion of Healing", in: "items" }, // srd-2024/items has it.
+  ],
+  weapons: [
+    { name: "Net", in: "items" }, // srd-2024/items has it (SRD 5.2 lists Net under items).
+  ],
+  armor: [
+    { name: "Hide Armor", in: "items" }, // srd-2014/items has it.
+    { name: "Shield", in: "items" }, // srd-2014/items has it.
+  ],
 };
 
 type Rec = { name: string; document: { key: string; name?: string } | string; [k: string]: unknown };
@@ -118,13 +123,15 @@ for (const endpoint of ENDPOINTS) {
 }
 
 // An equipment name that is one edition's only must be absent from all four
-// equipment endpoints of the other document, so fallback tests cannot pass
-// merely because a fixture was trimmed.
+// equipment endpoints of the other document, except the single endpoint a skip
+// names, so fallback tests cannot pass merely because a fixture was trimmed.
 for (const endpoint of EQUIPMENT) {
   for (const [names, otherDoc] of [[NAMES[endpoint].only2024, "srd-2014"], [NAMES[endpoint].only2014, "srd-2024"]] as const) {
     for (const name of names) {
-      if (CROSS_CHECK_SKIP[endpoint]?.has(name)) continue;
-      for (const other of EQUIPMENT) if (has(otherDoc, other, name)) fail(`${otherDoc}/${other}: has "${name}", which ${endpoint} treats as the other edition's only`);
+      for (const other of EQUIPMENT) {
+        if (CROSS_CHECK_SKIP[endpoint]?.some(s => s.name === name && s.in === other)) continue;
+        if (has(otherDoc, other, name)) fail(`${otherDoc}/${other}: has "${name}", which ${endpoint} treats as the other edition's only`);
+      }
     }
   }
 }
