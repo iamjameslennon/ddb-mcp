@@ -19,6 +19,7 @@ import { wrapIfHomebrew } from "../../utils.js";
 import { arr, featureDefinition, isHomebrewClassFeature, isHomebrewEntry, num, obj, records, shownHomebrew, signed, str } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, InventoryItem, Mod } from "./types.js";
 import { resolveBackground } from "./features.js";
+import type { CharacterEditions } from "./editions.js";
 import { classSpellLists, isShownClassSpell } from "./spells.js";
 import { computeWeaponAttacks } from "./weapons.js";
 
@@ -184,16 +185,16 @@ function formatSpellAction(s: Record<string, unknown>): string {
 const actionLine = ({ action, homebrew }: CharAction): string => wrapIfHomebrew(`• ${str(action.name)}`, homebrew);
 
 // ── Limited-use features ─────────────────────────────────────────────────────
+// maxUses=0 with statModifierUsesId means uses = that stat modifier (e.g. CHA for Bardic Inspiration)
+const hasUses = (lu: Record<string, unknown>): boolean =>
+  lu.maxUses !== undefined && (num(lu.maxUses) > 0 || lu.statModifierUsesId != null);
+
 function buildLimitedUseLines(
   allActions: readonly CharAction[],
   statMods: readonly number[],
 ): string[] {
   return allActions
-    .filter(({ action: a }) => {
-      const lu = obj(a.limitedUse);
-      // maxUses=0 with statModifierUsesId means uses = that stat modifier (e.g. CHA for Bardic Inspiration)
-      return lu.maxUses !== undefined && (num(lu.maxUses) > 0 || lu.statModifierUsesId != null);
-    })
+    .filter(({ action: a }) => hasUses(obj(a.limitedUse)))
     .map(({ action: a, homebrew }) => {
       const lu = obj(a.limitedUse);
       const resetLabels: Record<number, string> = { 1: "Short Rest", 2: "Long Rest" };
@@ -208,9 +209,40 @@ function buildLimitedUseLines(
     });
 }
 
+/**
+ * D&D Beyond keeps an item's charges on the inventory entry (`limitedUse`),
+ * not in char.actions. Every carried item with maxUses > 0 gets a line, in
+ * inventory order, equipped or attuned or not; the entry's limitedUse wins,
+ * the definition's is the fallback. An item that also has a limitedUse action
+ * entry (componentId / componentTypeId = its definition id / entityTypeId) is
+ * left to that action's line. Two entries of one definition are two lines.
+ */
+function buildItemChargeLines(
+  inventory: readonly InventoryItem[],
+  allActions: readonly CharAction[],
+  editions: CharacterEditions,
+): string[] {
+  const actionKeys = new Set(
+    allActions.filter(({ action: a }) => hasUses(obj(a.limitedUse))).map(({ action: a }) => entityKey(a.componentId, a.componentTypeId)),
+  );
+  const resetLabels: Record<number, string> = { 1: "Short Rest", 2: "Long Rest" };
+  return inventory.flatMap(i => {
+    const def = obj(i.definition);
+    const own = obj(i.limitedUse);
+    const lu = num(own.maxUses) > 0 ? own : obj(def.limitedUse);
+    if (!(num(lu.maxUses) > 0)) return [];
+    if (num(def.id) && actionKeys.has(entityKey(def.id, def.entityTypeId))) return [];
+    const name = editions.named(str(def.name), def);
+    const reset = typeof lu.resetType === "string" && lu.resetType !== ""
+      ? lu.resetType
+      : resetLabels[num(lu.resetType)] ?? (str(lu.resetTypeDescription) || "Rest");
+    return [wrapIfHomebrew(`• ${name}   ${num(lu.numberUsed)} used / ${num(lu.maxUses)} max   (${reset})`, shownHomebrew(i, name))];
+  });
+}
+
 // ── Public API ───────────────────────────────────────────────────────────────
 export function computeActions(core: CoreStats): Actions {
-  const { char, classes, statMods } = core;
+  const { char, classes, statMods, inventory, editions } = core;
   const allActions = getAllActions(char, classes);
   const allCharSpells = getCharSpellsForActions(char, classes);
 
@@ -231,7 +263,10 @@ export function computeActions(core: CoreStats): Actions {
     ...allActions.filter(a => activationType(a.action) === 4).map(actionLine),
     ...reactionSpells,
   ];
-  const limitedUseFeatures = buildLimitedUseLines(allActions, statMods);
+  const limitedUseFeatures = [
+    ...buildLimitedUseLines(allActions, statMods),
+    ...buildItemChargeLines(inventory, allActions, editions),
+  ];
 
   return {
     weaponAttacks: computeWeaponAttacks(core),
