@@ -30,8 +30,16 @@ function populated(shape: "2014" | "2024"): Record<string, unknown> {
       // 2024 sheets: no `race` object (the lineage is in options), spells under classSpells[].classSpells.
       d.race = null;
       d.options = { race: [{ definition: { id: 61, name: "Dwarf", sources: S(145) } }] };
-      d.classSpells = [{ characterClassId: 1, classSpells: [] }];
     }
+    const spell = (id: number, name: string, level: number, activationType: number) =>
+      ({ prepared: true, definition: { id, name, level, activation: { activationType }, sources: S(145) } });
+    const fireBolt = spell(71, "Fire Bolt", 0, 1);
+    const shield = spell(72, "Shield", 1, 4);
+    const healing = spell(73, "Healing Word", 1, 3);
+    if (shape === "2014") d.classSpells = [{ characterClassId: 1, spells: [fireBolt, shield] }];
+    else d.classSpells = [{ characterClassId: 1, classSpells: [fireBolt, shield] }];
+    d.spells = { race: [spell(74, "Dancing Lights", 0, 1)], class: [healing], item: [spell(75, "Web", 2, 1)], feat: [spell(76, "Misty Step", 2, 3)] };
+    d.actions = { race: [{ name: "Breath", activation: { activationType: 1 }, limitedUse: { maxUses: 1, numberUsed: 0, resetType: 1 } }], class: [], feat: null, item: null };
   });
 }
 
@@ -44,6 +52,16 @@ function withBad(base: Record<string, unknown>, bad: unknown): Record<string, un
     d.inventory = pad(d.inventory);
     d.classes[0].classFeatures = pad(d.classes[0].classFeatures);
     d.classes[0].subclassDefinition.classFeatures = pad(d.classes[0].subclassDefinition.classFeatures);
+    d.classSpells = pad(d.classSpells);
+    for (const cs of d.classSpells) {
+      if (cs && typeof cs === "object") {
+        const c = cs as Record<string, unknown>;
+        if (c.spells) c.spells = pad(c.spells as unknown[]);
+        if (c.classSpells) c.classSpells = pad(c.classSpells as unknown[]);
+      }
+    }
+    for (const k of Object.keys(d.spells)) d.spells[k] = pad(d.spells[k]);
+    for (const k of Object.keys(d.actions)) if (d.actions[k]) d.actions[k] = pad(d.actions[k]);
   });
 }
 
@@ -59,7 +77,7 @@ describe.each(["2014", "2024"] as const)("a null or non-object entry in the %s s
       expect(parseCharacterData(dirty, section, INDEX)).toBe(parseCharacterData(clean, section, INDEX));
     });
 
-    it.each(["resilience", "second wind", "improved critical", "longsword", "torch", "great weapon", "dwarf", "e"])(
+    it.each(["resilience", "second wind", "improved critical", "longsword", "torch", "great weapon", "dwarf", "e", "fire bolt", "shield", "web", "misty", "lights"])(
       "ddb_character_lookup %j renders as if the entry were absent", query => {
         expect(formatCharacterLookup(data(dirty), query, INDEX)).toBe(formatCharacterLookup(data(clean), query, INDEX));
       });

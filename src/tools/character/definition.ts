@@ -138,12 +138,10 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
   // ── Spells ────────────────────────────────────────────────────────────────
   const allSpells: Record<string, unknown>[] = [
     // Same fallback as the sheet's classSpellLists (spells.ts): 2024 format uses cs.classSpells.
-    ...arr<Record<string, unknown>>(char.classSpells).flatMap(cs =>
-      arr<Record<string, unknown>>(cs.spells).length > 0
-        ? arr<Record<string, unknown>>(cs.spells)
-        : arr<Record<string, unknown>>(cs.classSpells)
+    ...records(char.classSpells).flatMap(cs =>
+      records(cs.spells).length > 0 ? records(cs.spells) : records(cs.classSpells)
     ),
-    ...Object.values(obj(char.spells)).flatMap(v => arr<Record<string, unknown>>(v)),
+    ...Object.values(obj(char.spells)).flatMap(v => records(v)),
   ];
   for (const spell of allSpells) {
     const name = str(obj(spell.definition).name || spell.name);

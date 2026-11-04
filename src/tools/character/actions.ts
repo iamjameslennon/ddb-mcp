@@ -16,7 +16,7 @@
  */
 
 import { wrapIfHomebrew } from "../../utils.js";
-import { arr, featureDefinition, isHomebrewClassFeature, isHomebrewEntry, num, obj, shownHomebrew, signed, str } from "./helpers.js";
+import { arr, featureDefinition, isHomebrewClassFeature, isHomebrewEntry, num, obj, records, shownHomebrew, signed, str } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, InventoryItem, Mod } from "./types.js";
 import { resolveBackground } from "./features.js";
 import { classSpellLists, isShownClassSpell } from "./spells.js";
@@ -133,7 +133,7 @@ function getAllActions(char: CharData, classes: readonly ClassEntry[]): CharActi
   // and don't represent real character abilities on the website.
   const entities = grantingEntities(char, classes);
   return Object.entries(obj(char.actions))
-    .flatMap(([bucket, v]) => arr<Record<string, unknown>>(v).map(action => ({ bucket, action })))
+    .flatMap(([bucket, v]) => records(v).map(action => ({ bucket, action })))
     .filter(({ action: a }) => a != null && !str(a.name).startsWith("Circle Spell") && str(a.name) !== "Initiate a Circle Spell")
     .map(({ bucket, action }) => {
       const granted = entities.get(entityKey(action.componentId, action.componentTypeId));
@@ -158,7 +158,7 @@ function getCharSpellsForActions(char: CharData, classes: readonly ClassEntry[])
   const seen = new Set<string>();
   return [
     ...classSpellLists(char, classes).flatMap(({ isSpellbook, spells }) => spells.filter(s => isShownClassSpell(s, isSpellbook))),
-    ...Object.values(obj(char.spells)).flatMap(v => arr<Record<string, unknown>>(v)),
+    ...Object.values(obj(char.spells)).flatMap(v => records(v)),
   ].filter(s => {
     if (!s) return false;
     const def = obj(s.definition);

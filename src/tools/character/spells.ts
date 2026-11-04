@@ -16,7 +16,7 @@
 
 import { isConcentrationSpell } from "../reference.js";
 import { wrapIfHomebrew } from "../../utils.js";
-import { arr, isHomebrewEntry, num, obj, shownHomebrew, signed, splitListLines, statNames, str } from "./helpers.js";
+import { isHomebrewEntry, num, obj, records, shownHomebrew, signed, splitListLines, statNames, str } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, ListEntry } from "./types.js";
 import type { CharacterEditions } from "./editions.js";
 
@@ -66,7 +66,7 @@ function buildSlotLines(char: CharData, classes: readonly ClassEntry[]): string[
   // char.spellSlots only tracks used counts; max slots come from the class's
   // levelSpellSlots progression table: levelSpellSlots[classLevel][slotLevel-1]
   const spellSlotUsed: Record<number, number> = {};
-  for (const s of arr<Record<string, unknown>>(char.spellSlots)) {
+  for (const s of records(char.spellSlots)) {
     spellSlotUsed[num(s.level)] = num(s.used);
   }
   const slotMax: Record<number, number> = {};
@@ -106,7 +106,7 @@ export interface ClassSpellList {
 // Each char.classSpells entry with its class's name. Ungated: callers apply the
 // spellbook gate (isShownClassSpell) themselves.
 export function classSpellLists(char: CharData, classes: readonly ClassEntry[]): ClassSpellList[] {
-  return arr<Record<string, unknown>>(char.classSpells).map(cs => {
+  return records(char.classSpells).map(cs => {
     // Try characterClassId first; fall back to id/classId for 2024-rules format
     const classEntry = classes.find(c =>
       c.id === cs.characterClassId ||
@@ -115,9 +115,9 @@ export function classSpellLists(char: CharData, classes: readonly ClassEntry[]):
     );
     const className = str(obj(classEntry?.definition ?? {}).name);
     // spells may be under cs.spells or cs.classSpells (2024 format variation)
-    const spells = arr<Record<string, unknown>>(cs.spells).length > 0
-      ? arr<Record<string, unknown>>(cs.spells)
-      : arr<Record<string, unknown>>(cs.classSpells);
+    const spells = records(cs.spells).length > 0
+      ? records(cs.spells)
+      : records(cs.classSpells);
     return { className, isSpellbook: className === "Wizard", spells };
   });
 }
@@ -141,7 +141,7 @@ export function shownSpellDefinitions(char: CharData, classes: readonly ClassEnt
   }
   const spellsObj = obj(char.spells);
   for (const key of Object.keys(SOURCE_LABELS)) {
-    for (const s of arr<Record<string, unknown>>(spellsObj[key])) {
+    for (const s of records(spellsObj[key])) {
       // buildSpellSections drops a nameless spell from "From X:", so it isn't shown.
       if (str(obj(s.definition).name)) defs.push(obj(s.definition));
     }
@@ -192,7 +192,7 @@ function buildSpellSections(
   const duplicateWarnings: string[] = [];
 
   for (const [key, label] of Object.entries(SOURCE_LABELS)) {
-    const spellList = arr<Record<string, unknown>>(spellsObj[key]);
+    const spellList = records(spellsObj[key]);
     if (!spellList.length) continue;
     const seen = new Set<string>();
     const names = spellList
@@ -262,7 +262,7 @@ function buildConcentrationByLevel(
     for (const s of spells) if (isShownClassSpell(s, isSpellbook)) addConcSpell(s);
   }
   for (const spellList of Object.values(obj(char.spells))) {
-    for (const s of arr<Record<string, unknown>>(spellList)) addConcSpell(s);
+    for (const s of records(spellList)) addConcSpell(s);
   }
   return concByLevel;
 }

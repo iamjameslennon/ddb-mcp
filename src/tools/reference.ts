@@ -308,15 +308,17 @@ async function loadSpellCompendium(): Promise<SpellStore> {
  * per-class game-data spell lists. Called from parseCharacterData().
  */
 export function addCharacterSpellsToCompendium(char: Record<string, unknown>): void {
-  const arrOf = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
   const objOf = (v: unknown): Record<string, unknown> =>
     v != null && typeof v === "object" && !Array.isArray(v)
       ? (v as Record<string, unknown>)
       : {};
+  // A null or non-object entry (malformed data) is skipped.
+  const arrOf = (v: unknown): Record<string, unknown>[] =>
+    Array.isArray(v) ? v.filter(e => e !== null && typeof e === "object" && !Array.isArray(e)) : [];
 
   const added: DdbSpell[] = [];
-  for (const cs of arrOf<Record<string, unknown>>(char.classSpells)) {
-    for (const spell of arrOf<Record<string, unknown>>(cs.spells)) {
+  for (const cs of arrOf(char.classSpells)) {
+    for (const spell of arrOf(cs.spells)) {
       const id = objOf(spell.definition).id;
       if (typeof id === "number" && Number.isFinite(id) && !characterSpellBuffer.has(id)) {
         characterSpellBuffer.set(id, spell as unknown as DdbSpell);
