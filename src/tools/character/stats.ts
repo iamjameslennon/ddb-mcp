@@ -9,7 +9,7 @@
  * pass could lift these into structured data, but that's a separate concern.
  */
 
-import { arr, capitalize, hasRemarkableAthlete, isBonusMod, isExpertiseMod, isHalfProficiencyMod, isLanguageMod, isProficiencyMod, isSenseMod, isSetBaseMod, isSetMod, num, obj, signed, statKeys, statNames, str } from "./helpers.js";
+import { arr, records, capitalize, hasRemarkableAthlete, isBonusMod, isExpertiseMod, isHalfProficiencyMod, isLanguageMod, isProficiencyMod, isSenseMod, isSetBaseMod, isSetMod, num, obj, signed, statKeys, statNames, str } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
 
 export interface Senses {
@@ -190,7 +190,7 @@ function computeSenses(char: CharData, allMods: readonly Mod[], skillBonuses: re
     const name = SENSE_ID_NAMES[num(cs.senseId)];
     if (name) recordBase(name, num(cs.value), 0);
   }
-  for (const trait of arr<Record<string, unknown>>(obj(char.race).racialTraits)) {
+  for (const trait of records(obj(char.race).racialTraits)) {
     for (const sense of arr<Record<string, unknown>>(obj(trait.definition).senses)) {
       const name = SENSE_ID_NAMES[num(sense.senseId)];
       const match = str(sense.notes).match(/\d+/);

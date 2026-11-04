@@ -17,7 +17,7 @@ import {
   type CharacterEditionEntry, type CharacterEntryKind, type EditionInfo, type EditionMarkers,
   type RulesEdition, type SourceIndex,
 } from "../../edition.js";
-import { arr, hasTag, num, obj, str } from "./helpers.js";
+import { arr, records, hasTag, num, obj, str } from "./helpers.js";
 import { shownSpellDefinitions } from "./spells.js";
 import type { CharData, ClassEntry, InventoryItem, Mod } from "./types.js";
 
@@ -87,7 +87,7 @@ export function computeCharacterEditions(char: CharData, index: SourceIndex): Ch
   }
   const background = obj(char.background).definition;
   if (isObject(background) && str(background.name)) entries.push(entry(str(background.name), "background", background));
-  for (const f of arr<Mod>(char.feats)) {
+  for (const f of records<Mod>(char.feats)) {
     if (hasTag(f, "__INITIAL_ASI")) continue;
     const featName = str(obj(f.definition).name);
     if (featName) entries.push(entry(featName, "feat", f.definition));
@@ -96,7 +96,7 @@ export function computeCharacterEditions(char: CharData, index: SourceIndex): Ch
   for (const def of dedupeDefinitions(shownSpellDefinitions(char, classes).filter(d => str(d.name)))) {
     entries.push(entry(str(def.name), "spell", def));
   }
-  for (const def of dedupeDefinitions(shownItemDefinitions(arr<InventoryItem>(char.inventory)).filter(d => str(d.name)))) {
+  for (const def of dedupeDefinitions(shownItemDefinitions(records<InventoryItem>(char.inventory)).filter(d => str(d.name)))) {
     entries.push(entry(str(def.name), "item", def));
   }
 

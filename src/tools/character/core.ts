@@ -13,7 +13,7 @@
 
 import type { SourceIndex } from "../../edition.js";
 import { computeCharacterEditions } from "./editions.js";
-import { arr, featureDefinition, isBonusMod, isSetMod, num, modOf, obj, statKeys, statNames } from "./helpers.js";
+import { arr, records, featureDefinition, isBonusMod, isSetMod, num, modOf, obj, statKeys, statNames } from "./helpers.js";
 import { makeResolveTemplates } from "./templates.js";
 import type { CharData, ClassEntry, CoreStats, InventoryItem, Mod } from "./types.js";
 
@@ -31,7 +31,7 @@ export function computeCoreStats(char: CharData, index: SourceIndex): CoreStats 
   const startingClass = classes.find(c => c.isStartingClass === true) ?? classes[0];
   const startingClassFeatureIds = new Set<number>();
   if (startingClass) {
-    for (const cf of arr<Record<string, unknown>>(startingClass.classFeatures)) {
+    for (const cf of records(startingClass.classFeatures)) {
       const id = num(obj(cf.definition).id);
       if (id) startingClassFeatureIds.add(id);
     }
@@ -144,7 +144,7 @@ export function computeCoreStats(char: CharData, index: SourceIndex): CoreStats 
   });
   const statMods = statTotals.map(modOf);
 
-  const inventory = arr<InventoryItem>(char.inventory);
+  const inventory = records<InventoryItem>(char.inventory);
   const resolveTemplates = makeResolveTemplates(profBonus, totalLevel);
 
   return {

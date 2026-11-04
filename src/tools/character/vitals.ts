@@ -9,7 +9,7 @@
  * a vitals concern.
  */
 
-import { arr, featureDefinition, hasRemarkableAthlete, isBonusMod, isHalfProficiencyMod, isSetMod, num, obj, signed, str } from "./helpers.js";
+import { arr, records, featureDefinition, hasRemarkableAthlete, isBonusMod, isHalfProficiencyMod, isSetMod, num, obj, signed, str } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
 
 export interface HitPoints { current: number; max: number; temp: number }
@@ -73,7 +73,7 @@ function computeSpeed(core: CoreStats): string[] {
   // unchanged.
   const grantedClassFeatureIds = new Set<number>();
   for (const c of arr<Record<string, unknown>>(char.classes)) {
-    for (const cf of arr<Record<string, unknown>>(c.classFeatures)) {
+    for (const cf of records(c.classFeatures)) {
       const id = num(obj(cf.definition).id);
       if (id) grantedClassFeatureIds.add(id);
     }
@@ -120,7 +120,7 @@ function computeSpeed(core: CoreStats): string[] {
   // (which covers both body armor and shields, since DDB uses armorTypeId
   // 1/2/3 for light/medium/heavy and 4 for shield, all under the same
   // filterType).
-  const hasEquippedArmorOrShield = arr<Record<string, unknown>>(char.inventory).some(
+  const hasEquippedArmorOrShield = records(char.inventory).some(
     i => i.equipped === true && str(obj(i.definition).filterType) === "Armor"
   );
   const unarmoredMoveBonus = hasEquippedArmorOrShield

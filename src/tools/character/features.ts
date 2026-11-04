@@ -9,7 +9,7 @@
  */
 
 import { wrapIfHomebrew, wrapUntrusted } from "../../utils.js";
-import { arr, hasTag, isHomebrewClassFeature, isHomebrewEntry, num, obj, str, stripHtml } from "./helpers.js";
+import { records, hasTag, isHomebrewClassFeature, isHomebrewEntry, num, obj, str, stripHtml } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
 import type { TemplateResolver } from "./templates.js";
 import type { CharacterEditions } from "./editions.js";
@@ -38,7 +38,7 @@ function buildFeatLines(char: CharData, resolveTemplates: TemplateResolver, edit
   // DDB stores some non-feat entries in the feats array.
   // __DISGUISE_FEAT = class features surfaced as feats (shown in OTHER FEATURES).
   // __INITIAL_ASI   = 2024 background Ability Score Improvements (already in ABILITY SCORES; drop entirely).
-  const allFeats = arr<Mod>(char.feats);
+  const allFeats = records<Mod>(char.feats);
   const realFeats = allFeats.filter(
     f => !hasTag(f, "__DISGUISE_FEAT") && !hasTag(f, "__INITIAL_ASI")
   );
@@ -63,7 +63,7 @@ function buildClassFeatureLines(classes: readonly ClassEntry[]): string[] {
   for (const c of classes) {
     const charLevel = num(c.level);
     const classDef = obj(c.definition);
-    for (const cf of arr<Record<string, unknown>>(c.classFeatures)) {
+    for (const cf of records(c.classFeatures)) {
       const def = obj(cf.definition);
       const line = `• ${str(def.name)} (${str(classDef.name)} ${num(def.requiredLevel || 1)})`;
       if (num(def.requiredLevel || 0) <= charLevel && !seen.has(line)) {
@@ -78,7 +78,7 @@ function buildClassFeatureLines(classes: readonly ClassEntry[]): string[] {
 // ── Racial traits ────────────────────────────────────────────────────────────
 function buildRacialTraitLines(char: CharData): string[] {
   const race = obj(char.race);
-  return arr<Record<string, unknown>>(race.racialTraits).map(t =>
+  return records(race.racialTraits).map(t =>
     wrapIfHomebrew(`• ${str(obj(t.definition).name)}`, isHomebrewEntry(t, race)));
 }
 

@@ -11,6 +11,9 @@ import type { ListEntry, Mod, ProficiencyMod, ExpertiseMod, HalfProficiencyMod, 
 export const str = (v: unknown): string => (v != null ? String(v) : "");
 export const num = (v: unknown): number => (typeof v === "number" ? v : 0);
 export const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+/** The object entries of an array field: a null or non-object entry (malformed data) is dropped. */
+export const records = <T = Record<string, unknown>>(v: unknown): T[] =>
+  arr<unknown>(v).filter(e => e != null && typeof e === "object" && !Array.isArray(e)) as T[];
 export const obj = (v: unknown): Record<string, unknown> =>
   v != null && typeof v === "object" && !Array.isArray(v)
     ? (v as Record<string, unknown>) : {};
@@ -96,7 +99,7 @@ export function splitListLines(indent: string, label: string, entries: readonly 
 
 /** Returns true if the feat has the given category tagName. */
 export const hasTag = (feat: Mod, tag: string): boolean =>
-  arr<Record<string, unknown>>(obj(feat.definition).categories).some(c => c.tagName === tag);
+  arr<Record<string, unknown>>(obj(obj(feat).definition).categories).some(c => c.tagName === tag);
 
 // ── Mod type guards (follow-up A) ─────────────────────────────────────────────
 // Narrow `Mod` (Record<string, unknown>) to the discriminated shapes in

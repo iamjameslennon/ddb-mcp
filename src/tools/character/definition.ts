@@ -16,7 +16,7 @@ import { classifyEdition, editionTag, rulesLine, type EditionInfo, type EditionM
 import { getSourceIndex, LOGGED_OUT_CHARACTER_INDEX_WAIT_MS } from "../../game-config.js";
 import { fetchCharacter, withNotice } from "../character.js";
 import { computeCharacterEditions, type CharacterEditions } from "./editions.js";
-import { featureDefinition, isHomebrewClassFeature, isHomebrewEntry, levenshteinDistance } from "./helpers.js";
+import { featureDefinition, isHomebrewClassFeature, isHomebrewEntry, levenshteinDistance, records } from "./helpers.js";
 import type { CharData } from "./types.js";
 
 function matchesDefinitionQuery(name: string, query: string): boolean {
@@ -158,7 +158,7 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
   }
 
   // ── Feats ─────────────────────────────────────────────────────────────────
-  for (const feat of arr<Record<string, unknown>>(char.feats)) {
+  for (const feat of records(char.feats)) {
     const name = str(obj(feat.definition).name);
     if (name && matchesDefinitionQuery(name, query)) {
       results.push({
@@ -175,7 +175,7 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
     const classDef = obj(cls.definition);
     const className = str(classDef.name);
 
-    for (const cf of arr<Record<string, unknown>>(cls.classFeatures)) {
+    for (const cf of records(cls.classFeatures)) {
       const d = obj(cf.definition);
       const name = str(d.name);
       const requiredLevel = num(d.requiredLevel || 1);
@@ -215,7 +215,7 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
   // ── Racial Traits ─────────────────────────────────────────────────────────
   const race = obj(char.race);
   const raceName = str(race.fullName || race.baseName);
-  for (const trait of arr<Record<string, unknown>>(race.racialTraits)) {
+  for (const trait of records(race.racialTraits)) {
     const def = obj(trait.definition);
     const name = str(def.name);
     if (name && matchesDefinitionQuery(name, query)) {
@@ -256,7 +256,7 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
   }
 
   // ── Equipped Items ────────────────────────────────────────────────────────
-  for (const item of arr<Record<string, unknown>>(char.inventory)) {
+  for (const item of records(char.inventory)) {
     if (!item.equipped) continue;
     const name = str(obj(item.definition).name);
     if (name && matchesDefinitionQuery(name, query)) {

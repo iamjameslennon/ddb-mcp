@@ -10,7 +10,7 @@
  */
 
 import { wrapIfHomebrew } from "../../utils.js";
-import { arr, isBonusMod, isHomebrewEntry, isProficiencyMod, num, obj, signed, str } from "./helpers.js";
+import { arr, records, isBonusMod, isHomebrewEntry, isProficiencyMod, num, obj, signed, str } from "./helpers.js";
 import type { CoreStats } from "./types.js";
 
 export function computeWeaponAttacks(core: CoreStats): string[] {
@@ -32,7 +32,7 @@ export function computeWeaponAttacks(core: CoreStats): string[] {
   const hasMartialArts =
     allMods.some(m => str(m.subType) === "martial-arts") ||
     classes.some(c =>
-      arr<Record<string, unknown>>(c.classFeatures).some(cf =>
+      records(c.classFeatures).some(cf =>
         str(obj(cf.definition).name) === "Martial Arts" &&
         num(obj(cf.definition).requiredLevel || 1) <= num(c.level)
       )
