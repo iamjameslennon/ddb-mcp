@@ -322,13 +322,13 @@ class GameConfigUnavailableError extends Error {
 
 /**
  * A failure of D&D Beyond being unreachable, as opposed to a bug: a network
- * error (a `TypeError`), an unparseable response body, a session-layer error, an abort or
+ * error (a `TypeError` with a `cause`), an unparseable response body, a session-layer error, an abort or
  * timeout, an HTTP error status, a failed cobalt-token exchange, or no game
  * config. The "Couldn't look up" output already reports these, so they are not
  * logged.
  */
 function isExpectedOutage(e: unknown): boolean {
-  return e instanceof TypeError // undici's network failure; a bare one is counted too (owner ruling)
+  return (e instanceof TypeError && e.cause !== undefined) // undici's network failure always carries a cause; a bare TypeError is a code bug (owner ruling, revised)
     || e instanceof SessionLayerError // no session, a rewrite race, a revoke cleanup: the session layer, not our logic
     || e instanceof MonsterServiceParseError
     || (e instanceof DOMException && (e.name === "AbortError" || e.name === "TimeoutError"))

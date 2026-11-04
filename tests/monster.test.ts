@@ -307,7 +307,7 @@ function setupFetch(): void {
       const wanted = params.getAll("sources").map(Number);
       if (failUnfilteredSearch && !wanted.length) return mockResponse({}, 500);
       if (failSearchTerms.has(term)) return mockResponse({}, 500);
-      let data = [...ALL_MONSTERS, ...extraMonsters].filter(m => foldName(m.name as string).includes(foldName(term)));
+      let data = [...ALL_MONSTERS, ...extraMonsters].filter(m => m.name === null || foldName(m.name as string).includes(foldName(term)));
       let fuzzy = false;
       if (!data.length && FUZZY[term]) { data = FUZZY[term] as typeof data; fuzzy = true; }
       if (wanted.length) {
@@ -2426,7 +2426,6 @@ describe("getMonsterStats: session changes surface, lookup failures are logged",
     ["a cobalt-token timeout", () => new CobaltTokenTimeoutError(30_000)],
     ["a malformed cobalt token", () => new MalformedCobaltTokenError("not a JWT")],
     ["an anonymous-fetch timeout", () => new AnonymousFetchTimeoutError(20_000)],
-    ["a bare TypeError", () => new TypeError("fetch failed")],
     ["a no-session error", () => new NoSessionError()],
     ["another session-layer error", () => new SessionLayerError("Session file changed before the rewrite; not replaced.")],
     ["an abort", () => new DOMException("This operation was aborted", "AbortError")],
@@ -2436,6 +2435,23 @@ describe("getMonsterStats: session changes surface, lookup failures are logged",
     const { result, lines } = await lookupLog();
     expect(result).toEqual({ status: "unavailable" });
     expect(lines).toEqual([]);
+  });
+
+  it("a bare TypeError (no cause) is a code bug: unavailable, one stderr line with the JSON-quoted name", async () => {
+    throwOnMonsterSearch(new TypeError("Cannot read properties of null (reading 'x')"));
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce(NOT_FOUND);
+    const { result, lines } = await lookupLog('Gob"lin');
+    expect(result).toEqual({ status: "unavailable" });
+    expect(lines).toEqual(['[ddb-mcp] monster lookup failed for "Gob\\"lin": Cannot read properties of null (reading \'x\')\n']);
+  });
+
+  it("schema drift (a monster-service entry with name: null) is logged once, not read as an outage", async () => {
+    extraMonsters = [monster({ id: 8_000_900, name: null })];
+    vi.mocked(o5GetMonsterStats).mockResolvedValueOnce(NOT_FOUND);
+    const { result, lines } = await lookupLog();
+    expect(result).toEqual({ status: "unavailable" });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^\[ddb-mcp\] monster lookup failed for "Goblin": .+\n$/);
   });
 
   it("a body that isn't JSON is an expected outage: no stderr line", async () => {
