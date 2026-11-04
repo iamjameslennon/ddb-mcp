@@ -241,6 +241,19 @@ describe("char.actions lines", () => {
       expect(wrapped(combat({ classes: [rogue, hbClass], ...orphan("class") }))).toBe(true);
     });
 
+    it("class bucket: an official class with one homebrew class feature", () => {
+      const cls = fighter({ classFeatures: [feature(901, "Second Wind"), { isHomebrew: true, ...feature(902, "Hex Surge") }] });
+      expect(wrapped(combat({ classes: [cls], ...orphan("class") }))).toBe(true);
+    });
+
+    it("race bucket: an official species with one homebrew racial trait", () => {
+      const race = { ...(BASE.race as Record<string, unknown>), isHomebrew: false, racialTraits: [
+        { definition: { id: 301, entityTypeId: RACIAL_TRAIT, name: "Darkvision" } },
+        { definition: { id: 302, entityTypeId: RACIAL_TRAIT, name: "Hex Breath", isHomebrew: true } },
+      ] };
+      expect(wrapped(combat({ race, ...orphan("race") }))).toBe(true);
+    });
+
     it("race bucket: a homebrew species", () => {
       expect(wrapped(combat({ race: { ...(BASE.race as Record<string, unknown>), isHomebrew: true }, ...orphan("race") }))).toBe(true);
     });

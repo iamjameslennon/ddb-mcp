@@ -73,13 +73,18 @@ function grantingEntities(char: CharData, classes: readonly ClassEntry[]): Map<s
  * homebrew, for an action that names no entity on the sheet (e.g. a Tasha's
  * optional class feature that isn't in classFeatures). The granting entity
  * can't be told, so the line is wrapped when any candidate is homebrew
- * (owner ruling, option C): a class or its subclass, the species, a feat, an
- * item, or a homebrew or custom background.
+ * (owner ruling, option C): a class, its subclass or one of its class
+ * features; the species or one of its racial traits; a feat; an item; or a
+ * homebrew or custom background.
  */
 function bucketAnyHomebrew(char: CharData, classes: readonly ClassEntry[], bucket: string): boolean {
   switch (bucket) {
-    case "class": return classes.some(c => isHomebrewEntry(c, c.subclassDefinition));
-    case "race": return isHomebrewEntry(char.race);
+    case "class": return classes.some(c => isHomebrewEntry(c, c.subclassDefinition)
+      || arr<unknown>(c.classFeatures).some(cf => isHomebrewClassFeature(cf, c)));
+    case "race": {
+      const race = obj(char.race);
+      return isHomebrewEntry(race) || arr<unknown>(race.racialTraits).some(t => isHomebrewEntry(t, race));
+    }
     case "feat": return arr<Mod>(char.feats).some(f => isHomebrewEntry(f));
     case "item": return arr<InventoryItem>(char.inventory).some(i => isHomebrewEntry(i));
     case "background": return resolveBackground(char).untrusted;

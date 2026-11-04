@@ -10,7 +10,7 @@
  */
 
 import { wrapIfHomebrew } from "../../utils.js";
-import { arr, isBonusMod, isProficiencyMod, num, obj, shownHomebrew, signed, str } from "./helpers.js";
+import { arr, isBonusMod, isHomebrewEntry, isProficiencyMod, num, obj, signed, str } from "./helpers.js";
 import type { CoreStats } from "./types.js";
 
 export function computeWeaponAttacks(core: CoreStats): string[] {
@@ -81,7 +81,10 @@ export function computeWeaponAttacks(core: CoreStats): string[] {
 
     // Consolidate duplicates by key. A homebrew weapon is never merged with
     // an official one, so its line can be wrapped on its own.
-    const homebrew = shownHomebrew(i, wLabel);
+    // Even a nameless one: the line also prints its damage type, properties
+    // and mastery, which can carry text (owner ruling; unlike shownHomebrew's
+    // name-only lines).
+    const homebrew = isHomebrewEntry(i);
     const key = `${Number(homebrew)}|${wLabel}${dmgDice}`;
     const existing = weaponInventoryMap.get(key);
     if (existing) {
@@ -91,7 +94,7 @@ export function computeWeaponAttacks(core: CoreStats): string[] {
     }
   }
 
-  // A homebrew weapon's name is other players' text: its whole line is wrapped.
+  // A homebrew weapon's line is other players' text: it is wrapped whole.
   const weaponAttacks: string[] = [];
   for (const { lines, qty, homebrew } of weaponInventoryMap.values()) {
     weaponAttacks.push(wrapIfHomebrew(qty > 1 ? lines[0].replace("•", `• ×${qty}`) : lines[0], homebrew));
