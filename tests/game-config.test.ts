@@ -786,6 +786,39 @@ describe("a logged-out character waits at most LOGGED_OUT_CHARACTER_INDEX_WAIT_M
   });
 });
 
+describe("a fetch that settles after a clear does not repopulate the source index", () => {
+  afterEach(() => vi.mocked(hasValidSession).mockReturnValue(true));
+
+  it("session-bound path", async () => {
+    let settle!: (r: Response) => void;
+    vi.mocked(sessionFetch).mockImplementationOnce(() => new Promise<Response>(r => { settle = r; }));
+    const pending = getSourceIndex();
+    await vi.waitFor(() => expect(sessionFetch).toHaveBeenCalledTimes(1));
+    clearGameConfig();
+    settle(response({ data: LIVE }));
+    expect((await pending).sources.has(300)).toBe(true); // its own caller still gets the index
+    expect(peekSourceIndex().sources.has(300)).toBe(false); // but nothing was cached
+    expect((await getSourceIndex()).sources.has(300)).toBe(true);
+    expect(sessionFetch).toHaveBeenCalledTimes(2); // rebuilt from a fresh fetch
+  });
+
+  it("public path", async () => {
+    vi.mocked(hasValidSession).mockReturnValue(false);
+    let settle!: (r: Response) => void;
+    vi.mocked(anonymousFetch).mockImplementationOnce(() => new Promise<Response>(r => { settle = r; }));
+    const pending = getSourceIndex();
+    await vi.waitFor(() => expect(anonymousFetch).toHaveBeenCalledTimes(1));
+    clearGameConfig();
+    clearPublicGameConfig(); // as ddb_clear_cache does
+    settle(response({ data: LIVE }));
+    expect((await pending).sources.has(300)).toBe(true);
+    expect(peekSourceIndex().sources.has(300)).toBe(false);
+    vi.mocked(anonymousFetch).mockResolvedValue(response({ data: LIVE }));
+    expect((await getSourceIndex()).sources.has(300)).toBe(true);
+    expect(anonymousFetch).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("clearGameConfig (ddb_clear_cache)", () => {
   it("drops the cached config and the failure memo, so the next call fetches at once", async () => {
     configResponse = () => response({}, 503);

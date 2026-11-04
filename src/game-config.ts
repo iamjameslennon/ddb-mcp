@@ -213,6 +213,8 @@ function startConfigFetch(snapshot: SessionSnapshot): PendingConfigFetch {
 let publicConfigCache: GameConfig | null = null;
 let publicConfigFailureUntil = 0;
 let publicConfigPending: Promise<GameConfig | null> | null = null;
+// Advanced by clearPublicGameConfig(), like configEpoch for the session-bound config.
+let publicConfigEpoch = 0;
 
 /**
  * The game config fetched with no credentials (anonymousFetch). Cached until
@@ -228,6 +230,7 @@ export async function getPublicGameConfig(): Promise<GameConfig | null> {
 
 /** Drop the public config, its failure memo and any fetch in flight (ddb_clear_cache), so the next call fetches afresh. */
 export function clearPublicGameConfig(): void {
+  publicConfigEpoch++;
   publicConfigCache = null;
   publicConfigFailureUntil = 0;
   publicConfigPending = null;
@@ -364,6 +367,9 @@ async function buildLiveSourceIndex(callerSignal: AbortSignal | undefined, logge
   let timer: ReturnType<typeof setTimeout> | undefined;
   let unlink: (() => void) | undefined;
   const loggedOut = !hasValidSession();
+  // A clear (ddb_clear_cache) while the config is in flight: build the index
+  // for this caller, but cache nothing.
+  const epoch = loggedOut ? publicConfigEpoch : configEpoch;
   if (loggedOut && loggedOutWaitMs !== undefined) {
     // The wait is a withdrawal like the caller's own: publicConfigUntilAborted
     // stops waiting and leaves the shared fetch (and its cache fill) alone.
@@ -399,7 +405,7 @@ async function buildLiveSourceIndex(callerSignal: AbortSignal | undefined, logge
   }
   try {
     assertSessionCurrent(snapshot);
-    indexCache = { config, index };
+    if ((loggedOut ? publicConfigEpoch : configEpoch) === epoch) indexCache = { config, index };
   } catch {
     // Session changed mid-build: return this index, but don't cache it.
   }
