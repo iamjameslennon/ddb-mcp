@@ -362,13 +362,18 @@ async function buildLiveSourceIndex(callerSignal: AbortSignal | undefined, logge
   // monster path fetches anyway, shared through its in-flight and cached entry.
   let signal = callerSignal;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let unlink: (() => void) | undefined;
   const loggedOut = !hasValidSession();
   if (loggedOut && loggedOutWaitMs !== undefined) {
     // The wait is a withdrawal like the caller's own: publicConfigUntilAborted
     // stops waiting and leaves the shared fetch (and its cache fill) alone.
     const ctl = new AbortController();
     if (callerSignal?.aborted) ctl.abort();
-    else callerSignal?.addEventListener("abort", () => ctl.abort(), { once: true });
+    else if (callerSignal) {
+      const onAbort = () => ctl.abort();
+      callerSignal.addEventListener("abort", onAbort, { once: true });
+      unlink = () => callerSignal.removeEventListener("abort", onAbort);
+    }
     timer = setTimeout(() => ctl.abort(), loggedOutWaitMs);
     timer.unref?.();
     signal = ctl.signal;
@@ -378,6 +383,7 @@ async function buildLiveSourceIndex(callerSignal: AbortSignal | undefined, logge
     config = loggedOut ? await publicConfigUntilAborted(signal) : await getGameConfig({ signal });
   } finally {
     clearTimeout(timer);
+    unlink?.();
   }
   if (signal?.aborted) return peekSourceIndex();
   if (indexCache && indexCache.config === config) return indexCache.index;

@@ -111,6 +111,7 @@ describe("a character call caps its logged-out index wait", () => {
     fetchMock.mockImplementation(async (url: unknown) =>
       new Response("{}", { status: String(url) === COBALT_URL ? 401 : 404 }));
     await call().catch(() => undefined);
+    expect(index.getSourceIndex).toHaveBeenCalledTimes(1);
     const opts = index.getSourceIndex.mock.calls[0][0] as { loggedOutWaitMs?: number } | undefined;
     const { LOGGED_OUT_CHARACTER_INDEX_WAIT_MS } = await import("../src/game-config.js");
     expect(opts?.loggedOutWaitMs).toBe(capped ? LOGGED_OUT_CHARACTER_INDEX_WAIT_MS : undefined);

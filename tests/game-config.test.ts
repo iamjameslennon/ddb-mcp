@@ -756,6 +756,21 @@ describe("a logged-out character waits at most LOGGED_OUT_CHARACTER_INDEX_WAIT_M
     expect(vi.getTimerCount()).toBe(1); // only the shared fetch's own deadline: the 2 s wait timer is cleared
   });
 
+  it("a long-lived signal reused across capped calls does not accumulate abort listeners", async () => {
+    const ctl = new AbortController();
+    let live = 0;
+    const add = vi.spyOn(ctl.signal, "addEventListener").mockImplementation(() => { live++; });
+    const remove = vi.spyOn(ctl.signal, "removeEventListener").mockImplementation(() => { live--; });
+    for (let i = 0; i < 3; i++) {
+      const p = getSourceIndex({ signal: ctl.signal, loggedOutWaitMs: WAIT });
+      await vi.advanceTimersByTimeAsync(WAIT);
+      await p;
+    }
+    expect(add).toHaveBeenCalledTimes(3);
+    expect(remove).toHaveBeenCalledTimes(3);
+    expect(live).toBe(0);
+  });
+
   it("with a valid session the option is ignored: it waits up to the 10 s deadline", async () => {
     vi.mocked(hasValidSession).mockReturnValue(true);
     let seenSession = false;
