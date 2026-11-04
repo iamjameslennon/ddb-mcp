@@ -64,9 +64,29 @@ describe("charged items in LIMITED USE", () => {
     expect(out.join("\n")).toBe([wrapUntrusted("• Hex Wand [homebrew]   0 used / 3 max   (Dawn)"), "• Wand of Web   0 used / 7 max   (Dawn)"].join("\n"));
   });
 
-  it("a nameless homebrew item's line stays plain", () => {
-    const out = limitedUse(sheet([wand(8, "", charge(3), {}, { isHomebrew: true })]));
-    expect(out.join("\n")).not.toContain("<untrusted");
+  it("skips a nameless item, homebrew or not", () => {
+    expect(limitedUse(sheet([wand(8, "", charge(3), {}, { isHomebrew: true }), wand(81, "", charge(3))]))).toEqual([]);
+  });
+
+  it("skips a Consumable item (INVENTORY lists it with its count)", () => {
+    expect(limitedUse(sheet([wand(82, "Potion of Healing", charge(1, { resetType: "Consumable" })), wand(83, "Wand of Web", charge(7))])))
+      .toEqual(["• Wand of Web   0 used / 7 max   (Dawn)"]);
+  });
+
+  it("collapses whitespace in the reset label", () => {
+    const w = wand(84, "Staff", charge(3, { resetType: "Other", resetTypeDescription: "  regains\n 1d6   charges\r\n at dusk " }));
+    expect(limitedUse(sheet([w]))).toEqual(["• Staff   0 used / 3 max   (regains 1d6 charges at dusk)"]);
+  });
+
+  it("does not suppress on a degenerate key: an item with no id or entityTypeId is not matched by an action", () => {
+    const action = { id: "a3", entityTypeId: 222216831, componentId: 85, componentTypeId: 0, name: "Odd Action", activation: { activationType: 1 }, limitedUse: { maxUses: 1, numberUsed: 0, resetType: 1 } };
+    const noType = wand(85, "Typeless Wand", charge(2), {}, { entityTypeId: undefined });
+    const noId = wand(0, "Idless Wand", charge(2));
+    expect(limitedUse(sheet([noType, noId], { item: [action] }))).toEqual([
+      "• Odd Action   0 used / 1 max   (Short Rest)",
+      "• Typeless Wand   0 used / 2 max   (Dawn)",
+      "• Idless Wand   0 used / 2 max   (Dawn)",
+    ]);
   });
 
   it("omits an item with no limitedUse, null limitedUse, or maxUses 0", () => {
@@ -98,10 +118,13 @@ describe("charged items in LIMITED USE", () => {
       [1, "", "Short Rest"],
       [2, "", "Long Rest"],
       ["Dawn", "x", "Dawn"],
-      ["Consumable", "", "Consumable"],
+      ["Other", "Regains daily", "Regains daily"],
+      ["Other", "", "Other"],
+      ["", "Regains daily", "Regains daily"],
+      [undefined, "Regains daily", "Regains daily"],
+      [undefined, "", "Rest"],
       [7, "Regains daily", "Regains daily"],
       [7, "", "Rest"],
-      [undefined, "", "Rest"],
     ])("resetType %j with description %j reads (%s)", (resetType, resetTypeDescription, label) => {
       const w = wand(20, "Test Wand", { maxUses: 4, numberUsed: 0, resetType, resetTypeDescription });
       expect(limitedUse(sheet([w]))).toEqual([`• Test Wand   0 used / 4 max   (${label})`]);
@@ -110,8 +133,10 @@ describe("charged items in LIMITED USE", () => {
 });
 
 describe("the Rules header is unchanged by charged items", () => {
-  it("counts the item once, as before", () => {
+  it("lists the charges and leaves the Rules line as it was", () => {
     const rules = (out: string) => out.split("\n").find(l => l.startsWith("Rules:"));
-    expect(rules(sheet([wand(30, "Wand of Web", charge(7))]))).toBe(rules(sheet([wand(30, "Wand of Web", null)])));
+    const charged = sheet([wand(30, "Wand of Web", charge(7))]);
+    expect(limitedUse(charged)).toEqual(["• Wand of Web   0 used / 7 max   (Dawn)"]);
+    expect(rules(charged)).toBe(rules(sheet([wand(30, "Wand of Web", null)])));
   });
 });

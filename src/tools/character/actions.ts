@@ -231,11 +231,19 @@ function buildItemChargeLines(
     const own = obj(i.limitedUse);
     const lu = num(own.maxUses) > 0 ? own : obj(def.limitedUse);
     if (!(num(lu.maxUses) > 0)) return [];
-    if (num(def.id) && actionKeys.has(entityKey(def.id, def.entityTypeId))) return [];
+    // A consumable is already listed, with its count, under INVENTORY.
+    if (lu.resetType === "Consumable") return [];
     const name = editions.named(str(def.name), def);
-    const reset = typeof lu.resetType === "string" && lu.resetType !== ""
-      ? lu.resetType
-      : resetLabels[num(lu.resetType)] ?? (str(lu.resetTypeDescription) || "Rest");
+    if (name === "") return [];
+    // A degenerate key (no definition id or entity type) never matches an action.
+    if (num(def.id) && num(def.entityTypeId) && actionKeys.has(entityKey(def.id, def.entityTypeId))) return [];
+    const description = str(lu.resetTypeDescription).replace(/\s+/g, " ").trim();
+    const type = typeof lu.resetType === "string" ? lu.resetType.trim() : "";
+    const reset = type !== "" && type !== "Other"
+      ? type
+      : typeof lu.resetType === "number" && resetLabels[lu.resetType]
+        ? resetLabels[lu.resetType]
+        : description || type || "Rest";
     return [wrapIfHomebrew(`• ${name}   ${num(lu.numberUsed)} used / ${num(lu.maxUses)} max   (${reset})`, shownHomebrew(i, name))];
   });
 }
