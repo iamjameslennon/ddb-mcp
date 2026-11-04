@@ -58,7 +58,7 @@ diff /tmp/before.txt /tmp/after.txt                    # manual, required
 src/tools/character.ts                 ← public API only (network/IO, character cache; ~380 lines)
 src/tools/character/
   types.ts                             ← CharData, Mod (+ typed mod interfaces, follow-up A), ClassEntry, InventoryItem, CoreStats, ParseSection
-  helpers.ts                           ← str/num/arr/obj/signed/modOf/capitalize/hasTag/stripHtml, mod guards (isBonusMod…), homebrew predicates (isHomebrewEntry, featureDefinition, isHomebrewClassFeature), statNames/statKeys, levenshteinDistance
+  helpers.ts                           ← str/num/arr/obj/signed/modOf/capitalize/hasTag/stripHtml, mod guards (isBonusMod…), homebrew predicates (isHomebrewEntry, featureDefinition, isHomebrewClassFeature, shownHomebrew), records (object entries of an array field), splitListLines (a list's homebrew entries on their own wrapped line), statNames/statKeys, levenshteinDistance
   templates.ts                         ← makeResolveTemplates(profBonus, totalLevel)
   core.ts                              ← computeCoreStats(char, index) → CoreStats (index: SourceIndex, for editions)
   editions.ts                          ← computeCharacterEditions: main edition, `Rules:` line, inline-tag helpers (rules-edition phase 5)
@@ -69,7 +69,7 @@ src/tools/character/
   defenses.ts                          ← Resistances/Immunities/Conditions + formatDefensesBlock
   features.ts                          ← Feats/ClassFeatures/RacialTraits/Background + block
   weapons.ts                           ← computeWeaponAttacks: weapon attack rolls (martial arts, finesse, magic)
-  actions.ts                           ← Actions/Bonus/Reactions/LimitedUse + formatCombatBlock
+  actions.ts                           ← Actions/Bonus/Reactions/LimitedUse (incl. item charges) + formatCombatBlock; grantingEntities/withOptions/bucketAnyHomebrew link each action to the entity that grants it
   spells.ts                            ← computeSpells: Spellcasting/Slots/Spells/Concentration + formatSpellsBlock / formatConcentrationBlock; shownSpellDefinitions
   inventory.ts                         ← Equipped/Carried/Attunement/Currency + block
   notes.ts                             ← Traits/Backstory/Allies + formatNotesBlock
