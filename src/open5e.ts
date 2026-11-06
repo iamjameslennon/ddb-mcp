@@ -1097,6 +1097,8 @@ async function o5OptionReply<T extends O5Record>(
     /** Counted in the heading: "race(s)". */
     counted: string;
     noMatch: string;
+    limit: number;
+    offset: number;
     detail: (hit: O5Hit<T>) => Promise<string>;
     line: (entry: O5Entry<T>) => Promise<string>;
   },
@@ -1109,11 +1111,24 @@ async function o5OptionReply<T extends O5Record>(
     const same = got?.entry.edition === hit.entry.edition && got.entry.record.key === hit.entry.record.key;
     return o5Section(null, await opts.detail({ ...hit, renamed: same ? got.renamed : undefined }), searchFooter(requested, hidden), hidden);
   }
-  const lines = await Promise.all(selected.map(({ entry }) => opts.line(entry)));
-  return o5SearchReply(requested, origin, `Found ${selected.length} ${opts.counted} (SRD only):`, lines, hidden, opts.noMatch);
+  const total = selected.length;
+  const found = `Found ${total} ${opts.counted} (SRD only)`;
+  // An offset at or past the end has no lines to show, and is not "no match": N counts every match.
+  if (total && opts.offset >= total) {
+    return o5Section(open5eSearchHeader(requested, origin), `${found} — offset ${opts.offset} is past the end.`, searchFooter(requested, hidden), hidden);
+  }
+  const page = selected.slice(opts.offset, opts.offset + opts.limit);
+  const lines = await Promise.all(page.map(({ entry }) => opts.line(entry)));
+  const end = opts.offset + page.length;
+  if (total > end) lines.push(`\n*Use offset: ${end} to see more.*`);
+  const heading = total > page.length ? `${found}, showing ${opts.offset + 1}–${end}:` : `${found}:`;
+  return o5SearchReply(requested, origin, heading, lines, hidden, opts.noMatch);
 }
 
-type O5OptionSearchParams = { name?: string; rulesEdition?: RulesEdition };
+type O5OptionSearchParams = { name?: string; rulesEdition?: RulesEdition; limit?: number; offset?: number };
+
+/** Each option search's page size: the tools' own `defaultLimit`. */
+const O5_OPTION_LIMIT = 30;
 
 // ── Species
 
@@ -1187,6 +1202,8 @@ export async function o5SearchRacesSection(params: O5OptionSearchParams, origin:
     endpoint: "species",
     counted: "race(s)",
     noMatch: "No races found (SRD only).",
+    limit: params.limit ?? O5_OPTION_LIMIT,
+    offset: params.offset ?? 0,
     detail: hit => formatO5Species(hit, origin),
     line: async entry => {
       const { parent, speed } = await speciesFacts(entry);
@@ -1246,6 +1263,8 @@ export async function o5SearchClassesSection(params: O5OptionSearchParams, origi
     endpoint: "classes",
     counted: "class(es)",
     noMatch: "No classes found (SRD only).",
+    limit: params.limit ?? O5_OPTION_LIMIT,
+    offset: params.offset ?? 0,
     detail: hit => formatO5Class(hit, origin),
     line: async entry => {
       const die = await hitDie(entry);
@@ -1286,6 +1305,8 @@ export async function o5SearchBackgroundsSection(params: O5OptionSearchParams, o
     endpoint: "backgrounds",
     counted: "background(s)",
     noMatch: "No backgrounds found (SRD only).",
+    limit: params.limit ?? O5_OPTION_LIMIT,
+    offset: params.offset ?? 0,
     detail: async hit => formatO5Background(hit, origin),
     line: async entry => {
       const skills = (entry.record.benefits ?? []).find(x => x.type === "skill_proficiency" || x.name === "Skill Proficiencies");
@@ -1317,18 +1338,25 @@ function formatO5Feat(hit: O5Hit<O5Feat>, origin: Open5eOrigin): string {
   return lines.join("\n");
 }
 
-export async function o5SearchFeats(params: O5OptionSearchParams, origin: "unavailable" | "not-found"): Promise<string> {
+type O5FeatSearchParams = O5OptionSearchParams & { prerequisite?: string };
+
+export async function o5SearchFeats(params: O5FeatSearchParams, origin: "unavailable" | "not-found"): Promise<string> {
   return renderSection(await o5SearchFeatsSection(params, origin));
 }
 
-export async function o5SearchFeatsSection(params: O5OptionSearchParams, origin: "unavailable" | "not-found"): Promise<SearchSection> {
+export async function o5SearchFeatsSection(params: O5FeatSearchParams, origin: "unavailable" | "not-found"): Promise<SearchSection> {
   const requested = params.rulesEdition ?? "2024";
-  return o5OptionReply(requested, origin, await o5Select<O5Feat>(["feats"], requested, { name: params.name }), {
+  const wanted = params.prerequisite?.toLowerCase();
+  // A feat without a prerequisite never matches a prerequisite query.
+  const passes = wanted ? (e: O5Entry<O5Feat>): boolean => prerequisite(e.record).toLowerCase().includes(wanted) : undefined;
+  return o5OptionReply(requested, origin, await o5Select<O5Feat>(["feats"], requested, { name: params.name, passes }), {
     single: true,
     name: params.name,
     endpoint: "feats",
     counted: "feat(s)",
     noMatch: "No feats found (SRD only).",
+    limit: params.limit ?? O5_OPTION_LIMIT,
+    offset: params.offset ?? 0,
     detail: async hit => formatO5Feat(hit, origin),
     line: async entry => `• ${entry.record.name} ${editionTag(o5Info(entry))}${prerequisite(entry.record) ? ` (${prerequisite(entry.record)})` : ""}`,
   });

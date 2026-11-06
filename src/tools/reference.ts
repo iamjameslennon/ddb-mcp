@@ -982,7 +982,7 @@ export async function searchRacesSection(params: RaceSearchParams = {}): Promise
       return `- **${raceName(race)}** ${label}${race.isSubRace ? " *(Subrace)*" : ""}${desc ? ` — ${desc}` : ""}`;
     },
     notFound: `No races found ${matching(params.name)}.`,
-    fallback: kind => o5SearchRacesSection({ name: params.name, rulesEdition: params.rulesEdition }, kind),
+    fallback: kind => o5SearchRacesSection({ name: params.name, rulesEdition: params.rulesEdition, limit: params.limit ?? 30, offset: params.offset ?? 0 }, kind),
   });
 }
 
@@ -1035,7 +1035,7 @@ export async function searchClassesSection(params: ClassSearchParams = {}): Prom
       return `- **${cls.name}** ${label} — Hit Die: ${hitDie}${spellcasting}${desc ? `\n  ${desc}` : ""}`;
     },
     notFound: `No classes found ${matching(params.name)}.`,
-    fallback: kind => o5SearchClassesSection({ name: params.name, rulesEdition: params.rulesEdition }, kind),
+    fallback: kind => o5SearchClassesSection({ name: params.name, rulesEdition: params.rulesEdition, limit: params.limit ?? 30, offset: params.offset ?? 0 }, kind),
   });
 }
 
@@ -1078,7 +1078,7 @@ export async function searchBackgroundsSection(params: BackgroundSearchParams = 
       return `- **${bg.name}** ${label}${desc ? ` — ${desc}` : ""}`;
     },
     notFound: `No backgrounds found ${matching(params.name)}.`,
-    fallback: kind => o5SearchBackgroundsSection({ name: params.name, rulesEdition: params.rulesEdition }, kind),
+    fallback: kind => o5SearchBackgroundsSection({ name: params.name, rulesEdition: params.rulesEdition, limit: params.limit ?? 30, offset: params.offset ?? 0 }, kind),
   });
 }
 
@@ -1126,7 +1126,7 @@ export async function searchFeatsSection(params: FeatSearchParams = {}): Promise
       return `- **${feat.name}** ${label}${prereq}${desc ? ` — ${desc}` : ""}`;
     },
     notFound: "No feats found matching the search criteria.",
-    fallback: kind => o5SearchFeatsSection({ name: params.name, rulesEdition: params.rulesEdition }, kind),
+    fallback: kind => o5SearchFeatsSection({ name: params.name, rulesEdition: params.rulesEdition, prerequisite: params.prerequisite, limit: params.limit ?? 30, offset: params.offset ?? 0 }, kind),
   });
 }
 

@@ -306,6 +306,27 @@ describe("source and failures", () => {
       .toBe("Backgrounds unavailable — D&D Beyond and Open5e both failed.");
   });
 
+  it("a no-match feat search reaches the Open5e fallback with prerequisite, limit and offset", async () => {
+    install({ feats: [] });
+    // The suite mocks fs, so the recorded fixtures can't be read: two inline 2024 feats.
+    const o5Feat = (name: string, prerequisite: string | null, doc = "srd-2024") => ({
+      key: `${doc}_${name.toLowerCase()}`, name, type: "GENERAL", desc: "", benefits: [],
+      has_prerequisite: !!prerequisite, prerequisite, document: { key: doc },
+    });
+    const feats = (url: string) => (url.includes("srd-2024")
+      ? [o5Feat("Alert", null), o5Feat("Grappler", "Prerequisite: Level 4+, Strength or Dexterity 13+")]
+      : [o5Feat("Grappler", null, "srd-2014")]);
+    const ddb = fetchMock.getMockImplementation() as (url: string) => Promise<Response>;
+    fetchMock.mockImplementation(async (url: string) => (url.includes("api.open5e.com")
+      ? o5Response(JSON.stringify({ count: feats(url).length, next: null, previous: null, results: feats(url) }), { status: 200 }, url)
+      : ddb(url)));
+    const text = await reference.searchFeats({ prerequisite: "strength" });
+    expect(text).toContain("Grappler");
+    expect(text).not.toContain("Alert");
+    expect(await reference.searchFeats({ limit: 1 })).toContain("showing 1–1");
+    expect(await reference.searchFeats({ offset: 999 })).toContain("offset 999 is past the end");
+  });
+
   it("an empty list is never cached", async () => {
     install({ feats: [] });
     await reference.searchFeats({});

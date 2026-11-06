@@ -14,7 +14,7 @@ import {
   clearOpen5eCache,
   o5GetSpell, o5GetMonster, o5GetEquipment, o5MonsterInEdition,
   o5SearchSpells, o5SearchMonsters, o5SearchItems,
-  o5SearchRaces, o5SearchClasses, o5SearchBackgrounds, o5SearchFeats,
+  o5SearchRaces, o5SearchClasses, o5SearchBackgrounds, o5SearchFeats, o5SearchFeatsSection, o5SearchRacesSection,
   o5SearchRules, o5GetRule, o5GetMonsterStats, crText, castingTime, humanize, o5TwinNameFor, o5EquipmentKey, o5EquipmentGroupKey,
   type O5Record,
 } from "../src/open5e.js";
@@ -1415,5 +1415,57 @@ describe("o5GetMonster with a locked D&D Beyond edition (M2)", () => {
 
   it("without a locked edition the reason is unchanged", async () => {
     expect((await o5GetMonster("Half-Red Dragon Veteran", "2024", "unavailable"))!.split("\n")[2]).toBe("(no 2024 version found — 2014 text shown)");
+  });
+});
+
+describe("Open5e option searches: prerequisite, limit and offset", () => {
+  const feat = (name: string, prerequisite: string | null): Record<string, unknown> => ({
+    ...o5Record<Record<string, unknown>>("srd-2024", "feats", "Alert"),
+    key: `srd-2024_${name.toLowerCase().replace(/ /g, "-")}`, name,
+    has_prerequisite: !!prerequisite, prerequisite,
+  });
+  const bullets = (text: string): string[] => text.split("\n").filter(l => l.startsWith("• "));
+
+  it("prerequisite is a case-insensitive substring; a feat without one never matches", async () => {
+    const out = (await o5SearchFeatsSection({ prerequisite: "strength", rulesEdition: "2024" }, "not-found")).body;
+    expect(out.split("\n")[0]).toBe("Grappler");
+    expect(out).not.toContain("Alert");
+    expect((await o5SearchFeatsSection({ prerequisite: "zzz" }, "not-found")).noMatch).toBe(true);
+  });
+
+  it("prerequisite lists exactly the matching feats", async () => {
+    stubFetch(o5FixtureFetch({ "srd-2024/feats": [
+      feat("Ritual Caster", "Prerequisite: Spellcasting or Pact Magic"), feat("War Caster", "Spellcasting"), feat("Spell Sniper", "Level 4+, Spellcasting"),
+      feat("Tough", null), feat("Lucky", null),
+    ] }));
+    const out = (await o5SearchFeatsSection({ prerequisite: "spellcast", rulesEdition: "2024" }, "not-found")).body;
+    expect(bullets(out)).toHaveLength(3);
+    expect(out).toContain("Found 3 feat(s) (SRD only):");
+    expect(out).not.toContain("Tough");
+  });
+
+  it("limit pages the lines; N counts every match", async () => {
+    const out = await o5SearchFeats({ limit: 1, rulesEdition: "2024" }, "not-found");
+    expect(bullets(out)).toHaveLength(1);
+    expect(out).toContain("Found 2 feat(s) (SRD only), showing 1–1:");
+    expect(out).toContain("\n*Use offset: 1 to see more.*");
+  });
+
+  it("the last page has the range heading and no more-hint; a full fit is the plain heading", async () => {
+    const last = await o5SearchFeats({ offset: 1, rulesEdition: "2024" }, "not-found");
+    expect(bullets(last)).toHaveLength(1);
+    expect(last).toContain("Found 2 feat(s) (SRD only), showing 2–2:");
+    expect(last).not.toContain("Use offset");
+    expect(await o5SearchFeats({ rulesEdition: "2024" }, "not-found")).toContain("Found 2 feat(s) (SRD only):");
+  });
+
+  it("an offset past the end is not a no-match", async () => {
+    const out = await o5SearchFeats({ offset: 999, rulesEdition: "2024" }, "not-found");
+    expect(out).toContain("Found 2 feat(s) (SRD only) — offset 999 is past the end.");
+    expect(bullets(out)).toHaveLength(0);
+  });
+
+  it("races page too", async () => {
+    expect(bullets((await o5SearchRacesSection({ limit: 1 }, "not-found")).body)).toHaveLength(1);
   });
 });
