@@ -52,7 +52,8 @@ export function computeInventory(core: CoreStats): Inventory {
       equippedNonWeapons.push({ text: `${iName}${ac2 ? ` (AC ${ac2})` : ""}`, homebrew });
     } else if (filterType !== "Weapon") {
       const items = homebrew ? homebrewItems : carriedItems;
-      items.set(iName, (items.get(iName) ?? 0) + qty);
+      const key = homebrew ? iName.trim() : iName;
+      items.set(key, (items.get(key) ?? 0) + qty);
     }
   }
   const line = (items: Map<string, number>) => [...items.entries()]

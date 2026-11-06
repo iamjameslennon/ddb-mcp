@@ -96,12 +96,13 @@ export function computeCharacterEditions(char: CharData, index: SourceIndex): Ch
   for (const def of dedupeDefinitions(shownSpellDefinitions(char, classes).filter(d => str(d.name)))) {
     entries.push(entry(str(def.name), "spell", def));
   }
-  for (const def of dedupeDefinitions(shownItemDefinitions(records<InventoryItem>(char.inventory)).filter(d => str(d.name)))) {
+  // A player-made item has no ruleset: it is neither tagged nor counted.
+  for (const def of dedupeDefinitions(shownItemDefinitions(records<InventoryItem>(char.inventory)).filter(d => str(d.name) && d.isCustomItem !== true))) {
     entries.push(entry(str(def.name), "item", def));
   }
 
   const asTag = (t: string | null): string => (t ? ` ${t}` : "");
-  const tag = (def: unknown): string => asTag(characterTag(info(def), main));
+  const tag = (def: unknown): string => (obj(def).isCustomItem === true ? "" : asTag(characterTag(info(def), main)));
   return {
     main,
     rulesLine: characterRulesLine(entries),

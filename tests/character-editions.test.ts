@@ -95,6 +95,14 @@ describe("character Rules line and header tags", () => {
     expect(sheet(c)).toContain("  Rules: 2024 · 2014 content: 2 spells, 1 item · edition not stated: 1 item");
   });
 
+  it("a custom item has no ruleset: not counted in Rules:", () => {
+    const c = variant(FIGHTER_5, d => {
+      d.inventory = [item(910, "Oasis Amulet", "Other Gear", { isCustomItem: true, isHomebrew: false, sources: [] })];
+    });
+    expect(sheet(c)).not.toContain("edition not stated");
+    expect(lines(c)[2]).toBe("  Rules: 2024");
+  });
+
   it("items without an id are counted by name", () => {
     const gear = (name: string) => ({
       equipped: false, quantity: 1,

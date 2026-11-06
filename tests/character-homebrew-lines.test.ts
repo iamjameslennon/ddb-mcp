@@ -276,7 +276,7 @@ describe("custom items are placed as homebrew", () => {
 
   it("moves a custom carried item to the wrapped INVENTORY (homebrew) list", () => {
     const out = sheet({ inventory: [gear(1, "Backpack"), gear(2, "Oasis Amulet", custom)] }, "inventory");
-    expect(out).toContain(["INVENTORY", "  Backpack", "INVENTORY (homebrew)", wrapUntrusted("  Oasis Amulet [edition not stated]")].join("\n"));
+    expect(out).toContain(["INVENTORY", "  Backpack", "INVENTORY (homebrew)", wrapUntrusted("  Oasis Amulet")].join("\n"));
   });
 
   it("wraps a custom equipped item's line and a custom weapon's attack line", () => {
@@ -284,6 +284,8 @@ describe("custom items are placed as homebrew", () => {
     expect(inv).toMatch(new RegExp(`${OPEN}\\n[^\\n]*Hex Plate[^\\n]*\\n${CLOSE}`));
     const combat = sheet({ inventory: [weapon(3, "Filigreed Longsword", custom)] }, "combat");
     expect(combat).toMatch(new RegExp(`${OPEN}\\n[^\\n]*Filigreed Longsword[^\\n]*\\n${CLOSE}`));
+    expect(inv).not.toContain("[edition not stated]");
+    expect(combat).not.toContain("[edition not stated]");
   });
 
   it("wraps a custom item's charge line in LIMITED USE", () => {
