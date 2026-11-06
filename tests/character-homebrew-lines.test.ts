@@ -288,6 +288,18 @@ describe("custom items are placed as homebrew", () => {
     expect(combat).not.toContain("[edition not stated]");
   });
 
+  it("trims item names: custom 'X ' and 'X' merge, homebrew 'Q ' and 'Q' merge with one space before the tag", () => {
+    const out = sheet({ inventory: [gear(1, "X ", custom), gear(2, "X", custom), gear(3, "Q ", { isHomebrew: true }), gear(4, "Q", { isHomebrew: true })] }, "inventory");
+    expect(out).toContain(wrapUntrusted("  X ×2, Q [homebrew] ×2"));
+  });
+
+  it("trims an equipped item's name and keeps a trailing-space weapon's column alignment", () => {
+    const inv = sheet({ inventory: [armor(2, "Hex Plate ", 18, { isHomebrew: true })] }, "inventory");
+    expect(inv).toContain(wrapUntrusted("  Hex Plate [homebrew] (AC 18)"));
+    const combat = sheet({ inventory: [weapon(1, "Longsword "), weapon(2, "Longsword")] }, "combat");
+    expect(combat).toContain("• ×2 Longsword        +3 to hit   1d8+3 slashing");
+  });
+
   it("wraps a custom item's charge line in LIMITED USE", () => {
     const out = sheet({ inventory: [gear(4, "Ghost Step tattoo", custom,
       { limitedUse: { maxUses: 3, numberUsed: 0, resetType: "Dawn" } })] }, "combat");

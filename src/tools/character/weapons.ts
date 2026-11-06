@@ -44,7 +44,7 @@ export function computeWeaponAttacks(core: CoreStats): string[] {
     if (str(def.filterType) !== "Weapon") continue;
     if (i.equipped !== true) continue; // only show equipped weapons in ACTIONS
 
-    const wName = str(def.name);
+    const wName = str(def.name).trim();
     const wLabel = editions.named(wName, def);
     const dmg = obj(def.damage);
     const dmgDice = str(dmg.diceString);

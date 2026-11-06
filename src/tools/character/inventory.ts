@@ -42,7 +42,7 @@ export function computeInventory(core: CoreStats): Inventory {
   let attuned = 0;
   for (const i of inventory) {
     const def = obj(i.definition);
-    const iName = editions.named(str(def.name), def);
+    const iName = editions.named(str(def.name).trim(), def);
     const filterType = str(def.filterType);
     const qty = num(i.quantity) || 1;
     const homebrew = shownHomebrew(i, iName);
@@ -52,8 +52,7 @@ export function computeInventory(core: CoreStats): Inventory {
       equippedNonWeapons.push({ text: `${iName}${ac2 ? ` (AC ${ac2})` : ""}`, homebrew });
     } else if (filterType !== "Weapon") {
       const items = homebrew ? homebrewItems : carriedItems;
-      const key = homebrew ? iName.trim() : iName;
-      items.set(key, (items.get(key) ?? 0) + qty);
+      items.set(iName, (items.get(iName) ?? 0) + qty);
     }
   }
   const line = (items: Map<string, number>) => [...items.entries()]
