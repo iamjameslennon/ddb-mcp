@@ -15,7 +15,7 @@
  *
  * Unlike the server, this script exchanges one cobalt token and reuses it, so
  * it cannot reproduce auth-service rate-limiting of the server's per-request
- * token exchange (CLAUDE.md Next steps).
+ * token exchange (docs/claude/history.md, Next steps).
  *
  * Reads the session from the same path the MCP server uses
  * (~/.config/ddb-mcp/session.json on macOS/Linux, %APPDATA%/ddb-mcp/session.json
