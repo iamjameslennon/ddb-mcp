@@ -30,6 +30,7 @@ import {
   type CatalogAdapter, type CatalogHit, type LookupAdapter, type SearchSection,
 } from "./edition-search.js";
 import { createSpellStore, addSpells, spellList, type DdbSpell, type SpellStore } from "./spell-store.js";
+import { castingTimeText } from "./casting-time.js";
 import {
   buildClassFeatures, classFeatureFilters, compareClassFeatures, formatClassFeatureLine,
   buildRacialTraits, racialTraitFilters, compareRacialTraits, formatRacialTraitLine, raceKeyOf,
@@ -389,13 +390,8 @@ export function isConcentrationSpell(def: Record<string, unknown>): boolean | nu
 /** `rulesLines` (from lookupCatalog) go directly under the title. */
 function formatSpell(spell: DdbSpell, rulesLines: string[]): string {
   const d = spell.definition;
-  const ACTIVATION_TYPES: Record<number, string> = {
-    1: "Action", 3: "Bonus Action", 6: "Reaction",
-  };
   const levelLabel = d.level === 0 ? "Cantrip" : `Level ${d.level}`;
-  const castingTime = d.activation
-    ? `${d.activation.activationTime} ${ACTIVATION_TYPES[d.activation.activationType] ?? "Action"}`
-    : "1 Action";
+  const castingTime = castingTimeText(d.activation, d.castingTimeDescription);
 
   let range = "Self";
   if (d.range) {

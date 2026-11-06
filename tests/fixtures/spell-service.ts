@@ -35,6 +35,7 @@ function djb2(name: string): number {
 export function spell(name: string, level: number, opts: {
   id?: number; description?: string; concentration?: boolean;
   isLegacy?: boolean; isHomebrew?: boolean; sources?: number[]; school?: string; ritual?: boolean;
+  activation?: { activationTime: number; activationType: number }; castingTimeDescription?: string;
 } = {}) {
   return {
     definition: {
@@ -45,6 +46,8 @@ export function spell(name: string, level: number, opts: {
       description: opts.description ?? `${name} description`,
       concentration: opts.concentration ?? false,
       ritual: opts.ritual ?? false,
+      ...(opts.activation ? { activation: opts.activation } : {}),
+      ...(opts.castingTimeDescription !== undefined ? { castingTimeDescription: opts.castingTimeDescription } : {}),
       ...(opts.isLegacy !== undefined ? { isLegacy: opts.isLegacy } : {}),
       ...(opts.isHomebrew !== undefined ? { isHomebrew: opts.isHomebrew } : {}),
       ...(opts.sources ? { sources: opts.sources.map(sourceId => ({ sourceId })) } : {}),

@@ -33,6 +33,14 @@ describe("formatCharacterLookup", () => {
     expect(out).toContain("4. [Spell] Wall of Fire [edition not stated] (Level 4 Evocation)");
   });
 
+  it("a minute-long spell prints its casting time in minutes", () => {
+    const char = variant(FIGHTER_5, d => { d.spells = { race: [
+      { definition: { id: 5, name: "Identify", level: 1, school: "Divination", sources: S(145),
+        activation: { activationTime: 1, activationType: 6 } } },
+    ] }; }).data as Record<string, unknown>;
+    expect(formatCharacterLookup(char, "identify", INDEX)).toContain("Casting Time: 1 Minute");
+  });
+
   it("no hit keeps the existing not-found text", () => {
     expect(formatCharacterLookup(FIGHTER_5.data as Record<string, unknown>, "zzzz", INDEX)).toMatch(/^No definition found matching "zzzz"/);
   });

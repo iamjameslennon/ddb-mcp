@@ -104,6 +104,13 @@ describe("ddb_get_spell rules_edition", () => {
     expect(o.join("\n")).toContain("SLEEP 2014");
   });
 
+  it("prints the casting time from the activation type, with a reaction trigger", async () => {
+    installBasics([spell("Shield", 1, { id: 301, ...NEW, activation: { activationTime: 1, activationType: 4 },
+      castingTimeDescription: "which you take when you are hit by an attack" })]);
+    expect(await reference.getSpell("Shield")).toContain(
+      "Casting Time: 1 Reaction, which you take when you are hit by an attack");
+  });
+
   it("a 2014-only spell under the default carries the reason line", async () => {
     installBasics();
     expect(await reference.getSpell("Toll the Dead")).toContain(

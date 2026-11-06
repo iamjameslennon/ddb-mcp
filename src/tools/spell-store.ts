@@ -21,6 +21,7 @@ export interface SpellDefinition {
   components?: number[];
   componentsDescription?: string;
   activation?: { activationTime: number; activationType: number };
+  castingTimeDescription?: string | null;
   range?: { origin: string; rangeValue?: number; aoeType?: string; aoeValue?: number };
   duration?: { durationInterval?: number; durationUnit?: string; durationType?: string };
 }

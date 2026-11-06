@@ -19,6 +19,7 @@ import { computeCharacterEditions, type CharacterEditions } from "./editions.js"
 import { featureDefinition, isHomebrewClassFeature, isHomebrewEntry, levenshteinDistance, records } from "./helpers.js";
 import { resolveBackground } from "./features.js";
 import type { CharData } from "./types.js";
+import { castingTimeText } from "../casting-time.js";
 
 function matchesDefinitionQuery(name: string, query: string): boolean {
   const n = name.toLowerCase();
@@ -34,11 +35,7 @@ function formatSpellResult(spell: Record<string, unknown>): string {
   const school = String(d.school ?? "");
   const levelLabel = level === 0 ? "Cantrip" : `Level ${level}`;
 
-  const ACTIVATION_TYPES: Record<number, string> = { 1: "Action", 3: "Bonus Action", 6: "Reaction" };
-  const act = d.activation as Record<string, unknown> | undefined;
-  const castingTime = act
-    ? `${act.activationTime} ${ACTIVATION_TYPES[Number(act.activationType)] ?? "Action"}`
-    : "1 Action";
+  const castingTime = castingTimeText(d.activation as Record<string, unknown> | undefined, d.castingTimeDescription);
 
   const rng = d.range as Record<string, unknown> | undefined;
   let range = "Self";
