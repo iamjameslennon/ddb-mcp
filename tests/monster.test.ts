@@ -2312,7 +2312,10 @@ describe("a lookup that couldn't reach D&D Beyond is unavailable, not not-found"
 
 describe("unavailable names in encounter and treasure output (review pins)", () => {
   const NOT_FOUND = { status: "not-found" } as const;
-  const strip = (out: string) => out.split("\n").filter(l => !l.startsWith("⚠")).join("\n").trim();
+  // Drops the warning lines and the INCOMPLETE marking (headline form, "; excludes N not counted"), leaving the rating itself.
+  const strip = (out: string) => out.split("\n").filter(l => !l.startsWith("⚠")).join("\n")
+    .replace(/INCOMPLETE — \d+ monster\(s\) not counted \(the rest rate ([A-Z]+)\)/, "$1")
+    .replace("; excludes 1 not counted", "").replace(/\n{3,}/g, "\n\n").trim();
 
   it.each(["2024", "2014"] as const)("%s: an unavailable name adds no XP and no monster count, exactly like a not-found one", async (edition) => {
     vi.mocked(o5GetMonsterStats).mockImplementation(async () => NOT_FOUND);
@@ -2321,11 +2324,12 @@ describe("unavailable names in encounter and treasure output (review pins)", () 
     failSearchTerms.add("goblin");
     const out = await rateEncounter(party, [{ name: "Goblin" }, { name: "Wolf", count: 2 }], edition);
     expect(out).toContain("Couldn't look up");
+    expect(out.split("\n")[0]).toContain("INCOMPLETE — 1 monster(s) not counted");
     expect(strip(out)).toBe(strip(baseline));
     const alone = await rateEncounter(party, [{ name: "Wolf", count: 2 }], edition);
     expect(strip(out)).toBe(strip(alone));
     if (edition === "2024") expect(out).toContain("Total XP: 100");
-    else expect(out).toContain("Multiplier:   ×1.5 (2 monsters)");
+    else expect(out).toContain("Multiplier:   ×1.5 (2 monsters; excludes 1 not counted)");
   });
 
   it("warns in the order not-found, unavailable, ambiguous", async () => {

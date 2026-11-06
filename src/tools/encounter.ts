@@ -264,6 +264,7 @@ export async function rateEncounter(
   const notFound: string[] = [];
   const unavailable: string[] = [];
   const ambiguous: string[] = [];
+  let uncounted = 0; // named monsters whose lookup failed, by headcount (the name lists dedupe)
 
   // Distinct names resolve concurrently, MONSTER_LOOKUP_CONCURRENCY at a time; the loop below keeps input order.
   const lookupNames = [...new Set(monsters.filter(m => m.cr === undefined && m.name).map(m => m.name as string))];
@@ -290,20 +291,24 @@ export async function rateEncounter(
       const stats = lookups.get(m.name)!;
       if (stats.status === "not-found") {
         notFound.push(m.name);
+        uncounted += count;
         continue;
       }
       if (stats.status === "unavailable") {
         unavailable.push(m.name);
+        uncounted += count;
         continue;
       }
       if (stats.status === "ambiguous") {
         ambiguous.push(ambiguityMessage(m.name, stats.candidates.map(c => ({ name: c.name, cr: c.crValue === null ? null : displayCr(c.crValue) }))));
+        uncounted += count;
         continue;
       }
       if (stats.status === "unknown-cr") {
         // Listed with the ambiguous names: each is its own line telling the user to supply cr.
         const message = unknownCrMessage(stats.name);
         if (!ambiguous.includes(message)) ambiguous.push(message);
+        uncounted += count;
         continue;
       }
       resolvedName = stats.name;
@@ -329,6 +334,12 @@ export async function rateEncounter(
     return ["No valid monsters provided. Check names or supply cr values directly.", ...warningLines(notFound, unavailable, ambiguous)].join("\n");
   }
   const rules = encounterRulesLine(rulesEdition);
+  // Something named went uncounted: lead with that, and put the warnings right under the Rules line.
+  const incomplete = uncounted > 0;
+  const headline = (difficulty: string) => incomplete
+    ? `INCOMPLETE — ${uncounted} monster(s) not counted (the rest rate ${difficulty})`
+    : difficulty;
+  const warnings = warningLines(notFound, unavailable, ambiguous);
 
   // 3/4. Difficulty + output
   if (rulesEdition === "2024") {
@@ -350,8 +361,9 @@ export async function rateEncounter(
     }
 
     const lines = [
-      `ENCOUNTER DIFFICULTY: ${difficulty} (2024 XDMG)`,
+      `ENCOUNTER DIFFICULTY: ${headline(difficulty)} (2024 XDMG)`,
       rules,
+      ...(incomplete ? warnings : []),
       ``,
       `PARTY (${partySize} character${partySize !== 1 ? "s" : ""})`,
       ...partyLines,
@@ -365,7 +377,7 @@ export async function rateEncounter(
       `Result: ${difficulty} — ${explanation}`,
     ];
 
-    lines.push(...warningLines(notFound, unavailable, ambiguous));
+    if (!incomplete) lines.push(...warnings);
     return lines.join("\n");
 
   } else {
@@ -394,14 +406,16 @@ export async function rateEncounter(
     }
 
     const multiplierNote = partySize < 3
-      ? ` (stepped up — party fewer than 3)`
+      ? `, stepped up — party fewer than 3`
       : partySize > 5
-      ? ` (stepped down — party larger than 5)`
+      ? `, stepped down — party larger than 5`
       : "";
+    const excludes = incomplete ? `; excludes ${uncounted} not counted` : "";
 
     const lines = [
-      `ENCOUNTER DIFFICULTY: ${difficulty}`,
+      `ENCOUNTER DIFFICULTY: ${headline(difficulty)}`,
       rules,
+      ...(incomplete ? warnings : []),
       ``,
       `PARTY (${partySize} character${partySize !== 1 ? "s" : ""})`,
       ...partyLines,
@@ -411,8 +425,8 @@ export async function rateEncounter(
       ...monsterLines,
       ``,
       `Raw XP:       ${totalRawXp.toLocaleString()}`,
-      ...(multiplier !== 1 || multiplierNote
-        ? [`Multiplier:   ×${multiplier} (${totalMonsterCount} monster${totalMonsterCount !== 1 ? "s" : ""}${multiplierNote})`]
+      ...(multiplier !== 1 || multiplierNote || incomplete
+        ? [`Multiplier:   ×${multiplier} (${totalMonsterCount} monster${totalMonsterCount !== 1 ? "s" : ""}${multiplierNote}${excludes})`]
         : []
       ),
       `Adjusted XP:  ${adjustedXp.toLocaleString()}`,
@@ -420,7 +434,7 @@ export async function rateEncounter(
       `Result: ${difficulty} — ${explanation}`,
     ];
 
-    lines.push(...warningLines(notFound, unavailable, ambiguous));
+    if (!incomplete) lines.push(...warnings);
     return lines.join("\n");
   }
 }
