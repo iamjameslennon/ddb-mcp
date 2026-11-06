@@ -258,7 +258,10 @@ export async function fetchCharacter(characterId: string): Promise<CharacterFetc
   if (resp.status === 403) {
     throw new Error(`Character ${characterId} is private and cannot be accessed.`);
   }
-  throw new Error(`D&D Beyond API returned ${resp.status}: ${resp.statusText}`);
+  if (resp.status === 404) {
+    throw new Error(`Character ${characterId} was not found (404) — check the ID, or that the character still exists.`);
+  }
+  throw new Error(`D&D Beyond API returned ${resp.status}${resp.statusText ? `: ${resp.statusText}` : ""}`);
 }
 
 /**
@@ -384,7 +387,7 @@ export async function listCharacters(): Promise<string> {
   const resp = await session.fetch(
     `https://character-service.dndbeyond.com/character/v5/characters/list?userId=${session.userId}`
   );
-  if (!resp.ok) throw new Error(`Character list API returned ${resp.status}: ${resp.statusText}`);
+  if (!resp.ok) throw new Error(`Character list API returned ${resp.status}${resp.statusText ? `: ${resp.statusText}` : ""}`);
 
   const result = await resp.json() as {
     data?: {

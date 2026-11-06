@@ -5,7 +5,7 @@
  * No business logic — pure type/string/number utilities.
  */
 
-import { wrapUntrusted } from "../../utils.js";
+import { stripHtml as stripHtmlDecoded, wrapUntrusted } from "../../utils.js";
 import type { ListEntry, Mod, ProficiencyMod, ExpertiseMod, HalfProficiencyMod, BonusMod, SetMod, SetBaseMod, SenseMod, ResistanceMod, ImmunityMod, VulnerabilityMod, LanguageMod } from "./types.js";
 
 export const str = (v: unknown): string => (v != null ? String(v) : "");
@@ -23,12 +23,12 @@ export const modOf = (score: number): number => Math.floor((score - 10) / 2);
 export const capitalize = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
 /**
- * Lightweight HTML strip + whitespace collapse. Used for character snippets
- * (one-line summaries). For full HTML stripping with entity decoding, see
- * `stripHtml` in `src/utils.ts`.
+ * HTML strip (entities decoded, as in `stripHtml` in `src/utils.ts`) plus
+ * whitespace collapse. Used for character snippets (one-line summaries). Decode
+ * before any `wrapUntrusted`, which scrubs delimiter text only after decoding.
  */
 export const stripHtml = (s: string): string =>
-  s.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+  stripHtmlDecoded(s).replace(/\s+/g, " ").trim();
 
 /**
  * User-authored character content: any of these records, or its definition,

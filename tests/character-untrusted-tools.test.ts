@@ -17,6 +17,7 @@ vi.mock("fs", () => fsMock);
 const sessionMock = vi.hoisted(() => ({
   loggedIn: false,
   listBody: {} as unknown,
+  listFail: null as null | { status: number; statusText: string },
 }));
 vi.mock("../src/session-fetch.js", () => {
   class SessionChangedError extends Error {}
@@ -30,7 +31,9 @@ vi.mock("../src/session-fetch.js", () => {
     onSessionInvalidated: () => {},
     beginAuthenticatedSession: async () => ({
       userId: "99",
-      fetch: async () => ({ ok: true, status: 200, statusText: "", json: async () => sessionMock.listBody }),
+      fetch: async () => sessionMock.listFail
+        ? { ok: false, ...sessionMock.listFail }
+        : { ok: true, status: 200, statusText: "", json: async () => sessionMock.listBody },
     }),
   };
 });
@@ -53,6 +56,7 @@ function serveCharacter(data: Record<string, unknown>): void {
 beforeEach(() => {
   vi.clearAllMocks();
   sessionMock.loggedIn = false;
+  sessionMock.listFail = null;
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -116,5 +120,34 @@ describe("a malformed character body", () => {
     } })));
     const err = await getCharacterRaw("75").then(() => null, (e: Error) => e);
     expect(err?.message).toBe("D&D Beyond returned character 75 in an unreadable form (not JSON).");
+  });
+});
+
+describe("HTTP failure messages", () => {
+  const respond = (status: number, statusText: string) =>
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status, statusText, json: async () => ({}) })));
+
+  it("explains a 404 even with an empty statusText", async () => {
+    respond(404, "");
+    await expect(getCharacterRaw("404")).rejects.toThrow(
+      "Character 404 was not found (404) — check the ID, or that the character still exists.");
+  });
+
+  it("ends a bare 500 without a dangling colon", async () => {
+    respond(500, "");
+    await expect(getCharacterRaw("500")).rejects.toThrow(/^D&D Beyond API returned 500$/);
+  });
+
+  it("keeps a non-empty statusText", async () => {
+    respond(502, "Bad Gateway");
+    await expect(getCharacterRaw("502")).rejects.toThrow(/^D&D Beyond API returned 502: Bad Gateway$/);
+  });
+
+  it("applies the same rule to the character list", async () => {
+    sessionMock.loggedIn = true;
+    sessionMock.listFail = { status: 500, statusText: "" };
+    await expect(listCharacters()).rejects.toThrow(/^Character list API returned 500$/);
+    sessionMock.listFail = { status: 503, statusText: "Unavailable" };
+    await expect(listCharacters()).rejects.toThrow(/^Character list API returned 503: Unavailable$/);
   });
 });

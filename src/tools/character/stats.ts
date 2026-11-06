@@ -354,15 +354,20 @@ function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficie
                  !statKeys.some(k => sub.startsWith(k))) {
         // A subType is printed as the entry's name, so an unknown one goes to a
         // wrapped (custom) line.
+        // A known slug prints D&D Beyond's own name ("Thieves' Tools"); an
+        // unknown one keeps the slug text, as its friendly name is not DDB's.
         const known = PROFICIENCY_SLUGS.has(sub);
+        const name = (known && str(m.friendlySubtypeName)) || capitalize(sub.replace(/-/g, " "));
         if (isWeaponSlug(sub)) {
-          (known ? weapons : customWeapons).push(capitalize(sub.replace(/-/g, " ")));
+          (known ? weapons : customWeapons).push(name);
         } else {
-          (known ? tools : customTools).push(capitalize(sub.replace(/-/g, " ")));
+          (known ? tools : customTools).push(name);
         }
       }
     } else if (isLanguageMod(m)) {
-      (LANGUAGE_SLUGS.has(sub) ? languages : customLanguages).push(capitalize(sub.replace(/-/g, " ")));
+      const known = LANGUAGE_SLUGS.has(sub);
+      const name = (known && str(m.friendlySubtypeName)) || capitalize(sub.replace(/-/g, " "));
+      (known ? languages : customLanguages).push(name);
     }
   }
   // Player-added languages via DDB's "Custom Proficiency" UI live here.
