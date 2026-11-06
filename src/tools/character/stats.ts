@@ -320,6 +320,20 @@ const LANGUAGE_NAMES_BY_ID: Record<number, string> = {
   165: "Skin Cant", 166: "Communication Spores", 167: "Archosauric",
 };
 
+/** The slug a display name stands for: lowercase, apostrophes dropped, other runs of non-alphanumerics as "-". */
+const slugOf = (name: string): string =>
+  name.toLowerCase().replace(/['’]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
+/**
+ * D&D Beyond's display name for a known proficiency/language slug: the modifier's
+ * `friendlySubtypeName`, only when it is a string that is the slug spelled out
+ * ("Thieves' Tools" for `thieves-tools`). Anything else is "" (use the slug text).
+ */
+function friendlyName(m: Mod, sub: string): string {
+  const name = m.friendlySubtypeName;
+  return typeof name === "string" && slugOf(name) === sub ? name.trim() : "";
+}
+
 function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficiencies {
   const armorProfMap: Record<string, string> = {
     "light-armor": "Light Armor", "medium-armor": "Medium Armor",
@@ -357,16 +371,18 @@ function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficie
         // A known slug prints D&D Beyond's own name ("Thieves' Tools"); an
         // unknown one keeps the slug text, as its friendly name is not DDB's.
         const known = PROFICIENCY_SLUGS.has(sub);
-        const name = (known && str(m.friendlySubtypeName)) || capitalize(sub.replace(/-/g, " "));
+        const friendly = known ? friendlyName(m, sub) : "";
+        const name = friendly || capitalize(sub.replace(/-/g, " "));
         if (isWeaponSlug(sub)) {
-          (known ? weapons : customWeapons).push(name);
+          // "Crossbow, Light" prints as the item's name, "Light Crossbow" (owner ruling 2026-11-06).
+          (known ? weapons : customWeapons).push(friendly ? friendly.replace(/^([^,]+),\s*(.+)$/, "$2 $1") : name);
         } else {
           (known ? tools : customTools).push(name);
         }
       }
     } else if (isLanguageMod(m)) {
       const known = LANGUAGE_SLUGS.has(sub);
-      const name = (known && str(m.friendlySubtypeName)) || capitalize(sub.replace(/-/g, " "));
+      const name = (known && friendlyName(m, sub)) || capitalize(sub.replace(/-/g, " "));
       (known ? languages : customLanguages).push(name);
     }
   }

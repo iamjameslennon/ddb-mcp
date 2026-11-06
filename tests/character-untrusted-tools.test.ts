@@ -138,6 +138,11 @@ describe("HTTP failure messages", () => {
     await expect(getCharacterRaw("500")).rejects.toThrow(/^D&D Beyond API returned 500$/);
   });
 
+  it("treats a whitespace-only statusText as empty", async () => {
+    respond(500, "  ");
+    await expect(getCharacterRaw("501")).rejects.toThrow(/^D&D Beyond API returned 500$/);
+  });
+
   it("keeps a non-empty statusText", async () => {
     respond(502, "Bad Gateway");
     await expect(getCharacterRaw("502")).rejects.toThrow(/^D&D Beyond API returned 502: Bad Gateway$/);
