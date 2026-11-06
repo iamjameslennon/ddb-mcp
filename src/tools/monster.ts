@@ -563,8 +563,15 @@ function formatStatBlock(
   // Name the book (as ddb_search_monsters does) so same-named 2014/2024 blocks are distinguishable.
   if (m.sourceId) lines.push(`**Source** ${sourceLabel(index, m.sourceId)}`);
   lines.push("");
-  lines.push(`**Armor Class** ${m.armorClass}${m.armorClassDescription ? " " + m.armorClassDescription.trim() : ""}`);
-  lines.push(`**Hit Points** ${m.averageHitPoints}${m.hitPointDice?.diceString ? " (" + m.hitPointDice.diceString + ")" : ""}`);
+  // accessType 4 = restricted — basic stats returned but ability scores and actions may be empty.
+  const restricted = accessType === 4 && (!m.stats?.length || !m.actionsDescription);
+  // monster-service zeroes AC, HP and passive Perception on a locked block: show a dash, not the zero.
+  lines.push(restricted && !m.armorClass
+    ? "**Armor Class** —"
+    : `**Armor Class** ${m.armorClass}${m.armorClassDescription ? " " + m.armorClassDescription.trim() : ""}`);
+  lines.push(restricted && !m.averageHitPoints
+    ? "**Hit Points** —"
+    : `**Hit Points** ${m.averageHitPoints}${m.hitPointDice?.diceString ? " (" + m.hitPointDice.diceString + ")" : ""}`);
 
   if (m.movements?.length) {
     const speeds = m.movements.map(mv => {
@@ -610,9 +617,9 @@ function formatStatBlock(
       const name = config?.senses.find(cs => cs.id === s.senseId)?.name ?? `sense ${s.senseId}`;
       return `${name} ${s.notes}`;
     });
-    senseStrs.push(`passive Perception ${m.passivePerception}`);
+    if (!(restricted && !m.passivePerception)) senseStrs.push(`passive Perception ${m.passivePerception}`);
     lines.push(`**Senses** ${senseStrs.join(", ")}`);
-  } else {
+  } else if (!(restricted && !m.passivePerception)) {
     lines.push(`**Senses** passive Perception ${m.passivePerception}`);
   }
 
@@ -648,8 +655,7 @@ function formatStatBlock(
     lines.push(statBlockText(m.mythicActionsDescription));
   }
 
-  // accessType 4 = restricted — basic stats returned but ability scores and actions may be empty.
-  if (accessType === 4 && (!m.stats?.length || !m.actionsDescription)) {
+  if (restricted) {
     lines.push(extras.loggedOut
       ? `\n---\n${LOGGED_OUT_RESTRICTED_NOTE}`
       : "\n---\n*⚠️ Full stat block requires ownership of this content on D&D Beyond. Ability scores and actions may be missing.*");

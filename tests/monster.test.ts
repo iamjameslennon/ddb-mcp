@@ -2527,3 +2527,35 @@ describe("getMonsterStats: session changes surface, lookup failures are logged",
     }
   });
 });
+
+describe("locked stat block prints dashes, not zeros (B8)", () => {
+  const BEHOLDER = monster({
+    id: 8_000_900, name: "Beholder Zeroed", sourceId: 147, sources: sources(147), stats: [], actionsDescription: "",
+    armorClass: 0, averageHitPoints: 0, hitPointDice: { diceString: "d0" }, passivePerception: 0, senses: [],
+  });
+
+  beforeEach(() => {
+    vi.mocked(o5GetMonster).mockResolvedValue(null);
+  });
+
+  it("a restricted block shows — for AC and HP, drops passive Perception and keeps the notice", async () => {
+    extraMonsters = [BEHOLDER];
+    unownedIds.add(BEHOLDER.id as number);
+    const out = await getMonster("Beholder Zeroed");
+    expect(out).toContain("**Armor Class** —");
+    expect(out).toContain("**Hit Points** —");
+    expect(out).not.toContain("Armor Class** 0");
+    expect(out).not.toContain("passive Perception 0");
+    expect(out).not.toContain("(d0)");
+    expect(out).not.toContain("**Senses**");
+    expect(out).toContain("requires ownership");
+  });
+
+  it("an unrestricted block with a real AC 0 is unchanged", async () => {
+    extraMonsters = [{ ...BEHOLDER, id: 8_000_901, name: "Zero Ac Thing", stats: [{ statId: 1, value: 10 }], actionsDescription: "<p>Slam.</p>" }];
+    const out = await getMonster("Zero Ac Thing");
+    expect(out).toContain("**Armor Class** 0");
+    expect(out).toContain("**Hit Points** 0 (d0)");
+    expect(out).toContain("**Senses** passive Perception 0");
+  });
+});
