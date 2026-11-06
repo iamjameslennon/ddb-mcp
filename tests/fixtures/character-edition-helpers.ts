@@ -40,3 +40,16 @@ export function bgAndFeat(): Record<string, unknown> {
 
 /** Any inline edition tag. */
 export const TAG = /\[(?:2024|2014|third-party|homebrew|playtest|edition not stated)\]/;
+
+/**
+ * A sheet with the character-name wrap undone: the header always delimits the
+ * name as untrusted (tests/character-untrusted-header.test.ts pins that), so
+ * tests asserting that nothing else on a sheet is wrapped, or reading header
+ * lines by position, compare against the sheet without it.
+ */
+export function withoutNameWrap(out: string): string {
+  const stripped = out.replace(/(═+\n)<untrusted_dndbeyond_content>\n( {2}[^\n]*)\n<\/untrusted_dndbeyond_content>\n/, "$1$2\n");
+  // Fail closed: a sheet whose name is no longer wrapped must not pass as "unwrapped".
+  if (stripped === out) throw new Error("withoutNameWrap: the sheet has no wrapped character name");
+  return stripped;
+}

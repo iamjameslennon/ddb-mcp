@@ -9,8 +9,9 @@
  * pass could lift these into structured data, but that's a separate concern.
  */
 
-import { arr, records, capitalize, hasRemarkableAthlete, isBonusMod, isExpertiseMod, isHalfProficiencyMod, isLanguageMod, isProficiencyMod, isSenseMod, isSetBaseMod, isSetMod, num, obj, signed, statKeys, statNames, str } from "./helpers.js";
+import { arr, records, capitalize, knownAndCustomLines, hasRemarkableAthlete, isBonusMod, isExpertiseMod, isHalfProficiencyMod, isLanguageMod, isProficiencyMod, isSenseMod, isSetBaseMod, isSetMod, num, obj, signed, statKeys, statNames, str } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
+import { LANGUAGE_SLUGS, PROFICIENCY_SLUGS } from "./modifier-slugs.js";
 
 export interface Senses {
   passivePerception: number;
@@ -24,6 +25,14 @@ export interface Proficiencies {
   weapons: string[];
   tools: string[];
   languages: string[];
+  /**
+   * Entries printed on wrapped `(custom)` lines (F-2026-10-20): a proficiency or
+   * language modifier whose subType is not a known D&D Beyond value
+   * (`modifier-slugs.ts`), and languages the player typed as a custom proficiency.
+   */
+  customWeapons: string[];
+  customTools: string[];
+  customLanguages: string[];
 }
 
 export interface Stats {
@@ -201,7 +210,9 @@ function computeSenses(char: CharData, allMods: readonly Mod[], skillBonuses: re
   // Pass 2: process `type:"sense"` modifiers — additive if from a different
   // component than the current baseline (Umbral Sight extending race darkvision).
   for (const m of allMods) {
-    if (!isSenseMod(m)) continue;
+    // Only the four senses print: a subType is printed as the sense's name, so an
+    // unknown one (e.g. a crafted homebrew modifier) must not reach the sheet.
+    if (!isSenseMod(m) || !SENSE_SLUGS.has(m.subType)) continue;
     const name = capitalize(m.subType);
     const val = num(m.value);
     if (val <= 0) continue;
@@ -327,6 +338,9 @@ function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficie
   const weapons: string[] = [];
   const tools: string[] = [];
   const languages: string[] = [];
+  const customWeapons: string[] = [];
+  const customTools: string[] = [];
+  const customLanguages: string[] = [];
   for (const m of allMods) {
     const sub = str(m.subType);
     if (isProfPlaceholder(sub)) continue;
@@ -338,21 +352,24 @@ function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficie
         // skill/save prof — handled elsewhere
       } else if (!sub.includes("-score") && sub.length > 0 &&
                  !statKeys.some(k => sub.startsWith(k))) {
+        // A subType is printed as the entry's name, so an unknown one goes to a
+        // wrapped (custom) line.
+        const known = PROFICIENCY_SLUGS.has(sub);
         if (isWeaponSlug(sub)) {
-          weapons.push(capitalize(sub.replace(/-/g, " ")));
+          (known ? weapons : customWeapons).push(capitalize(sub.replace(/-/g, " ")));
         } else {
-          tools.push(capitalize(sub.replace(/-/g, " ")));
+          (known ? tools : customTools).push(capitalize(sub.replace(/-/g, " ")));
         }
       }
     } else if (isLanguageMod(m)) {
-      languages.push(capitalize(sub.replace(/-/g, " ")));
+      (LANGUAGE_SLUGS.has(sub) ? languages : customLanguages).push(capitalize(sub.replace(/-/g, " ")));
     }
   }
   // Player-added languages via DDB's "Custom Proficiency" UI live here.
   for (const cp of arr<Record<string, unknown>>(char.customProficiencies)) {
     if (num(cp.type) !== CUSTOM_PROF_TYPE_LANGUAGE) continue;
     const name = str(cp.name).trim();
-    if (name) languages.push(name);
+    if (name) customLanguages.push(name);
   }
   // Language grants stored in char.characterValues (typeId 35). valueId is
   // a stringified integer pointing into the rule-data language table.
@@ -363,7 +380,7 @@ function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficie
     if (!Number.isFinite(id) || id <= 0) continue;
     languages.push(LANGUAGE_NAMES_BY_ID[id] ?? `Language #${id}`);
   }
-  return { armor, weapons, tools, languages };
+  return { armor, weapons, tools, languages, customWeapons, customTools, customLanguages };
 }
 
 // ── Public API ──────────────────────────────────────────────────────────────
@@ -399,9 +416,12 @@ export function formatStatsBlock(s: Stats): string[] {
     ``,
     `PROFICIENCIES & TRAINING`,
     `  Armor: ${p.armor.length ? [...new Set(p.armor)].join(", ") : "None"}`,
-    `  Weapons: ${p.weapons.length ? [...new Set(p.weapons)].join(", ") : "None"}`,
-    `  Tools: ${p.tools.length ? [...new Set(p.tools)].join(", ") : "None"}`,
-    `  Languages: ${p.languages.length ? [...new Set(p.languages)].join(", ") : "None"}`,
+    // Unknown subTypes and custom-proficiency languages are untrusted text
+    // (F-2026-10-20): a wrapped line of their own, below the plain one (or alone,
+    // when every entry is custom).
+    ...knownAndCustomLines("  ", "Weapons", p.weapons, p.customWeapons, "None"),
+    ...knownAndCustomLines("  ", "Tools", p.tools, p.customTools, "None"),
+    ...knownAndCustomLines("  ", "Languages", p.languages, p.customLanguages, "None"),
     ``,
   ];
 }

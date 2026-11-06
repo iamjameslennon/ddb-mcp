@@ -54,9 +54,12 @@ function buildSpellcastingLines(
     const abilityMod = statMods[abilityId - 1];
     const spellAttack = abilityMod + profBonus;
     const saveDc = 8 + abilityMod + profBonus;
-    lines.push(
-      `  ${className}: ${statNames[abilityId - 1]}  Spell Attack: ${signed(spellAttack)}  Save DC: ${saveDc}`
-    );
+    // A homebrew class (or, on a `Class (Subclass)` line, either name) is other players' text.
+    const homebrew = classCasts ? isHomebrewEntry(c) : isHomebrewEntry(c, subDef);
+    lines.push(wrapIfHomebrew(
+      `  ${className}: ${statNames[abilityId - 1]}  Spell Attack: ${signed(spellAttack)}  Save DC: ${saveDc}`,
+      homebrew,
+    ));
   }
   return lines;
 }

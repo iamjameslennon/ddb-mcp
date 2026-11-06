@@ -3,11 +3,14 @@
  * header tags (classes, subclass, species, background).
  */
 import { describe, it, expect } from "vitest";
-import { parseCharacterData } from "../src/tools/character.js";
+import { parseCharacterData as parseSheet } from "../src/tools/character.js";
 import type { ParseSection } from "../src/tools/character/types.js";
 import { ARCANE_TRICKSTER_9, FIGHTER_5, MONK_3_HANDAXE } from "./fixtures/character-fixtures.js";
-import { INDEX, S, TAG, bgAndFeat, item, variant } from "./fixtures/character-edition-helpers.js";
+import { INDEX, S, TAG, bgAndFeat, item, variant, withoutNameWrap } from "./fixtures/character-edition-helpers.js";
 
+
+/** The sheet without its always-present name wrap (see withoutNameWrap). */
+const parseCharacterData = (...args: Parameters<typeof parseSheet>): string => withoutNameWrap(parseSheet(...args));
 const sheet = (c: Record<string, unknown>, s: ParseSection = "full") => parseCharacterData(c, s, INDEX);
 const lines = (c: Record<string, unknown>) => sheet(c).split("\n");
 

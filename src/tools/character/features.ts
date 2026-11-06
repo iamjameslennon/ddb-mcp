@@ -84,18 +84,29 @@ function buildRacialTraitLines(char: CharData): string[] {
 
 // ── Background feature ───────────────────────────────────────────────────────
 /**
- * The background definition the sheet shows, and whether its text is
- * untrusted: a custom background the player wrote, or a homebrew one (it can
- * come from someone else's shared collection).
+ * The background definition whose feature the sheet shows, and whether its
+ * text is untrusted: a custom definition the player wrote, or a homebrew one
+ * (it can come from someone else's shared collection). A live-shape borrowed
+ * `featuresBackground` is a stock D&D Beyond background (`definitionKey`,
+ * `sources`), so it is untrusted only when it is homebrew. The sheet and
+ * ddb_character_lookup both resolve it here.
  */
 export function resolveBackground(char: CharData): { bgDef: Record<string, unknown>; untrusted: boolean } {
   // For custom backgrounds, featureName may reflect a feat name rather than
   // the actual background feature. Check customBackground first if present.
   const bgObj = obj(char.background);
   const customBg = obj(bgObj.customBackground);
-  const featuresBackgroundDef = obj(obj(customBg.featuresBackground).definition);
-  const customBgDef = Object.keys(featuresBackgroundDef).length > 0
-    ? featuresBackgroundDef
+  // Live (2026-11-06), featuresBackground is itself the definition whose
+  // feature a custom background borrows, read only while the custom background
+  // is in use (`hasCustomBackground`: a character with it off can still carry
+  // one); a nested `.definition` is read as before.
+  const featuresBg = obj(customBg.featuresBackground);
+  const nestedFeaturesDef = obj(featuresBg.definition);
+  if (Object.keys(nestedFeaturesDef).length === 0 && bgObj.hasCustomBackground === true && str(featuresBg.featureName) !== "") {
+    return { bgDef: featuresBg, untrusted: isHomebrewEntry(featuresBg) };
+  }
+  const customBgDef = Object.keys(nestedFeaturesDef).length > 0
+    ? nestedFeaturesDef
     : obj(customBg.definition);
   const usedCustom = Object.keys(customBgDef).length > 0;
   const bgDef = usedCustom ? customBgDef : obj(bgObj.definition);

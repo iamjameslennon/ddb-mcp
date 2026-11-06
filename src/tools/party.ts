@@ -1,6 +1,7 @@
-import { getCampaign } from "./campaign.js";
+import { getCampaignData } from "./campaign.js";
 import { fetchCharacter, parseCharacterData, withNotice } from "./character.js";
 import { getSourceIndex } from "../game-config.js";
+import { wrapUntrusted } from "../utils.js";
 
 export async function getParty(campaignId: string): Promise<string> {
   // Start the source index with the campaign fetch (getSourceIndex never
@@ -10,15 +11,12 @@ export async function getParty(campaignId: string): Promise<string> {
   const indexPromise = getSourceIndex({ signal: indexCtl.signal });
 
   // 1. Get campaign to retrieve character IDs
-  const campaignJson = await getCampaign(campaignId).catch((err: unknown) => { indexCtl.abort(); throw err; });
-  const campaign = JSON.parse(campaignJson) as {
-    name: string;
-    characters: Array<{ character: string; player: string; url: string }>;
-  };
+  const campaign = await getCampaignData(campaignId).catch((err: unknown) => { indexCtl.abort(); throw err; });
 
+  // The campaign name is the DM's text (F-2026-10-20); each sheet wraps its own names.
   if (!campaign.characters || campaign.characters.length === 0) {
     indexCtl.abort();
-    return `Campaign "${campaign.name}" has no active characters.`;
+    return wrapUntrusted(`Campaign "${campaign.name}" has no active characters.`);
   }
 
   // 2. Extract character IDs from URLs (format: /characters/{id})
@@ -39,7 +37,9 @@ export async function getParty(campaignId: string): Promise<string> {
           const raw = JSON.parse(json) as Record<string, unknown>;
           return withNotice(parseCharacterData(raw, "summary", index), notice);
         } catch (err) {
-          return `[Could not load character ${id}: ${err instanceof Error ? err.message : String(err)}]`;
+          // The message can quote D&D Beyond's response (a JSON.parse error
+          // includes part of the body), so the line is delimited as untrusted.
+          return wrapUntrusted(`[Could not load character ${id}: ${err instanceof Error ? err.message : String(err)}]`);
         }
       })
     );
@@ -48,5 +48,5 @@ export async function getParty(campaignId: string): Promise<string> {
 
   // 4. Join with clear separators
   const separator = "\n" + "─".repeat(40) + "\n";
-  return `PARTY: ${campaign.name}\n${separator}${results.join(separator)}`;
+  return `${wrapUntrusted(`PARTY: ${campaign.name}`)}\n${separator}${results.join(separator)}`;
 }

@@ -7,12 +7,15 @@
  * "<label> (homebrew)" line directly below the plain one.
  */
 import { describe, expect, it } from "vitest";
-import { parseCharacterData } from "../src/tools/character.js";
+import { parseCharacterData as parseSheet } from "../src/tools/character.js";
 import { wrapUntrusted } from "../src/utils.js";
 import type { ParseSection } from "../src/tools/character/types.js";
 import { FIGHTER_5 } from "./fixtures/character-fixtures.js";
-import { INDEX, S } from "./fixtures/character-edition-helpers.js";
+import { INDEX, S, withoutNameWrap } from "./fixtures/character-edition-helpers.js";
 
+
+/** The sheet without its always-present name wrap (see withoutNameWrap). */
+const parseCharacterData = (...args: Parameters<typeof parseSheet>): string => withoutNameWrap(parseSheet(...args));
 const OPEN = "<untrusted_dndbeyond_content>";
 const CLOSE = "</untrusted_dndbeyond_content>";
 
@@ -262,5 +265,35 @@ describe("delimiter neutralisation and official entries", () => {
     expect(out).not.toContain(OPEN);
     expect(parseCharacterData({ data: { ...(FIGHTER_5.data as Record<string, unknown>), classSpells: classSpells({ ...spell(3, "Bless", 1, { ...no, concentration: true }), ...no }) } }, "concentration", INDEX))
       .not.toContain(OPEN);
+  });
+});
+
+// ── Custom items (live 2026-11-06: 7 on 5 of 57 characters) ─────────────────
+// A player-made item is `definition.isCustomItem: true` with `isHomebrew: false`:
+// its name and description are the player's text, so it is placed as homebrew.
+describe("custom items are placed as homebrew", () => {
+  const custom = { isCustomItem: true, isHomebrew: false, sources: [] };
+
+  it("moves a custom carried item to the wrapped INVENTORY (homebrew) list", () => {
+    const out = sheet({ inventory: [gear(1, "Backpack"), gear(2, "Oasis Amulet", custom)] }, "inventory");
+    expect(out).toContain(["INVENTORY", "  Backpack", "INVENTORY (homebrew)", wrapUntrusted("  Oasis Amulet [edition not stated]")].join("\n"));
+  });
+
+  it("wraps a custom equipped item's line and a custom weapon's attack line", () => {
+    const inv = sheet({ inventory: [armor(2, "Hex Plate", 18, custom)] }, "inventory");
+    expect(inv).toMatch(new RegExp(`${OPEN}\\n[^\\n]*Hex Plate[^\\n]*\\n${CLOSE}`));
+    const combat = sheet({ inventory: [weapon(3, "Filigreed Longsword", custom)] }, "combat");
+    expect(combat).toMatch(new RegExp(`${OPEN}\\n[^\\n]*Filigreed Longsword[^\\n]*\\n${CLOSE}`));
+  });
+
+  it("wraps a custom item's charge line in LIMITED USE", () => {
+    const out = sheet({ inventory: [gear(4, "Ghost Step tattoo", custom,
+      { limitedUse: { maxUses: 3, numberUsed: 0, resetType: "Dawn" } })] }, "combat");
+    expect(out).toMatch(new RegExp(`${OPEN}\\n• Ghost Step tattoo[^\\n]*\\n${CLOSE}`));
+  });
+
+  it("keeps an item with isCustomItem: false plain", () => {
+    const out = sheet({ inventory: [gear(5, "Lantern", { isCustomItem: false })] }, "inventory");
+    expect(out).not.toContain(OPEN);
   });
 });

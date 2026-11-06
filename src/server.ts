@@ -5,7 +5,7 @@ import { z } from "zod";
 import { getBrowser, getContext, closeBrowser, beginLoginSession, endLoginSession } from "./browser.js";
 import { login } from "./auth.js";
 import { revokeSession } from "./session-state.js";
-import { fetchCharacter, downloadCharacter, listCharacters, parseCharacter, findCharacterByName, getDefinition, clearCharacterCache } from "./tools/character.js";
+import { getCharacterRaw, downloadCharacter, listCharacters, parseCharacter, findCharacterByName, getDefinition, clearCharacterCache } from "./tools/character.js";
 import { getCampaign, listMyCampaigns, invalidateCampaignCache } from "./tools/campaign.js";
 import { getParty } from "./tools/party.js";
 import { navigate, interact, getCurrentPageContent } from "./tools/navigate.js";
@@ -179,7 +179,7 @@ server.tool(
 // ─── ddb_list_characters ──────────────────────────────────────────────────────
 server.tool(
   "ddb_list_characters",
-  "List all characters in your D&D Beyond account, including their ID, level, race, and class. Requires login — run ddb_login first if you haven't already.",
+  "List all characters in your D&D Beyond account, including their ID, level, race, and class, as JSON delimited in <untrusted_dndbeyond_content> tags (campaign names are the DM's text; species and class names can be homebrew). Requires login — run ddb_login first if you haven't already.",
   {},
   READ_ONLY_NET,
   async () => {
@@ -197,7 +197,7 @@ server.tool(
 // ─── ddb_get_character_raw ────────────────────────────────────────────────────
 server.tool(
   "ddb_get_character_raw",
-  "Returns raw 300–500 KB character JSON. Requires confirm_large_response: true. Use ddb_get_character instead for all normal use. Requires login — run ddb_login first if you haven't already.",
+  "Returns raw 300–500 KB character JSON, delimited in <untrusted_dndbeyond_content> tags (it holds the player's free text). Requires confirm_large_response: true. Use ddb_get_character instead for all normal use. Requires login — run ddb_login first if you haven't already.",
   {
     character_id: z.string().regex(/^\d+$/, "character_id must be numeric (e.g. '12345678')").optional().describe("The D&D Beyond character ID (e.g. '12345678')"),
     character_name: z.string().min(1).optional().describe("Character name to look up (fuzzy matched against your account)"),
@@ -217,8 +217,8 @@ server.tool(
         }
         resolvedId = found.id;
       }
-      // The notice goes in its own content block so the JSON block stays parseable.
-      const { json, notice } = await fetchCharacter(resolvedId);
+      // The notice goes in its own content block, outside the untrusted wrap.
+      const { json, notice } = await getCharacterRaw(resolvedId);
       return {
         content: notice
           ? [{ type: "text", text: `⚠️ ${notice}` }, { type: "text", text: json }]
@@ -385,7 +385,7 @@ server.tool(
 // ─── ddb_get_campaign ─────────────────────────────────────────────────────────
 server.tool(
   "ddb_get_campaign",
-  "Fetch campaign information including player characters from a D&D Beyond campaign. Requires login — run ddb_login first if you haven't already.",
+  "Fetch campaign information including player characters from a D&D Beyond campaign, as JSON delimited in <untrusted_dndbeyond_content> tags (campaign, character and user names are other people's text). Requires login — run ddb_login first if you haven't already.",
   {
     campaign_id: z.string().regex(/^\d+$/, "campaign_id must be numeric").describe("The D&D Beyond campaign ID (found in the campaign URL)"),
   },
@@ -405,7 +405,7 @@ server.tool(
 // ─── ddb_list_campaigns ───────────────────────────────────────────────────────
 server.tool(
   "ddb_list_campaigns",
-  "List all D&D Beyond campaigns you are part of (as DM or player). Requires login — run ddb_login first if you haven't already.",
+  "List all D&D Beyond campaigns you are part of (as DM or player), as JSON delimited in <untrusted_dndbeyond_content> tags (campaign and user names are other people's text). Requires login — run ddb_login first if you haven't already.",
   {},
   READ_ONLY_NET,
   async () => {

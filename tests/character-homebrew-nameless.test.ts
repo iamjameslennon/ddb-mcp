@@ -7,12 +7,15 @@
  * mastery too, which can carry text, so a nameless homebrew weapon is wrapped.
  */
 import { describe, expect, it } from "vitest";
-import { parseCharacterData } from "../src/tools/character.js";
+import { parseCharacterData as parseSheet } from "../src/tools/character.js";
 import { wrapUntrusted } from "../src/utils.js";
 import type { ParseSection } from "../src/tools/character/types.js";
 import { FIGHTER_5 } from "./fixtures/character-fixtures.js";
-import { INDEX, S } from "./fixtures/character-edition-helpers.js";
+import { INDEX, S, withoutNameWrap } from "./fixtures/character-edition-helpers.js";
 
+
+/** The sheet without its always-present name wrap (see withoutNameWrap). */
+const parseCharacterData = (...args: Parameters<typeof parseSheet>): string => withoutNameWrap(parseSheet(...args));
 const OPEN = "<untrusted_dndbeyond_content>";
 
 function sheet(overrides: Record<string, unknown>, section: ParseSection): string {

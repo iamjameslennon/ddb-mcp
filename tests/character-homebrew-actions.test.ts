@@ -9,12 +9,15 @@
  * feat option 258900837, race option 306912077; live 2026-11-04, 56 characters).
  */
 import { describe, expect, it } from "vitest";
-import { parseCharacterData } from "../src/tools/character.js";
+import { parseCharacterData as parseSheet } from "../src/tools/character.js";
 import { wrapUntrusted } from "../src/utils.js";
 import { grantingEntities } from "../src/tools/character/actions.js";
 import { FIGHTER_5 } from "./fixtures/character-fixtures.js";
-import { INDEX, S } from "./fixtures/character-edition-helpers.js";
+import { INDEX, S, withoutNameWrap } from "./fixtures/character-edition-helpers.js";
 
+
+/** The sheet without its always-present name wrap (see withoutNameWrap). */
+const parseCharacterData = (...args: Parameters<typeof parseSheet>): string => withoutNameWrap(parseSheet(...args));
 const OPEN = "<untrusted_dndbeyond_content>";
 const CLOSE = "</untrusted_dndbeyond_content>";
 

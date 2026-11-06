@@ -17,6 +17,7 @@ import { getSourceIndex, LOGGED_OUT_CHARACTER_INDEX_WAIT_MS } from "../../game-c
 import { fetchCharacter, withNotice } from "../character.js";
 import { computeCharacterEditions, type CharacterEditions } from "./editions.js";
 import { featureDefinition, isHomebrewClassFeature, isHomebrewEntry, levenshteinDistance, records } from "./helpers.js";
+import { resolveBackground } from "./features.js";
 import type { CharData } from "./types.js";
 
 function matchesDefinitionQuery(name: string, query: string): boolean {
@@ -228,15 +229,8 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
   // Same resolution as the character sheet (features.ts): a custom
   // background's feature text is the player's, and it wins over the stock
   // definition. The rules line stays the stock background's, as in the header.
-  const bgObj = obj(char.background);
-  const stockBgDef = obj(bgObj.definition);
-  const customBg = obj(bgObj.customBackground);
-  const featuresBackgroundDef = obj(obj(customBg.featuresBackground).definition);
-  const customBgDef = Object.keys(featuresBackgroundDef).length > 0
-    ? featuresBackgroundDef
-    : obj(customBg.definition);
-  const usedCustom = Object.keys(customBgDef).length > 0;
-  const bgDef = usedCustom ? customBgDef : stockBgDef;
+  const stockBgDef = obj(obj(char.background).definition);
+  const { bgDef, untrusted: bgUntrusted } = resolveBackground(char);
   const bgFeatureName = str(bgDef.featureName);
   // A feature that is a feat is the feat's own entry (found above), as on the
   // sheet, which leaves it out of BACKGROUND FEATURE.
@@ -249,7 +243,7 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
       name: bgFeatureName,
       info: editions.info(stockBgDef),
       text: `${bgFeatureName} (${bgName})\n\n${bgDesc}`,
-      untrusted: usedCustom || isHomebrewEntry(bgObj, bgDef),
+      untrusted: bgUntrusted,
     });
   }
 

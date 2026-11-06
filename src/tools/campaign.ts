@@ -4,6 +4,7 @@ import {
   type AuthenticatedSession,
 } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
+import { wrapUntrusted } from "../utils.js";
 
 const CAMPAIGN_API = "https://www.dndbeyond.com/api/campaign/stt";
 
@@ -80,10 +81,30 @@ export async function listMyCampaigns(): Promise<string> {
   if (mapped.length === 0) {
     return "You are not currently a member of any campaigns on D&D Beyond.";
   }
-  return JSON.stringify(mapped);
+  // Campaign names are their DMs' text (F-2026-10-20).
+  return wrapUntrusted(JSON.stringify(mapped));
 }
 
+/** A campaign and its active characters, as `ddb_get_campaign` prints them. */
+export interface CampaignInfo {
+  id: number;
+  name: string;
+  dungeonMaster: string;
+  playerCount: number;
+  characters: Array<{ character: string; player: string; url: string }>;
+}
+
+/**
+ * `ddb_get_campaign`'s reply: the campaign as JSON, delimited as untrusted,
+ * since its campaign, character and user names are other people's text
+ * (F-2026-10-20).
+ */
 export async function getCampaign(campaignId: string): Promise<string> {
+  return wrapUntrusted(JSON.stringify(await getCampaignData(campaignId)));
+}
+
+/** The campaign and its active characters, unwrapped: callers that print any of it wrap what they print. */
+export async function getCampaignData(campaignId: string): Promise<CampaignInfo> {
   if (!hasValidSession()) throw new Error("Not logged in. Please run ddb_login first.");
 
   const session = await beginAuthenticatedSession();
@@ -109,11 +130,11 @@ export async function getCampaign(campaignId: string): Promise<string> {
     url: `https://www.dndbeyond.com/characters/${c.id}`,
   }));
 
-  return JSON.stringify({
+  return {
     id: campaign.id,
     name: campaign.name,
     dungeonMaster: campaign.dmUsername,
     playerCount: campaign.playerCount,
     characters,
-  });
+  };
 }

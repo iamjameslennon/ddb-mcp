@@ -6,7 +6,8 @@
  * Phase 3 of the character.ts refactor — see docs/character-refactor.md.
  */
 
-import { arr, num, obj, str } from "./helpers.js";
+import { wrapUntrusted } from "../../utils.js";
+import { arr, isHomebrewEntry, num, obj, str } from "./helpers.js";
 import type { CharacterEditions } from "./editions.js";
 import type { CharData, ClassEntry, CoreStats } from "./types.js";
 
@@ -19,6 +20,10 @@ export interface Identity {
   background: string;
   xp: number;
   inspiration: boolean;
+  /** The species (or a lineage option), a class or a subclass is homebrew: the species / class line is wrapped. */
+  raceClassHomebrew: boolean;
+  /** The background is custom or homebrew: the Background line is wrapped. */
+  backgroundUntrusted: boolean;
 }
 
 /**
@@ -76,7 +81,20 @@ function buildClassLine(classes: readonly ClassEntry[], editions: CharacterEditi
 export function computeIdentity(core: CoreStats): Identity {
   const { char, classes, totalLevel, editions } = core;
   // A missing species or background stays empty rather than a bare tag.
-  const bgDef = obj(char.background).definition;
+  // A custom background in use (live shape: `hasCustomBackground`) prints the
+  // player's own name for it (`customBackground.name`), untagged, as it has no
+  // definition to classify. With no name it prints the stock background whose
+  // feature it borrows (`customBackground.featuresBackground`, a definition of
+  // its own, as resolveBackground reads it), since `background.definition` can
+  // be stale (live: Dunil's Noble beside a Criminal / Spy feature); else the
+  // stock background, as before.
+  const bgObj = obj(char.background);
+  const inUse = bgObj.hasCustomBackground === true;
+  const customBgName = inUse ? str(obj(bgObj.customBackground).name).trim() : "";
+  const borrowed = obj(obj(bgObj.customBackground).featuresBackground);
+  const borrowedShown = inUse && customBgName === "" && Object.keys(obj(borrowed.definition)).length === 0
+    && str(borrowed.name).trim() !== "";
+  const bgDef = borrowedShown ? borrowed : bgObj.definition;
   return {
     charName: str(char.name),
     rulesLine: editions.rulesLine,
@@ -84,19 +102,32 @@ export function computeIdentity(core: CoreStats): Identity {
     race: str(obj(char.race).fullName || obj(char.race).baseName) ? editions.named(deriveRace(char), char.race) : deriveRace(char),
     classLine: buildClassLine(classes, editions),
     totalLevel,
-    background: editions.named(str(obj(bgDef).name), bgDef),
+    background: customBgName || editions.named(str(obj(bgDef).name), bgDef),
     xp: num(char.currentXp),
     inspiration: !!char.inspiration,
+    raceClassHomebrew: isHomebrewEntry(char.race, ...arr(obj(char.options).race))
+      || classes.some(c => isHomebrewEntry(c, c.subclassDefinition)),
+    // Wrapped by what the line prints: the player's custom name, or a homebrew
+    // definition (the one shown, or the background record's own).
+    backgroundUntrusted: customBgName !== "" || isHomebrewEntry(borrowedShown ? borrowed : char.background, bgDef),
   };
 }
 
+/**
+ * The header box. The character's name is the player's own text (another
+ * player's, in ddb_get_party), so it is always delimited as untrusted; the
+ * species / class line and the Background line are wrapped whole when an entry
+ * on them is homebrew or custom (F-2026-10-20). Borders, the Rules line and
+ * Inspiration stay plain.
+ */
 export function formatHeaderBlock(i: Identity): string[] {
+  const wrapIf = (line: string, untrusted: boolean): string => untrusted ? wrapUntrusted(line) : line;
   return [
     `═══════════════════════════════════════`,
-    `  ${i.charName}`,
+    wrapIf(`  ${i.charName}`, i.charName !== ""),
     `  ${i.rulesLine}`,
-    `  ${i.race} | ${i.classLine} | Level ${i.totalLevel}`,
-    `  Background: ${i.background || "—"} | XP: ${i.xp}`,
+    wrapIf(`  ${i.race} | ${i.classLine} | Level ${i.totalLevel}`, i.raceClassHomebrew),
+    wrapIf(`  Background: ${i.background || "—"} | XP: ${i.xp}`, i.backgroundUntrusted),
     `  Inspiration: ${i.inspiration ? "Yes" : "No"}`,
     `═══════════════════════════════════════`,
     ``,

@@ -32,12 +32,14 @@ export const stripHtml = (s: string): string =>
 
 /**
  * User-authored character content: any of these records, or its definition,
- * is flagged homebrew (strictly `isHomebrew === true`). Pass the entry first,
- * then its owners (class, subclass, species). The one predicate the character
- * sheet and ddb_character_lookup both use, so they wrap the same entries.
+ * is flagged homebrew (strictly `isHomebrew === true`) or is a player-made item
+ * (`isCustomItem === true`: live, a custom item is `isHomebrew: false`, but its
+ * name and description are the player's text). Pass the entry first, then its
+ * owners (class, subclass, species). The one predicate the character sheet and
+ * ddb_character_lookup both use, so they wrap the same entries.
  */
 export const isHomebrewEntry = (...records: unknown[]): boolean =>
-  records.some(r => obj(r).isHomebrew === true || obj(obj(r).definition).isHomebrew === true);
+  records.some(r => [obj(r), obj(obj(r).definition)].some(o => o.isHomebrew === true || o.isCustomItem === true));
 
 /**
  * A class feature's definition. `classes[].classFeatures` wraps each one
@@ -94,6 +96,21 @@ export function splitListLines(indent: string, label: string, entries: readonly 
   return [
     ...(plain.length ? [`${indent}${label}: ${plain.join(", ")}`] : []),
     ...(homebrew.length ? [wrapUntrusted(`${indent}${label} (homebrew): ${homebrew.join(", ")}`)] : []),
+  ];
+}
+
+/**
+ * A comma list split by provenance: `<indent><label>: a, b` with the known
+ * entries (deduped), then the rest on a wrapped `<indent><label> (custom): c`
+ * line. The plain line reads `<label>: <none>` when nothing is listed at all,
+ * and is left out when every entry is custom (F-2026-10-20).
+ */
+export function knownAndCustomLines(indent: string, label: string, known: readonly string[], custom: readonly string[], none: string): string[] {
+  const k = [...new Set(known)];
+  const c = [...new Set(custom)];
+  return [
+    ...(k.length || !c.length ? [`${indent}${label}: ${k.length ? k.join(", ") : none}`] : []),
+    ...(c.length ? [wrapUntrusted(`${indent}${label} (custom): ${c.join(", ")}`)] : []),
   ];
 }
 

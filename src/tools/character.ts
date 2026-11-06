@@ -21,6 +21,7 @@ import { homedir } from "os";
 import type { ParseSection } from "./character/types.js";
 import { levenshteinDistance } from "./character/helpers.js";
 import { parseCharacterData } from "./character/parse.js";
+import { wrapUntrusted } from "../utils.js";
 
 // Re-export so MCP server registrations (src/server.ts) and tests
 // (tests/character-parser.test.ts, party.test.ts, character-snapshot.test.ts)
@@ -157,6 +158,16 @@ export async function getCharacter(characterId: string): Promise<string> {
 }
 
 /**
+ * ddb_get_character_raw's reply: the whole character JSON, delimited as
+ * untrusted, since it holds the player's free text and homebrew entries
+ * (F-2026-10-20). The notice stays outside the wrap.
+ */
+export async function getCharacterRaw(characterId: string): Promise<CharacterFetch> {
+  const { json, notice } = await fetchCharacter(characterId);
+  return { json: wrapUntrusted(json), notice };
+}
+
+/**
  * getCharacter(), plus a notice for tool output when the token exchange failed
  * and the character was loaded without signing in. Tools that show a character
  * to the user call this and pass the notice through `withNotice()`, so an
@@ -214,7 +225,12 @@ export async function fetchCharacter(characterId: string): Promise<CharacterFetc
   }
 
   if (resp.ok) {
-    const result = await resp.json();
+    // A parse error's message quotes part of the body (other people's text in a
+    // party), and every character tool prints its error: a fixed message instead.
+    const result: unknown = await resp.json().catch((e: unknown) => {
+      if (e instanceof SyntaxError) throw new Error(`D&D Beyond returned character ${characterId} in an unreadable form (not JSON).`);
+      throw e;
+    });
     const json = JSON.stringify(result);
     // The body parse is async: an account change could have landed while it was
     // in flight. For the authenticated path, refuse to cache A's private
@@ -341,7 +357,8 @@ export async function downloadCharacter(
     );
   }
   writeFileSync(savePath, JSON.stringify(parsed, null, 2), "utf8");
-  return withNotice(`Character data for '${charName}' saved to: ${savePath}`, notice);
+  // The reply echoes the character's name, the player's text (F-2026-10-20).
+  return withNotice(wrapUntrusted(`Character data for '${charName}' saved to: ${savePath}`), notice);
 }
 
 export async function listCharacters(): Promise<string> {
@@ -377,5 +394,7 @@ export async function listCharacters(): Promise<string> {
     campaignName: c.campaignName ?? null,
   }));
 
-  return JSON.stringify(characters);
+  // Campaign names are the DM's text and species / class names can be
+  // homebrew (F-2026-10-20), so the whole reply is delimited as untrusted.
+  return wrapUntrusted(JSON.stringify(characters));
 }
