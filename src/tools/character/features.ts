@@ -76,10 +76,23 @@ function buildClassFeatureLines(classes: readonly ClassEntry[]): string[] {
 }
 
 // ── Racial traits ────────────────────────────────────────────────────────────
-function buildRacialTraitLines(char: CharData): string[] {
+function buildRacialTraitLines(char: CharData, classes: readonly ClassEntry[]): string[] {
   const race = obj(char.race);
-  return records(race.racialTraits).map(t =>
-    wrapIfHomebrew(`• ${str(obj(t.definition).name)}`, isHomebrewEntry(t, race)));
+  const totalLevel = classes.reduce((sum, c) => sum + num(c.level), 0);
+  const lines: string[] = [];
+  const seen = new Set<string>();
+  for (const t of records(race.racialTraits)) {
+    const def = obj(t.definition);
+    // The sheet hides these (Age, Size, Languages, ASI, level-gated traits). Lookup, senses and
+    // granted actions still read every trait.
+    if (def.hideInSheet === true || obj(def.displayConfiguration).RACIALTRAIT === 0 || num(def.requiredLevel) > totalLevel) continue;
+    const line = wrapIfHomebrew(`• ${str(def.name)}`, isHomebrewEntry(t, race));
+    if (!seen.has(line)) {
+      seen.add(line);
+      lines.push(line);
+    }
+  }
+  return lines;
 }
 
 // ── Background feature ───────────────────────────────────────────────────────
@@ -134,7 +147,7 @@ export function computeFeatures(core: CoreStats): Features {
     disguisedFeatLines,
     realFeatCount,
     classFeatureLines: buildClassFeatureLines(classes),
-    racialTraitLines: buildRacialTraitLines(char),
+    racialTraitLines: buildRacialTraitLines(char, classes),
     background: buildBackgroundFeature(char, resolveTemplates),
   };
 }

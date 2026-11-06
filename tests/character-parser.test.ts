@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { parseCharacterData } from "../src/tools/character.js";
 import { wrapUntrusted } from "../src/utils.js";
+import { formatCharacterLookup } from "../src/tools/character/definition.js";
+import { INDEX } from "./fixtures/character-edition-helpers.js";
 import { FIGHTER_5, MONK_3_HANDAXE, ARCANE_TRICKSTER_9 } from "./fixtures/character-fixtures.js";
 
 describe("parseCharacterData", () => {
@@ -2470,5 +2472,59 @@ describe("parseCharacterData — global bonus modifiers (Luckstone)", () => {
     expect(out).toContain("Passive Perception: 12");
     expect(out).toContain("Passive Investigation: 11"); // INT 0 + 1
     expect(out).toContain("Passive Insight: 12");        // WIS 1 + 1
+  });
+});
+
+describe("parseCharacterData — racial traits follow the sheet's visibility", () => {
+  const trait = (name: string, def: Record<string, unknown> = {}) =>
+    ({ definition: { name, description: `${name} text`, isHomebrew: false, ...def } });
+  const TRAITS = [
+    trait("Giant Ancestry"),
+    trait("Large Form", { hideInSheet: true, requiredLevel: 5 }),
+    trait("Languages", { hideInSheet: true, displayConfiguration: { RACIALTRAIT: 0 } }),
+    trait("Ability Score Increases", { displayConfiguration: { RACIALTRAIT: 0 } }),
+    trait("Large Form", { requiredLevel: 5 }),
+  ];
+  const withRace = (racialTraits: unknown[], classes?: unknown[]): Record<string, unknown> => {
+    const data = FIGHTER_5.data as Record<string, unknown>;
+    return { data: {
+      ...data,
+      race: { ...(data.race as Record<string, unknown>), fullName: "Goliath", racialTraits },
+      ...(classes ? { classes } : {}),
+    } };
+  };
+  const lines = (out: string): string[] => {
+    const at = out.split("\n");
+    const i = at.indexOf("RACIAL TRAITS");
+    const rest = at.slice(i + 1);
+    const end = rest.indexOf("");
+    return rest.slice(0, end < 0 ? undefined : end);
+  };
+  const fighter = (FIGHTER_5.data as { classes: Record<string, unknown>[] }).classes[0];
+
+  it("lists only the visible, unlocked trait on a level-1 character", () => {
+    const out = parseCharacterData(withRace(TRAITS, [{ ...fighter, level: 1 }]));
+    expect(lines(out)).toEqual(["• Giant Ancestry"]);
+  });
+
+  it("compares requiredLevel with the total level across classes and lists a duplicate once", () => {
+    const rogue = { ...fighter, id: 2, level: 2, definition: { ...(fighter.definition as object), name: "Rogue" } };
+    const out = parseCharacterData(withRace(TRAITS, [{ ...fighter, level: 3 }, rogue]));
+    expect(lines(out)).toEqual(["• Giant Ancestry", "• Large Form"]);
+  });
+
+  it("prints two visible entries of the same name once", () => {
+    const out = parseCharacterData(withRace([trait("Celestial Revelation"), trait("Celestial Revelation")]));
+    expect(lines(out)).toEqual(["• Celestial Revelation"]);
+  });
+
+  it("does not merge a homebrew trait into an official one of the same name", () => {
+    const out = parseCharacterData(withRace([trait("Darkvision"), trait("Darkvision", { isHomebrew: true })]));
+    expect(out.match(/Darkvision/g)).toHaveLength(2);
+  });
+
+  it("still finds a hidden trait through ddb_character_lookup", () => {
+    const data = (withRace(TRAITS, [{ ...fighter, level: 1 }]).data) as Record<string, unknown>;
+    expect(formatCharacterLookup(data, "languages", INDEX)).toContain("Languages");
   });
 });
