@@ -822,6 +822,16 @@ describe("o5GetRule query jump folds like the search", () => {
     const out = (await o5GetRule("The Order of Combat", "2024", 4000, "zzzz"))!;
     expect(out.split("\n").slice(4).join("\n").startsWith("…")).toBe(false);
   });
+
+  it("a query that is not found says so right after the Rules:/Part of lines and still shows the section's start", async () => {
+    const out = (await o5GetRule("The Order of Combat", "2024", 4000, "zzznotthere"))!;
+    const lines = out.split("\n");
+    expect(lines[3]).toBe('*"zzznotthere" not found in The Order of Combat — showing its start. Try ddb_search_rules.*');
+    expect(lines[2]).toMatch(/^\*Part of /);
+    expect(out).toContain("\n\n");
+    expect(lines.slice(5).join("\n").startsWith("…")).toBe(false);
+    expect((await o5GetRule("The Order of Combat", "2024", 4000, "initiative"))!).not.toContain("not found in");
+  });
 });
 
 describe("Open5e weapon and armour gets carry the items record's cost and weight", () => {
@@ -1467,5 +1477,30 @@ describe("Open5e option searches: prerequisite, limit and offset", () => {
 
   it("races page too", async () => {
     expect(bullets((await o5SearchRacesSection({ limit: 1 }, "not-found")).body)).toHaveLength(1);
+  });
+});
+
+describe("Open5e request timeout", () => {
+  it("a per-request TimeoutError reads as a clear message and is remembered for 60 s", async () => {
+    const timeout = Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
+    const f = vi.fn(async () => { throw timeout; });
+    vi.stubGlobal("fetch", f);
+    await expect(o5GetRule("Combat", "2024")).rejects.toThrow("Open5e (api.open5e.com) didn't answer within 20 s — try again shortly.");
+    const calls = f.mock.calls.length;
+    await expect(o5GetRule("Combat", "2024")).rejects.toThrow("didn't answer within 20 s");
+    expect(f.mock.calls.length).toBe(calls);
+  });
+
+  it("a TimeoutError from resp.json() reads the same way", async () => {
+    const timeout = Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => ({
+      url, ok: true, status: 200, json: async () => { throw timeout; },
+    })));
+    await expect(o5GetRule("Combat", "2024")).rejects.toThrow("didn't answer within 20 s");
+  });
+
+  it("other fetch errors keep their own message", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("boom"); }));
+    await expect(o5GetRule("Combat", "2024")).rejects.toThrow("boom");
   });
 });

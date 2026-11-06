@@ -100,12 +100,17 @@ async function fetchPages(firstUrl: string): Promise<unknown[]> {
       if (seen.size >= O5_MAX_PAGES) throw new Error(`Open5e paging passed ${O5_MAX_PAGES} pages: ${new URL(firstUrl).pathname}`);
       seen.add(url);
       const signal = AbortSignal.any([AbortSignal.timeout(O5_TIMEOUT_MS), deadline.signal]);
-      const resp: Response = await fetch(url, { headers: { Accept: "application/json" }, signal });
+      // Only AbortSignal.timeout aborts with a TimeoutError; the document deadline aborts with its own Error, which passes through unchanged.
+      const timedOut = (e: unknown): Error | undefined =>
+        e instanceof Error && e.name === "TimeoutError"
+          ? new Error(`Open5e (api.open5e.com) didn't answer within ${O5_TIMEOUT_MS / 1000} s — try again shortly.`)
+          : undefined;
+      const resp: Response = await fetch(url, { headers: { Accept: "application/json" }, signal }).catch(e => { throw timedOut(e) ?? e; });
       // fetch follows redirects; a real response always carries its final url.
       if (!resp.url) throw new Error(`Open5e response has no final url: ${new URL(url).pathname}`);
       if (new URL(resp.url).origin !== O5_ORIGIN) throw new Error(`Open5e redirected off ${O5_ORIGIN}: ${new URL(resp.url).origin}`);
       if (!resp.ok) throw new Error(`Open5e ${resp.status}: ${new URL(url).pathname}`);
-      const body = await resp.json() as { count?: number; next?: string | null; results?: unknown[] };
+      const body = await (resp.json() as Promise<{ count?: number; next?: string | null; results?: unknown[] }>).catch(e => { throw timedOut(e) ?? e; });
       if (expected === undefined && typeof body.count === "number") expected = body.count;
       all.push(...(body.results ?? []));
       url = body.next || null;
@@ -1488,8 +1493,10 @@ export async function o5GetRule(
 
   // If query provided, start near the first occurrence, matched as the search matches
   const q = query ? normalizeName(query) : "";
+  let queryMissed = false;
   if (q) {
     const idx = foldedIndexOf(text, q);
+    queryMissed = idx === -1;
     if (idx !== -1) {
       const start = Math.max(0, idx - 200);
       text = (start > 0 ? "…\n\n" : "") + text.slice(start);
@@ -1507,6 +1514,7 @@ export async function o5GetRule(
     `## ${(section ?? ruleset).name}`,
     rulesLine({ ruleset: edition, book: null }, { open5e: "primary", reason }),
     ...(section ? [`*Part of ${ruleset.name}*`] : []),
+    ...(queryMissed ? [`*"${query}" not found in ${(section ?? ruleset).name} — showing its start. Try ddb_search_rules.*`] : []),
     ``,
     output + truncNote,
   ].join("\n");
