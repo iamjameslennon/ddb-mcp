@@ -110,9 +110,12 @@ export function computeWeaponAttacks(core: CoreStats): string[] {
       .join("");
     const dmgStr = `${withBonus(dmgDice)} ${dmgType}${twoHanded}${extraDice}`;
 
+    // A Thrown weapon with no range data prints only its reach, and one with
+    // no long range only its normal range (owner ruling 2026-11-06).
     const reach = `reach ${props.includes("Reach") ? 10 : 5} ft.`;
+    const thrown = longRange > 0 ? `${range}/${longRange}` : `${range}`;
     const rangeStr = isRanged ? `range ${range}/${longRange} ft.`
-      : props.includes("Thrown") ? `${reach} / thrown ${range}/${longRange} ft.`
+      : props.includes("Thrown") && range > 0 ? `${reach} / thrown ${thrown} ft.`
       : reach;
 
     // A mastery shows only when the character has mastered this weapon.

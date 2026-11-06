@@ -2673,6 +2673,17 @@ describe("parseCharacterData — weapon rows", () => {
     expect(rows([blank])[0]).toContain("1d8+3 slashing + 1d6   reach 5 ft.");
   });
 
+  it("a Thrown weapon with no range prints only its reach, and one with no long range only its range", () => {
+    for (const range of [null, 0]) {
+      const noRange = weapon("Hex Dagger", { range, longRange: range, properties: props("Thrown") });
+      expect(rows([noRange])[0]).toContain("1d8+3 slashing   reach 5 ft.   Thrown");
+    }
+    for (const longRange of [null, 0]) {
+      const noLong = weapon("Hex Dagger", { range: 20, longRange, properties: props("Thrown") });
+      expect(rows([noLong])[0]).toContain("1d8+3 slashing   reach 5 ft. / thrown 20 ft.   Thrown");
+    }
+  });
+
   it("a Reach weapon with Thrown prints both", () => {
     const pike = weapon("Throwing Pike", { range: 20, longRange: 60, properties: props("Reach", "Thrown") });
     expect(rows([pike])[0]).toContain("   reach 10 ft. / thrown 20/60 ft.   Reach, Thrown");
