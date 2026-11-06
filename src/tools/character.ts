@@ -292,10 +292,23 @@ function realpathNearestAncestor(p: string): string {
  * write outside the allowlist, and a legitimately symlinked allowed dir (e.g.
  * ~/Downloads → an external volume) still validates. Throws on escape.
  *
+ * A leading `~` expands to `home` (injectable for tests).
+ *
  * Exported for unit testing.
  */
-export function resolveSafeSavePath(outputPath: string, allowedDirs: string[]): string {
-  const resolved = resolve(outputPath);
+export function resolveSafeSavePath(
+  outputPath: string,
+  allowedDirs: string[],
+  home: string = homedir()
+): string {
+  // Expand ~ only as the leading segment: "~", "~/x" (and "~\x" on Windows).
+  // "~user/x" and a mid-path "~" are left alone and fail the allowlist.
+  let expanded = outputPath;
+  if (outputPath === "~") expanded = home;
+  else if (outputPath.startsWith("~/") || (process.platform === "win32" && outputPath.startsWith("~\\"))) {
+    expanded = join(home, outputPath.slice(2));
+  }
+  const resolved = resolve(expanded);
   if (resolved.includes("\0")) throw new Error("Output path contains invalid characters.");
 
   const realTarget = realpathNearestAncestor(resolved);

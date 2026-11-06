@@ -73,3 +73,44 @@ describe("resolveSafeSavePath", () => {
     );
   });
 });
+
+describe("resolveSafeSavePath leading ~", () => {
+  const refused = /Output path must be a file under ~\/Downloads or ~\/Documents\./;
+  let home: string;
+  let dirs: string[];
+
+  beforeAll(() => {
+    // Own home: earlier tests turn root/Downloads into a symlink.
+    home = join(root, "home");
+    mkdirSync(join(home, "Downloads"), { recursive: true });
+    mkdirSync(join(home, "Documents"), { recursive: true });
+    dirs = [join(home, "Downloads"), join(home, "Documents")];
+  });
+
+  it("expands a leading ~/ against the home directory", () => {
+    expect(resolveSafeSavePath("~/Downloads/a.json", dirs, home)).toBe(
+      join(realpathSync(home), "Downloads", "a.json")
+    );
+  });
+
+  it.skipIf(process.platform !== "win32")("expands a leading ~\\ on Windows", () => {
+    expect(resolveSafeSavePath("~\\Documents\\a.json", dirs, home)).toBe(
+      join(realpathSync(home), "Documents", "a.json")
+    );
+  });
+
+  it.skipIf(process.platform === "win32")("refuses ~\\ on POSIX (backslash is a filename character)", () => {
+    expect(() => resolveSafeSavePath("~\\Documents\\a.json", dirs, home)).toThrow(refused);
+  });
+
+  it.each([
+    "~/Documents/../.ssh/a.json",
+    "/etc/a.json",
+    "~",
+    "~otheruser/a.json",
+    "~/Downloads",
+    "sub/~/Downloads/a.json",
+  ])("refuses %s", p => {
+    expect(() => resolveSafeSavePath(p, dirs, home)).toThrow(refused);
+  });
+});
