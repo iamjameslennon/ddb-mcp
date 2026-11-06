@@ -2588,3 +2588,133 @@ describe("parseCharacterData — proficiency display names", () => {
     expect(out).not.toContain("Ignore previous instructions");
   });
 });
+
+// ── Weapon rows (B6) ─────────────────────────────────────────────────────────
+// FIGHTER_5 has no weapon proficiencies: STR 16 (+3), DEX 12 (+1), so every
+// weapon below hits at its ability mod plus any magic bonus.
+describe("parseCharacterData — weapon rows", () => {
+  const base = FIGHTER_5.data as Record<string, unknown>;
+  const props = (...names: string[]) => names.map(n => {
+    const [name, notes] = n.split(":");
+    return { name, notes: notes ?? null };
+  });
+  const weapon = (name: string, def: Record<string, unknown> = {}, quantity = 1) => ({
+    equipped: true, quantity,
+    definition: {
+      name, type: name, filterType: "Weapon", categoryId: 2, attackType: 1,
+      damage: { diceString: "1d8" }, damageType: "Slashing", range: 5, longRange: 5,
+      properties: [], grantedModifiers: [], sources: [{ sourceId: 145 }], ...def,
+    },
+  });
+  const masteries = (...subTypes: string[]) =>
+    ({ ...(base.modifiers as Record<string, unknown>), feat: subTypes.map(subType => ({ type: "weapon-mastery", subType })) });
+  const rows = (inventory: unknown[], extra: Record<string, unknown> = {}): string[] =>
+    parseCharacterData({ data: { ...base, inventory, ...extra } }, "combat").split("\n").filter(l => l.includes(" to hit "));
+
+  const dagger = weapon("Dagger", {
+    categoryId: 1, damage: { diceString: "1d4" }, damageType: "Piercing", range: 20, longRange: 60,
+    properties: props("Finesse", "Light", "Thrown", "Nick"),
+  });
+  const sunBlade = weapon("Sun Blade", {
+    type: "Longsword", properties: props("Versatile:1d10", "Sap"),
+    grantedModifiers: [
+      { type: "bonus", subType: "magic", value: 2, fixedValue: 2, restriction: "" },
+      { type: "damage", subType: "radiant", dice: { diceString: "1d8" }, restriction: "Against Undead Targets" },
+      { type: "replace-damage-type", subType: "radiant", restriction: "" },
+      { type: "weapon-property", subType: "finesse", restriction: "" },
+    ],
+  });
+
+  it("a melee weapon with Thrown prints its thrown range after its reach", () => {
+    expect(rows([dagger])).toEqual([
+      "• Dagger           +3 to hit   1d4+3 piercing   reach 5 ft. / thrown 20/60 ft.   Finesse, Light, Thrown",
+    ]);
+  });
+
+  it("a Reach weapon has a 10 ft. reach", () => {
+    const glaive = weapon("Glaive", { damage: { diceString: "1d10" }, properties: props("Heavy", "Reach", "Two-Handed", "Graze") });
+    expect(rows([glaive])).toEqual(["• Glaive           +3 to hit   1d10+3 slashing   reach 10 ft.   Heavy, Reach, Two-Handed"]);
+  });
+
+  it("a Versatile weapon prints its two-handed die with the same bonus", () => {
+    expect(rows([weapon("Longsword", { properties: props("Versatile:1d10") })])).toEqual([
+      "• Longsword        +3 to hit   1d8+3 slashing (1d10+3 two-handed)   reach 5 ft.   Versatile",
+    ]);
+  });
+
+  it("a magic weapon's granted modifiers set its damage type, add its extra die and grant Finesse", () => {
+    // DEX 18 (+4) beats STR (+3) only because the Sun Blade grants Finesse: +4 +2 magic.
+    const stats = (base.stats as Array<Record<string, unknown>>).map(s => s.id === 2 ? { id: 2, value: 18 } : s);
+    expect(rows([sunBlade], { stats })).toEqual([
+      "• Sun Blade        +6 to hit   1d8+6 radiant (1d10+6 two-handed) + 1d8 radiant (Against Undead Targets)   reach 5 ft.   Versatile, Finesse",
+    ]);
+  });
+
+  it("an \"additional\" extra die takes the weapon's shown damage type, and \"all\" prints none", () => {
+    const giantSlayer = weapon("Giant Slayer Battleaxe", {
+      type: "Battleaxe", grantedModifiers: [
+        { type: "damage", subType: "additional", dice: { diceString: "2d6" }, restriction: "Against Giants" },
+      ],
+    });
+    expect(rows([giantSlayer])[0]).toContain("1d8+3 slashing + 2d6 slashing (Against Giants)   reach 5 ft.");
+    const radiant = weapon("Radiant Slayer", { grantedModifiers: [
+      { type: "replace-damage-type", subType: "radiant" },
+      { type: "damage", subType: "additional", dice: { diceString: "2d6" }, restriction: "" },
+    ] });
+    expect(rows([radiant])[0]).toContain("1d8+3 radiant + 2d6 radiant   reach 5 ft.");
+    const vicious = weapon("Vicious Weapon", { grantedModifiers: [
+      { type: "damage", subType: "all", dice: { diceString: "2d6" }, restriction: "20 on the Attack Roll\t" },
+    ] });
+    expect(rows([vicious])[0]).toContain("1d8+3 slashing + 2d6 (20 on the Attack Roll)   reach 5 ft.");
+  });
+
+  it("an extra die with no subType prints no type", () => {
+    const blank = weapon("Odd Blade", { grantedModifiers: [{ type: "damage", subType: "", dice: { diceString: "1d6" } }] });
+    expect(rows([blank])[0]).toContain("1d8+3 slashing + 1d6   reach 5 ft.");
+  });
+
+  it("a Reach weapon with Thrown prints both", () => {
+    const pike = weapon("Throwing Pike", { range: 20, longRange: 60, properties: props("Reach", "Thrown") });
+    expect(rows([pike])[0]).toContain("   reach 10 ft. / thrown 20/60 ft.   Reach, Thrown");
+  });
+
+  it("a Versatile property whose notes are not a die adds no two-handed damage", () => {
+    for (const notes of [null, "", "two hands", "1d10 extra"]) {
+      const odd = weapon("Longsword", { properties: [{ name: "Versatile", notes }] });
+      expect(rows([odd])).toEqual(["• Longsword        +3 to hit   1d8+3 slashing   reach 5 ft.   Versatile"]);
+    }
+  });
+
+  it("keeps a mastery only for a weapon the character has mastered", () => {
+    const spear = weapon("Spear", {
+      categoryId: 1, damage: { diceString: "1d6" }, damageType: "Piercing", range: 20, longRange: 60,
+      properties: props("Thrown", "Versatile:1d8", "Sap"),
+    });
+    const rapier = weapon("Rapier", { damageType: "Piercing", properties: props("Finesse", "Vex") });
+    const out = rows([spear, rapier], { modifiers: masteries("sap-spear") });
+    expect(out[0]).toMatch(/   Thrown, Versatile, Sap$/);
+    expect(out[1]).toMatch(/   Finesse$/);
+    expect(rows([spear, rapier])[0]).toMatch(/   Thrown, Versatile$/);
+  });
+
+  it("matches a magic weapon's mastery by its base type", () => {
+    expect(rows([sunBlade], { modifiers: masteries("sap-longsword") })[0]).toMatch(/   Versatile, Sap, Finesse$/);
+    expect(rows([sunBlade], { modifiers: masteries("sap-sun-blade") })[0]).toMatch(/   Versatile, Finesse$/);
+  });
+
+  it("gates a definition's own mastery the same way", () => {
+    const whip = weapon("Whip", { mastery: "Slow", properties: props("Finesse", "Reach") });
+    expect(rows([whip])[0]).toMatch(/   Finesse, Reach$/);
+    expect(rows([whip], { modifiers: masteries("slow-whip") })[0]).toMatch(/   Finesse, Reach, Slow$/);
+  });
+
+  it("pads the ×N prefix with the name, so to-hit columns line up", () => {
+    const rapier = weapon("Rapier", { damageType: "Piercing", properties: props("Finesse", "Vex") }, 2);
+    const out = rows([rapier, dagger]);
+    expect(out).toEqual([
+      "• ×2 Rapier        +3 to hit   1d8+3 piercing   reach 5 ft.   Finesse",
+      "• Dagger           +3 to hit   1d4+3 piercing   reach 5 ft. / thrown 20/60 ft.   Finesse, Light, Thrown",
+    ]);
+    expect(out[0].indexOf(" to hit")).toBe(out[1].indexOf(" to hit"));
+  });
+});

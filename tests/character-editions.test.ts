@@ -281,7 +281,8 @@ describe("inline tags", () => {
       attackType: 1, damage: { diceString: "1d4" }, damageType: "Piercing", properties: [], grantedModifiers: [],
     } });
     const c = variant(FIGHTER_5, d => { d.inventory = [dagger(1), dagger(2)]; });
-    expect(sheet(c)).toMatch(/^• ×2 Dagger \[2014\] {4}[+-]\d+ to hit/m);
+    // The ×2 prefix pads with the name and tag: "×2 Dagger [2014]" is already 16.
+    expect(sheet(c)).toMatch(/^• ×2 Dagger \[2014\] [+-]\d+ to hit/m);
   });
 
   it("same-named items of different rulesets stay separate in INVENTORY", () => {

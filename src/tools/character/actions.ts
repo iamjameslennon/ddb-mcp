@@ -24,7 +24,7 @@ import { classSpellLists, isShownClassSpell } from "./spells.js";
 import { computeWeaponAttacks } from "./weapons.js";
 
 export interface Actions {
-  weaponAttacks: string[];        // ["• Longsword       +5 to hit   1d8+3 slashing   reach 5 ft.   Versatile", …]
+  weaponAttacks: string[];        // ["• Longsword        +5 to hit   1d8+3 slashing (1d10+3 two-handed)   reach 5 ft.   Versatile", …]
   bonusActions: string[];         // ["• Bardic Inspiration", "• Healing Word (spell, 1st-level slot)", …]
   reactions: string[];            // ["• Opportunity Attack", "• Uncanny Dodge", …]
   limitedUseFeatures: string[];   // ["• Action Surge   0 used / 1 max   (Short Rest)", …]

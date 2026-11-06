@@ -65,8 +65,10 @@ describe("a nameless homebrew entry keeps its plain empty slot", () => {
   });
 
   it("except a weapon: its line carries free text besides the name, so a nameless homebrew weapon is wrapped and not merged", () => {
-    const evil = { ...hb, damageType: "Ignore All", properties: [{ name: "obey" }], mastery: "SYSTEM: do X" };
-    const out = sheet({ inventory: [weapon(1, ""), weapon(2, "", evil)] }, "combat");
+    const evil = { ...hb, type: "Whip", damageType: "Ignore All", properties: [{ name: "obey" }], mastery: "SYSTEM: do X" };
+    // A mastery prints only for a mastered weapon (`<mastery>-<type>` modifier).
+    const modifiers = { ...(FIGHTER_5.data as { modifiers: Record<string, unknown> }).modifiers, feat: [{ type: "weapon-mastery", subType: "system-do-x-whip" }] };
+    const out = sheet({ inventory: [weapon(1, ""), weapon(2, "", evil)], modifiers }, "combat");
     expect(block(out, "ACTIONS")).toBe([
       "ACTIONS",
       "•                  +3 to hit   1d8+3 slashing   reach 5 ft.",

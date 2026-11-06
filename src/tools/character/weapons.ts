@@ -4,12 +4,14 @@
  * Phase 6a of the character.ts refactor — see docs/character-refactor.md.
  *
  * Owns ability-mod selection (finesse, ranged, Martial Arts monk weapons),
- * proficiency bonus, magic enhancement (+1/+2/+3 from grantedModifiers), and
- * duplicate consolidation (×2 daggers, etc.). Output is pre-formatted lines
- * to preserve byte-for-byte parity with the original inline code.
+ * proficiency bonus, the item's grantedModifiers (+1/+2/+3 magic, extra
+ * damage dice, a replaced damage type, granted Finesse), reach and thrown
+ * range, versatile dice, the Weapon Mastery gate, and duplicate
+ * consolidation (×2 daggers, etc.). Output is pre-formatted lines.
  */
 
 import { wrapIfHomebrew } from "../../utils.js";
+import { MASTERY_NAMES } from "../weapon-mastery.js";
 import { arr, records, isBonusMod, isHomebrewEntry, isProficiencyMod, num, obj, signed, str } from "./helpers.js";
 import type { CoreStats } from "./types.js";
 
@@ -38,7 +40,16 @@ export function computeWeaponAttacks(core: CoreStats): string[] {
       )
     );
 
-  const weaponInventoryMap = new Map<string, { lines: string[]; qty: number; homebrew: boolean }>();
+  // Weapon Mastery (2024): one `weapon-mastery` modifier per mastered weapon,
+  // subType `<mastery>-<weapon type>` ("sap-spear", "topple-maul"). A magic
+  // weapon matches by its base type (Sun Blade → longsword).
+  const slug = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const masteredSubTypes = new Set(
+    allMods.filter(m => m.type === "weapon-mastery").map(m => str(m.subType))
+  );
+
+  // Lines are built after consolidation, so the ×N prefix is padded with the name.
+  const weaponInventoryMap = new Map<string, { label: string; rest: string; qty: number; homebrew: boolean }>();
   for (const i of inventory) {
     const def = obj(i.definition);
     if (str(def.filterType) !== "Weapon") continue;
@@ -48,19 +59,25 @@ export function computeWeaponAttacks(core: CoreStats): string[] {
     const wLabel = editions.named(wName, def);
     const dmg = obj(def.damage);
     const dmgDice = str(dmg.diceString);
-    const dmgType = str(def.damageType).toLowerCase();
     const attackType = num(def.attackType); // 1=melee, 2=ranged
-    const props = arr<Record<string, unknown>>(def.properties).map(p => str(p.name));
-    const isFinesse = props.includes("Finesse");
+    const properties = arr<Record<string, unknown>>(def.properties);
+    const props = properties.map(p => str(p.name));
+    const granted = arr<Record<string, unknown>>(def.grantedModifiers);
+    const grantsFinesse = granted.some(gm => gm.type === "weapon-property" && gm.subType === "finesse");
+    const isFinesse = props.includes("Finesse") || grantsFinesse;
     const isRanged = attackType === 2;
     const range = num(def.range);
     const longRange = num(def.longRange);
     const mastery = str(def.mastery);
 
     // Magic enhancement bonus from grantedModifiers (e.g. +1 weapon)
-    const magicBonus = arr<Record<string, unknown>>(def.grantedModifiers)
+    const magicBonus = granted
       .filter(gm => isBonusMod(gm) && gm.subType === "magic")
       .reduce((s, gm) => s + num(gm.value ?? gm.fixedValue), 0);
+
+    // A granted damage type (Sun Blade: radiant) replaces the weapon's own.
+    const replacedType = str(granted.find(gm => gm.type === "replace-damage-type" && str(gm.subType))?.subType);
+    const dmgType = (replacedType || str(def.damageType)).toLowerCase();
 
     // Monk weapons: simple melee or shortsword, no Two-Handed/Heavy
     const isMonkWeapon = hasMartialArts &&
@@ -73,11 +90,42 @@ export function computeWeaponAttacks(core: CoreStats): string[] {
     const profMod = isWeaponProficient(def) ? profBonus : 0;
     const hitBonus = abilityMod + profMod + magicBonus;
     const dmgBonus = abilityMod + magicBonus;
-    const dmgStr = dmgBonus !== 0 ? `${dmgDice}${signed(dmgBonus)}` : dmgDice;
-    const rangeStr = isRanged ? `range ${range}/${longRange} ft.` : `reach 5 ft.`;
-    const propsStr = [...props, ...(mastery ? [mastery] : [])].join(", ");
+    const withBonus = (dice: string): string => dmgBonus !== 0 ? `${dice}${signed(dmgBonus)}` : dice;
 
-    const line = `• ${wLabel.padEnd(16)} ${signed(hitBonus)} to hit   ${dmgStr} ${dmgType}   ${rangeStr}${propsStr ? `   ${propsStr}` : ""}`;
+    // Versatile: the property's notes hold the two-handed die ("1d10").
+    const versatileDie = str(properties.find(p => str(p.name) === "Versatile")?.notes).trim();
+    const twoHanded = /^\d+d\d+$/.test(versatileDie) ? ` (${withBonus(versatileDie)} two-handed)` : "";
+    // Extra damage dice from grantedModifiers, with D&D Beyond's restriction text.
+    // "additional" is the weapon's own (shown) type, as the item text says
+    // (Giant Slayer); "all" (Vicious Weapon) prints no type (owner ruling 2026-11-06).
+    const extraType = (subType: string): string =>
+      subType === "additional" ? dmgType : subType === "all" ? "" : subType;
+    const extraDice = granted
+      .filter(gm => gm.type === "damage" && str(obj(gm.dice).diceString))
+      .map(gm => {
+        const restriction = str(gm.restriction).trim();
+        const dice = [str(obj(gm.dice).diceString), extraType(str(gm.subType))].filter(Boolean).join(" ");
+        return ` + ${dice}${restriction ? ` (${restriction})` : ""}`;
+      })
+      .join("");
+    const dmgStr = `${withBonus(dmgDice)} ${dmgType}${twoHanded}${extraDice}`;
+
+    const reach = `reach ${props.includes("Reach") ? 10 : 5} ft.`;
+    const rangeStr = isRanged ? `range ${range}/${longRange} ft.`
+      : props.includes("Thrown") ? `${reach} / thrown ${range}/${longRange} ft.`
+      : reach;
+
+    // A mastery shows only when the character has mastered this weapon.
+    const mastered = (name: string): boolean =>
+      masteredSubTypes.has(`${slug(name)}-${slug(str(def.type) || wName)}`);
+    const shownProps = [
+      ...props.filter(p => !MASTERY_NAMES.has(p) || mastered(p)),
+      ...(grantsFinesse && !props.includes("Finesse") ? ["Finesse"] : []),
+      ...(mastery && mastered(mastery) ? [mastery] : []),
+    ];
+    const propsStr = shownProps.join(", ");
+
+    const rest = `${signed(hitBonus)} to hit   ${dmgStr}   ${rangeStr}${propsStr ? `   ${propsStr}` : ""}`;
 
     // Consolidate duplicates by key. A homebrew weapon is never merged with
     // an official one, so its line can be wrapped on its own.
@@ -90,14 +138,15 @@ export function computeWeaponAttacks(core: CoreStats): string[] {
     if (existing) {
       existing.qty += num(i.quantity) || 1;
     } else {
-      weaponInventoryMap.set(key, { lines: [line], qty: num(i.quantity) || 1, homebrew });
+      weaponInventoryMap.set(key, { label: wLabel, rest, qty: num(i.quantity) || 1, homebrew });
     }
   }
 
   // A homebrew weapon's line is other players' text: it is wrapped whole.
   const weaponAttacks: string[] = [];
-  for (const { lines, qty, homebrew } of weaponInventoryMap.values()) {
-    weaponAttacks.push(wrapIfHomebrew(qty > 1 ? lines[0].replace("•", `• ×${qty}`) : lines[0], homebrew));
+  for (const { label, rest, qty, homebrew } of weaponInventoryMap.values()) {
+    const prefix = qty > 1 ? `×${qty} ` : "";
+    weaponAttacks.push(wrapIfHomebrew(`• ${`${prefix}${label}`.padEnd(16)} ${rest}`, homebrew));
   }
   return weaponAttacks;
 }

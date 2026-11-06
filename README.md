@@ -466,8 +466,8 @@ RACIAL TRAITS
 • ...
 
 ACTIONS
-• Dagger           +2 to hit   1d4 piercing   reach 5 ft.   Finesse, Light, Thrown, Nick
-• Quarterstaff     +1 to hit   1d6-1 bludgeoning   reach 5 ft.   Versatile, Topple
+• Dagger           +2 to hit   1d4 piercing   reach 5 ft. / thrown 20/60 ft.   Finesse, Light, Thrown
+• Quarterstaff     +1 to hit   1d6-1 bludgeoning (1d8-1 two-handed)   reach 5 ft.   Versatile
 
 BONUS ACTIONS
   (none)

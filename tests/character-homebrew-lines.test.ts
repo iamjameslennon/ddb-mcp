@@ -297,7 +297,7 @@ describe("custom items are placed as homebrew", () => {
     const inv = sheet({ inventory: [armor(2, "Hex Plate ", 18, { isHomebrew: true })] }, "inventory");
     expect(inv).toContain(wrapUntrusted("  Hex Plate [homebrew] (AC 18)"));
     const combat = sheet({ inventory: [weapon(1, "Longsword "), weapon(2, "Longsword")] }, "combat");
-    expect(combat).toContain("• ×2 Longsword        +3 to hit   1d8+3 slashing");
+    expect(combat).toContain("• ×2 Longsword     +3 to hit   1d8+3 slashing");
   });
 
   it("wraps a custom item's charge line in LIMITED USE", () => {
