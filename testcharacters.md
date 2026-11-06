@@ -1,6 +1,6 @@
 # Regression Test Characters
 
-Public D&D Beyond characters used for regression testing. All verified accessible as of 2026-05-09.
+Public D&D Beyond characters used for regression testing. All verified accessible as of 2026-05-09; re-verified 2026-11-06 (56 public).
 
 To run a smoke test on any character:
 ```
@@ -91,7 +91,7 @@ These were provided but returned 403 (private) or 404 (deleted/not found) as of 
 
 | ID | URL | Reason |
 |----|-----|--------|
-| 52514332 | https://www.dndbeyond.com/profile/theMagius/characters/52514332 | 403 Private |
+| 52514332 | https://www.dndbeyond.com/profile/theMagius/characters/52514332 | 404 Not found (verified 2026-11-06; was 403 Private) |
 | 21228884 | https://www.dndbeyond.com/profile/Hexuks/characters/21228884 | 404 Not found |
 | 21229154 | https://ddb.ac/characters/21229154/FGLXgw | 404 Not found |
 | 21229537 | https://ddb.ac/characters/21229537/Ie8tuX | 404 Not found |
