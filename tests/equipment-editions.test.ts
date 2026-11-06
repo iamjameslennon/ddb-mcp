@@ -1,6 +1,7 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { open5eSearchHeader, searchHeader, sourceNote } from "../src/edition.js";
 import { o5FixtureFetch } from "./fixtures/open5e-v2.js";
+import { MASTERY_NAMES } from "../src/tools/weapon-mastery.js";
 
 /**
  * equipment-editions.test.ts — rules_edition and source on ddb_get_equipment /
@@ -386,5 +387,43 @@ describe("a selection bug is not a load failure", () => {
     await expect(reference.searchItems({ name: "longsword" })).rejects.toThrow("selection bug");
     await expect(reference.getItem("Longsword")).rejects.toThrow("selection bug");
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("open5e"))).toBe(false);
+  });
+});
+
+describe("ddb_get_equipment weapon mastery by shown edition", () => {
+  const MASTERY_PARA = "This weapon has the following mastery property. To use this property, you must have a feature that lets you use it.";
+  const longbow = (sources: number[]) => item(20, "Longbow", {
+    description: `<p>A bow.</p>\r\n<p>${MASTERY_PARA}</p>\r\n<p><strong>Slow.</strong> Reduce Speed by 10 feet.</p>`,
+    properties: ["Ammunition", "Heavy", "Range", "Two-Handed", "Slow"].map(name => ({ name })),
+  }, sources);
+
+  it("a 2014 reply drops the mastery name and paragraph", async () => {
+    installItems([longbow([2])]);
+    const text = await reference.getItem("Longbow", "2014");
+    expect(text).toContain("Properties: Ammunition, Heavy, Range, Two-Handed\n");
+    expect(text).not.toContain("Slow.");
+    expect(text).not.toContain("mastery property");
+    expect(text.endsWith("A bow.")).toBe(true);
+  });
+
+  it("a 2024 reply keeps both", async () => {
+    installItems([longbow([148])]);
+    const text = await reference.getItem("Longbow", "2024");
+    expect(text).toContain("Properties: Ammunition, Heavy, Range, Two-Handed, Slow");
+    expect(text).toContain("Slow. Reduce Speed");
+    expect(text).toContain("mastery property");
+  });
+
+  it("a dual-edition definition shown as 2014 drops both", async () => {
+    installItems([longbow([148, 2])]);
+    const text = await reference.getItem("Longbow", "2014");
+    expect(text.split("\n")[1]).toMatch(/^Rules: 2014/);
+    expect(text).toContain("Properties: Ammunition, Heavy, Range, Two-Handed\n");
+    expect(text).not.toContain("Slow.");
+    expect(text).not.toContain("mastery property");
+  });
+
+  it("MASTERY_NAMES is exactly the eight 2024 masteries", () => {
+    expect([...MASTERY_NAMES].sort()).toEqual(["Cleave", "Graze", "Nick", "Push", "Sap", "Slow", "Topple", "Vex"]);
   });
 });

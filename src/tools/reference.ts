@@ -21,8 +21,9 @@ import { stripHtml, wrapIfHomebrew } from "../utils.js";
 import {
   twinNames, classOwnerTwinKey, classifyEdition, selectByEdition, definitionTiebreak, isEdition,
   normalizeName, searchFooter, dedupeByKey, homebrewLoginRequired, homebrewUnreachable, homebrewNoMatch, homebrewNotFound,
-  type RulesEdition,
+  type RulesEdition, type EditionInfo,
 } from "../edition.js";
+import { MASTERY_NAMES } from "./weapon-mastery.js";
 import { peekSourceIndex, getSourceIndex } from "../game-config.js";
 import { resolveSource, unknownSourceError, withSourceCaveat, isHomebrewSource, GENERIC_SOURCE_HINT, type ResolvedSource } from "../source-filter.js";
 import {
@@ -651,8 +652,15 @@ async function loadItemCompendium(): Promise<DdbItem[]> {
   return items;
 }
 
-/** `rulesLines` (from lookupCatalog) go directly under the title. */
-function formatItem(item: DdbItem, rulesLines: string[]): string {
+/** Starts the paragraph D&D Beyond appends to a weapon's description for its 2024 mastery. */
+const MASTERY_PARAGRAPH = /(?:^|\n)[ \t]*This weapon has the following mastery property/;
+
+/**
+ * `rulesLines` (from lookupCatalog) go directly under the title. `shown` is the
+ * shown entry's ruleset (`found.info.ruleset`, never re-classified: a dual-edition
+ * definition would classify as 2024). A 2014 reply drops the 2024 mastery.
+ */
+function formatItem(item: DdbItem, rulesLines: string[], shown: EditionInfo["ruleset"]): string {
   const type = item.filterType || item.type || "Item";
   const rarity = item.rarity || "Common";
   const lines = [`**${item.name}** — ${type}, ${rarity}`, ...rulesLines];
@@ -684,9 +692,15 @@ function formatItem(item: DdbItem, rulesLines: string[]): string {
   }
 
   if (item.properties?.length) {
-    lines.push(`Properties: ${item.properties.map(p => p.name).join(", ")}`);
+    const names = item.properties.map(p => p.name).filter(n => shown !== "2014" || !MASTERY_NAMES.has(n));
+    if (names.length) lines.push(`Properties: ${names.join(", ")}`);
   }
-  lines.push("", stripHtml(item.description || item.snippet || "No description available."));
+  let description = stripHtml(item.description || item.snippet || "No description available.");
+  if (shown === "2014") {
+    const cut = description.search(MASTERY_PARAGRAPH);
+    if (cut >= 0) description = description.slice(0, cut).trimEnd();
+  }
+  lines.push("", description);
   return wrapIfHomebrew(lines.join("\n"), item.isHomebrew);
 }
 
@@ -781,7 +795,7 @@ export async function getItem(itemName: string, rulesEdition: RulesEdition = "20
     return `Item "${itemName}" not found. Try ddb_search_equipment with a partial name.`;
   }
 
-  return formatItem(found.entry, found.rulesLines);
+  return formatItem(found.entry, found.rulesLines, found.info.ruleset);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
