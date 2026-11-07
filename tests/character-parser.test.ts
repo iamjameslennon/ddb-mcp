@@ -542,7 +542,25 @@ describe("parseCharacterData — comma-in-type-name weapon proficiency", () => {
     };
     const out = parseCharacterData(withCrossbow, "combat");
     // FIGHTER_5: DEX 12 (+1), prof +3 → +1+3 = +4 to hit
-    expect(out).toContain("Crossbow, Light  +4 to hit");
+    // The row reads "Light Crossbow", as the proficiency list does (owner ruling 2026-11-06).
+    expect(out).toContain("• Light Crossbow   +4 to hit");
+    expect(out).not.toContain("Crossbow, Light");
+  });
+
+  it("reorders the name before its tag and merges two copies under the reordered label", () => {
+    const fighter = (FIGHTER_5.data) as Record<string, unknown>;
+    const handCrossbow = (id: number, extra: Record<string, unknown> = {}) => ({
+      equipped: true, quantity: 1,
+      definition: {
+        id, name: "Crossbow, Hand", type: "Crossbow, Hand", filterType: "Weapon", categoryId: 2, attackType: 2,
+        damage: { diceString: "1d6" }, damageType: "piercing", range: 30, longRange: 120,
+        properties: [{ name: "Light" }], grantedModifiers: [], sources: [{ sourceId: 145 }], ...extra,
+      },
+    });
+    const out = parseCharacterData({ data: { ...fighter, inventory: [handCrossbow(1), handCrossbow(2), handCrossbow(3, { isHomebrew: true })] } }, "combat");
+    expect(out).toContain("• ×2 Hand Crossbow +1 to hit");
+    expect(out).toContain("• Hand Crossbow [homebrew] ");
+    expect(out).not.toContain("Crossbow, Hand");
   });
 });
 
@@ -2510,6 +2528,11 @@ describe("parseCharacterData — racial traits follow the sheet's visibility", (
   it("compares requiredLevel with the total level across classes and lists a duplicate once", () => {
     const rogue = { ...fighter, id: 2, level: 2, definition: { ...(fighter.definition as object), name: "Rogue" } };
     const out = parseCharacterData(withRace(TRAITS, [{ ...fighter, level: 3 }, rogue]));
+    expect(lines(out)).toEqual(["• Giant Ancestry", "• Large Form"]);
+  });
+
+  it("shows level-gated traits on a classless sheet (total level 0), still hiding hidden ones", () => {
+    const out = parseCharacterData(withRace(TRAITS, []));
     expect(lines(out)).toEqual(["• Giant Ancestry", "• Large Form"]);
   });
 

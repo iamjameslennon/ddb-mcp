@@ -76,16 +76,17 @@ function buildClassFeatureLines(classes: readonly ClassEntry[]): string[] {
 }
 
 // ── Racial traits ────────────────────────────────────────────────────────────
-function buildRacialTraitLines(char: CharData, classes: readonly ClassEntry[]): string[] {
+function buildRacialTraitLines(char: CharData, totalLevel: number): string[] {
   const race = obj(char.race);
-  const totalLevel = classes.reduce((sum, c) => sum + num(c.level), 0);
   const lines: string[] = [];
   const seen = new Set<string>();
   for (const t of records(race.racialTraits)) {
     const def = obj(t.definition);
     // The sheet hides these (Age, Size, Languages, ASI, level-gated traits). Lookup, senses and
-    // granted actions still read every trait.
-    if (def.hideInSheet === true || obj(def.displayConfiguration).RACIALTRAIT === 0 || num(def.requiredLevel) > totalLevel) continue;
+    // granted actions still read every trait. A sheet with no class levels shows its
+    // level-gated traits (fail-open, owner ruling 2026-11-06).
+    if (def.hideInSheet === true || obj(def.displayConfiguration).RACIALTRAIT === 0) continue;
+    if (totalLevel > 0 && num(def.requiredLevel) > totalLevel) continue;
     const line = wrapIfHomebrew(`• ${str(def.name)}`, isHomebrewEntry(t, race));
     if (!seen.has(line)) {
       seen.add(line);
@@ -140,14 +141,14 @@ function buildBackgroundFeature(char: CharData, resolveTemplates: TemplateResolv
 
 // ── Public API ───────────────────────────────────────────────────────────────
 export function computeFeatures(core: CoreStats): Features {
-  const { char, classes, resolveTemplates, editions } = core;
+  const { char, classes, totalLevel, resolveTemplates, editions } = core;
   const { featLines, disguisedFeatLines, realFeatCount } = buildFeatLines(char, resolveTemplates, editions);
   return {
     featLines,
     disguisedFeatLines,
     realFeatCount,
     classFeatureLines: buildClassFeatureLines(classes),
-    racialTraitLines: buildRacialTraitLines(char, classes),
+    racialTraitLines: buildRacialTraitLines(char, totalLevel),
     background: buildBackgroundFeature(char, resolveTemplates),
   };
 }

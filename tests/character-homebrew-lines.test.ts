@@ -306,6 +306,13 @@ describe("custom items are placed as homebrew", () => {
     expect(out).toMatch(new RegExp(`${OPEN}\\n• Ghost Step tattoo[^\\n]*\\n${CLOSE}`));
   });
 
+  it("trims an item's name on its LIMITED USE line, one space before the tag", () => {
+    const charges = { limitedUse: { maxUses: 3, numberUsed: 0, resetType: 2 } };
+    const out = sheet({ inventory: [gear(6, "Wand of Q ", { isHomebrew: true }, charges), gear(7, "Wand of Webs ", {}, charges)] }, "combat");
+    expect(out).toContain(wrapUntrusted("• Wand of Q [homebrew]   0 used / 3 max   (Long Rest)"));
+    expect(out).toContain("\n• Wand of Webs   0 used / 3 max   (Long Rest)\n");
+  });
+
   it("keeps an item with isCustomItem: false plain", () => {
     const out = sheet({ inventory: [gear(5, "Lantern", { isCustomItem: false })] }, "inventory");
     expect(out).not.toContain(OPEN);

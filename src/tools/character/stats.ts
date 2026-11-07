@@ -9,7 +9,7 @@
  * pass could lift these into structured data, but that's a separate concern.
  */
 
-import { arr, records, capitalize, knownAndCustomLines, hasRemarkableAthlete, isBonusMod, isExpertiseMod, isHalfProficiencyMod, isLanguageMod, isProficiencyMod, isSenseMod, isSetBaseMod, isSetMod, num, obj, signed, statKeys, statNames, str } from "./helpers.js";
+import { arr, records, capitalize, knownAndCustomLines, hasRemarkableAthlete, isBonusMod, isExpertiseMod, isHalfProficiencyMod, isLanguageMod, isProficiencyMod, isSenseMod, isSetBaseMod, isSetMod, num, obj, signed, statKeys, statNames, str, weaponWordOrder } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
 import { LANGUAGE_SLUGS, PROFICIENCY_SLUGS } from "./modifier-slugs.js";
 
@@ -375,7 +375,7 @@ function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficie
         const name = friendly || capitalize(sub.replace(/-/g, " "));
         if (isWeaponSlug(sub)) {
           // "Crossbow, Light" prints as the item's name, "Light Crossbow" (owner ruling 2026-11-06).
-          (known ? weapons : customWeapons).push(friendly ? friendly.replace(/^([^,]+),\s*(.+)$/, "$2 $1") : name);
+          (known ? weapons : customWeapons).push(friendly ? weaponWordOrder(friendly) : name);
         } else {
           (known ? tools : customTools).push(name);
         }

@@ -12,7 +12,7 @@
 
 import { wrapIfHomebrew } from "../../utils.js";
 import { MASTERY_NAMES } from "../weapon-mastery.js";
-import { arr, records, isBonusMod, isHomebrewEntry, isProficiencyMod, num, obj, signed, str } from "./helpers.js";
+import { arr, records, isBonusMod, isHomebrewEntry, isProficiencyMod, num, obj, signed, str, weaponWordOrder } from "./helpers.js";
 import type { CoreStats } from "./types.js";
 
 export function computeWeaponAttacks(core: CoreStats): string[] {
@@ -56,7 +56,8 @@ export function computeWeaponAttacks(core: CoreStats): string[] {
     if (i.equipped !== true) continue; // only show equipped weapons in ACTIONS
 
     const wName = str(def.name).trim();
-    const wLabel = editions.named(wName, def);
+    // "Crossbow, Light" reads "Light Crossbow", as in the proficiency list (owner ruling 2026-11-06).
+    const wLabel = editions.named(weaponWordOrder(wName), def);
     const dmg = obj(def.damage);
     const dmgDice = str(dmg.diceString);
     const attackType = num(def.attackType); // 1=melee, 2=ranged

@@ -77,6 +77,13 @@ export const isHomebrewClassFeature = (feature: unknown, cls: unknown): boolean 
 };
 
 /**
+ * A weapon's name as the item reads: D&D Beyond's "X, Y" becomes "Y X"
+ * ("Crossbow, Light" → "Light Crossbow"; owner ruling 2026-11-06). Shared by
+ * the proficiency list (stats.ts) and the attack rows (weapons.ts).
+ */
+export const weaponWordOrder = (name: string): string => name.replace(/^([^,]+),\s*(.+)$/, "$2 $1");
+
+/**
  * Whether a printed entry is placed as homebrew: the record is homebrew and
  * the name the line prints is not empty. A nameless entry carries no text, so
  * it keeps its plain empty slot (owner ruling).

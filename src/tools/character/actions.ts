@@ -233,7 +233,7 @@ function buildItemChargeLines(
     if (!(num(lu.maxUses) > 0)) return [];
     // A consumable is already listed, with its count, under INVENTORY.
     if (lu.resetType === "Consumable") return [];
-    const name = editions.named(str(def.name), def);
+    const name = editions.named(str(def.name).trim(), def);
     if (name === "") return [];
     // A degenerate key (no definition id or entity type) never matches an action.
     if (num(def.id) && num(def.entityTypeId) && actionKeys.has(entityKey(def.id, def.entityTypeId))) return [];
