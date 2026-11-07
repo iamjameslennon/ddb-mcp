@@ -562,6 +562,28 @@ describe("parseCharacterData — comma-in-type-name weapon proficiency", () => {
     expect(out).toContain("• Hand Crossbow [homebrew] ");
     expect(out).not.toContain("Crossbow, Hand");
   });
+
+  // Owner ruling 2026-11-07: only a name equal to the base weapon type is reordered.
+  it("keeps a magic or named variant's D&D Beyond name", () => {
+    const fighter = (FIGHTER_5.data) as Record<string, unknown>;
+    const weapon = (id: number, name: string, type: string, dice: string) => ({
+      equipped: true, quantity: 1,
+      definition: {
+        id, name, type, filterType: "Weapon", categoryId: 1, attackType: 1, damage: { diceString: dice }, damageType: "Bludgeoning",
+        properties: [], grantedModifiers: [], sources: [{ sourceId: 145 }],
+      },
+    });
+    const out = parseCharacterData({ data: { ...fighter, inventory: [
+      weapon(1, "Mace, +1", "Mace", "1d6"),
+      weapon(2, "Crossbow, Light, +1", "Crossbow, Light", "1d8"),
+      weapon(3, "Crossbow, Light", "Crossbow, Light", "1d10"),
+    ] } }, "combat");
+    expect(out).toContain("• Mace, +1 ");
+    expect(out).toContain("• Crossbow, Light, +1 ");
+    expect(out).toContain("• Light Crossbow ");
+    expect(out).not.toContain("+1 Mace");
+    expect(out).not.toContain("Light, +1 Crossbow");
+  });
 });
 
 

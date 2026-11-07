@@ -155,7 +155,14 @@ describe("formatCharacterLookup", () => {
     const char = variant(FIGHTER_5, d => {
       d.inventory = [1, 2, 3, 4].map(n => ({ ...filigreed, definition: { ...filigreed.definition, id: 9010 + n, name: `Filigreed ${n} ` } }));
     }).data as Record<string, unknown>;
-    // Only the name is pinned here: the list's inline tag for a custom item is not ruled on.
-    expect(formatCharacterLookup(char, "filigreed", INDEX)).toMatch(/\n1\. \[Item\] Filigreed 1 \[[^\]]+\] \(Longsword, Common\)\n/);
+    expect(formatCharacterLookup(char, "filigreed", INDEX)).toMatch(/\n1\. \[Item\] Filigreed 1[ (]/);
+  });
+
+  // Owner ruling 2026-11-07: as on the sheet, a custom item's list line carries no edition tag.
+  it("a custom item's list line carries no edition tag and stays wrapped", () => {
+    const char = variant(FIGHTER_5, d => {
+      d.inventory = [1, 2, 3, 4].map(n => ({ ...filigreed, definition: { ...filigreed.definition, id: 9010 + n, name: `Filigreed ${n}` } }));
+    }).data as Record<string, unknown>;
+    expect(formatCharacterLookup(char, "filigreed", INDEX)).toContain(wrapUntrusted("1. [Item] Filigreed 1 (Longsword, Common)"));
   });
 });

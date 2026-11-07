@@ -79,7 +79,8 @@ export const isHomebrewClassFeature = (feature: unknown, cls: unknown): boolean 
 /**
  * A weapon's name as the item reads: D&D Beyond's "X, Y" becomes "Y X"
  * ("Crossbow, Light" → "Light Crossbow"; owner ruling 2026-11-06). Shared by
- * the proficiency list (stats.ts) and the attack rows (weapons.ts).
+ * the proficiency list (stats.ts) and the attack rows (weapons.ts), which
+ * reorder only a name equal to the base weapon type.
  */
 export const weaponWordOrder = (name: string): string => name.replace(/^([^,]+),\s*(.+)$/, "$2 $1");
 

@@ -56,8 +56,10 @@ export function computeWeaponAttacks(core: CoreStats): string[] {
     if (i.equipped !== true) continue; // only show equipped weapons in ACTIONS
 
     const wName = str(def.name).trim();
-    // "Crossbow, Light" reads "Light Crossbow", as in the proficiency list (owner ruling 2026-11-06).
-    const wLabel = editions.named(weaponWordOrder(wName), def);
+    // "Crossbow, Light" reads "Light Crossbow", as in the proficiency list (owner ruling 2026-11-06),
+    // but only when the name is the base weapon type: a magic or named variant ("Mace, +1",
+    // "Crossbow, Light, +1") keeps D&D Beyond's name (owner ruling 2026-11-07).
+    const wLabel = editions.named(wName === str(def.type).trim() ? weaponWordOrder(wName) : wName, def);
     const dmg = obj(def.damage);
     const dmgDice = str(dmg.diceString);
     const attackType = num(def.attackType); // 1=melee, 2=ranged

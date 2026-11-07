@@ -298,7 +298,9 @@ function formatDefinitionHits(hits: DefinitionHit[], query: string): string {
   if (hits.length > 3) {
     const list = hits.map((h, i) => {
       const first = h.text.split("\n")[0];
-      return wrapIfHomebrew(`${i + 1}. [${h.type}] ${h.name} ${editionTag(h.info)}${first.slice(h.name.length)}`, h.untrusted);
+      // A custom item has no ruleset, so no tag, as on the sheet (owner ruling 2026-11-07).
+      const tag = h.customItem ? "" : ` ${editionTag(h.info)}`;
+      return wrapIfHomebrew(`${i + 1}. [${h.type}] ${h.name}${tag}${first.slice(h.name.length)}`, h.untrusted);
     }).join("\n");
     return `Found ${hits.length} matches for "${query}". Be more specific, or here are the matches:\n\n${list}`;
   }
