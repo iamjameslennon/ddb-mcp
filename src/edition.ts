@@ -628,6 +628,13 @@ export function rulesLine(info: EditionInfo, opts: { reason?: RulesLineReason; o
   return opts.reason ? `${line}\n${REASON_TEXT[opts.reason]}` : line;
 }
 
+/**
+ * ddb_character_lookup's line for a player-made item (`isCustomItem`): it has
+ * no ruleset, as on the sheet, where it is neither tagged nor counted (owner
+ * ruling 2026-11-06).
+ */
+export const CUSTOM_ITEM_RULES_LINE = "Rules: custom item";
+
 /** Added when the query matched a different name in the twin group than the one shown. */
 export function renameLine(name2014: string, name2024: string): string {
   return `(2014 name: ${name2014} · 2024 name: ${name2024})`;

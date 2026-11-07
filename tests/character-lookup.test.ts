@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { formatCharacterLookup } from "../src/tools/character/definition.js";
+import { wrapUntrusted } from "../src/utils.js";
 import { FIGHTER_5, MONK_3_HANDAXE } from "./fixtures/character-fixtures.js";
 import { INDEX, S, variant } from "./fixtures/character-edition-helpers.js";
 
@@ -103,5 +104,58 @@ describe("formatCharacterLookup", () => {
     // The homebrew block is delimited as untrusted, rules line included.
     expect(formatCharacterLookup(char, "zany", INDEX).split("\n").slice(0, 4)).toEqual(
       ["[Feat]", "<untrusted_dndbeyond_content>", "Zany Trick", "Rules: homebrew (edition not stated)"]);
+  });
+
+  // ── Weapon mastery on a 2014-shown item (owner ruling 2026-11-06) ─────────
+  // The live shape (Rapier, 2026-11-06): paragraphs joined by \r\n, the mastery in its own container.
+  const MASTERY_DESC = "<p>Proficiency with a Rapier allows you to add your proficiency bonus.</p>\r\n<div class=\"mastery-container\"><hr />\r\n"
+    + "<p>This weapon has the following mastery property. To use this property, you must have a feature that lets you use it.</p>\r\n"
+    + "<p><strong><em>Vex.</em></strong> If you hit a creature with this weapon, you have Advantage on your next attack.</p>\r\n</div>";
+  const rapier = (sources: Array<{ sourceId: number }>) => ({ equipped: true, quantity: 1, definition: {
+    id: 9001, name: "Rapier", type: "Rapier", rarity: "Common", filterType: "Weapon", weight: 2,
+    properties: [{ name: "Finesse" }, { name: "Vex" }], description: MASTERY_DESC, sources,
+  } });
+
+  it("a 2014 lookup drops the 2024 mastery paragraph", () => {
+    const char = variant(MONK_3_HANDAXE, d => { d.inventory = [rapier(S(2))]; }).data as Record<string, unknown>;
+    expect(formatCharacterLookup(char, "rapier", INDEX)).toBe(
+      "[Item]\nRapier (Rapier, Common)\nRules: 2014 · Player's Handbook (2014)\nWeight: 2 lb\n\nProficiency with a Rapier allows you to add your proficiency bonus.");
+  });
+
+  it("a 2024 lookup keeps the mastery paragraph", () => {
+    const char = variant(FIGHTER_5, d => { d.inventory = [rapier(S(145))]; }).data as Record<string, unknown>;
+    const out = formatCharacterLookup(char, "rapier", INDEX);
+    expect(out).toContain("Rules: 2024 · Player's Handbook (2024)");
+    expect(out).toContain("This weapon has the following mastery property.");
+    expect(out).toContain("Vex. If you hit a creature");
+  });
+
+  it("a dual-edition weapon shown as 2014 on a 2014 sheet drops the mastery paragraph", () => {
+    const char = variant(MONK_3_HANDAXE, d => { d.inventory[0].definition.description = MASTERY_DESC; }).data as Record<string, unknown>;
+    const out = formatCharacterLookup(char, "handaxe", INDEX);
+    expect(out).toContain("Rules: 2014 · Basic Rules (2014)");
+    expect(out).toContain("Proficiency with a Rapier");
+    expect(out).not.toContain("mastery");
+    expect(out).not.toContain("Vex");
+  });
+
+  // ── Custom items (owner ruling 2026-11-06) ───────────────────────────────
+  const filigreed = { equipped: true, quantity: 1, definition: {
+    id: 9002, name: "Filigreed Longsword ", type: "Longsword", rarity: "Common", filterType: "Weapon",
+    description: "<p>Fine work.</p>", isCustomItem: true, isHomebrew: false, sources: [],
+  } };
+
+  it("a custom item is trimmed, reads Rules: custom item, and stays wrapped", () => {
+    const char = variant(FIGHTER_5, d => { d.inventory = [filigreed]; }).data as Record<string, unknown>;
+    expect(formatCharacterLookup(char, "filigreed", INDEX)).toBe(
+      `[Item]\n${wrapUntrusted("Filigreed Longsword (Longsword, Common)\nRules: custom item\n\nFine work.")}`);
+  });
+
+  it("a custom item in a list of matches is trimmed", () => {
+    const char = variant(FIGHTER_5, d => {
+      d.inventory = [1, 2, 3, 4].map(n => ({ ...filigreed, definition: { ...filigreed.definition, id: 9010 + n, name: `Filigreed ${n} ` } }));
+    }).data as Record<string, unknown>;
+    // Only the name is pinned here: the list's inline tag for a custom item is not ruled on.
+    expect(formatCharacterLookup(char, "filigreed", INDEX)).toMatch(/\n1\. \[Item\] Filigreed 1 \[[^\]]+\] \(Longsword, Common\)\n/);
   });
 });

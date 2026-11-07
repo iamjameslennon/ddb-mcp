@@ -12,7 +12,7 @@
  */
 
 import { stripHtml as stripHtmlFull, wrapIfHomebrew } from "../../utils.js";
-import { classifyEdition, editionTag, rulesLine, type EditionInfo, type EditionMarkers, type SourceIndex } from "../../edition.js";
+import { classifyEdition, CUSTOM_ITEM_RULES_LINE, editionTag, rulesLine, type EditionInfo, type EditionMarkers, type SourceIndex } from "../../edition.js";
 import { getSourceIndex, LOGGED_OUT_CHARACTER_INDEX_WAIT_MS } from "../../game-config.js";
 import { fetchCharacter, withNotice } from "../character.js";
 import { computeCharacterEditions, type CharacterEditions } from "./editions.js";
@@ -20,6 +20,7 @@ import { featureDefinition, isHomebrewClassFeature, isHomebrewEntry, levenshtein
 import { resolveBackground } from "./features.js";
 import type { CharData } from "./types.js";
 import { castingTimeText } from "../casting-time.js";
+import { withoutMasteryParagraph } from "../weapon-mastery.js";
 
 function matchesDefinitionQuery(name: string, query: string): boolean {
   const n = name.toLowerCase();
@@ -100,14 +101,18 @@ function formatRacialTraitResult(trait: Record<string, unknown>, raceName: strin
   return `${name} (${raceName})\n\n${desc}`;
 }
 
-function formatItemResult(item: Record<string, unknown>): string {
+/**
+ * `name` is the trimmed name the hit lists. `shown` is the hit's ruleset (never
+ * re-classified: a dual-edition definition would classify as 2024); a 2014 one
+ * drops the description's 2024 mastery paragraph, as ddb_get_equipment does.
+ */
+function formatItemResult(item: Record<string, unknown>, name: string, shown: EditionInfo["ruleset"]): string {
   const d = (item.definition ?? item) as Record<string, unknown>;
-  const name = String(d.name ?? "Unknown");
   const type = String(d.type ?? "Item");
   const rarity = String(d.rarity ?? "Common");
   const weight = d.weight != null ? `Weight: ${d.weight} lb\n` : "";
   const desc = stripHtmlFull(String(d.description ?? ""));
-  return `${name} (${type}, ${rarity})\n${weight}\n${desc}`;
+  return `${name} (${type}, ${rarity})\n${weight}\n${shown === "2014" ? withoutMasteryParagraph(desc) : desc}`;
 }
 
 interface DefinitionHit {
@@ -119,6 +124,8 @@ interface DefinitionHit {
   text: string;
   /** Homebrew or a player-written custom background: the text is user-authored. */
   untrusted: boolean;
+  /** A player-made item: its rules line is CUSTOM_ITEM_RULES_LINE, not its ruleset's. */
+  customItem?: boolean;
 }
 
 function searchDefinitions(char: Record<string, unknown>, query: string, editions: CharacterEditions, index: SourceIndex): DefinitionHit[] {
@@ -245,13 +252,16 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
   }
 
   // ── Equipped Items ────────────────────────────────────────────────────────
+  // Item names are trimmed, as on the sheet (owner ruling 2026-11-06).
   for (const item of records(char.inventory)) {
     if (!item.equipped) continue;
-    const name = str(obj(item.definition).name);
+    const name = str(obj(item.definition).name).trim();
     if (name && matchesDefinitionQuery(name, query)) {
+      const info = editions.info(item.definition);
       results.push({
-        type: "Item", name, info: editions.info(item.definition), text: formatItemResult(item),
+        type: "Item", name, info, text: formatItemResult(item, name, info.ruleset),
         untrusted: isHomebrewEntry(item),
+        customItem: obj(item.definition).isCustomItem === true,
       });
     }
   }
@@ -296,6 +306,7 @@ function formatDefinitionHits(hits: DefinitionHit[], query: string): string {
   return hits.map(h => {
     const [first, ...rest] = h.text.split("\n");
     // The whole block, rules line included, is delimited when it is user-authored.
-    return `[${h.type}]\n${wrapIfHomebrew([first, rulesLine(h.info), ...rest].join("\n"), h.untrusted)}`;
+    const rules = h.customItem ? CUSTOM_ITEM_RULES_LINE : rulesLine(h.info);
+    return `[${h.type}]\n${wrapIfHomebrew([first, rules, ...rest].join("\n"), h.untrusted)}`;
   }).join("\n\n===\n\n");
 }

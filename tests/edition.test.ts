@@ -4,7 +4,7 @@ import {
   normalizeName, createTwinNamer, twinNames, twinAliases, classOwnerTwinKey, editionSourceId, entrySourceIds, bookChoiceNote, alsoInLine,
   dedupeById, dedupeByKey, definitionTiebreak, monsterTiebreak,
   selectByEdition, lookupByName, groupAndSelect,
-  cappedList, rulesLine, reasonLine, renameLine, RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, PARTY_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, lookupSourceNote, editionTag, searchHeader, open5eSearchHeader, searchFooter, ambiguityMessage,
+  cappedList, rulesLine, CUSTOM_ITEM_RULES_LINE, reasonLine, renameLine, RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, PARTY_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, lookupSourceNote, editionTag, searchHeader, open5eSearchHeader, searchFooter, ambiguityMessage,
   lockedLineSuffix, lockedSwapSummary, lockedEntriesNote, availableElsewhereHint, HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO,
   loggedOutReason, LOGGED_OUT_RESTRICTED_NOTE, NOT_LOGGED_IN_SUFFIX,
   characterMainEdition, characterTag, characterRulesLine, classifyForEdition,
@@ -742,6 +742,10 @@ describe("rulesLine", () => {
     expect(rulesLine(info("2014"), { open5e: "primary", reason: "rules-miss-2024" })).toBe("Rules: 2014 · SRD 5.1\n(no matching 2024 rules section — 2014 text shown)");
     expect(rulesLine(info("2024"), { open5e: "primary", reason: "rules-miss-2014" })).toBe("Rules: 2024 · SRD 5.2\n(no matching 2014 rules section — 2024 text shown)");
     expect(rulesLine(info("2024", "Dungeon Master's Guide (2024)"), { reason: "treasure-no-2014" })).toBe("Rules: 2024 · Dungeon Master's Guide (2024)\n(no 2014 version exists — 2024 tables used)");
+  });
+
+  it("a custom item's rules line (owner ruling 2026-11-06)", () => {
+    expect(CUSTOM_ITEM_RULES_LINE).toBe("Rules: custom item");
   });
 
   it("reasonLine gives the rules search-miss text", () => {

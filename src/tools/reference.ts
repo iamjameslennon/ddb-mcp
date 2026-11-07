@@ -23,7 +23,7 @@ import {
   normalizeName, searchFooter, dedupeByKey, homebrewLoginRequired, homebrewUnreachable, homebrewNoMatch, homebrewNotFound,
   type RulesEdition, type EditionInfo,
 } from "../edition.js";
-import { MASTERY_NAMES } from "./weapon-mastery.js";
+import { MASTERY_NAMES, withoutMasteryParagraph } from "./weapon-mastery.js";
 import { peekSourceIndex, getSourceIndex } from "../game-config.js";
 import { resolveSource, unknownSourceError, withSourceCaveat, isHomebrewSource, GENERIC_SOURCE_HINT, type ResolvedSource } from "../source-filter.js";
 import {
@@ -652,9 +652,6 @@ async function loadItemCompendium(): Promise<DdbItem[]> {
   return items;
 }
 
-/** Starts the paragraph D&D Beyond appends to a weapon's description for its 2024 mastery. */
-const MASTERY_PARAGRAPH = /(?:^|\n)[ \t]*This weapon has the following mastery property/;
-
 /**
  * `rulesLines` (from lookupCatalog) go directly under the title. `shown` is the
  * shown entry's ruleset (`found.info.ruleset`, never re-classified: a dual-edition
@@ -695,12 +692,8 @@ function formatItem(item: DdbItem, rulesLines: string[], shown: EditionInfo["rul
     const names = item.properties.map(p => p.name).filter(n => shown !== "2014" || !MASTERY_NAMES.has(n));
     if (names.length) lines.push(`Properties: ${names.join(", ")}`);
   }
-  let description = stripHtml(item.description || item.snippet || "No description available.");
-  if (shown === "2014") {
-    const cut = description.search(MASTERY_PARAGRAPH);
-    if (cut >= 0) description = description.slice(0, cut).trimEnd();
-  }
-  lines.push("", description);
+  const description = stripHtml(item.description || item.snippet || "No description available.");
+  lines.push("", shown === "2014" ? withoutMasteryParagraph(description) : description);
   return wrapIfHomebrew(lines.join("\n"), item.isHomebrew);
 }
 
