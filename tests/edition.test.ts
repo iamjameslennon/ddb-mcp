@@ -841,7 +841,7 @@ describe("search labels", () => {
   });
 
   it("CHARACTER_LOOKUP_TOOL_NOTE", () => {
-    expect(CHARACTER_LOOKUP_TOOL_NOTE).toBe("Each result carries a 'Rules:' line naming the entry's ruleset; a list of matches tags each line instead.");
+    expect(CHARACTER_LOOKUP_TOOL_NOTE).toBe("Each result carries a 'Rules:' line naming the entry's ruleset (a custom item reads 'custom item'); a list of matches tags each line instead, except custom items, which stay untagged.");
   });
 
   it("LIBRARY_LIST_TOOL_NOTE", () => {

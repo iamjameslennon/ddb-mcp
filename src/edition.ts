@@ -569,7 +569,7 @@ export const PARTY_RULES_TOOL_NOTE =
 
 /** Appended to the ddb_character_lookup description. */
 export const CHARACTER_LOOKUP_TOOL_NOTE =
-  "Each result carries a 'Rules:' line naming the entry's ruleset; a list of matches tags each line instead.";
+  "Each result carries a 'Rules:' line naming the entry's ruleset (a custom item reads 'custom item'); a list of matches tags each line instead, except custom items, which stay untagged.";
 
 /** Appended to the ddb_list_library description. */
 export const LIBRARY_LIST_TOOL_NOTE = "Each book carries an edition tag ([2024], [2014], …).";

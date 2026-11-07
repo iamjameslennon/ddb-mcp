@@ -143,7 +143,7 @@ Full detail: [docs/claude/architecture.md](docs/claude/architecture.md).
 
 ## Open work (history and closed items in [history.md](docs/claude/history.md))
 
-Last updated 2026-11-06. Releases and pushes go straight to `main`. The rules-edition work (phases 1–5) is complete, as are the follow-up rounds of minors A–E and the F-2026-10-20 residuals. Since v2.10.2, 269 commits are unreleased.
+Last updated 2026-11-07. Releases and pushes go straight to `main`. The rules-edition work (phases 1–5) is complete, as are the follow-up rounds of minors A–E and the F-2026-10-20 residuals. Since v2.10.2, 269 commits are unreleased.
 
 1. **Stateless-safe plan, Task 2 onward**: [docs/superpowers/plans/2026-09-17-stateless-safe-ddb-mcp.md](docs/superpowers/plans/2026-09-17-stateless-safe-ddb-mcp.md). Nothing blocks it. The plan predates some moves, so refresh it first:
    - the registrations are in `src/server.ts`, not `src/index.ts`;

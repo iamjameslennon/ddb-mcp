@@ -177,7 +177,7 @@ Can a character use the Help action to assist with a skill check?
 | `ddb_get_character` | Parse a character into a compact, readable sheet. Covers all stats, skills, spells, actions, and inventory; LIMITED USE also lists items with rechargeable charges (wands, staffs, rods). Use `sections` to get just `summary`, `combat`, `spells`, `inventory`, `features`, `concentration`, `notes`, or `full`. Accepts name (fuzzy matched) or numeric ID. A `Rules:` line under the character's name gives the ruleset of the classes and lists content from other rulesets, which is also tagged inline (`[2014]`, `[homebrew]`, …). |
 | `ddb_get_character_raw` | Fetch raw character JSON from the D&D Beyond API. Use `ddb_get_character` for all normal use. |
 | `ddb_download_character` | Save a character's full JSON to a local file (must be under ~/Downloads or ~/Documents). |
-| `ddb_character_lookup` | Look up the full description of a spell, feat, class feature, racial trait, or item on a character sheet. Supports partial and fuzzy name matching. Each result carries a `Rules:` line; a list of matches tags each line. |
+| `ddb_character_lookup` | Look up the full description of a spell, feat, class feature, racial trait, or item on a character sheet. Supports partial and fuzzy name matching. Each result carries a `Rules:` line (a custom item reads `custom item`); a list of matches tags each line, except custom items, which stay untagged. |
 
 ### Campaign Tools
 
