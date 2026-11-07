@@ -143,7 +143,7 @@ Full detail: [docs/claude/architecture.md](docs/claude/architecture.md).
 
 ## Open work (history and closed items in [history.md](docs/claude/history.md))
 
-Last updated 2026-11-06. Releases and pushes go straight to `main`. The rules-edition work (phases 1–5) is complete, as are the follow-up rounds of minors A–E and the F-2026-10-20 residuals. Since v2.10.2, 265 commits are unreleased.
+Last updated 2026-11-06. Releases and pushes go straight to `main`. The rules-edition work (phases 1–5) is complete, as are the follow-up rounds of minors A–E and the F-2026-10-20 residuals. Since v2.10.2, 268 commits are unreleased.
 
 1. **Stateless-safe plan, Task 2 onward**: [docs/superpowers/plans/2026-09-17-stateless-safe-ddb-mcp.md](docs/superpowers/plans/2026-09-17-stateless-safe-ddb-mcp.md). Nothing blocks it. The plan predates some moves, so refresh it first:
    - the registrations are in `src/server.ts`, not `src/index.ts`;
@@ -152,5 +152,5 @@ Last updated 2026-11-06. Releases and pushes go straight to `main`. The rules-ed
 
    Task 4 (delete `characterSpellBuffer`) is also unblocked.
 2. **Open carry-overs that need a book-owning or homebrew account**: (b) owner-only subclass renames; (aa) slug joins for paid books; (ah) a feature-level homebrew flag on optional features; (ay) item- and background-granted action entries (wrapping is covered by synthetic tests only).
-3. **Regression handover (B11, B12, I1–I4)**: needs owner decisions, see docs/superpowers/specs/2026-11-06-regression-report.md. The rest of the 2026-11-06 run is done (history.md "Regression run 2026-11-06").
+3. **Regression handover (B11, B12, I1–I5)**: needs owner decisions, see docs/superpowers/specs/2026-11-06-regression-report.md. The rest of the 2026-11-06 run is done (history.md "Regression run 2026-11-06").
 4. **Open by design** (no change planned): (q) either Open5e document failing fails the call; (y) the sheet keeps empty slots for nameless entries; (ab) "dual-edition" means only 2024 + 2014 books.

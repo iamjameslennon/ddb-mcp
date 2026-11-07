@@ -436,8 +436,8 @@ SENSES
 PROFICIENCIES & TRAINING
   Armor: None
   Weapons: Simple Weapons
-  Tools: Calligraphers supplies
-  Languages: Common, Common sign language, Draconic
+  Tools: Calligrapher's Supplies
+  Languages: Common, Common Sign Language, Draconic
 
 DEFENSES
   Resistances: Fire
@@ -505,7 +505,7 @@ Key things `ddb_get_character` handles correctly:
 - **Wizards**: only shows prepared spells and unprepared rituals (castable from spellbook without a slot) — not the full spellbook
 - **Spell sources**: racial traits, class features, feats, and magic items are all labelled separately
 - **Ritual spells**: marked with `[ritual]` in the spell list
-- **Actions**: weapons include to-hit bonus, damage, range, and mastery properties; magic item bonuses (+1/+2/+3) are applied to both hit and damage
+- **Actions**: weapons include to-hit bonus, damage (with the versatile die), reach or range, and properties, plus the mastery only for weapons the character has mastered; magic item bonuses (+1/+2/+3) are applied to both hit and damage
 - **Bonus actions / reactions**: spell-based bonus actions and reactions (Healing Word, Shield, Hunter's Mark, Hellish Rebuke, etc.) appear in the correct section with slot cost
 - **AC**: correctly calculates Unarmored Defense for Barbarians and Monks; Draconic Resilience base bump; Defense fighting style gated on equipped body armor; selects best armor when multiple items are equipped
 - **Skills**: Jack of All Trades applied for Bards; Remarkable Athlete for Champion Fighters (STR/DEX/CON only); expertise marked with `**`
@@ -653,7 +653,7 @@ Forked from [ddb-mcp/ddb-mcp](https://github.com/ddb-mcp/ddb-mcp). The monster, 
 - **Ritual spells**: marked with `[ritual]`
 - **Full action classification**: bonus actions and reactions list both class features and spell-based entries with slot cost
 - **Magic weapon bonuses**: enhancement bonuses (+1/+2/+3) applied to both to-hit and damage
-- **Weapon properties and mastery**: all properties and mastery tags shown per weapon
+- **Weapon properties and mastery**: all properties shown per weapon, and a mastery only for weapons the character has mastered
 - **Skill and initiative accuracy**: Jack of All Trades and Alert feat handled correctly for both 2014 and 2024 rules
 - **Multiclass support**: hit dice per class, spell slots from combined caster levels
 

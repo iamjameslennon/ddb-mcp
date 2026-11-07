@@ -179,6 +179,8 @@ Rule (fields confirmed live on 152579009 and 112314883): skip a trait when `defi
 
 ### Task 7: B13, custom items (two paths)
 
+> **7(b) dropped (owner ruling 2026-11-06):** every `data.customItems` entry mirrors an `isCustomItem` inventory entry (same id and quantity), so `customItems` stay unprinted and only 7(a) was done. Item names are trimmed everywhere they print.
+
 **The report only half-matches HEAD.** Custom items reach the character JSON two ways:
 - **(a)** Inventory entries whose definition has `isCustomItem: true` (live: 7 on 5 of 57 characters). They are placed as homebrew, wrapped in `INVENTORY (homebrew)`, per the existing ruling in `tests/character-homebrew-lines.test.ts:269-283`. But they carry `[edition not stated]` there, on equipped and weapon lines too, and they are counted as `edition not stated: N items` in `Rules:`. This is the report's B13.
 - **(b)** `data.customItems` (`{id, name, description, weight, cost, quantity, notes}`, with no definition) is never read, so those items are silently **absent**. Live: Calderax 14814039 has `Platinum Ring` ×2 and `Filigreed Longsword ` (trailing space), and 39715128 and 17931478 each have `Unidentified Item 1`.
@@ -343,6 +345,8 @@ Changes:
 ---
 
 ## Final verification (after Task 13)
+
+> **Adapted (owner rulings 2026-11-06):** Task 5 was skipped, and the snapshots live in the plan workspace (`.superpowers/sdd/2026-11-06-regression-fixes/snap/`), so the baseline is `before-6`, not `/tmp/before-5.txt`.
 
 - [ ] `npm run build`, restart the server, and repeat the report's live checks for B1, B2, B3, B7, B8 and B9. Record each output.
 - [ ] Run the full snapshot diff against `/tmp/before-5.txt`: every changed line maps to one of Tasks 5–9.

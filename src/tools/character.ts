@@ -305,7 +305,8 @@ export function resolveSafeSavePath(
   home: string = homedir()
 ): string {
   // Expand ~ only as the leading segment: "~", "~/x" (and "~\x" on Windows).
-  // "~user/x" and a mid-path "~" are left alone and fail the allowlist.
+  // "~user/x" and a mid-path "~" are left alone: they resolve against the
+  // working directory like any relative path, then face the allowlist.
   let expanded = outputPath;
   if (outputPath === "~") expanded = home;
   else if (outputPath.startsWith("~/") || (process.platform === "win32" && outputPath.startsWith("~\\"))) {
