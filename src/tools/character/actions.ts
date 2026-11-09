@@ -23,11 +23,17 @@ import { resolveBackground } from "./features.js";
 import type { CharacterEditions } from "./editions.js";
 import { classSpellLists, isShownClassSpell } from "./spells.js";
 import { computeWeaponAttacks } from "./weapons.js";
+import { MASTERY_NAMES } from "../weapon-mastery.js";
 
 export interface Actions {
   weaponAttacks: string[];        // ["• Longsword        +5 to hit   1d8+3 slashing (1d10+3 two-handed)   reach 5 ft.   Versatile", …]
-  bonusActions: string[];         // ["• Bardic Inspiration", "• Healing Word (spell, 1st-level slot)", …]
+  unarmedStrike: string[];        // filled by a later task; [] until then
+  spellAttacks: string[];         // filled by a later task; [] until then
+  actionFeatures: string[];       // ["• Channel Divinity", "• Channel Divinity: Sear Undead   1d8", …]
+  offHandAttacks: string[];       // filled by a later task; [] until then
+  bonusActions: string[];         // ["• Bardic Inspiration   1d6", "• Healing Word (spell, 1st-level slot)", …]
   reactions: string[];            // ["• Opportunity Attack", "• Uncanny Dodge", …]
+  otherFeatures: string[];        // ["• Sneak Attack   3d6", …] (activationType 8, Special)
   limitedUseFeatures: string[];   // ["• Action Surge   0 used / 1 max   (Short Rest)", …]
 }
 
@@ -244,7 +250,26 @@ function formatSpellAction(s: Record<string, unknown>): string {
 }
 
 /** `• <name>` for an action, wrapped whole when its granting entity is homebrew. */
-const actionLine = ({ action, homebrew }: CharAction): string => wrapIfHomebrew(`• ${str(action.name)}`, homebrew);
+/**
+ * The dice D&D Beyond shows for an action: only when it displays as an attack,
+ * adds no ability modifier of its own and is not Martial Arts (whose figures
+ * the data gets wrong or leaves incomplete). `value` is never printed.
+ */
+export function actionDice(a: Record<string, unknown>): string {
+  if (a.displayAsAttack !== true || a.abilityModifierStatId != null || a.isMartialArts === true) return "";
+  return str(obj(a.dice).diceString).trim();
+}
+
+/** A weapon-mastery action, named `<mastery> (<weapon>)` (Weapon Mastery feat). */
+export function isMasteryAction(a: Record<string, unknown>): boolean {
+  const m = /^(\S+) \(.+\)$/.exec(str(a.name));
+  return m != null && MASTERY_NAMES.has(m[1]);
+}
+
+const actionLine = ({ action, homebrew }: CharAction): string => {
+  const dice = actionDice(action);
+  return wrapIfHomebrew(`• ${str(action.name)}${dice ? `   ${dice}` : ""}`, homebrew);
+};
 
 // ── Limited-use features ─────────────────────────────────────────────────────
 // maxUses=0 with statModifierUsesId means uses = that stat modifier (e.g. CHA for Bardic Inspiration)
@@ -321,8 +346,12 @@ export function computeActions(core: CoreStats): Actions {
   const reactionSpells = allCharSpells.filter(s => spellActivationType(s) === 4).map(formatSpellAction);
 
   // activationType 3 = bonus action in class actions, 4 = reaction
-  // activationType 1 = action (weapon masteries — skip, shown in ACTIONS already)
-  // activationType 8 = special/passive — skip
+  // activationType 1 = action (weapon-mastery actions are skipped: the weapon rows show mastery)
+  // activationType 8 = special, listed under OTHER
+  const actionFeatures = allActions
+    .filter(a => activationType(a.action) === 1 && !isMasteryAction(a.action))
+    .map(actionLine);
+  const otherFeatures = allActions.filter(a => activationType(a.action) === 8).map(actionLine);
   const bonusActions = [
     ...allActions.filter(a => activationType(a.action) === 3).map(actionLine),
     ...bonusActionSpells,
@@ -340,23 +369,31 @@ export function computeActions(core: CoreStats): Actions {
 
   return {
     weaponAttacks: computeWeaponAttacks(core),
+    unarmedStrike: [],
+    spellAttacks: [],
+    actionFeatures,
+    offHandAttacks: [],
     bonusActions,
     reactions,
+    otherFeatures,
     limitedUseFeatures,
   };
 }
 
 export function formatCombatBlock(a: Actions): string[] {
+  const actions = [...a.weaponAttacks, ...a.unarmedStrike, ...a.spellAttacks, ...a.actionFeatures];
+  const bonus = [...a.offHandAttacks, ...a.bonusActions];
   return [
     `ACTIONS`,
-    ...(a.weaponAttacks.length ? a.weaponAttacks : ["  (none)"]),
+    ...(actions.length ? actions : ["  (none)"]),
     ``,
     `BONUS ACTIONS`,
-    ...(a.bonusActions.length ? a.bonusActions : ["  (none)"]),
+    ...(bonus.length ? bonus : ["  (none)"]),
     ``,
     `REACTIONS`,
     ...(a.reactions.length ? a.reactions : ["  (none)"]),
     ``,
+    ...(a.otherFeatures.length ? [`OTHER`, ...a.otherFeatures, ``] : []),
     ...(a.limitedUseFeatures.length ? [`LIMITED USE`, ...a.limitedUseFeatures, ``] : []),
   ];
 }
