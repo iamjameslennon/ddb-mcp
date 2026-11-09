@@ -11,7 +11,7 @@
 
 import { arr, records, capitalize, knownAndCustomLines, hasRemarkableAthlete, isBonusMod, isExpertiseMod, isHalfProficiencyMod, isLanguageMod, isProficiencyMod, isSenseMod, isSetBaseMod, isSetMod, num, obj, signed, statKeys, statNames, str, weaponWordOrder } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
-import { bucketAnyHomebrew, entityKey, grantingEntities, grantingEntityNames } from "./actions.js";
+import { bucketAnyHomebrew, entityKey, grantingEntities, grantingEntityNames, hiddenOptionIds, isVisibleAction, visibleClassFeatureIds } from "./actions.js";
 import { isActiveItemMod } from "./item-gate.js";
 import { wrapUntrusted } from "../../utils.js";
 import { LANGUAGE_SLUGS, PROFICIENCY_SLUGS } from "./modifier-slugs.js";
@@ -416,13 +416,18 @@ interface SaveAdvGroup { kind: string; text: string; all: boolean; abilities: Se
  * Advantage / disadvantage on saving throws (spec §1). Read per bucket of
  * `char.modifiers` (allMods flattens them, and the unresolved-entity homebrew
  * fallback needs the bucket). Item modifiers count only while the item is
- * active. One line per (kind, restriction); an empty restriction groups by
- * and prints the granting entity's name, or nothing when it can't be resolved.
+ * active. A class- or subclass-bucket modifier of a class feature the
+ * character lacks (or of an option under one) is skipped, by the rule that
+ * hides such actions (isVisibleAction). One line per (kind, restriction); an
+ * empty restriction groups by and prints the granting entity's name, or
+ * nothing when it can't be resolved.
  */
 export function buildSaveAdvantageLines(core: CoreStats): string[] {
   const { char, classes, inventory } = core;
   const entities = grantingEntities(char, classes);
   const names = grantingEntityNames(char, classes);
+  const visibleIds = visibleClassFeatureIds(char, classes);
+  const hiddenOptions = hiddenOptionIds(char, visibleIds);
   const groups = new Map<string, SaveAdvGroup>();
   for (const [bucket, list] of Object.entries(obj(char.modifiers))) {
     for (const m of arr<Mod>(list)) {
@@ -432,6 +437,8 @@ export function buildSaveAdvantageLines(core: CoreStats): string[] {
       const ability = statKeys.findIndex(k => sub === `${k}-saving-throws`);
       if (!kind || (sub !== "saving-throws" && ability < 0)) continue;
       if (!isActiveItemMod(m, inventory)) continue;
+      const visibilityBucket = bucket === "subclass" ? "class" : bucket;
+      if (!isVisibleAction(visibilityBucket, m, visibleIds, hiddenOptions)) continue;
       const key = entityKey(m.componentId, m.componentTypeId);
       const granted = entities.get(key);
       const restriction = str(m.restriction).trim();

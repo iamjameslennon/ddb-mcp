@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { parseCharacterData as parseSheet } from "../src/tools/character.js";
 import { wrapUntrusted } from "../src/utils.js";
 import { INDEX, item, withoutNameWrap } from "./fixtures/character-edition-helpers.js";
-import { BASE, ITEM, RACIAL_TRAIT } from "./fixtures/combat-helpers.js";
+import { BASE, CLASS_FEATURE, ITEM, OPTION, RACIAL_TRAIT, feature, fighter } from "./fixtures/combat-helpers.js";
 
 const NONE = { race: [], class: [], background: [], item: [], feat: [], condition: [] };
 const mod = (subType: string, restriction: string, extra: Record<string, unknown> = {}, type = "advantage") =>
@@ -93,6 +93,48 @@ describe("save advantage lines", () => {
       { race: [mod("saving-throws", "against fear", { componentId: 999, componentTypeId: 1 })] },
       { race: race({ isHomebrew: true }) });
     expect(lines(out)).toEqual([wrapUntrusted("  Advantage (all saves): against fear")]);
+  });
+
+  it("wraps a subclass-bucket line whose entity is unresolved when the subclass is homebrew; an official one stays plain", () => {
+    const run = (isHomebrew: boolean) => lines(withMods(
+      { subclass: [mod("saving-throws", "INJECTED TEXT", { componentId: 424242, componentTypeId: 77777 })] },
+      { classes: [fighter({ subclassDefinition: { id: 77, name: "Hexblade Knight", isHomebrew, classFeatures: [] } })] }));
+    expect(run(true)).toEqual([wrapUntrusted("  Advantage (all saves): INJECTED TEXT")]);
+    expect(run(false)).toEqual(["  Advantage (all saves): INJECTED TEXT"]);
+  });
+
+  describe("class-bucket visibility (spec anti-goal: no features the character lacks)", () => {
+    const wisMod = (componentId: number, componentTypeId = CLASS_FEATURE) =>
+      mod("wisdom-saving-throws", "", { componentId, componentTypeId });
+
+    it("skips a mod from a class feature above the class level", () => {
+      const classes = [fighter({ classFeatures: [feature(2, "Level 17 Thing", { requiredLevel: 17 })] })];
+      expect(lines(withMods({ class: [wisMod(2)] }, { classes }))).toEqual([]);
+      expect(lines(withMods({ subclass: [wisMod(2)] }, { classes }))).toEqual([]);
+    });
+
+    it("keeps a mod from a reached class feature", () => {
+      const classes = [fighter({ classFeatures: [feature(2, "Level 3 Thing", { requiredLevel: 3 })] })];
+      expect(lines(withMods({ class: [wisMod(2)] }, { classes }))).toEqual(["  Advantage (WIS): Level 3 Thing"]);
+    });
+
+    it("keeps a mod from a chosen optional class feature and skips an unchosen one", () => {
+      const m = { class: [mod("wisdom-saving-throws", "against fear", { componentId: 3035892, componentTypeId: CLASS_FEATURE })] };
+      expect(lines(withMods(m))).toEqual([]);
+      expect(lines(withMods(m, { optionalClassFeatures: [{ classFeatureId: 3035892 }] }))).toEqual(["  Advantage (WIS): against fear"]);
+    });
+
+    it("skips a mod from an option under an unchosen class feature", () => {
+      const options = { class: [{ componentId: 3035679, componentTypeId: CLASS_FEATURE, definition: { id: 1306486, entityTypeId: OPTION, name: "Tireless" } }] };
+      const m = { class: [wisMod(1306486, OPTION)] };
+      expect(lines(withMods(m, { options }))).toEqual([]);
+      const classes = [fighter({ classFeatures: [feature(3035679, "Deft Explorer")] })];
+      expect(lines(withMods(m, { options, classes }))).toEqual(["  Advantage (WIS): Tireless"]);
+    });
+
+    it("leaves other buckets unfiltered", () => {
+      expect(lines(withMods({ race: [wisMod(2)] }))).toEqual(["  Advantage (WIS)"]);
+    });
   });
 
   it("adds nothing when there are no advantage mods", () => {

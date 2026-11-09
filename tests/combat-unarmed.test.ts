@@ -91,6 +91,15 @@ describe("Unarmed Strike row", () => {
     ]);
   });
 
+  it("counts an explicit Martial Arts requiredLevel 0 as level 0, not 1", () => {
+    const base = monk("wrapper", 10, 16, { requiredLevel: 0 });
+    const overrides = { ...base, classes: [{ ...base.classes[0], level: 0 }] };
+    const core = coreOf(overrides);
+    expect(row(combat(overrides))).toEqual([
+      `• ${"Unarmed Strike".padEnd(16)} +${core.statMods[1] + core.profBonus} to hit   1d6+${core.statMods[1]} bludgeoning   reach 5 ft.`,
+    ]);
+  });
+
   it("wraps the whole row when the Martial Arts feature is homebrew", () => {
     const overrides = monk("wrapper", 10, 16, { isHomebrew: true });
     const core = coreOf(overrides);

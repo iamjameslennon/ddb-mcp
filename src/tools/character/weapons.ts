@@ -13,7 +13,8 @@
 import { wrapIfHomebrew } from "../../utils.js";
 import { MASTERY_NAMES } from "../weapon-mastery.js";
 import { arr, records, isBonusMod, isHomebrewClassFeature, isHomebrewEntry, isProficiencyMod, num, obj, signed, str, weaponWordOrder } from "./helpers.js";
-import type { CharData, CoreStats } from "./types.js";
+import type { CharData, ClassEntry, CoreStats } from "./types.js";
+import { hiddenOptionIds, visibleClassFeatureIds } from "./actions.js";
 
 /** Inventory ids flagged as the off-hand weapon: `characterValues` typeId 18, value true, `valueId` an integer (others skipped). */
 export function offHandItemIds(char: CharData): Set<number> {
@@ -27,10 +28,16 @@ export function offHandItemIds(char: CharData): Set<number> {
   return ids;
 }
 
-/** The Two-Weapon Fighting fighting style: an `options.*` entry (2014) or a feat (2024) of that name. */
-export function hasTwoWeaponFightingStyle(char: CharData): boolean {
+/**
+ * The Two-Weapon Fighting fighting style: an `options.*` entry (2014) or a
+ * feat (2024) of that name. An option under a class feature the character
+ * lacks (hiddenOptionIds) doesn't count.
+ */
+export function hasTwoWeaponFightingStyle(char: CharData, classes: readonly ClassEntry[]): boolean {
   const named = (r: unknown): boolean => str(obj(obj(r).definition).name) === "Two-Weapon Fighting";
-  return Object.values(obj(char.options)).some(list => arr<unknown>(list).some(named)) || arr<unknown>(char.feats).some(named);
+  const hidden = hiddenOptionIds(char, visibleClassFeatureIds(char, classes));
+  const chosen = (r: unknown): boolean => named(r) && !hidden.has(num(obj(obj(r).definition).id));
+  return Object.values(obj(char.options)).some(list => arr<unknown>(list).some(chosen)) || arr<unknown>(char.feats).some(named);
 }
 
 /**
@@ -42,7 +49,8 @@ function martialArts(core: CoreStats): { die: string; homebrew: boolean } | null
   for (const c of core.classes) {
     for (const cf of records(c.classFeatures)) {
       if (str(obj(cf.definition).name) !== "Martial Arts") continue;
-      if (num(obj(cf.definition).requiredLevel || 1) > num(c.level)) continue;
+      const required = obj(cf.definition).requiredLevel;
+      if ((required == null ? 1 : num(required)) > num(c.level)) continue;
       const die = str(obj(obj(cf.levelScale).dice).diceString);
       if (die) return { die, homebrew: isHomebrewClassFeature(cf, c) };
     }
@@ -97,7 +105,7 @@ export function computeWeaponAttacks(core: CoreStats): { attacks: string[]; offH
   );
 
   const offHandIds = offHandItemIds(core.char);
-  const twoWeaponStyle = hasTwoWeaponFightingStyle(core.char);
+  const twoWeaponStyle = hasTwoWeaponFightingStyle(core.char, classes);
 
   // Lines are built after consolidation, so the ×N prefix is padded with the name.
   const weaponInventoryMap = new Map<string, { label: string; rest: string; qty: number; homebrew: boolean; offHand: boolean }>();

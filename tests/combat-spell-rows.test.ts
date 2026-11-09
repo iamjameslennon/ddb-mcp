@@ -264,6 +264,31 @@ describe("spell rows in ACTIONS", () => {
     expect(rowFor(sheet(wizard(5, [known(SCORCHING_RAY)])), "Scorching Ray")).toContain("   3 rays × 2d6 fire   ");
   });
 
+  it("reads a typeId-16 count only for cantrips: a leveled spell's entries count slot levels", () => {
+    const rays = spellDef("Ray Volley", 2, {
+      attackType: 2, range: ranged(120), scaleType: "spellscale",
+      atHigherLevels: { higherLevelDefinitions: [{ level: 1, typeId: 16, dice: null, value: 1, details: "Rays" }] },
+      modifiers: [damage("fire", "2d6")],
+    });
+    const row = rowFor(sheet(wizard(5, [known(rays)])), "Ray Volley")!;
+    expect(row).toContain("   2d6 fire   ");
+    expect(row).not.toContain("rays ×");
+  });
+
+  it("prints no DC for a fractional save ability id", () => {
+    const odd = spellDef("Odd Flame", 0, { saveDcAbilityId: 2.5, modifiers: [damage("radiant", "1d8")] });
+    const row = rowFor(sheet(cleric(1, [known(odd)])), "Odd Flame")!;
+    expect(row).toBe(`• ${"Odd Flame (cantrip)".padEnd(26)} 1d8 radiant   range 60 ft.`);
+    expect(row).not.toMatch(/undefined|NaN|DC/);
+  });
+
+  it("reads a damage bonus's ability only for an integer statId of 1 to 6", () => {
+    const potent = { type: "bonus", subType: "cleric-cantrip-damage", statId: 5, value: null, fixedValue: null };
+    const odd = { type: "bonus", subType: "cleric-cantrip-damage", statId: 2.5, value: null, fixedValue: null };
+    const o = cleric(1, [known(SACRED_FLAME)], { stats: stats({ wis: 20 }), modifiers: { ...(BASE.modifiers as object), class: [potent, odd] } });
+    expect(rowFor(sheet(o), "Sacred Flame")).toContain("   1d8+5 radiant   ");
+  });
+
   it("prints range from the range object", () => {
     const at = (range: unknown) => spellDef("Zap", 0, { attackType: 2, range, modifiers: [damage("lightning", "1d8")] });
     const r = (range: unknown) => rowFor(sheet(wizard(1, [known(at(range))])), "Zap")!;

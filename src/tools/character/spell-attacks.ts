@@ -117,28 +117,35 @@ function isActionSpell(def: Rec): boolean {
   return num(def.level) === 0 && num(def.saveDcAbilityId) > 0 && records(def.modifiers).some(m => m.type === "damage");
 }
 
-/** A bonus modifier's amount: its ability's modifier (statId 1–6), else its fixed value. */
+/** An ability id: an integer 1–6 (STR … CHA). */
+const isAbilityId = (id: number): boolean => Number.isInteger(id) && id >= 1 && id <= 6;
+
+/** A bonus modifier's amount: its ability's modifier (an integer statId 1–6), else its fixed value. */
 function modAmount(m: Mod, statMods: readonly number[]): number {
   const statId = num(m.statId);
-  return statId >= 1 && statId <= 6 ? statMods[statId - 1] : num(m.value ?? m.fixedValue);
+  return isAbilityId(statId) ? statMods[statId - 1] : num(m.value ?? m.fixedValue);
 }
 
 const withBonus = (dice: string, bonus: number): string => (bonus ? `${dice}${signed(bonus)}` : dice);
 
-/** `N word × ` from the first damage restriction like "3 Rays", else the highest reached spell-level typeId-16 entry. */
-function countPrefix(def: Rec, damageMods: readonly Rec[], totalLevel: number): string {
+/**
+ * `N word × ` from the first damage restriction like "3 Rays", else, for a
+ * cantrip only, the highest typeId-16 entry reached by character level (a
+ * leveled spell's entries count slot levels, not character levels).
+ */
+function countPrefix(def: Rec, damageMods: readonly Rec[], level: number, totalLevel: number): string {
   let count = 0;
   let word = "";
   for (const m of damageMods) {
     const match = /^(\d+) (\w+)/.exec(str(m.restriction).trim());
     if (match) { count = Number(match[1]); word = match[2]; break; }
   }
-  if (!word) {
+  if (!word && level === 0) {
     let best = -1;
     for (const h of higherLevels(def)) {
-      const level = num(h.level);
-      if (num(h.typeId) !== 16 || level > totalLevel || level <= best || !str(h.details).trim()) continue;
-      best = level;
+      const reached = num(h.level);
+      if (num(h.typeId) !== 16 || reached > totalLevel || reached <= best || !str(h.details).trim()) continue;
+      best = reached;
       count = 1 + num(h.value);
       word = str(h.details).trim();
     }
@@ -181,7 +188,7 @@ function spellDamage(
   if (!groups.length) return { damage: "", weapon: false };
   const text = groups.map(g => `${g.dice}${g.types.length ? ` ${g.types.join("/")}` : ""}`).join(" + ");
   const note = slotNote ? ` (at ${slotOrdinal(cast)}-level slot: see spell)` : "";
-  return { damage: `${countPrefix(def, damageMods, totalLevel)}${text}${note}`, weapon: false };
+  return { damage: `${countPrefix(def, damageMods, level, totalLevel)}${text}${note}`, weapon: false };
 }
 
 /** `range N ft.`, `touch` or `self`, from the definition's range object; "" for any other shape. */
@@ -245,7 +252,7 @@ export function computeSpellAttackRows(core: CoreStats): string[] {
       : nums
         ? [
           attackType === 1 || attackType === 2 ? `${signed(nums.attack)} to hit` : "",
-          saveId >= 1 && saveId <= 6 ? `DC ${nums.dc} ${statNames[saveId - 1]}` : "",
+          isAbilityId(saveId) ? `DC ${nums.dc} ${statNames[saveId - 1]}` : "",
         ].filter(Boolean).join(" / ")
         : "";
 

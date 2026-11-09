@@ -5,7 +5,7 @@ import { hasTwoWeaponFightingStyle, offHandItemIds } from "../src/tools/characte
 import type { CharData } from "../src/tools/character/types.js";
 import { wrapUntrusted } from "../src/utils.js";
 import { INDEX } from "./fixtures/character-edition-helpers.js";
-import { BASE, block, combat } from "./fixtures/combat-helpers.js";
+import { BASE, CLASS_FEATURE, OPTION, block, combat, feature, fighter } from "./fixtures/combat-helpers.js";
 
 const stats = (str: number) => [str, 10, 14, 10, 13, 8].map((value, i) => ({ id: i + 1, value }));
 const coreOf = (overrides: Record<string, unknown>) =>
@@ -60,6 +60,16 @@ describe("off-hand weapon row", () => {
     expect(bonusOf(combat(overrides))[0]).toContain(`1d4${mod(m + 1)} piercing`);
   });
 
+  it("ignores a Two-Weapon Fighting option under a class feature the character lacks", () => {
+    const options = { class: [{ componentId: 3035679, componentTypeId: CLASS_FEATURE, definition: { id: 1306490, entityTypeId: OPTION, name: "Two-Weapon Fighting" } }] };
+    const base = { inventory: [dagger(1), dagger(2)], ...flag("2"), options };
+    const m = coreOf(base).statMods[0];
+    expect(m).toBeGreaterThan(0);
+    expect(bonusOf(combat(base))[0]).toContain("1d4+1 piercing");
+    const chosen = { ...base, classes: [fighter({ classFeatures: [feature(3035679, "Fighting Style")] })] };
+    expect(bonusOf(combat(chosen))[0]).toContain(`1d4${mod(m + 1)} piercing`);
+  });
+
   it("applies a negative ability modifier on the off-hand", () => {
     const overrides = { inventory: [dagger(1), dagger(2)], ...flag("2"), stats: stats(8) };
     expect(coreOf(overrides).statMods[0]).toBe(-1);
@@ -107,7 +117,7 @@ describe("off-hand weapon row", () => {
   });
 
   it("detects the fighting style by name only", () => {
-    expect(hasTwoWeaponFightingStyle({})).toBe(false);
-    expect(hasTwoWeaponFightingStyle({ feats: [null, { definition: { name: "Defense" } }] })).toBe(false);
+    expect(hasTwoWeaponFightingStyle({}, [])).toBe(false);
+    expect(hasTwoWeaponFightingStyle({ feats: [null, { definition: { name: "Defense" } }] }, [])).toBe(false);
   });
 });

@@ -145,10 +145,12 @@ function withOptions(char: CharData, base: Map<string, boolean[]>): Map<string, 
  * can't be told, so the line is wrapped when any candidate is homebrew
  * (owner ruling, option C): a class, its subclass or one of its class
  * features; the species or one of its racial traits; a feat; an item; or a
- * homebrew or custom background.
+ * homebrew or custom background. The `subclass` bucket has the class
+ * bucket's candidates.
  */
 export function bucketAnyHomebrew(char: CharData, classes: readonly ClassEntry[], bucket: string): boolean {
   switch (bucket) {
+    case "subclass":
     case "class": return classes.some(c => isHomebrewEntry(c, c.subclassDefinition)
       || arr<unknown>(c.classFeatures).some(cf => isHomebrewClassFeature(cf, c))
       || arr<unknown>(obj(c.subclassDefinition).classFeatures).some(cf => isHomebrewClassFeature(cf, c)));

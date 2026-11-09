@@ -247,6 +247,23 @@ describe("char.actions lines", () => {
       expect(wrapped(combat({ background: custom, ...orphan("background") }))).toBe(true);
     });
 
+    it("subclass bucket: a homebrew subclass wraps its ACTIONS, OTHER and BONUS ACTIONS lines; an official one stays plain", () => {
+      const subActs = actions({ subclass: [
+        action("Hex Cut", 3035893, 77777, 1), action("Hex Mark", 3035894, 77777, 8), action("Hex Aim", 3035892, 77777, BONUS),
+      ] });
+      const run = (isHomebrew: boolean) =>
+        combat({ classes: [fighter({ subclassDefinition: { id: 77, name: "Hexblade Knight", isHomebrew, classFeatures: [] } })], ...subActs });
+      const brew = run(true);
+      expect(block(brew, "ACTIONS")).toContain(wrapUntrusted("• Hex Cut"));
+      expect(block(brew, "OTHER")).toContain(wrapUntrusted("• Hex Mark"));
+      expect(block(brew, "BONUS ACTIONS")).toContain(wrapUntrusted("• Hex Aim"));
+      const official = run(false);
+      expect(official).not.toContain(OPEN);
+      expect(block(official, "ACTIONS").split("\n")).toContain("• Hex Cut");
+      expect(block(official, "OTHER").split("\n")).toContain("• Hex Mark");
+      expect(block(official, "BONUS ACTIONS")).toBe(["BONUS ACTIONS", "• Hex Aim"].join("\n"));
+    });
+
     it("a homebrew owner in another bucket does not wrap", () => {
       expect(wrapped(combat({ classes: [hbClass], ...orphan("feat") }))).toBe(false);
     });
