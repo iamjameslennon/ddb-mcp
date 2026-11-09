@@ -4,7 +4,7 @@
  * feature) is hidden everywhere. Other buckets keep today's behaviour.
  */
 import { describe, expect, it } from "vitest";
-import { ACTION, BONUS, CLASS_FEATURE, FEAT, OPTION, SPECIAL, action, actions, block, combat, feature, fighter, limited } from "./fixtures/combat-helpers.js";
+import { BONUS, CLASS_FEATURE, FEAT, OPTION, REACTION, SPECIAL, action, actions, block, combat, feature, fighter, limited } from "./fixtures/combat-helpers.js";
 
 const STEADY = 3035892;
 
@@ -30,12 +30,32 @@ describe("action visibility", () => {
     expect(out).not.toContain("Late Trick");
   });
 
-  it("hides Initiate a Circle Spell and Circle Spell options", () => {
-    const out = combat(actions({ class: [
-      action("Initiate a Circle Spell", 12373777, CLASS_FEATURE, ACTION),
-      action("Circle Spell: Fireball", 12373777, CLASS_FEATURE, SPECIAL),
-    ] }));
-    expect(out).not.toContain("Circle Spell");
+  it("hides Initiate a Circle Spell and Circle Spell options, and shows them when the feature is chosen", () => {
+    const acts = actions({ class: [
+      action("Initiate a Circle Spell", 12373777, CLASS_FEATURE, BONUS, limited),
+      action("Circle Spell: Fireball", 12373777, CLASS_FEATURE, REACTION, limited),
+    ] });
+    const hidden = combat(acts);
+    expect(hidden).not.toContain("Circle Spell");
+    const shown = combat({ ...acts, optionalClassFeatures: [{ classFeatureId: 12373777 }] });
+    expect(block(shown, "BONUS ACTIONS")).toContain("• Initiate a Circle Spell");
+    expect(block(shown, "REACTIONS")).toContain("• Circle Spell: Fireball");
+  });
+
+  it("counts an explicit requiredLevel 0 as level 0, not 1", () => {
+    const out = combat({
+      classes: [fighter({ level: 0, classFeatures: [feature(800, "Zero Trick", { requiredLevel: 0 })] })],
+      ...actions({ class: [action("Zero Trick", 800, CLASS_FEATURE, BONUS)] }),
+    });
+    expect(block(out, "BONUS ACTIONS")).toContain("• Zero Trick");
+  });
+
+  it("hides a limited-use option action of an unchosen class feature from LIMITED USE, and shows it otherwise", () => {
+    const options = { class: [{ componentId: 3035679, componentTypeId: CLASS_FEATURE, definition: { id: 1306486, entityTypeId: OPTION, name: "Tireless" } }] };
+    const acts = actions({ class: [action("Tireless Charge", 1306486, OPTION, SPECIAL, limited)] });
+    expect(combat({ options, ...acts })).not.toContain("Tireless Charge");
+    const shown = combat({ options, ...acts, classes: [fighter({ classFeatures: [feature(3035679, "Deft Explorer")] })] });
+    expect(block(shown, "LIMITED USE")).toContain("• Tireless Charge");
   });
 
   it("hides an option action whose option belongs to an unchosen class feature", () => {

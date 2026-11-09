@@ -150,7 +150,7 @@ export function visibleClassFeatureIds(char: CharData, classes: readonly ClassEn
     for (const cf of features) {
       const def = featureDefinition(cf);
       const id = num(def.id);
-      if (id && (num(def.requiredLevel) || 1) <= level) ids.add(id);
+      if (id && (def.requiredLevel == null ? 1 : num(def.requiredLevel)) <= level) ids.add(id);
     }
   }
   for (const o of arr<unknown>(char.optionalClassFeatures).filter(isRecord)) {
