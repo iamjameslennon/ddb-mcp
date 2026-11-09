@@ -9,51 +9,14 @@
  * feat option 258900837, race option 306912077; live 2026-11-04, 56 characters).
  */
 import { describe, expect, it } from "vitest";
-import { parseCharacterData as parseSheet } from "../src/tools/character.js";
 import { wrapUntrusted } from "../src/utils.js";
 import { grantingEntities } from "../src/tools/character/actions.js";
-import { FIGHTER_5 } from "./fixtures/character-fixtures.js";
-import { INDEX, S, withoutNameWrap } from "./fixtures/character-edition-helpers.js";
+import { S } from "./fixtures/character-edition-helpers.js";
+import { CLASS_FEATURE, RACIAL_TRAIT, FEAT, OPTION, RACE_OPTION, BACKGROUND, ITEM, BASE, FIGHTER, combat, block, BONUS, REACTION, action, limited, actions, feature, fighter } from "./fixtures/combat-helpers.js";
 
 
-/** The sheet without its always-present name wrap (see withoutNameWrap). */
-const parseCharacterData = (...args: Parameters<typeof parseSheet>): string => withoutNameWrap(parseSheet(...args));
 const OPEN = "<untrusted_dndbeyond_content>";
 const CLOSE = "</untrusted_dndbeyond_content>";
-
-const CLASS_FEATURE = 12168134;
-const RACIAL_TRAIT = 1960452172;
-const FEAT = 1088085227;
-const OPTION = 258900837;
-const RACE_OPTION = 306912077;
-const BACKGROUND = 1669830167;
-const ITEM = 112130694;
-
-const BASE = FIGHTER_5.data as Record<string, unknown>;
-const FIGHTER = (BASE.classes as Record<string, unknown>[])[0];
-
-function combat(overrides: Record<string, unknown>): string {
-  const data = { ...BASE, inventory: [], classSpells: [], spells: {}, ...overrides };
-  return parseCharacterData({ data }, "combat", INDEX);
-}
-
-/** The lines between the section header `from` and the next blank line. */
-function block(out: string, from: string): string {
-  const lines = out.split("\n");
-  const start = lines.indexOf(from);
-  expect(start).toBeGreaterThan(-1);
-  return lines.slice(start, lines.indexOf("", start)).join("\n");
-}
-
-const BONUS = 3;
-const REACTION = 4;
-const action = (name: string, componentId: number, componentTypeId: number, activationType: number, extra: Record<string, unknown> = {}) =>
-  ({ id: `${componentId}${name.length}`, entityTypeId: 222216831, componentId, componentTypeId, name, activation: { activationType }, limitedUse: null, ...extra });
-const limited = { limitedUse: { maxUses: 2, numberUsed: 0, resetType: 1 } };
-const actions = (buckets: Record<string, unknown[]>) => ({ actions: { class: [], race: [], feat: [], background: null, item: null, ...buckets } });
-const feature = (id: number, name: string, extra: Record<string, unknown> = {}) =>
-  ({ definition: { id, entityTypeId: CLASS_FEATURE, name, requiredLevel: 1, ...extra } });
-const fighter = (extra: Record<string, unknown>) => ({ ...FIGHTER, ...extra });
 
 // ── Spell lines ─────────────────────────────────────────────────────────────
 describe("bonus-action and reaction spell lines", () => {

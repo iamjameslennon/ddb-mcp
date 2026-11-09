@@ -4,7 +4,8 @@
  *
  * Phase 6b of the character.ts refactor — see docs/character-refactor.md.
  *
- * Filters Circle Spell entries (Dark Bargain campaign leak), surfaces
+ * Hides class-bucket actions of class features the character lacks (which
+ * subsumes the Dark Bargain Circle Spell leak), surfaces
  * activationType 3/4 spells into bonus-action and reaction lists (with the
  * spellbook prepared/ritual gate applied), and computes "X used / Y max"
  * for limited-use features (including stat-mod-keyed uses like Bardic
@@ -128,14 +129,75 @@ function bucketAnyHomebrew(char: CharData, classes: readonly ClassEntry[], bucke
 // ── Action source extraction ─────────────────────────────────────────────────
 interface CharAction { action: Record<string, unknown>; homebrew: boolean }
 
+/** entityTypeId of a class feature (and of the componentTypeId of an action it grants). */
+export const CLASS_FEATURE_TYPE = 12168134;
+const OPTION_TYPE = 258900837;
+
+/**
+ * Ids of the class features the character has: each class's features whose
+ * `requiredLevel` (a missing one counts as 1) is at most that class's `level`,
+ * read from `classFeatures` (wrapped) and `subclassDefinition.classFeatures`
+ * (plain) as core.ts does, plus every chosen optional class feature.
+ */
+export function visibleClassFeatureIds(char: CharData, classes: readonly ClassEntry[]): Set<number> {
+  const ids = new Set<number>();
+  for (const cls of classes) {
+    const level = num(cls.level);
+    const features = [
+      ...arr<unknown>(cls.classFeatures),
+      ...arr<unknown>(obj(cls.subclassDefinition).classFeatures),
+    ].filter(isRecord);
+    for (const cf of features) {
+      const def = featureDefinition(cf);
+      const id = num(def.id);
+      if (id && (num(def.requiredLevel) || 1) <= level) ids.add(id);
+    }
+  }
+  for (const o of arr<unknown>(char.optionalClassFeatures).filter(isRecord)) {
+    const id = num(o.classFeatureId);
+    if (id) ids.add(id);
+  }
+  return ids;
+}
+
+/** Definition ids of the options whose owning class feature is not among `visibleIds`. */
+export function hiddenOptionIds(char: CharData, visibleIds: ReadonlySet<number>): Set<number> {
+  const hidden = new Set<number>();
+  const options = Object.values(obj(char.options)).flatMap(v => arr<unknown>(v)).filter(isRecord);
+  for (const o of options) {
+    if (num(o.componentTypeId) !== CLASS_FEATURE_TYPE || visibleIds.has(num(o.componentId))) continue;
+    const id = num(obj(o.definition).id);
+    if (id) hidden.add(id);
+  }
+  return hidden;
+}
+
+/**
+ * Whether an action is shown (spec §4). Only the class bucket is filtered: an
+ * action of a class feature the character lacks, or of an option under one, is
+ * hidden. Other buckets keep their behaviour.
+ */
+export function isVisibleAction(
+  bucket: string,
+  action: Record<string, unknown>,
+  visibleIds: ReadonlySet<number>,
+  hiddenOptionIds: ReadonlySet<number>,
+): boolean {
+  if (bucket !== "class") return true;
+  const type = num(action.componentTypeId);
+  if (type === CLASS_FEATURE_TYPE) return visibleIds.has(num(action.componentId));
+  if (type === OPTION_TYPE) return !hiddenOptionIds.has(num(action.componentId));
+  return true;
+}
+
 function getAllActions(char: CharData, classes: readonly ClassEntry[]): CharAction[] {
   // activation.activationType: 1=action, 3=bonus action, 4=reaction, 8=special (skip)
-  // Filter Circle Spell entries — these leak from the Dark Bargain campaign feature
-  // and don't represent real character abilities on the website.
   const entities = grantingEntities(char, classes);
+  const visibleIds = visibleClassFeatureIds(char, classes);
+  const hiddenOptions = hiddenOptionIds(char, visibleIds);
   return Object.entries(obj(char.actions))
     .flatMap(([bucket, v]) => records(v).map(action => ({ bucket, action })))
-    .filter(({ action: a }) => a != null && !str(a.name).startsWith("Circle Spell") && str(a.name) !== "Initiate a Circle Spell")
+    .filter(({ bucket, action }) => isVisibleAction(bucket, action, visibleIds, hiddenOptions))
     .map(({ bucket, action }) => {
       const granted = entities.get(entityKey(action.componentId, action.componentTypeId));
       // A nameless action carries no text: it stays plain, as every nameless entry does.

@@ -23,6 +23,8 @@ function sheet(inventory: unknown[], actions: Record<string, unknown[]> | null =
   const data = variant(FIGHTER_5, d => {
     d.inventory = inventory;
     if (actions) d.actions = { class: [], race: [], feat: [], background: null, item: null, ...actions };
+    // A class action shows only when the character has its class feature (spec §4); 900 is chosen here.
+    if (actions?.class?.length) d.optionalClassFeatures = [{ classFeatureId: 900 }];
   });
   return parseCharacterData(data, "combat", INDEX);
 }
