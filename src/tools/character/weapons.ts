@@ -13,7 +13,25 @@
 import { wrapIfHomebrew } from "../../utils.js";
 import { MASTERY_NAMES } from "../weapon-mastery.js";
 import { arr, records, isBonusMod, isHomebrewClassFeature, isHomebrewEntry, isProficiencyMod, num, obj, signed, str, weaponWordOrder } from "./helpers.js";
-import type { CoreStats } from "./types.js";
+import type { CharData, CoreStats } from "./types.js";
+
+/** Inventory ids flagged as the off-hand weapon: `characterValues` typeId 18, value true, `valueId` an integer (others skipped). */
+export function offHandItemIds(char: CharData): Set<number> {
+  const ids = new Set<number>();
+  for (const v of arr<unknown>(char.characterValues)) {
+    const e = obj(v);
+    if (e.typeId !== 18 || e.value !== true) continue;
+    const id = typeof e.valueId === "number" ? e.valueId : /^\d+$/.test(str(e.valueId).trim()) ? Number(str(e.valueId).trim()) : NaN;
+    if (Number.isInteger(id)) ids.add(id);
+  }
+  return ids;
+}
+
+/** The Two-Weapon Fighting fighting style: an `options.*` entry (2014) or a feat (2024) of that name. */
+export function hasTwoWeaponFightingStyle(char: CharData): boolean {
+  const named = (r: unknown): boolean => str(obj(obj(r).definition).name) === "Two-Weapon Fighting";
+  return Object.values(obj(char.options)).some(list => arr<unknown>(list).some(named)) || arr<unknown>(char.feats).some(named);
+}
 
 /**
  * The Martial Arts die: the `levelScale.dice.diceString` of a `Martial Arts`
@@ -45,7 +63,7 @@ export function computeUnarmedStrike(core: CoreStats): string {
   return wrapIfHomebrew(`• ${"Unarmed Strike".padEnd(16)} ${signed(mod + profBonus)} to hit   ${damage} bludgeoning   reach 5 ft.`, ma?.homebrew);
 }
 
-export function computeWeaponAttacks(core: CoreStats): string[] {
+export function computeWeaponAttacks(core: CoreStats): { attacks: string[]; offHand: string[] } {
   const { allMods, classes, inventory, statMods, profBonus, editions } = core;
   const dexMod = statMods[1];
 
@@ -78,8 +96,11 @@ export function computeWeaponAttacks(core: CoreStats): string[] {
     allMods.filter(m => m.type === "weapon-mastery").map(m => str(m.subType))
   );
 
+  const offHandIds = offHandItemIds(core.char);
+  const twoWeaponStyle = hasTwoWeaponFightingStyle(core.char);
+
   // Lines are built after consolidation, so the ×N prefix is padded with the name.
-  const weaponInventoryMap = new Map<string, { label: string; rest: string; qty: number; homebrew: boolean }>();
+  const weaponInventoryMap = new Map<string, { label: string; rest: string; qty: number; homebrew: boolean; offHand: boolean }>();
   for (const i of inventory) {
     const def = obj(i.definition);
     if (str(def.filterType) !== "Weapon") continue;
@@ -122,7 +143,11 @@ export function computeWeaponAttacks(core: CoreStats): string[] {
     const abilityMod = usesDex ? dexMod : statMods[0];
     const profMod = isWeaponProficient(def) ? profBonus : 0;
     const hitBonus = abilityMod + profMod + magicBonus;
-    const dmgBonus = abilityMod + magicBonus;
+    // An off-hand weapon drops a positive ability modifier unless the character
+    // has the Two-Weapon Fighting style; only that part changes.
+    const offHand = offHandIds.has(num(i.id));
+    const dmgAbility = offHand && abilityMod > 0 && !twoWeaponStyle ? 0 : abilityMod;
+    const dmgBonus = dmgAbility + magicBonus;
     const withBonus = (dice: string): string => dmgBonus !== 0 ? `${dice}${signed(dmgBonus)}` : dice;
 
     // Versatile: the property's notes hold the two-handed die ("1d10").
@@ -169,20 +194,21 @@ export function computeWeaponAttacks(core: CoreStats): string[] {
     // and mastery, which can carry text (owner ruling; unlike shownHomebrew's
     // name-only lines).
     const homebrew = isHomebrewEntry(i);
-    const key = `${Number(homebrew)}|${wLabel}${dmgDice}`;
+    const key = `${Number(homebrew)}|${Number(offHand)}|${wLabel}${dmgDice}`;
     const existing = weaponInventoryMap.get(key);
     if (existing) {
       existing.qty += num(i.quantity) || 1;
     } else {
-      weaponInventoryMap.set(key, { label: wLabel, rest, qty: num(i.quantity) || 1, homebrew });
+      weaponInventoryMap.set(key, { label: wLabel, rest, qty: num(i.quantity) || 1, homebrew, offHand });
     }
   }
 
   // A homebrew weapon's line is other players' text: it is wrapped whole.
-  const weaponAttacks: string[] = [];
-  for (const { label, rest, qty, homebrew } of weaponInventoryMap.values()) {
+  const attacks: string[] = [];
+  const offHandRows: string[] = [];
+  for (const { label, rest, qty, homebrew, offHand } of weaponInventoryMap.values()) {
     const prefix = qty > 1 ? `×${qty} ` : "";
-    weaponAttacks.push(wrapIfHomebrew(`• ${`${prefix}${label}`.padEnd(16)} ${rest}`, homebrew));
+    (offHand ? offHandRows : attacks).push(wrapIfHomebrew(`• ${`${prefix}${label}`.padEnd(16)} ${rest}`, homebrew));
   }
-  return weaponAttacks;
+  return { attacks, offHand: offHandRows };
 }

@@ -28,9 +28,9 @@ import { MASTERY_NAMES } from "../weapon-mastery.js";
 export interface Actions {
   weaponAttacks: string[];        // ["• Longsword        +5 to hit   1d8+3 slashing (1d10+3 two-handed)   reach 5 ft.   Versatile", …]
   unarmedStrike: string[];        // ["• Unarmed Strike   +5 to hit   3 bludgeoning   reach 5 ft."]
-  spellAttacks: string[];         // filled by a later task; [] until then
+  spellAttacks: string[];         // equipped weapons flagged as the off-hand (BONUS ACTIONS)
   actionFeatures: string[];       // ["• Channel Divinity", "• Channel Divinity: Sear Undead   1d8", …]
-  offHandAttacks: string[];       // filled by a later task; [] until then
+  offHandAttacks: string[];       // equipped weapons flagged as the off-hand (BONUS ACTIONS)
   bonusActions: string[];         // ["• Bardic Inspiration   1d6", "• Healing Word (spell, 1st-level slot)", …]
   reactions: string[];            // ["• Opportunity Attack", "• Uncanny Dodge", …]
   otherFeatures: string[];        // ["• Sneak Attack   3d6", …] (activationType 8, Special)
@@ -370,12 +370,13 @@ export function computeActions(core: CoreStats): Actions {
     ...buildItemChargeLines(inventory, allActions, editions),
   ];
 
+  const { attacks: weaponAttacks, offHand: offHandAttacks } = computeWeaponAttacks(core);
   return {
-    weaponAttacks: computeWeaponAttacks(core),
+    weaponAttacks,
     unarmedStrike: [computeUnarmedStrike(core)],
     spellAttacks: [],
     actionFeatures,
-    offHandAttacks: [],
+    offHandAttacks,
     bonusActions,
     reactions,
     otherFeatures,
