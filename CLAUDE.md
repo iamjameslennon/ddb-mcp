@@ -152,5 +152,5 @@ Last updated 2026-11-09. Releases and pushes go straight to `main`. The rules-ed
 
    Task 4 (delete `characterSpellBuffer`) is also unblocked.
 2. **Open carry-overs that need a book-owning or homebrew account**: (b) owner-only subclass renames; (aa) slug joins for paid books; (ah) a feature-level homebrew flag on optional features; (ay) item- and background-granted action entries (wrapping is covered by synthetic tests only).
-3. **Regression handover (B11, B12, I4, I5)**: needs owner decisions, see docs/superpowers/specs/2026-11-06-regression-report.md. The rest of the 2026-11-06 run is done (history.md "Regression run 2026-11-06"); I1–I3 closed 2026-11-09, and their carry-overs (ba)–(bi) are listed under history.md "Combat section completeness 2026-11-09".
+3. **Regression handover (B11, B12, I4, I5)**: needs owner decisions, see docs/superpowers/specs/2026-11-06-regression-report.md. The rest of the 2026-11-06 run is done (history.md "Regression run 2026-11-06"); I1–I3 closed 2026-11-09, and their carry-overs (ba)–(bj) are listed under history.md "Combat section completeness 2026-11-09".
 4. **Open by design** (no change planned): (q) either Open5e document failing fails the call; (y) the sheet keeps empty slots for nameless entries; (ab) "dual-edition" means only 2024 + 2014 books.
