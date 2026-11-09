@@ -1,6 +1,6 @@
 # Combat section completeness — design
 
-Date: 2026-11-07. Covers regression-report items I1–I3 (docs/superpowers/specs/2026-11-06-regression-report.md) plus the missing action features found while measuring them. Status: owner decisions recorded 2026-11-07. Awaiting approval of the whole document.
+Date: 2026-11-07. Covers regression-report items I1–I3 (docs/superpowers/specs/2026-11-06-regression-report.md) plus the missing action features found while measuring them. Status: owner decisions recorded 2026-11-07. Implemented 2026-11-09 (commits `dcc6f63..8748c1a`); later owner rulings and the carry-overs are in docs/claude/history.md "Combat section completeness 2026-11-09".
 
 **Owner decisions (2026-11-07):**
 - List damaging save cantrips (unlike the website).
