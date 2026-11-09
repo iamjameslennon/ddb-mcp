@@ -22,12 +22,12 @@ import type { CharData, ClassEntry, CoreStats, InventoryItem, Mod } from "./type
 import { resolveBackground } from "./features.js";
 import type { CharacterEditions } from "./editions.js";
 import { classSpellLists, isShownClassSpell } from "./spells.js";
-import { computeWeaponAttacks } from "./weapons.js";
+import { computeUnarmedStrike, computeWeaponAttacks } from "./weapons.js";
 import { MASTERY_NAMES } from "../weapon-mastery.js";
 
 export interface Actions {
   weaponAttacks: string[];        // ["• Longsword        +5 to hit   1d8+3 slashing (1d10+3 two-handed)   reach 5 ft.   Versatile", …]
-  unarmedStrike: string[];        // filled by a later task; [] until then
+  unarmedStrike: string[];        // ["• Unarmed Strike   +5 to hit   3 bludgeoning   reach 5 ft."]
   spellAttacks: string[];         // filled by a later task; [] until then
   actionFeatures: string[];       // ["• Channel Divinity", "• Channel Divinity: Sear Undead   1d8", …]
   offHandAttacks: string[];       // filled by a later task; [] until then
@@ -372,7 +372,7 @@ export function computeActions(core: CoreStats): Actions {
 
   return {
     weaponAttacks: computeWeaponAttacks(core),
-    unarmedStrike: [],
+    unarmedStrike: [computeUnarmedStrike(core)],
     spellAttacks: [],
     actionFeatures,
     offHandAttacks: [],

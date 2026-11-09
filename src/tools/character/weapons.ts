@@ -15,6 +15,32 @@ import { MASTERY_NAMES } from "../weapon-mastery.js";
 import { arr, records, isBonusMod, isHomebrewEntry, isProficiencyMod, num, obj, signed, str, weaponWordOrder } from "./helpers.js";
 import type { CoreStats } from "./types.js";
 
+/**
+ * The Martial Arts die: the `levelScale.dice.diceString` of a `Martial Arts`
+ * class feature at or below its class level, read from the classFeatures
+ * wrapper (the definition carries no levelScale). Null without one.
+ */
+export function martialArtsDie(core: CoreStats): string | null {
+  for (const c of core.classes) {
+    for (const cf of records(c.classFeatures)) {
+      if (str(obj(cf.definition).name) !== "Martial Arts") continue;
+      if (num(obj(cf.definition).requiredLevel || 1) > num(c.level)) continue;
+      const die = str(obj(obj(cf.levelScale).dice).diceString);
+      if (die) return die;
+    }
+  }
+  return null;
+}
+
+/** The one Unarmed Strike row of ACTIONS (STR-based; Martial Arts uses its die and the better of STR/DEX). */
+export function computeUnarmedStrike(core: CoreStats): string {
+  const { statMods, profBonus } = core;
+  const die = martialArtsDie(core);
+  const mod = die ? Math.max(statMods[0], statMods[1]) : statMods[0];
+  const damage = die ? `${die}${mod === 0 ? "" : signed(mod)}` : String(Math.max(0, 1 + mod));
+  return `• ${"Unarmed Strike".padEnd(16)} ${signed(mod + profBonus)} to hit   ${damage} bludgeoning   reach 5 ft.`;
+}
+
 export function computeWeaponAttacks(core: CoreStats): string[] {
   const { allMods, classes, inventory, statMods, profBonus, editions } = core;
   const dexMod = statMods[1];

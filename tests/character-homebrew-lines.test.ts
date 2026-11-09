@@ -65,6 +65,7 @@ describe("weapon attack lines", () => {
       "ACTIONS",
       "• Longsword        +3 to hit   1d8+3 slashing   reach 5 ft.",
       wrapUntrusted("• Hex Blade [homebrew] +3 to hit   1d8+3 slashing   reach 5 ft."),
+      "• Unarmed Strike   +6 to hit   4 bludgeoning   reach 5 ft.",
     ].join("\n"));
   });
 
@@ -79,6 +80,7 @@ describe("weapon attack lines", () => {
       "ACTIONS",
       "• Longsword        +3 to hit   1d8+3 slashing   reach 5 ft.",
       wrapUntrusted("• Longsword        +3 to hit   1d8+3 slashing   reach 5 ft."),
+      "• Unarmed Strike   +6 to hit   4 bludgeoning   reach 5 ft.",
     ].join("\n"));
   });
 });

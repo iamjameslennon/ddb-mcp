@@ -2654,7 +2654,7 @@ describe("parseCharacterData — weapon rows", () => {
   const masteries = (...subTypes: string[]) =>
     ({ ...(base.modifiers as Record<string, unknown>), feat: subTypes.map(subType => ({ type: "weapon-mastery", subType })) });
   const rows = (inventory: unknown[], extra: Record<string, unknown> = {}): string[] =>
-    parseCharacterData({ data: { ...base, inventory, ...extra } }, "combat").split("\n").filter(l => l.includes(" to hit "));
+    parseCharacterData({ data: { ...base, inventory, ...extra } }, "combat").split("\n").filter(l => l.includes(" to hit ") && !l.startsWith("• Unarmed Strike"));
 
   const dagger = weapon("Dagger", {
     categoryId: 1, damage: { diceString: "1d4" }, damageType: "Piercing", range: 20, longRange: 60,

@@ -138,7 +138,7 @@ export const MONK_3_HANDAXE: Record<string, unknown> = {
         },
         subclassDefinition: null,
         classFeatures: [
-          { definition: { name: "Martial Arts", requiredLevel: 1, snippet: "Use DEX for monk weapons." } },
+          { definition: { name: "Martial Arts", requiredLevel: 1, snippet: "Use DEX for monk weapons." }, levelScale: { dice: { diceString: "1d4" } } },
         ],
       },
     ],
