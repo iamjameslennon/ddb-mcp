@@ -65,12 +65,14 @@ src/tools/character/
   identity.ts                          ← race-variant detection + formatHeaderBlock
   vitals.ts                            ← HP/HitDice/Speed/Init/DeathSaves + formatVitalsBlock(vitals, ac, profBonus)
   ac.ts                                ← computeAc (the most rule-tangled single calc; no block of its own, its value is printed by the vitals block)
-  stats.ts                             ← Abilities/Saves/Skills/Senses/Profs + formatStatsBlock
+  stats.ts                             ← Abilities/Saves/Skills/Senses/Profs + formatStatsBlock; save advantage lines (buildSaveAdvantageLines)
   defenses.ts                          ← Resistances/Immunities/Conditions + formatDefensesBlock
   features.ts                          ← Feats/ClassFeatures/RacialTraits/Background + block
-  weapons.ts                           ← computeWeaponAttacks: weapon attack rolls (martial arts, finesse, magic)
-  actions.ts                           ← Actions/Bonus/Reactions/LimitedUse (incl. item charges) + formatCombatBlock; grantingEntities/withOptions/bucketAnyHomebrew link each action to the entity that grants it
-  spells.ts                            ← computeSpells: Spellcasting/Slots/Spells/Concentration + formatSpellsBlock / formatConcentrationBlock; shownSpellDefinitions
+  weapons.ts                           ← computeWeaponAttacks: weapon attack rolls (martial arts, finesse, magic), the dual-wield off-hand rows; computeUnarmedStrike
+  actions.ts                           ← Actions/Bonus/Reactions/Other/LimitedUse (incl. item charges) + formatCombatBlock; grantingEntities/withOptions/bucketAnyHomebrew link each action to the entity that grants it; action visibility (visibleClassFeatureIds/isVisibleAction) and feature dice (actionDice)
+  spell-attacks.ts                     ← computeSpellAttackRows: the ACTIONS spell rows (to-hit/DC, damage at the cast level, range); to-hit and DC shared with spells.ts (spellAttackAndDc/spellBonuses)
+  item-gate.ts                         ← isActiveItemMod: an item modifier applies only while its item is equipped (and attuned when required); used by spell attack/DC and damage bonuses and save advantages
+  spells.ts                            ← computeSpells: Spellcasting/Slots/Spells/Concentration + formatSpellsBlock / formatConcentrationBlock; shownSpellDefinitions; classSpellcastingAbilityId/spellAttackAndDc/spellBonuses (shared with spell-attacks.ts); actionSpells
   inventory.ts                         ← Equipped/Carried/Attunement/Currency + block
   notes.ts                             ← Traits/Backstory/Allies + formatNotesBlock
   parse.ts                             ← parseCharacterData(raw, sections, index = peekSourceIndex()) orchestrator (~110 lines)

@@ -468,6 +468,9 @@ RACIAL TRAITS
 ACTIONS
 • Dagger           +2 to hit   1d4 piercing   reach 5 ft. / thrown 20/60 ft.   Finesse, Light, Thrown
 • Quarterstaff     +1 to hit   1d6-1 bludgeoning (1d8-1 two-handed)   reach 5 ft.   Versatile
+• Unarmed Strike   +1 to hit   0 bludgeoning   reach 5 ft.
+• Chromatic Orb (1st level)  +5 to hit   3d8 acid/cold/fire/lightning/poison/thunder   range 90 ft.
+• Fire Bolt (cantrip)        +5 to hit   1d10 fire   range 120 ft.
 
 BONUS ACTIONS
   (none)
@@ -475,6 +478,9 @@ BONUS ACTIONS
 REACTIONS
 • Opportunity Attack
 • Shield (spell, 1st-level slot)
+
+OTHER
+• Arcane Recovery
 
 LIMITED USE
 • Arcane Recovery   0 used / 1 max   (Long Rest)
