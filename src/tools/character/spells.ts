@@ -16,7 +16,8 @@
 
 import { isConcentrationSpell } from "../reference.js";
 import { wrapIfHomebrew } from "../../utils.js";
-import { isHomebrewEntry, num, obj, records, shownHomebrew, signed, splitListLines, statNames, str } from "./helpers.js";
+import { isBonusMod, isHomebrewEntry, num, obj, records, shownHomebrew, signed, splitListLines, statNames, str } from "./helpers.js";
+import { isActiveItemMod } from "./item-gate.js";
 import type { CharData, ClassEntry, CoreStats, ListEntry } from "./types.js";
 import type { CharacterEditions } from "./editions.js";
 
@@ -32,32 +33,76 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 const SLOT_ORDINAL = ["", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th"];
-const slotOrdinal = (lvl: number): string => SLOT_ORDINAL[lvl] ?? `${lvl}th`;
+export const slotOrdinal = (lvl: number): string => SLOT_ORDINAL[lvl] ?? `${lvl}th`;
+
+// ── Spellcasting ability, attack and DC (shared with the ACTIONS spell rows) ─
+/**
+ * A class's spellcasting ability id (1=STR … 6=CHA): that of whichever
+ * definition (class, else subclass) has `canCastSpells === true`, else 0. A
+ * subclass that can't cast (Way of the Open Hand carries
+ * `spellCastingAbilityId: 5`) does not count.
+ */
+export function classSpellcastingAbilityId(cls: ClassEntry): number {
+  const def = obj(cls.definition);
+  const subDef = obj(cls.subclassDefinition);
+  if (def.canCastSpells === true) return num(def.spellCastingAbilityId);
+  if (subDef.canCastSpells === true) return num(subDef.spellCastingAbilityId);
+  return 0;
+}
+
+/**
+ * The bonuses to every spell attack and spell save DC: the `bonus` modifiers
+ * with subType `spell-attacks` / `spell-save-dc` (`value ?? fixedValue`) from
+ * any bucket, an item's only while the item is active (spec §2.5).
+ */
+export function spellBonuses(core: CoreStats): { attack: number; dc: number } {
+  let attack = 0;
+  let dc = 0;
+  for (const m of core.allMods.map(obj)) {
+    if (!isBonusMod(m) || !isActiveItemMod(m, core.inventory)) continue;
+    if (m.subType === "spell-attacks") attack += num(m.value ?? m.fixedValue);
+    else if (m.subType === "spell-save-dc") dc += num(m.value ?? m.fixedValue);
+  }
+  return { attack, dc };
+}
+
+/**
+ * Spell attack bonus (ability mod + proficiency + bonus) and save DC (8 +
+ * ability mod + proficiency + bonus), or null when `abilityId` is not 1–6
+ * (0 included), so no ability modifier is ever read out of range.
+ */
+export function spellAttackAndDc(
+  abilityId: number,
+  statMods: readonly number[],
+  profBonus: number,
+  bonuses: { attack: number; dc: number },
+): { attack: number; dc: number } | null {
+  if (!Number.isInteger(abilityId) || abilityId < 1 || abilityId > 6) return null;
+  const abilityMod = statMods[abilityId - 1];
+  return { attack: abilityMod + profBonus + bonuses.attack, dc: 8 + abilityMod + profBonus + bonuses.dc };
+}
 
 // ── Spellcasting summary (per spellcasting class) ────────────────────────────
 function buildSpellcastingLines(
   classes: readonly ClassEntry[],
   statMods: readonly number[],
   profBonus: number,
+  bonuses: { attack: number; dc: number },
 ): string[] {
   // spellCastingAbilityId: 1=STR 2=DEX 3=CON 4=INT 5=WIS 6=CHA
   const lines: string[] = [];
   for (const c of classes) {
+    const abilityId = classSpellcastingAbilityId(c);
+    const nums = spellAttackAndDc(abilityId, statMods, profBonus, bonuses);
+    if (!nums) continue;
     const def = obj(c.definition);
     const subDef = obj(c.subclassDefinition);
     const classCasts = def.canCastSpells === true;
-    const subclassCasts = subDef.canCastSpells === true;
-    if (!classCasts && !subclassCasts) continue;
-    const abilityId = num(classCasts ? def.spellCastingAbilityId : subDef.spellCastingAbilityId);
-    if (!abilityId) continue;
     const className = classCasts ? str(def.name) : `${str(def.name)} (${str(subDef.name)})`;
-    const abilityMod = statMods[abilityId - 1];
-    const spellAttack = abilityMod + profBonus;
-    const saveDc = 8 + abilityMod + profBonus;
     // A homebrew class (or, on a `Class (Subclass)` line, either name) is other players' text.
     const homebrew = classCasts ? isHomebrewEntry(c) : isHomebrewEntry(c, subDef);
     lines.push(wrapIfHomebrew(
-      `  ${className}: ${statNames[abilityId - 1]}  Spell Attack: ${signed(spellAttack)}  Save DC: ${saveDc}`,
+      `  ${className}: ${statNames[abilityId - 1]}  Spell Attack: ${signed(nums.attack)}  Save DC: ${nums.dc}`,
       homebrew,
     ));
   }
@@ -102,6 +147,8 @@ function buildSlotLines(char: CharData, classes: readonly ClassEntry[]): string[
 // ── Class spell lists ────────────────────────────────────────────────────────
 export interface ClassSpellList {
   className: string;
+  /** The class the list belongs to; undefined when no class entry matches. */
+  classEntry: ClassEntry | undefined;
   isSpellbook: boolean;
   spells: Record<string, unknown>[];
 }
@@ -121,7 +168,7 @@ export function classSpellLists(char: CharData, classes: readonly ClassEntry[]):
     const spells = records(cs.spells).length > 0
       ? records(cs.spells)
       : records(cs.classSpells);
-    return { className, isSpellbook: className === "Wizard", spells };
+    return { className, classEntry, isSpellbook: className === "Wizard", spells };
   });
 }
 
@@ -150,6 +197,38 @@ export function shownSpellDefinitions(char: CharData, classes: readonly ClassEnt
     }
   }
   return defs;
+}
+
+/** A spell the combat block can list, with where it came from. */
+export interface ActionSpell {
+  spell: Record<string, unknown>;
+  /** The class spell list it came from (class spells). */
+  list?: ClassSpellList;
+  /** The `char.spells` bucket it came from (race, class, feat, item, background, …). */
+  bucket?: string;
+}
+
+/**
+ * Every spell the combat block reads: class spells read as the SPELLS section
+ * reads them (classSpellLists: `spells`, else the 2024 `classSpells` shape)
+ * with its spellbook gate (isShownClassSpell), so unprepared non-ritual Wizard
+ * spells don't bleed in; then every `char.spells` bucket. A spell granted
+ * twice (two classes, or a class and a racial trait) is listed once: the
+ * first by definition id, else by name.
+ */
+export function actionSpells(char: CharData, classes: readonly ClassEntry[]): ActionSpell[] {
+  const seen = new Set<string>();
+  return [
+    ...classSpellLists(char, classes).flatMap(list =>
+      list.spells.filter(s => isShownClassSpell(s, list.isSpellbook)).map(spell => ({ spell, list }))),
+    ...Object.entries(obj(char.spells)).flatMap(([bucket, v]) => records(v).map(spell => ({ spell, bucket }))),
+  ].filter(({ spell }) => {
+    const def = obj(spell.definition);
+    const key = num(def.id) ? `id:${num(def.id)}` : `name:${str(def.name)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 // ── Spell listing (per class + per non-class source + duplicate warnings) ────
@@ -274,7 +353,7 @@ function buildConcentrationByLevel(
 export function computeSpells(core: CoreStats): Spells {
   const { char, classes, statMods, profBonus, editions } = core;
   return {
-    spellcastingLines: buildSpellcastingLines(classes, statMods, profBonus),
+    spellcastingLines: buildSpellcastingLines(classes, statMods, profBonus, spellBonuses(core)),
     slotLines: buildSlotLines(char, classes),
     spellSections: buildSpellSections(char, classes, editions),
     concentrationByLevel: buildConcentrationByLevel(char, classes, editions),

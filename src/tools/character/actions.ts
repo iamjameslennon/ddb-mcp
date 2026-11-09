@@ -5,7 +5,8 @@
  * Phase 6b of the character.ts refactor — see docs/character-refactor.md.
  *
  * Hides class-bucket actions of class features the character lacks (which
- * subsumes the Dark Bargain Circle Spell leak), surfaces
+ * subsumes the Dark Bargain Circle Spell leak), lists one-action attack
+ * spells and damaging cantrips in ACTIONS (spell-attacks.ts), surfaces
  * activationType 3/4 spells into bonus-action and reaction lists (with the
  * spellbook prepared/ritual gate applied), and computes "X used / Y max"
  * for limited-use features (including stat-mod-keyed uses like Bardic
@@ -21,14 +22,15 @@ import { arr, featureDefinition, isHomebrewClassFeature, isHomebrewEntry, num, o
 import type { CharData, ClassEntry, CoreStats, InventoryItem, Mod } from "./types.js";
 import { resolveBackground } from "./features.js";
 import type { CharacterEditions } from "./editions.js";
-import { classSpellLists, isShownClassSpell } from "./spells.js";
+import { actionSpells } from "./spells.js";
+import { computeSpellAttackRows } from "./spell-attacks.js";
 import { computeUnarmedStrike, computeWeaponAttacks } from "./weapons.js";
 import { MASTERY_NAMES } from "../weapon-mastery.js";
 
 export interface Actions {
   weaponAttacks: string[];        // ["• Longsword        +5 to hit   1d8+3 slashing (1d10+3 two-handed)   reach 5 ft.   Versatile", …]
   unarmedStrike: string[];        // ["• Unarmed Strike   +5 to hit   3 bludgeoning   reach 5 ft."]
-  spellAttacks: string[];         // equipped weapons flagged as the off-hand (BONUS ACTIONS)
+  spellAttacks: string[];         // ["• Fire Bolt (cantrip)        +5 to hit   2d10 fire   range 120 ft.", …] (one-action attack spells and damaging save cantrips)
   actionFeatures: string[];       // ["• Channel Divinity", "• Channel Divinity: Sear Undead   1d8", …]
   offHandAttacks: string[];       // equipped weapons flagged as the off-hand (BONUS ACTIONS)
   bonusActions: string[];         // ["• Bardic Inspiration   1d6", "• Healing Word (spell, 1st-level slot)", …]
@@ -220,27 +222,8 @@ const activationType = (a: Record<string, unknown>): number =>
   num(obj(a.activation).activationType);
 
 // ── Bonus-action and reaction spells ─────────────────────────────────────────
-function getCharSpellsForActions(char: CharData, classes: readonly ClassEntry[]): Record<string, unknown>[] {
-  // Bonus-action and reaction spells — activationType 3=bonus action, 4=reaction.
-  // The class spells are read as the SPELLS section reads them (classSpellLists:
-  // `spells`, else the 2024 `classSpells` shape) with its spellbook gate
-  // (isShownClassSpell), so unprepared non-ritual Wizard spells don't bleed in.
-  // A spell granted twice (two classes, or a class and a racial trait) is
-  // listed once: the first by definition id, else by name.
-  const seen = new Set<string>();
-  return [
-    ...classSpellLists(char, classes).flatMap(({ isSpellbook, spells }) => spells.filter(s => isShownClassSpell(s, isSpellbook))),
-    ...Object.values(obj(char.spells)).flatMap(v => records(v)),
-  ].filter(s => {
-    if (!s) return false;
-    const def = obj(s.definition);
-    const key = num(def.id) ? `id:${num(def.id)}` : `name:${str(def.name)}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
+// activationType 3=bonus action, 4=reaction; the spells are gathered by
+// actionSpells (spells.ts), which applies the spellbook gate and dedupes.
 const spellActivationType = (s: Record<string, unknown>): number =>
   num(obj(obj(s.definition).activation).activationType);
 
@@ -342,7 +325,7 @@ function buildItemChargeLines(
 export function computeActions(core: CoreStats): Actions {
   const { char, classes, statMods, inventory, editions } = core;
   const allActions = getAllActions(char, classes);
-  const allCharSpells = getCharSpellsForActions(char, classes);
+  const allCharSpells = actionSpells(char, classes).map(({ spell }) => spell);
 
   // Spell activationTypes (from rule-data): 1=Action, 2=No Action, 3=Bonus Action, 4=Reaction, 8=Special
   const bonusActionSpells = allCharSpells.filter(s => spellActivationType(s) === 3).map(formatSpellAction);
@@ -374,7 +357,7 @@ export function computeActions(core: CoreStats): Actions {
   return {
     weaponAttacks,
     unarmedStrike: [computeUnarmedStrike(core)],
-    spellAttacks: [],
+    spellAttacks: computeSpellAttackRows(core),
     actionFeatures,
     offHandAttacks,
     bonusActions,

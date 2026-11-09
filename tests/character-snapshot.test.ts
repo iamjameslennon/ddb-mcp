@@ -13,7 +13,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { parseCharacterData } from "../src/tools/character.js";
-import { FIGHTER_5, MONK_3_HANDAXE, ARCANE_TRICKSTER_9 } from "./fixtures/character-fixtures.js";
+import { FIGHTER_5, MONK_3_HANDAXE, ARCANE_TRICKSTER_9, CLERIC_5_SPELLS } from "./fixtures/character-fixtures.js";
 
 describe("parseCharacterData snapshots", () => {
   it("FIGHTER_5 — full output", () => {
@@ -34,5 +34,13 @@ describe("parseCharacterData snapshots", () => {
 
   it("ARCANE_TRICKSTER_9 — spells section only", () => {
     expect(parseCharacterData(ARCANE_TRICKSTER_9, "spells")).toMatchSnapshot();
+  });
+
+  it("CLERIC_5_SPELLS — full output", () => {
+    expect(parseCharacterData(CLERIC_5_SPELLS, "full")).toMatchSnapshot();
+  });
+
+  it("CLERIC_5_SPELLS — combat section only", () => {
+    expect(parseCharacterData(CLERIC_5_SPELLS, "combat")).toMatchSnapshot();
   });
 });

@@ -106,6 +106,176 @@ SPELL SLOTS
 "
 `;
 
+exports[`parseCharacterData snapshots > CLERIC_5_SPELLS — combat section only 1`] = `
+"═══════════════════════════════════════
+<untrusted_dndbeyond_content>
+  Mira
+</untrusted_dndbeyond_content>
+  Rules: 2024
+  High Elf | Cleric 5 | Level 5
+  Background: Acolyte | XP: 6500
+  Inspiration: No
+═══════════════════════════════════════
+
+HP: 43/43   Temp HP: —   Prof Bonus: +3
+Hit Dice: 5d8 (5 remaining)
+AC: 11   Initiative: +1   Speed: 30 ft.
+Death Saves: Successes 0/3   Failures 0/3
+
+ABILITY SCORES
+  STR 10 (+0)  DEX 12 (+1)  CON 14 (+2)  INT 10 (+0)  WIS 18 (+4)  CHA 8 (-1)
+
+SAVING THROWS
+  STR +0   DEX +1   CON +2   INT +0   WIS +4   CHA -1
+  (* proficient)
+
+SKILLS
+  Acrobatics (DEX)       +1
+  Animal Handling (WIS)  +4
+  Arcana (INT)           +0
+  Athletics (STR)        +0
+  Deception (CHA)        -1
+  History (INT)          +0
+  Insight (WIS)          +4
+  Intimidation (CHA)     -1
+  Investigation (INT)    +0
+  Medicine (WIS)         +4
+  Nature (INT)           +0
+  Perception (WIS)       +4
+  Performance (CHA)      -1
+  Persuasion (CHA)       -1
+  Religion (INT)         +0
+  Sleight of Hand (DEX)  +1
+  Stealth (DEX)          +1
+  Survival (WIS)         +4
+  (* proficient, ** expertise)
+
+SENSES
+  Passive Perception: 14   Passive Investigation: 10   Passive Insight: 14
+
+PROFICIENCIES & TRAINING
+  Armor: None
+  Weapons: None
+  Tools: None
+  Languages: None
+
+DEFENSES
+  Resistances: (none)
+  Immunities: (none)
+  Vulnerabilities: (none)
+CONDITIONS: (none)
+
+ACTIONS
+• Unarmed Strike   +3 to hit   1 bludgeoning   reach 5 ft.
+• Sacred Flame (cantrip)     DC 15 DEX   2d8 radiant   range 60 ft.
+• Guiding Bolt (1st level)   +7 to hit   4d6 radiant   range 120 ft.
+• Fire Bolt (cantrip)        +3 to hit   2d10 fire   range 120 ft.
+
+BONUS ACTIONS
+  (none)
+
+REACTIONS
+• Opportunity Attack
+"
+`;
+
+exports[`parseCharacterData snapshots > CLERIC_5_SPELLS — full output 1`] = `
+"═══════════════════════════════════════
+<untrusted_dndbeyond_content>
+  Mira
+</untrusted_dndbeyond_content>
+  Rules: 2024
+  High Elf | Cleric 5 | Level 5
+  Background: Acolyte | XP: 6500
+  Inspiration: No
+═══════════════════════════════════════
+
+HP: 43/43   Temp HP: —   Prof Bonus: +3
+Hit Dice: 5d8 (5 remaining)
+AC: 11   Initiative: +1   Speed: 30 ft.
+Death Saves: Successes 0/3   Failures 0/3
+
+ABILITY SCORES
+  STR 10 (+0)  DEX 12 (+1)  CON 14 (+2)  INT 10 (+0)  WIS 18 (+4)  CHA 8 (-1)
+
+SAVING THROWS
+  STR +0   DEX +1   CON +2   INT +0   WIS +4   CHA -1
+  (* proficient)
+
+SKILLS
+  Acrobatics (DEX)       +1
+  Animal Handling (WIS)  +4
+  Arcana (INT)           +0
+  Athletics (STR)        +0
+  Deception (CHA)        -1
+  History (INT)          +0
+  Insight (WIS)          +4
+  Intimidation (CHA)     -1
+  Investigation (INT)    +0
+  Medicine (WIS)         +4
+  Nature (INT)           +0
+  Perception (WIS)       +4
+  Performance (CHA)      -1
+  Persuasion (CHA)       -1
+  Religion (INT)         +0
+  Sleight of Hand (DEX)  +1
+  Stealth (DEX)          +1
+  Survival (WIS)         +4
+  (* proficient, ** expertise)
+
+SENSES
+  Passive Perception: 14   Passive Investigation: 10   Passive Insight: 14
+
+PROFICIENCIES & TRAINING
+  Armor: None
+  Weapons: None
+  Tools: None
+  Languages: None
+
+DEFENSES
+  Resistances: (none)
+  Immunities: (none)
+  Vulnerabilities: (none)
+CONDITIONS: (none)
+
+FEATS (0)
+  (none)
+
+CLASS FEATURES
+
+RACIAL TRAITS
+
+ACTIONS
+• Unarmed Strike   +3 to hit   1 bludgeoning   reach 5 ft.
+• Sacred Flame (cantrip)     DC 15 DEX   2d8 radiant   range 60 ft.
+• Guiding Bolt (1st level)   +7 to hit   4d6 radiant   range 120 ft.
+• Fire Bolt (cantrip)        +3 to hit   2d10 fire   range 120 ft.
+
+BONUS ACTIONS
+  (none)
+
+REACTIONS
+• Opportunity Attack
+
+SPELLCASTING
+  Cleric: WIS  Spell Attack: +7  Save DC: 15
+
+SPELL SLOTS
+  Level 1: 4/4
+  Level 2: 3/3
+  Level 3: 2/2
+
+SPELLS
+  Cantrips: Sacred Flame, Light
+  Spells: Guiding Bolt (L1)
+  From Racial Trait: Fire Bolt
+
+ATTUNEMENT: 0/3 slots used
+
+CURRENCY: none
+No notes or backstory have been recorded for this character."
+`;
+
 exports[`parseCharacterData snapshots > FIGHTER_5 — full output 1`] = `
 "═══════════════════════════════════════
 <untrusted_dndbeyond_content>

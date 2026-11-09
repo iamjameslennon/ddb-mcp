@@ -289,3 +289,141 @@ export const ARCANE_TRICKSTER_9: Record<string, unknown> = {
     customSenses: [],
   },
 };
+
+// ── Level-5 Cleric with action spells ────────────────────────────────────────
+// WIS 18 (+4), prof +3: Spell Attack +7, Save DC 15. Class list: Sacred Flame
+// (damaging save cantrip), Guiding Bolt (prepared attack spell) and Light
+// (utility cantrip, no ACTIONS row); Fire Bolt from a racial trait with its
+// own ability (INT 10). Spell definitions trimmed from live D&D Beyond JSON
+// (2026-11-07). Rules: pure 2024.
+const cantripScale = (size: number) => ({
+  higherLevelDefinitions: [5, 11, 17].map((level, i) => ({
+    level, typeId: 15, value: null, details: "",
+    dice: { diceCount: i + 2, diceValue: size, diceMultiplier: null, fixedValue: 0, diceString: `${i + 2}d${size}` },
+  })),
+});
+const spellDie = (count: number, size: number) => ({ diceCount: count, diceValue: size, diceMultiplier: null, fixedValue: null, diceString: `${count}d${size}` });
+const oneAction = { activationTime: 1, activationType: 1 };
+const noHigherLevels = { higherLevelDefinitions: [] };
+
+export const CLERIC_5_SPELLS: Record<string, unknown> = {
+  data: {
+    name: "Mira",
+    race: {
+      fullName: "High Elf",
+      baseName: "Elf",
+      sources: [{ sourceId: 145 }],
+      weightSpeeds: { normal: { walk: 30, fly: 0, swim: 0, climb: 0, burrow: 0 } },
+      racialTraits: [],
+    },
+    classes: [
+      {
+        id: 7,
+        level: 5,
+        hitDiceUsed: 0,
+        isStartingClass: true,
+        definition: {
+          name: "Cleric",
+          hitDice: 8,
+          canCastSpells: true,
+          spellCastingAbilityId: 5,    // WIS
+          sources: [{ sourceId: 145 }],
+          spellRules: {
+            levelSpellSlots: Array.from({ length: 21 }, (_, lvl) =>
+              lvl >= 5 ? [4, 3, 2, 0, 0, 0, 0, 0, 0] : [0, 0, 0, 0, 0, 0, 0, 0, 0]
+            ),
+          },
+        },
+        subclassDefinition: null,
+        classFeatures: [],
+      },
+    ],
+    background: { definition: { name: "Acolyte", featureName: null, featureDescription: null, sources: [{ sourceId: 145 }] } },
+    currentXp: 6500,
+    inspiration: false,
+    stats: [
+      { id: 1, value: 10 }, // STR
+      { id: 2, value: 12 }, // DEX
+      { id: 3, value: 14 }, // CON
+      { id: 4, value: 10 }, // INT
+      { id: 5, value: 18 }, // WIS +4
+      { id: 6, value: 8  }, // CHA
+    ],
+    bonusStats: [
+      { id: 1, value: null }, { id: 2, value: null }, { id: 3, value: null },
+      { id: 4, value: null }, { id: 5, value: null }, { id: 6, value: null },
+    ],
+    overrideStats: [
+      { id: 1, value: null }, { id: 2, value: null }, { id: 3, value: null },
+      { id: 4, value: null }, { id: 5, value: null }, { id: 6, value: null },
+    ],
+    modifiers: {
+      race: [], class: [], background: [], feat: [], item: [], condition: [],
+    },
+    feats: [],
+    inventory: [],
+    spells: {
+      race: [
+        {
+          spellCastingAbilityId: 4,    // INT, the racial trait's own ability
+          castAtLevel: null,
+          definition: {
+            id: 2103, name: "Fire Bolt", level: 0, attackType: 2, saveDcAbilityId: null, activation: oneAction,
+            range: { origin: "Ranged", rangeValue: 120, aoeType: null, aoeValue: null },
+            scaleType: "characterlevel", atHigherLevels: noHigherLevels, sources: [{ sourceId: 145 }],
+            modifiers: [{ type: "damage", subType: "fire", die: spellDie(1, 10), restriction: "", atHigherLevels: cantripScale(10) }],
+          },
+        },
+      ],
+    },
+    classSpells: [
+      {
+        characterClassId: 7,
+        spells: [
+          {
+            prepared: true,
+            castAtLevel: null,
+            definition: {
+              id: 2236, name: "Sacred Flame", level: 0, attackType: null, saveDcAbilityId: 2, activation: oneAction,
+              range: { origin: "Ranged", rangeValue: 60, aoeType: null, aoeValue: null },
+              scaleType: "characterlevel", atHigherLevels: noHigherLevels, sources: [{ sourceId: 145 }],
+              modifiers: [{ type: "damage", subType: "radiant", die: spellDie(1, 8), restriction: "", atHigherLevels: cantripScale(8) }],
+            },
+          },
+          {
+            prepared: true,
+            castAtLevel: null,
+            definition: {
+              id: 2133, name: "Guiding Bolt", level: 1, attackType: 2, saveDcAbilityId: null, activation: oneAction,
+              range: { origin: "Ranged", rangeValue: 120, aoeType: null, aoeValue: null },
+              scaleType: "spellscale", atHigherLevels: noHigherLevels, sources: [{ sourceId: 145 }],
+              modifiers: [{
+                type: "damage", subType: "radiant", die: spellDie(4, 6), restriction: "",
+                atHigherLevels: { higherLevelDefinitions: [{ level: 1, typeId: 15, value: null, details: "", dice: { diceCount: 1, diceValue: 6, diceMultiplier: null, fixedValue: 0, diceString: "1d6" } }] },
+              }],
+            },
+          },
+          {
+            prepared: true,
+            castAtLevel: null,
+            definition: {
+              id: 2173, name: "Light", level: 0, attackType: null, saveDcAbilityId: 2, activation: oneAction,
+              range: { origin: "Touch", rangeValue: 0, aoeType: null, aoeValue: null },
+              scaleType: null, atHigherLevels: noHigherLevels, sources: [{ sourceId: 145 }], modifiers: [],
+            },
+          },
+        ],
+      },
+    ],
+    actions: { class: [], race: [], feat: [], background: [] },
+    currencies: { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 },
+    baseHitPoints: 33,
+    bonusHitPoints: 0,
+    removedHitPoints: 0,
+    temporaryHitPoints: 0,
+    spellSlots: [],
+    deathSaves: { successCount: 0, failCount: 0 },
+    conditions: [],
+    customSenses: [],
+  },
+};
