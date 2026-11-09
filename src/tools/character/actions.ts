@@ -1,5 +1,5 @@
 /**
- * Actions domain — ACTIONS / BONUS ACTIONS / REACTIONS / LIMITED USE.
+ * Actions domain — ACTIONS / BONUS ACTIONS / REACTIONS / OTHER / LIMITED USE.
  * Owns the combat block.
  *
  * Phase 6b of the character.ts refactor — see docs/character-refactor.md.
@@ -67,6 +67,8 @@ export function grantingEntities(char: CharData, classes: readonly ClassEntry[])
   // Null or non-object entries are skipped.
   for (const cls of classes) {
     for (const cf of arr<unknown>(cls.classFeatures).filter(isRecord)) add(featureDefinition(cf), isHomebrewClassFeature(cf, cls));
+    // Subclass features listed only on the subclass definition (plain shape).
+    for (const cf of arr<unknown>(obj(cls.subclassDefinition).classFeatures).filter(isRecord)) add(featureDefinition(cf), isHomebrewClassFeature(cf, cls));
   }
   const race = obj(char.race);
   for (const t of arr<unknown>(race.racialTraits).filter(isRecord)) add(t.definition, isHomebrewEntry(t, race));
@@ -120,7 +122,8 @@ function withOptions(char: CharData, base: Map<string, boolean[]>): Map<string, 
 function bucketAnyHomebrew(char: CharData, classes: readonly ClassEntry[], bucket: string): boolean {
   switch (bucket) {
     case "class": return classes.some(c => isHomebrewEntry(c, c.subclassDefinition)
-      || arr<unknown>(c.classFeatures).some(cf => isHomebrewClassFeature(cf, c)));
+      || arr<unknown>(c.classFeatures).some(cf => isHomebrewClassFeature(cf, c))
+      || arr<unknown>(obj(c.subclassDefinition).classFeatures).some(cf => isHomebrewClassFeature(cf, c)));
     case "race": {
       const race = obj(char.race);
       return isHomebrewEntry(race) || arr<unknown>(race.racialTraits).some(t => isHomebrewEntry(t, race));
@@ -197,7 +200,7 @@ export function isVisibleAction(
 }
 
 function getAllActions(char: CharData, classes: readonly ClassEntry[]): CharAction[] {
-  // activation.activationType: 1=action, 3=bonus action, 4=reaction, 8=special (skip)
+  // activation.activationType: 1=action, 3=bonus action, 4=reaction, 8=special (listed under OTHER)
   const entities = grantingEntities(char, classes);
   const visibleIds = visibleClassFeatureIds(char, classes);
   const hiddenOptions = hiddenOptionIds(char, visibleIds);
@@ -249,7 +252,6 @@ function formatSpellAction(s: Record<string, unknown>): string {
   return wrapIfHomebrew(`• ${str(def.name)} (spell, ${slotStr})`, shownHomebrew(s, str(def.name)));
 }
 
-/** `• <name>` for an action, wrapped whole when its granting entity is homebrew. */
 /**
  * The dice D&D Beyond shows for an action: only when it displays as an attack,
  * adds no ability modifier of its own and is not Martial Arts (whose figures
@@ -266,6 +268,7 @@ export function isMasteryAction(a: Record<string, unknown>): boolean {
   return m != null && MASTERY_NAMES.has(m[1]);
 }
 
+/** `• <name>` for an action, wrapped whole when its granting entity is homebrew. */
 const actionLine = ({ action, homebrew }: CharAction): string => {
   const dice = actionDice(action);
   return wrapIfHomebrew(`• ${str(action.name)}${dice ? `   ${dice}` : ""}`, homebrew);

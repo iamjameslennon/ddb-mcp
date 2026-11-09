@@ -15,7 +15,7 @@ const dice = (diceString: string, extra: Record<string, unknown> = {}) => ({ dis
 describe("action features", () => {
   it("lists an action feature under ACTIONS", () => {
     const out = sheet([action("Channel Divinity", 1, CLASS_FEATURE, ACTION)]);
-    expect(block(out, "ACTIONS")).toContain("\n• Channel Divinity");
+    expect(block(out, "ACTIONS").split("\n")).toContain("• Channel Divinity");
   });
 
   it("appends displayAsAttack dice", () => {
@@ -83,7 +83,24 @@ describe("action features", () => {
 
   it("keeps a limited-use action's LIMITED USE line", () => {
     const out = sheet([action("Channel Divinity", 1, CLASS_FEATURE, ACTION, limited)]);
-    expect(block(out, "ACTIONS")).toContain("• Channel Divinity");
+    expect(block(out, "ACTIONS").split("\n")).toContain("• Channel Divinity");
     expect(block(out, "LIMITED USE")).toContain("• Channel Divinity   0 used / 2 max   (Short Rest)");
+  });
+
+  it("wraps an action whose granting feature exists only on subclassDefinition.classFeatures (plain shape)", () => {
+    const plain = (id: number, name: string, isHomebrew: boolean) => ({ id, entityTypeId: CLASS_FEATURE, name, requiredLevel: 1, isHomebrew });
+    const out = combat({
+      classes: [fighter({ subclassDefinition: { id: 77, name: "Oath", classFeatures: [plain(999001, "Hex Wrath", true), plain(999002, "Fair Wrath", false)] } })],
+      ...actions({ class: [
+        action("Hex Wrath", 999001, CLASS_FEATURE, ACTION), action("Fair Wrath", 999002, CLASS_FEATURE, ACTION),
+        action("Hex Wrath", 999001, CLASS_FEATURE, SPECIAL), action("Fair Wrath", 999002, CLASS_FEATURE, SPECIAL),
+        action("Hex Wrath", 999001, CLASS_FEATURE, BONUS), action("Fair Wrath", 999002, CLASS_FEATURE, BONUS),
+      ] }),
+    });
+    for (const b of ["ACTIONS", "OTHER", "BONUS ACTIONS"]) {
+      const text = block(out, b);
+      expect(text).toContain(wrapUntrusted("• Hex Wrath"));
+      expect(text.split("\n")).toContain("• Fair Wrath");
+    }
   });
 });
