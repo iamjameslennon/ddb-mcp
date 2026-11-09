@@ -11,6 +11,9 @@
 
 import { arr, records, capitalize, knownAndCustomLines, hasRemarkableAthlete, isBonusMod, isExpertiseMod, isHalfProficiencyMod, isLanguageMod, isProficiencyMod, isSenseMod, isSetBaseMod, isSetMod, num, obj, signed, statKeys, statNames, str, weaponWordOrder } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
+import { bucketAnyHomebrew, entityKey, grantingEntities, grantingEntityNames } from "./actions.js";
+import { isActiveItemMod } from "./item-gate.js";
+import { wrapUntrusted } from "../../utils.js";
 import { LANGUAGE_SLUGS, PROFICIENCY_SLUGS } from "./modifier-slugs.js";
 
 export interface Senses {
@@ -38,6 +41,8 @@ export interface Proficiencies {
 export interface Stats {
   abilityScoreDisplay: string[];   // ["STR 16 (+3)", "DEX 12 (+1)", ...]
   savingThrows: string[];           // ["STR +5*", "DEX +1", ...]
+  /** `  Advantage (all saves): ...` lines printed under the saves; a homebrew line is already wrapped. */
+  saveAdvantages: string[];
   skillLines: string[];             // ["  Acrobatics (DEX)       +1", ...]
   senses: Senses;
   proficiencies: Proficiencies;
@@ -404,6 +409,49 @@ function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficie
   return { armor, weapons, tools, languages, customWeapons, customTools, customLanguages };
 }
 
+// ── Save advantages ──────────────────────────────────────────────────────────
+interface SaveAdvGroup { kind: string; text: string; all: boolean; abilities: Set<number>; homebrew: boolean }
+
+/**
+ * Advantage / disadvantage on saving throws (spec §1). Read per bucket of
+ * `char.modifiers` (allMods flattens them, and the unresolved-entity homebrew
+ * fallback needs the bucket). Item modifiers count only while the item is
+ * active. One line per (kind, restriction); an empty restriction groups by
+ * and prints the granting entity's name, or nothing when it can't be resolved.
+ */
+export function buildSaveAdvantageLines(core: CoreStats): string[] {
+  const { char, classes, inventory } = core;
+  const entities = grantingEntities(char, classes);
+  const names = grantingEntityNames(char, classes);
+  const groups = new Map<string, SaveAdvGroup>();
+  for (const [bucket, list] of Object.entries(obj(char.modifiers))) {
+    for (const m of arr<Mod>(list)) {
+      if (m == null || typeof m !== "object") continue;
+      const kind = m.type === "advantage" ? "Advantage" : m.type === "disadvantage" ? "Disadvantage" : "";
+      const sub = str(m.subType);
+      const ability = statKeys.findIndex(k => sub === `${k}-saving-throws`);
+      if (!kind || (sub !== "saving-throws" && ability < 0)) continue;
+      if (!isActiveItemMod(m, inventory)) continue;
+      const key = entityKey(m.componentId, m.componentTypeId);
+      const granted = entities.get(key);
+      const restriction = str(m.restriction).trim();
+      const text = restriction || names.get(key) || "";
+      const gk = `${kind}\u0000${restriction ? "r" : "n"}\u0000${text}`;
+      const g = groups.get(gk) ?? { kind, text, all: false, abilities: new Set<number>(), homebrew: false };
+      if (sub === "saving-throws") g.all = true; else g.abilities.add(ability);
+      g.homebrew ||= granted ? granted.some(Boolean) : bucketAnyHomebrew(char, classes, bucket);
+      groups.set(gk, g);
+    }
+  }
+  const out = new Set<string>();
+  for (const g of groups.values()) {
+    const who = g.all ? "all saves" : [...g.abilities].sort((a, b) => a - b).map(i => statNames[i]).join(", ");
+    const line = `  ${g.kind} (${who})${g.text ? `: ${g.text}` : ""}`;
+    out.add(g.homebrew ? wrapUntrusted(line) : line);
+  }
+  return [...out];
+}
+
 // ── Public API ──────────────────────────────────────────────────────────────
 export function computeStats(core: CoreStats): Stats {
   const { char, allMods, statMods, statTotals, profBonus, classes } = core;
@@ -411,6 +459,7 @@ export function computeStats(core: CoreStats): Stats {
   return {
     abilityScoreDisplay: buildAbilityScoreDisplay(statTotals, statMods),
     savingThrows: buildSavingThrows(allMods, statMods, profBonus),
+    saveAdvantages: buildSaveAdvantageLines(core),
     skillLines: buildSkillLines(skillBonuses),
     senses: computeSenses(char, allMods, skillBonuses),
     proficiencies: computeProficiencies(char, allMods),
@@ -425,6 +474,7 @@ export function formatStatsBlock(s: Stats): string[] {
     ``,
     `SAVING THROWS`,
     `  ${s.savingThrows.join("   ")}`,
+    ...s.saveAdvantages,
     `  (* proficient)`,
     ``,
     `SKILLS`,

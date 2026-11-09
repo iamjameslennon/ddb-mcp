@@ -45,7 +45,7 @@ export interface Actions {
 // 2026-11-04, 56 characters: class features 12168134, racial traits 1960452172,
 // feats 1088085227, class and feat options 258900837, race options 306912077).
 // Matching both fields matters: ids repeat across entity types.
-const entityKey = (id: unknown, typeId: unknown): string => `${num(typeId)}:${num(id)}`;
+export const entityKey = (id: unknown, typeId: unknown): string => `${num(typeId)}:${num(id)}`;
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   v != null && typeof v === "object" && !Array.isArray(v);
@@ -65,7 +65,16 @@ function addEntity(entities: Map<string, boolean[]>, def: unknown, homebrew: boo
  */
 export function grantingEntities(char: CharData, classes: readonly ClassEntry[]): Map<string, boolean[]> {
   const entities = new Map<string, boolean[]>();
-  const add = (def: unknown, homebrew: boolean) => addEntity(entities, def, homebrew);
+  walkBaseEntities(char, classes, (def, homebrew) => addEntity(entities, def, homebrew));
+  return withOptions(char, entities);
+}
+
+/**
+ * Every definition an action or modifier can name, in the order
+ * grantingEntities records them (options excluded; see withOptions). Shared
+ * with grantingEntityNames so the two cover the same sources.
+ */
+function walkBaseEntities(char: CharData, classes: readonly ClassEntry[], add: (def: unknown, homebrew: boolean) => void): void {
   // Null or non-object entries are skipped.
   for (const cls of classes) {
     for (const cf of arr<unknown>(cls.classFeatures).filter(isRecord)) add(featureDefinition(cf), isHomebrewClassFeature(cf, cls));
@@ -80,7 +89,24 @@ export function grantingEntities(char: CharData, classes: readonly ClassEntry[])
   add(bgDef, untrusted);
   // A custom background shows its own definition; an action can still name the stock one.
   if (obj(obj(char.background).definition) !== bgDef) add(obj(char.background).definition, untrusted);
-  return withOptions(char, entities);
+}
+
+/**
+ * The trimmed name of every definition grantingEntities knows, under the same
+ * entityKey (options included). Where several share a key the first named wins.
+ */
+export function grantingEntityNames(char: CharData, classes: readonly ClassEntry[]): Map<string, string> {
+  const names = new Map<string, string>();
+  const add = (def: unknown) => {
+    const d = obj(def);
+    const name = str(d.name).trim();
+    if (!num(d.id) || !num(d.entityTypeId) || !name) return;
+    const key = entityKey(d.id, d.entityTypeId);
+    if (!names.has(key)) names.set(key, name);
+  };
+  walkBaseEntities(char, classes, add);
+  for (const o of Object.values(obj(char.options)).flatMap(v => arr<unknown>(v)).filter(isRecord)) add(o.definition);
+  return names;
 }
 
 /**
@@ -121,7 +147,7 @@ function withOptions(char: CharData, base: Map<string, boolean[]>): Map<string, 
  * features; the species or one of its racial traits; a feat; an item; or a
  * homebrew or custom background.
  */
-function bucketAnyHomebrew(char: CharData, classes: readonly ClassEntry[], bucket: string): boolean {
+export function bucketAnyHomebrew(char: CharData, classes: readonly ClassEntry[], bucket: string): boolean {
   switch (bucket) {
     case "class": return classes.some(c => isHomebrewEntry(c, c.subclassDefinition)
       || arr<unknown>(c.classFeatures).some(cf => isHomebrewClassFeature(cf, c))
