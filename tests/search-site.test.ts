@@ -50,6 +50,13 @@ describe("search (ddb_search_site)", () => {
     expect(text).not.toContain("## Races");
   });
 
+  it("all: a near-match monster section (no noMatch) is kept", async () => {
+    sections.monsters.mockResolvedValue(ddb('No monster names match "vorpal". Closest matches from D&D Beyond:\n- **Avoral Guardinal** [2024]'));
+    const text = await search("vorpal", "all", "2024");
+    expect(text).toContain("## Monsters");
+    expect(text).toContain("Avoral Guardinal");
+  });
+
   it("a single category keeps its own header and footer", async () => {
     const s = ddb("**Spell Search** (1 found)", 1);
     sections.spells.mockResolvedValue(s);

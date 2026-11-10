@@ -2667,6 +2667,92 @@ describe("word-start name matching (B11)", () => {
   });
 });
 
+describe("near matches (B11 option B)", () => {
+  const GOBLIN_2014 = monster({ id: 8_200_001, name: "Goblin", isLegacy: true, sourceId: 1, sources: sources(1) });
+  const GOBLIN_WARRIOR_2024 = monster({ id: 8_200_002, name: "Goblin Warrior", sourceId: 147, sources: sources(147) });
+  const GOBLIN_BOSS_2024 = monster({ id: 8_200_003, name: "Goblin Boss", sourceId: 147, sources: sources(147) });
+  const AVORAL = monster({ id: 8_200_004, name: "Avoral Guardinal", sourceId: 147, sources: sources(147) });
+  const label = (t: string) => `No monster names match "${t}". Closest matches from D&D Beyond:`;
+  const entryLines = (out: string) => out.split("\n").filter(l => l.startsWith("- **"));
+  const withFuzzy = async (entries: Record<string, unknown[]>, run: () => Promise<void>) => {
+    const saved = Object.fromEntries(Object.keys(entries).map(k => [k, FUZZY[k]]));
+    Object.assign(FUZZY, entries);
+    try { await run(); } finally { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete FUZZY[k]; else FUZZY[k] = v; } }
+  };
+
+  it('"gobiln" lists the typed hits, in service order, under the label', () => withFuzzy(
+    { gobiln: [GOBLIN_WARRIOR_2024, GOBLIN_2014, GOBLIN_BOSS_2024] }, async () => {
+      const out = await searchMonsters({ name: "gobiln" });
+      const at = out.indexOf(label("gobiln"));
+      expect(at).toBeGreaterThan(-1);
+      const lines = entryLines(out);
+      expect(lines[0]).toContain("- **Goblin Warrior** [2024]");
+      expect(lines[1]).toContain("- **Goblin** [2014]");
+      expect(lines.length).toBeLessThanOrEqual(10);
+      expect(out.indexOf(lines[0])).toBeGreaterThan(at);
+      expect(out).not.toContain("**Monster Search**");
+      expect(out).not.toContain("hidden");
+    }));
+
+  it('"vorpal" lists Avoral Guardinal under the label', () => withFuzzy({ vorpal: [AVORAL] }, async () => {
+    const out = await searchMonsters({ name: "vorpal" });
+    expect(out.indexOf("Avoral Guardinal")).toBeGreaterThan(out.indexOf(label("vorpal")));
+  }));
+
+  it("the section is not noMatch", () => withFuzzy({ vorpal: [AVORAL] }, async () => {
+    const section = await searchMonstersSection({ name: "vorpal" });
+    expect(section.noMatch).toBeUndefined();
+    expect(section.body).toContain(label("vorpal"));
+  }));
+
+  it("a homebrew near-match line is wrapped", () => withFuzzy(
+    { vorpall: [monster({ id: 8_200_010, name: "Vorpal Horror", isHomebrew: true, sourceId: 147, sources: sources(147) })] }, async () => {
+      const out = await searchMonsters({ name: "vorpall" });
+      const line = entryLines(out.replace(/<untrusted_dndbeyond_content>\n?/g, "")).find(l => l.includes("Vorpal Horror"))!;
+      expect(line).toBeDefined();
+      expect(out).toMatch(/<untrusted_dndbeyond_content>[^]*Vorpal Horror[^]*<\/untrusted_dndbeyond_content>/);
+      expect(out.indexOf("<untrusted_dndbeyond_content>")).toBeGreaterThan(out.indexOf(label("vorpall")));
+    }));
+
+  it("homebrew source: only non-official fuzzy hits are listed, wrapped, under the label", () => withFuzzy(
+    { vorpalll: [AVORAL, monster({ id: 8_200_011, name: "Vorpal Horror", isHomebrew: true, sourceId: 147, sources: sources(147) })] }, async () => {
+      const out = await searchMonsters({ source: "homebrew", name: "vorpalll" });
+      expect(out).toContain(label("vorpalll"));
+      expect(out).not.toContain("Avoral Guardinal");
+      expect(out).toMatch(/<untrusted_dndbeyond_content>[^]*Vorpal Horror/);
+    }));
+
+  it("filters keep applying: a CR no hit has falls back to Open5e", () => withFuzzy(
+    { gobiln: [GOBLIN_WARRIOR_2024, GOBLIN_2014] }, async () => {
+      const out = await searchMonsters({ name: "gobiln", cr: 24 });
+      expect(out).not.toContain("Closest matches");
+      expect(out).toContain("O5 SEARCH RESULT");
+    }));
+
+  it("a name match emptied by filters is not a near match", async () => {
+    extraMonsters = [GOBLIN_WARRIOR_2024];
+    const out = await searchMonsters({ name: "goblin", cr: 24 });
+    expect(out).not.toContain("Closest matches");
+  });
+
+  it("aliases don't feed near matches", () => withFuzzy(
+    { thug: [AVORAL], tough: [monster({ id: 8_200_012, name: "Zzz Alias Only", sourceId: 147, sources: sources(147) })] }, async () => {
+      const out = await searchMonsters({ name: "thug" });
+      expect(out).toContain("Avoral Guardinal");
+      expect(out).not.toContain("Zzz Alias Only");
+    }));
+
+  it("R9: a book search leads with the empty-book line, then the label and the book's hits", () => withFuzzy(
+    { gobiln: [monster({ id: 8_200_020, name: "Goblin Warrior", sourceId: 147, sources: sources(147) }), GOBLIN_2014] }, async () => {
+      const out = await searchMonsters({ source: "mm-2024", name: "gobiln" });
+      const body = out.slice(out.indexOf("No monsters matching"));
+      expect(body.startsWith("No monsters matching the search criteria in Monster Manual [mm-2024].")).toBe(true);
+      expect(out.indexOf(label("gobiln"))).toBeGreaterThan(out.indexOf("No monsters matching"));
+      expect(out).toContain("**Goblin Warrior**");
+      expect(out).not.toContain("- **Goblin** [2014]");
+    }));
+});
+
 // ── Page scans and the full-list cache (B11) ─────────────────────────────────
 
 describe("monster page scans and the full-list cache", () => {

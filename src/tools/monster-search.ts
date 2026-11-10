@@ -56,6 +56,55 @@ function orderRows<R extends { m: { name: string; id: number } }>(rows: R[], que
     exact(a) - exact(b) || a.m.name.localeCompare(b.m.name, "en") || a.m.id - b.m.id);
 }
 
+/** What a result line needs besides the row: the config tables, the source index and the requested book. */
+interface RowContext {
+  crMap: Map<number, { value: number }>;
+  typeMap: Map<number, string>;
+  config: Parameters<typeof sizeName>[0];
+  index: Parameters<typeof sourceLabel>[0];
+  sourceIds: number[];
+  anonymous: boolean;
+}
+type ListedRow = { m: DdbMonster; info: EditionInfo; reason?: SelectionReason; srd?: O5EditionMonster; statsUnknown?: boolean };
+
+/**
+ * One result line, wrapped whole unless the entry is explicitly official. Normal
+ * and near-match lines both come from here, so neither can skip the edition tag
+ * or the untrusted wrapping.
+ */
+function formatRow({ m, info: mInfo, reason, srd, statsUnknown }: ListedRow, ctx: RowContext): string {
+  const { crMap, typeMap, config, index, sourceIds } = ctx;
+  const cr = crMap.get(m.challengeRatingId);
+  const crStr = cr ? crDisplay(cr.value) : "?";
+  const typeName = typeMap.get(m.typeId) ?? "Unknown";
+  const size = sizeName(config, m.sizeId) ?? "Unknown size";
+  const tags: string[] = [];
+  if (m.isLegendary) tags.push("Legendary");
+  if (m.isMythic) tags.push("Mythic");
+  const tagStr = tags.length ? ` [${tags.join(", ")}]` : "";
+  let sourceStr = sourceLabel(index, m.sourceId);
+  if (sourceIds.length && !sourceIds.includes(m.sourceId)) {
+    // Matched the requested book as a reprint — say so, or the line looks off-filter.
+    const via = m.sources?.find(s => sourceIds.includes(s.sourceId))?.sourceId ?? sourceIds[0];
+    sourceStr += `, reprinted in ${sourceLabel(index, via)}`;
+  }
+  // A locked list entry's AC and HP are zeroed: the SRD's, else dashes.
+  // An SRD record's null AC or HP is unknown too: a dash, never the zeroed list value.
+  const ac = srd ? srd.armorClass ?? "—" : statsUnknown ? "—" : m.armorClass;
+  const hp = srd ? srd.hitPoints ?? "—" : statsUnknown ? "—" : m.averageHitPoints;
+  let line = `- **${m.name}** ${editionTag(mInfo)}${tagStr} — ${sourceStr} — CR ${crStr}, ${size} ${typeName}, AC ${ac}, ${hp} HP`;
+  if (isLockedReason(reason)) line += ` ${lockedLineSuffix(reason, ctx.anonymous)}`;
+  // Homebrew names are user-authored — delimit them, as getMonster does for
+  // homebrew stat blocks. Fail closed: only an explicitly official entry is left plain.
+  return m.isHomebrew === false ? line : wrapUntrusted(line);
+}
+
+/** At most this many of D&D Beyond's closest hits are listed when no name matches (R10). */
+export const NEAR_MATCH_LIMIT = 10;
+/** Not edition text: it says the lines below are not name matches. */
+export const nearMatchLabel = (searchTerm: string): string =>
+  `No monster names match "${searchTerm}". Closest matches from D&D Beyond:`;
+
 export interface MonsterSearchParams {
   name?: string;
   cr?: number;
@@ -116,6 +165,7 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
     if (!book) return unknownSourceError(index, params.source);
   }
   const sourceIds = book?.ids ?? [];
+  const rowCtx: RowContext = { crMap, typeMap, config, index, sourceIds, anonymous: asker.anonymous };
 
   // Source filters server-side. CR/type/size (and homebrew) filter client-side,
   // so page through results (up to MAX_FILTER_SCAN) rather than judging one page.
@@ -211,10 +261,43 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
     hidden = picked.hidden;
   }
 
+  // The path's normal header: homebrew (no edition, so no sourceNote), a book, or the plain search.
+  function sectionHeader(): { header: string; note?: string | null } {
+    if (homebrew) return { header: searchHeader({ sourceBook: HOMEBREW_SOURCE_BOOK }) };
+    // Slugs aren't unique; the header names the lowest-id book, not a premade-character pack.
+    if (book) return sourceFraming(book, requested, index);
+    return { header: searchHeader({ requested }) };
+  }
+
   monsters = orderRows(monsters, searchTerm);
+
+  /** R10: the typed spelling's hits as the service ranked them, past CR/type/size (and, for homebrew, only non-official). */
+  function nearMatchHits(typedHits: DdbMonster[]): DdbMonster[] {
+    return typedHits.filter(m => passes(m) && (!homebrew || m.isHomebrew !== false)).slice(0, NEAR_MATCH_LIMIT);
+  }
 
   if (monsters.length === 0) {
     const scope = partialScan ? ` (checked the first ${checked} of ${totalText} entries)` : "";
+    // G3: nothing fetched, from any spelling, matches the typed name. The typed
+    // spelling's own hits (never an alias's) are then listed as D&D Beyond's closest.
+    const nearHits = searchTerm && !fetched.some(nameOk) ? nearMatchHits(results[0]?.data ?? []) : [];
+    if (nearHits.length) {
+      const shownNear = await withListStats(nearHits.map(m => ({ m, info: homebrew ? HOMEBREW_INFO : info(m) })), access);
+      const { header, note } = sectionHeader();
+      const body: string[] = [];
+      // R9: a book search leads with today's empty-book line and its "appears in" hint.
+      if (params.source && !homebrew) {
+        let msg = `No monsters matching the search criteria in ${sourceLabel(index, sourceIds[0])}${scope}.`;
+        const available = await availableSourcesFor(searchTerm, index, asker, snapshot);
+        if (available.length) msg += ` "${searchTerm}" appears in: ${available.join(", ")}.`;
+        body.push(msg);
+      }
+      if (note) body.push(note);
+      body.push(nearMatchLabel(searchTerm));
+      for (const row of shownNear) body.push(formatRow(row, rowCtx));
+      // No noMatch: ddb_search_site's "all" must keep this section.
+      return { header, body: body.join("\n"), footer: searchFooter(requested, 0), hidden: 0 };
+    }
     if (homebrew) {
       return noMatchSection(searchTerm
         ? `No homebrew monsters found matching "${searchTerm}"${scope}.`
@@ -250,18 +333,8 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
   const shown = await withListStats(monsters.slice(0, PAGE_SIZE), access);
 
   const lines: string[] = [];
-  let header: string;
-  if (homebrew) {
-    // Homebrew has no edition, so no sourceNote.
-    header = searchHeader({ sourceBook: HOMEBREW_SOURCE_BOOK });
-  } else if (book) {
-    // Slugs aren't unique; the header names the lowest-id book, not a premade-character pack.
-    const framing = sourceFraming(book, requested, index);
-    header = framing.header;
-    if (framing.note) lines.push(framing.note);
-  } else {
-    header = searchHeader({ requested });
-  }
+  const { header, note } = sectionHeader();
+  if (note) lines.push(note);
   // The note and the swap summary count every selected entry, as the header
   // total does, not just the lines shown.
   const lockedNote = lockedEntriesNote(monsters.filter(r => isLockedIn(access, r.m.id)).length, asker.anonymous);
@@ -274,31 +347,7 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
     : `${shown.length} shown, ${total - (checked - monsters.length)} total ${matchedBy}`;
   const capNote = nameCapped ? ` (the first ${PAGE_SIZE} matches per name were checked)` : "";
   lines.push(`**Monster Search** (${countText})${capNote}\n`);
-  for (const { m, info: mInfo, reason, srd, statsUnknown } of shown) {
-    const cr = crMap.get(m.challengeRatingId);
-    const crStr = cr ? crDisplay(cr.value) : "?";
-    const typeName = typeMap.get(m.typeId) ?? "Unknown";
-    const size = sizeName(config, m.sizeId) ?? "Unknown size";
-    const tags: string[] = [];
-    if (m.isLegendary) tags.push("Legendary");
-    if (m.isMythic) tags.push("Mythic");
-    const tagStr = tags.length ? ` [${tags.join(", ")}]` : "";
-    let sourceStr = sourceLabel(index, m.sourceId);
-    if (sourceIds.length && !sourceIds.includes(m.sourceId)) {
-      // Matched the requested book as a reprint — say so, or the line looks off-filter.
-      const via = m.sources?.find(s => sourceIds.includes(s.sourceId))?.sourceId ?? sourceIds[0];
-      sourceStr += `, reprinted in ${sourceLabel(index, via)}`;
-    }
-    // A locked list entry's AC and HP are zeroed: the SRD's, else dashes.
-    // An SRD record's null AC or HP is unknown too: a dash, never the zeroed list value.
-    const ac = srd ? srd.armorClass ?? "—" : statsUnknown ? "—" : m.armorClass;
-    const hp = srd ? srd.hitPoints ?? "—" : statsUnknown ? "—" : m.averageHitPoints;
-    let line = `- **${m.name}** ${editionTag(mInfo)}${tagStr} — ${sourceStr} — CR ${crStr}, ${size} ${typeName}, AC ${ac}, ${hp} HP`;
-    if (isLockedReason(reason)) line += ` ${lockedLineSuffix(reason, asker.anonymous)}`;
-    // Homebrew names are user-authored — delimit them, as getMonster does for
-    // homebrew stat blocks. Fail closed: only an explicitly official entry is left plain.
-    lines.push(m.isHomebrew === false ? line : wrapUntrusted(line));
-  }
+  for (const row of shown) lines.push(formatRow(row, rowCtx));
 
   if (shown.length < monsters.length) {
     lines.push(`\n*${monsters.length - shown.length} more matches not shown.*`);
