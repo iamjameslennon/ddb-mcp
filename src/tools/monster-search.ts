@@ -7,7 +7,7 @@ import { captureSession } from "../session-fetch.js";
 import { getSourceIndex } from "../game-config.js";
 import {
   classifyEdition, groupAndSelect, monsterTiebreak, twinAliases,
-  isEdition, editionTag, searchHeader, searchFooter,
+  isEdition, editionTag, searchHeader, NEAR_MATCH_RULES_LINE, searchFooter,
   isLockedReason, lockedLineSuffix, lockedSwapSummary, lockedEntriesNote,
   NOT_LOGGED_IN_SUFFIX,
   HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO, homebrewLoginRequired, homebrewUnreachable,
@@ -283,7 +283,10 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
     const nearHits = searchTerm && !fetched.some(nameOk) ? nearMatchHits(results[0]?.data ?? []) : [];
     if (nearHits.length) {
       const shownNear = await withListStats(nearHits.map(m => ({ m, info: homebrew ? HOMEBREW_INFO : info(m) })), access);
-      const { header, note } = sectionHeader();
+      // The edition-neutral header replaces the path's edition claim (and the book header's
+      // "every entry"); the book's own source note is kept.
+      const header = NEAR_MATCH_RULES_LINE;
+      const note = book ? sectionHeader().note : null;
       const body: string[] = [];
       // R9: a book search leads with today's empty-book line and its "appears in" hint.
       if (params.source && !homebrew) {

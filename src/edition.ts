@@ -703,6 +703,12 @@ export function searchHeader(mode: SearchHeaderMode): string {
 }
 
 /**
+ * First line of a near-match section (no entry matched the typed name): the
+ * hits are D&D Beyond's raw closest, so no edition was selected for them.
+ */
+export const NEAR_MATCH_RULES_LINE = "Rules: closest matches only — no edition was selected; each line is tagged with its own edition.";
+
+/**
  * First line of an Open5e fallback search: its lines mix SRD 5.2 and SRD 5.1
  * entries, selected like D&D Beyond entries.
  */

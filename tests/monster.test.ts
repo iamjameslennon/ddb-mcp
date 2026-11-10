@@ -2690,8 +2690,19 @@ describe("near matches (B11 option B)", () => {
       expect(lines[1]).toContain("- **Goblin** [2014]");
       expect(lines.length).toBeLessThanOrEqual(10);
       expect(out.indexOf(lines[0])).toBeGreaterThan(at);
+      expect(out.split("\n")[0]).toBe("Rules: closest matches only — no edition was selected; each line is tagged with its own edition.");
+      expect(out).not.toContain("2024 by default");
       expect(out).not.toContain("**Monster Search**");
       expect(out).not.toContain("hidden");
+    }));
+
+  it("lists at most NEAR_MATCH_LIMIT hits", () => withFuzzy(
+    { gobilnx: Array.from({ length: 12 }, (_, i) => monster({ id: 8_200_100 + i, name: `Near Hit ${String(i + 1).padStart(2, "0")}`, sourceId: 147, sources: sources(147) })) }, async () => {
+      const out = await searchMonsters({ name: "gobilnx" });
+      expect(entryLines(out)).toHaveLength(10);
+      expect(out).toContain("Near Hit 10");
+      expect(out).not.toContain("Near Hit 11");
+      expect(out).not.toContain("Near Hit 12");
     }));
 
   it('"vorpal" lists Avoral Guardinal under the label', () => withFuzzy({ vorpal: [AVORAL] }, async () => {
@@ -2751,6 +2762,20 @@ describe("near matches (B11 option B)", () => {
       expect(out).toContain("**Goblin Warrior**");
       expect(out).not.toContain("- **Goblin** [2014]");
     }));
+
+  it("R9: the appears-in hint follows the empty-book line, before the label", async () => {
+    // The substring match elsewhere keeps the mock from going fuzzy, so the book's hit comes in as an any-word hit.
+    extraMonsters = [monster({ id: 8_200_022, name: "Gobiln Scout", sourceId: 1, sources: sources(1) })];
+    ANY_WORD = { gobiln: [monster({ id: 8_200_021, name: "Goblin Warrior", sourceId: 147, sources: sources(147) })] };
+    const out = await searchMonsters({ source: "mm-2024", name: "gobiln" });
+    const lines = out.split("\n");
+    const empty = lines.findIndex(l => l.startsWith("No monsters matching the search criteria in Monster Manual [mm-2024]."));
+    expect(empty).toBeGreaterThan(-1);
+    expect(lines[empty]).toContain('"gobiln" appears in:');
+    const labelAt = lines.findIndex(l => l.startsWith("No monster names match"));
+    expect(labelAt).toBeGreaterThan(empty);
+    expect(lines.findIndex(l => l.includes("**Goblin Warrior**"))).toBeGreaterThan(labelAt);
+  });
 });
 
 // ── Page scans and the full-list cache (B11) ─────────────────────────────────

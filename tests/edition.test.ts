@@ -4,7 +4,7 @@ import {
   normalizeName, createTwinNamer, twinNames, twinAliases, classOwnerTwinKey, editionSourceId, entrySourceIds, bookChoiceNote, alsoInLine,
   dedupeById, dedupeByKey, definitionTiebreak, monsterTiebreak,
   selectByEdition, lookupByName, groupAndSelect,
-  cappedList, rulesLine, CUSTOM_ITEM_RULES_LINE, reasonLine, renameLine, RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, PARTY_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, lookupSourceNote, editionTag, searchHeader, open5eSearchHeader, searchFooter, ambiguityMessage,
+  cappedList, rulesLine, CUSTOM_ITEM_RULES_LINE, reasonLine, renameLine, RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, PARTY_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, lookupSourceNote, editionTag, searchHeader, NEAR_MATCH_RULES_LINE, open5eSearchHeader, searchFooter, ambiguityMessage,
   lockedLineSuffix, lockedSwapSummary, lockedEntriesNote, availableElsewhereHint, HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO,
   loggedOutReason, LOGGED_OUT_RESTRICTED_NOTE, NOT_LOGGED_IN_SUFFIX,
   characterMainEdition, characterTag, characterRulesLine, classifyForEdition, sourceIdRuleset, isDualEdition,
@@ -865,6 +865,10 @@ describe("search labels", () => {
 
   it("DMG_SOURCE_ID names the two Dungeon Master's Guides", () => {
     expect(DMG_SOURCE_ID).toEqual({ "2024": 146, "2014": 3 });
+  });
+
+  it("NEAR_MATCH_RULES_LINE is edition-neutral", () => {
+    expect(NEAR_MATCH_RULES_LINE).toBe("Rules: closest matches only — no edition was selected; each line is tagged with its own edition.");
   });
 
   it("searchHeader", () => {
