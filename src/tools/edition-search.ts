@@ -62,10 +62,15 @@ export function narrowingHint(o: { total: number; complete?: boolean; approxKb: 
  * One search's output in parts, so ddb_search_site can merge several under one header and footer.
  * `open5e`: an Open5e search, whose header (when it has one) is its own Rules line, kept with
  * its body in an "all" reply instead of being folded into the combined D&D Beyond header.
+ * `ownRulesLine`: a D&D Beyond section whose header is its own Rules line, not the search's edition
+ * claim (a monster near-match section, whose lines no edition was selected for): kept with its body
+ * in an "all" reply, like an Open5e one, and never counted towards the combined header.
  * `noMatch`: the reply means nothing matched (a plain no-match line, or one under hidden-twin
  * framing), so ddb_search_site omits the section. An error or "unavailable" reply never sets it.
  */
-export interface SearchSection { header: string | null; body: string; footer: string | null; hidden: number; open5e?: boolean; noMatch?: true }
+export interface SearchSection {
+  header: string | null; body: string; footer: string | null; hidden: number; open5e?: boolean; ownRulesLine?: true; noMatch?: true;
+}
 
 export function renderSection(s: SearchSection): string {
   return [s.header, s.body, s.footer].filter((p): p is string => p !== null).join("\n");

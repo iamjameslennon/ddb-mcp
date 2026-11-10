@@ -32,6 +32,18 @@ vi.mock("../src/open5e.js", () => ({
   o5MonsterInEdition: vi.fn(async () => null),
 }));
 
+// ddb_search_site's other categories, so search("…", "all") runs the real monster section (A1).
+const refSections = vi.hoisted(() => ({
+  spells: vi.fn(), items: vi.fn(), races: vi.fn(), classes: vi.fn(), feats: vi.fn(),
+}));
+vi.mock("../src/tools/reference.js", () => ({
+  searchSpellsSection: refSections.spells,
+  searchItemsSection: refSections.items,
+  searchRacesSection: refSections.races,
+  searchClassesSection: refSections.classes,
+  searchFeatsSection: refSections.feats,
+}));
+
 import { getMonster, searchMonsters, searchMonstersSection, getMonsterStats, clearMonsterCache, statBlockText } from "../src/tools/monster.js";
 import { rateEncounter } from "../src/tools/encounter.js";
 import { generateTreasure } from "../src/tools/treasure.js";
@@ -44,6 +56,8 @@ import {
   FULL_SCAN_DEADLINE_MS, SHORT_LIST_TTL_MS, FULL_LIST_TTL_MS, MAX_SCAN_PAGES,
 } from "../src/tools/monster-service.js";
 import { o5SearchMonstersSection, o5GetMonster, o5GetMonsterStats, o5MonsterInEdition } from "../src/open5e.js";
+import { search } from "../src/tools/search.js";
+import { NEAR_MATCH_RULES_LINE, searchHeader } from "../src/edition.js";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 // IDs, source attribution, and categories mirror live monster-service / game
@@ -2778,6 +2792,21 @@ describe("near matches (B11 option B)", () => {
     expect(section.noMatch).toBeUndefined();
     expect(section.body).toContain(label("vorpal"));
   }));
+
+  it("ddb_search_site: the real near-match section keeps its neutral Rules line in \"all\" (A1)", () => withFuzzy(
+    { gobiln: [GOBLIN_WARRIOR_2024, GOBLIN_2014] }, async () => {
+      const section = await searchMonstersSection({ name: "gobiln", siteSearch: true });
+      expect(section).toMatchObject({ header: NEAR_MATCH_RULES_LINE, ownRulesLine: true, footer: null, hidden: 0 });
+      for (const fn of Object.values(refSections)) fn.mockResolvedValue({ header: null, body: "No things found.", footer: null, hidden: 0, noMatch: true });
+      refSections.spells.mockResolvedValue({ header: searchHeader({ requested: "2024" }), body: "**Spell Search** (1 found)\n\n- **Gobiln Ward** [2024]", footer: null, hidden: 0 });
+      const all = await search("gobiln", "all", "2024");
+      const monsterPart = all.slice(all.indexOf("## Monsters"));
+      expect(monsterPart.startsWith(`## Monsters\n\n${NEAR_MATCH_RULES_LINE}\n${label("gobiln")}`)).toBe(true);
+      expect(monsterPart).toContain("- **Goblin** [2014]");
+      expect(monsterPart).not.toContain("2024 by default");
+      // Category "monsters" renders the section as it is.
+      expect((await search("gobiln", "monsters", "2024")).split("\n")[0]).toBe(NEAR_MATCH_RULES_LINE);
+    }));
 
   it("a homebrew near-match line is wrapped", () => withFuzzy(
     { vorpall: [monster({ id: 8_200_010, name: "Vorpal Horror", isHomebrew: true, sourceId: 147, sources: sources(147) })] }, async () => {

@@ -44,10 +44,12 @@ export async function search(
     const body = section.body.trim();
     // A section that matched nothing is omitted (its hidden twins were counted above).
     if (!body || section.noMatch) continue;
-    // An Open5e section keeps its own Rules line; a D&D Beyond header is folded into the combined one.
-    const text = section.open5e && section.header !== null ? `${section.header}\n${body}` : body;
+    // An Open5e or near-match section keeps its own Rules line; a D&D Beyond
+    // search header is folded into the combined one.
+    const ownLine = (section.open5e || section.ownRulesLine) && section.header !== null;
+    const text = ownLine ? `${section.header}\n${body}` : body;
     sections.push(`## ${CATEGORY_LABELS[ALL_CATEGORIES[i]]}\n\n${text}`);
-    if (section.header !== null && !section.open5e) anyHeader = true;
+    if (section.header !== null && !ownLine) anyHeader = true;
   }
 
   const footer = searchFooter(rulesEdition, hidden);

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { searchHeader, searchFooter, open5eSearchHeader } from "../src/edition.js";
+import { searchHeader, searchFooter, open5eSearchHeader, NEAR_MATCH_RULES_LINE } from "../src/edition.js";
 import { plainSection, noMatchSection, renderSection, type SearchSection } from "../src/tools/edition-search.js";
 import {
   clearOpen5eCache,
@@ -51,10 +51,44 @@ describe("search (ddb_search_site)", () => {
   });
 
   it("all: a near-match monster section (no noMatch) is kept", async () => {
-    sections.monsters.mockResolvedValue(ddb('No monster names match "vorpal". Closest matches from D&D Beyond:\n- **Avoral Guardinal** [2024]'));
-    const text = await search("vorpal", "all", "2024");
+    sections.monsters.mockResolvedValue(nearMatch());
+    const text = await search("gobiln", "all", "2024");
     expect(text).toContain("## Monsters");
-    expect(text).toContain("Avoral Guardinal");
+    expect(text).toContain("Goblin Warrior");
+  });
+
+  // The section searchMonstersSection({ name: "gobiln", siteSearch: true }) returns
+  // (pinned against the real function in monster.test.ts "near matches"): its own
+  // edition-neutral Rules line as the header, flagged ownRulesLine, no footer.
+  const nearMatch = (): SearchSection => ({
+    header: NEAR_MATCH_RULES_LINE,
+    body: 'No monster names match "gobiln". Closest matches from D&D Beyond:\n- **Goblin Warrior** [2024] — Monster Manual — CR 1/4, Small Fey, AC 15, 10 HP\n- **Goblin** [2014] — Basic Rules — CR 1/4, Small Humanoid, AC 15, 7 HP',
+    footer: null, hidden: 0, ownRulesLine: true,
+  });
+
+  it("all: a near-match monster section keeps its own neutral Rules line under the combined header (A1)", async () => {
+    sections.spells.mockResolvedValue(ddb("**Spell Search** (1 found)\n\n- **Gobiln Ward** [2024]"));
+    const near = nearMatch();
+    sections.monsters.mockResolvedValue(near);
+    const text = await search("gobiln", "all", "2024");
+    expect(text.split("\n")[0]).toBe(H);
+    expect(text).toContain(`## Monsters\n\n${NEAR_MATCH_RULES_LINE}\n${near.body}`);
+    const monsterPart = text.slice(text.indexOf("## Monsters"));
+    expect(monsterPart).not.toContain("2024 by default");
+    expect(text.match(/^Rules: /gm)).toHaveLength(2);
+  });
+
+  it("all: a near-match monster section alone adds no combined edition header (A1)", async () => {
+    sections.monsters.mockResolvedValue(nearMatch());
+    const text = await search("gobiln", "all", "2024");
+    expect(text.startsWith('# Search results for "gobiln"\n\n## Monsters\n\n' + NEAR_MATCH_RULES_LINE)).toBe(true);
+    expect(text).not.toContain("2024 by default");
+  });
+
+  it("monsters: a near-match section renders its neutral Rules line first (A1)", async () => {
+    const near = nearMatch();
+    sections.monsters.mockResolvedValue(near);
+    expect(await search("gobiln", "monsters", "2024")).toBe(`${NEAR_MATCH_RULES_LINE}\n${near.body}`);
   });
 
   it("passes siteSearch: true to the monster search, never listAll", async () => {

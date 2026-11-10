@@ -469,8 +469,9 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
       for (const row of shownNear) body.push(formatRow(row, rowCtx));
       // A near match judged over an incomplete scan may have missed a real match: say so.
       if (noCountNote) body.push(noCountNote);
-      // No noMatch: ddb_search_site's "all" must keep this section.
-      return { header, body: body.join("\n"), footer: searchFooter(requested, 0), hidden: 0 };
+      // No noMatch: ddb_search_site's "all" must keep this section, with its own
+      // neutral Rules line (ownRulesLine), not under the combined edition header.
+      return { header, body: body.join("\n"), footer: searchFooter(requested, 0), hidden: 0, ownRulesLine: true };
     }
     return noMatchReply(hidden, candidates);
   }
