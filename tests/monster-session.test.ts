@@ -65,34 +65,52 @@ beforeEach(() => {
   vi.mocked(assertSessionCurrent).mockImplementation(((snap: { gen: number }) => {
     if (snap.gen !== S.gen) throw new Error("session changed");
   }) as never);
-  // 300 entries across three pages; each entry is named for the account that fetched it.
+  // 300 entries across three pages (none past them); each entry is named for the account that fetched it.
   vi.mocked(sessionFetch).mockImplementation((async (input: string, account: number) => {
     const url = String(input);
     if (url.includes("api/config/json")) return response(CONFIG);
     const skip = Number(new URL(url).searchParams.get("skip"));
-    const data = Array.from({ length: 100 }, (_, i) => monster(skip + i + 1, `Account${account} Ghoul ${skip + i}`));
+    const data = Array.from({ length: Math.max(0, Math.min(100, 300 - skip)) }, (_, i) => monster(skip + i + 1, `Account${account} Ghoul ${skip + i}`));
     return response({ pagination: { total: 300, currentPage: 1, pages: 3 }, data });
   }) as never);
 });
 
 describe("paged monster scans and account changes", () => {
   it("discards a scan whose pages straddle an account change, instead of merging two accounts", async () => {
-    // Swap accounts right after the first page passes its own boundary check:
-    // config is assert #1, the source index is assert #2, page one is assert #3.
+    // Swap accounts right after the first page passes its own boundary checks:
+    // config is assert #1, the source index #2, the full-list cache read #3,
+    // page one's check before its request #4 and after it #5.
     let asserts = 0;
     vi.mocked(assertSessionCurrent).mockImplementation(((snap: { gen: number }) => {
       if (snap.gen !== S.gen) throw new Error("session changed");
-      if (++asserts === 3) S.gen = 2;
+      if (++asserts === 5) S.gen = 2;
     }) as never);
 
     // The scan is abandoned, so the search falls back to Open5e rather than
     // returning a list built from both accounts.
     expect(await searchMonsters({ cr: 1 })).toBe("O5 SEARCH RESULT");
+    // No page was requested under the second account.
+    const listCalls = vi.mocked(sessionFetch).mock.calls.filter(c => String(c[0]).includes("/v1/Monster?"));
+    expect(listCalls.length).toBeGreaterThan(0);
+    expect(listCalls.every(c => (c as unknown[])[1] === 1)).toBe(true);
+  });
+
+  it("a name scan straddling an account change is discarded too", async () => {
+    // A name with more than a page of hits: page one of the name (asserts #3, #4),
+    // then the name's full scan, whose first page swaps accounts after its checks (#5, #6).
+    let asserts = 0;
+    vi.mocked(assertSessionCurrent).mockImplementation(((snap: { gen: number }) => {
+      if (snap.gen !== S.gen) throw new Error("session changed");
+      if (++asserts === 6) S.gen = 2;
+    }) as never);
+    expect(await searchMonsters({ name: "Ghoul" })).toBe("O5 SEARCH RESULT");
+    const listCalls = vi.mocked(sessionFetch).mock.calls.filter(c => String(c[0]).includes("/v1/Monster?"));
+    expect(listCalls.every(c => (c as unknown[])[1] === 1)).toBe(true);
   });
 
   it("a scan within one account still returns every page", async () => {
     const result = await searchMonsters({ cr: 1 });
-    expect(result).toContain("30 shown of 30 matching; checked 300 of 300");
+    expect(result).toContain("(30 shown of 30 matching)");
     expect(result).not.toContain("Account2 ");
   });
 });
@@ -161,12 +179,16 @@ describe("the available-sources hint and account changes", () => {
     }) as never);
   });
 
-  /** Switch accounts right after the call's own list passed its last boundary check (assert #4: config, index, list, merge). */
-  function swapAfterFourthAssert(): void {
+  /**
+   * Switch accounts right after the call's own list passed its last boundary check:
+   * get, assert #4 (config, index, list, merge); search, #5 (config, index, the
+   * list before and after its request, the candidates' merge).
+   */
+  function swapAfterAssert(n: number): void {
     let asserts = 0;
     vi.mocked(assertSessionCurrent).mockImplementation(((snap: { gen: number }) => {
       if (snap.gen !== S.gen) throw new Error("session changed");
-      if (++asserts === 4) S.gen = 2;
+      if (++asserts === n) S.gen = 2;
     }) as never);
   }
 
@@ -175,14 +197,14 @@ describe("the available-sources hint and account changes", () => {
   });
 
   it("availableSourcesFor uses the caller's session snapshot", async () => {
-    swapAfterFourthAssert();
+    swapAfterAssert(4);
     const get = await getMonster("Lich", { source: "cos" });
     expect(get).toContain('No "Lich" entry found in source "cos".');
     expect(get).not.toContain("Player’s Handbook");
     expect(get).not.toContain("Available sources");
 
     S.gen = 1; S.lastSeen = 1; clearMonsterCache(); S.hooks.forEach(h => h());
-    swapAfterFourthAssert();
+    swapAfterAssert(5);
     const search = await searchMonsters({ name: "Lich", source: "cos" });
     expect(search).toContain("No monsters matching the search criteria in Curse of Strahd");
     expect(search).not.toContain("Player’s Handbook");

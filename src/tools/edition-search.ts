@@ -34,6 +34,11 @@ import {
 } from "../edition.js";
 import { inSources, sourceLabel, withSourceCaveat, type ResolvedSource } from "../source-filter.js";
 
+/** A count as printed in search totals: "1,601". */
+export function formatCount(n: number): string {
+  return n.toLocaleString("en-US");
+}
+
 // ── Sections ──────────────────────────────────────────────────────────────────
 
 /**

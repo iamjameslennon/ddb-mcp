@@ -692,7 +692,7 @@ describe("searchMonsters", () => {
     const result = await searchMonsters({ source: "cos" });
     expect(result).toContain("Strahd Zombie");
     expect(result).not.toContain("**Zombie**");
-    expect(result).toContain("3 total matched by source");
+    expect(result).toContain("(3 shown of 3 matching)");
     expect(listUrls[0]).toContain("take=100&sources=6");
   });
 
@@ -728,17 +728,19 @@ describe("searchMonsters", () => {
     expect(result).not.toMatch(/1 shown, \d+ total matched/);
   });
 
-  it("says honestly when the scan cap stopped short of the full result set", async () => {
+  it("reads the whole book: an entry beyond the first 600 is found, with an exact count", async () => {
     const result = await searchMonsters({ source: "mm-2024", cr: 21 });
-    expect(result).toContain("No monsters matching the search criteria in Monster Manual [mm-2024]");
-    expect(result).toMatch(/checked the first 600 of \d+ entries/);
+    expect(result).toContain("- **Filler Titan** [2024]");
+    expect(result).toContain("(1 shown of 1 matching)");
+    expect(result).not.toContain("could be read");
     expect(o5SearchMonstersSection).not.toHaveBeenCalled();
   });
 
-  it("flags a partial scan in the header when some entries matched", async () => {
+  it("an exact count in the header when some entries matched, with no partial note", async () => {
     const result = await searchMonsters({ source: "mm-2024", type: "ooze" });
     expect(result).toContain("Filler Colossus");
-    expect(result).toMatch(/Only the first 600 of \d+ were checked/);
+    expect(result).toContain("(2 shown of 2 matching)");
+    expect(result).not.toContain("could be read");
   });
 
   it("a config with no sources list resolves the source through the snapshot", async () => {
@@ -810,7 +812,7 @@ describe("stat-block text stays linear on hostile markup", () => {
 });
 
 describe("paged scans tolerate the service reordering between requests", () => {
-  it("never lists an entry twice, and says the scan was partial when pages overlapped", async () => {
+  it("never lists an entry twice, and the retry makes an overlapping scan exact", async () => {
     flipEachRequest = true;
     extraMonsters = Array.from({ length: 200 }, (_, i) => monster({
       id: 3_000_000 + i, name: `Horror ${String(i).padStart(3, "0")}`, sourceId: 232, sources: sources(232),
@@ -819,8 +821,11 @@ describe("paged scans tolerate the service reordering between requests", () => {
     const names = result.split("\n").filter(l => l.startsWith("- **")).map(l => l.slice(4, l.indexOf("**", 4)));
     expect(names.length).toBeGreaterThan(0);
     expect(new Set(names).size).toBe(names.length);
-    expect(result).not.toMatch(/checked 202 of 202/);
-    expect(result).toMatch(/Only the first \d+ of 202 were checked/);
+    // The first pass overlaps and misses entries; its retry (R3) reads every page again and fills them in.
+    // 202 entries; all but the CR 1 Psychic Gray Ooze are CR 1/4.
+    expect(listUrls.filter(u => u.includes("sources=232"))).toHaveLength(6); // two passes of 3 pages
+    expect(result).toContain("(100 shown of 201 matching)");
+    expect(result).not.toContain("could be read");
   });
 });
 
@@ -857,7 +862,7 @@ describe("search headers describe what was actually matched", () => {
   it("a CR-only search does not claim a name match", async () => {
     const result = await searchMonsters({ cr: 20 });
     expect(result).not.toContain("matched by name");
-    expect(result).toMatch(/checked \d+ of \d+ in the compendium/);
+    expect(result).toMatch(/\d+ shown of [\d,]+ matching\)/);
   });
 });
 
@@ -977,7 +982,7 @@ describe("adversarial review: mutation-testing gaps", () => {
   });
 
   it("a whitespace-only search name counts as no name", async () => {
-    expect(await searchMonsters({ name: "   ", source: "cos" })).toContain("3 total matched by source");
+    expect(await searchMonsters({ name: "   ", source: "cos" })).toContain("(3 shown of 3 matching)");
     expect(listUrls[0]).toContain("take=100"); // a source-only browse, not a 20-entry name search
   });
 });
@@ -1478,10 +1483,11 @@ describe("monster name searches take 100 per spelling", () => {
     expect(out.split("\n").at(-1)).toBe('1 2014 version hidden — rules_edition: "2014" shows it.');
   });
 
-  it("the header total and the refine note stay honest when the service has more than 100 hits", async () => {
+  it("the header total is exact when the service has more than 100 hits", async () => {
     const out = await searchMonsters({ name: "Filler" });
-    expect(out).toContain("(100 shown, 652 total matched by name)");
-    expect(out).toContain("*Refine your search with a name term for more specific results.*");
+    expect(out).toContain("(100 shown of 652 matching)");
+    expect(out).not.toContain("Refine your search");
+    expect(out).not.toContain("per name were checked");
   });
 });
 
@@ -1499,7 +1505,7 @@ describe("the locked-entry note and the swap summary count every selected entry"
     for (const id of [8_300_500, 8_300_510, 8_300_520, 8_300_521, 8_300_530, 8_300_531]) unownedIds.add(id);
     const lines = (await searchMonsters({ name: "Gloomling", cr: 0.25 })).split("\n");
     expect(lines[1]).toBe("2 entries aren't available to this account; their stat blocks fall back to the SRD or show a restricted notice.");
-    expect(lines[2]).toMatch(/^\*\*Monster Search\*\* \(100 shown of 109 matching; /);
+    expect(lines[2]).toBe("**Monster Search** (100 shown of 109 matching)");
     expect(lines.filter(l => l.startsWith("- **"))).toHaveLength(100);
     expect(lines.join("\n")).not.toContain("Gloomling Banshee"); // beyond the lines shown
     expect(lines.at(-2)).toBe("2 entries show their 2014 versions because the 2024 versions aren't available to this account.");
@@ -1544,13 +1550,13 @@ describe("searchMonsters counts a twin whose requested pick fails the filters", 
     expect(o5SearchMonstersSection).not.toHaveBeenCalled();
   });
 
-  it("a partial scan: the no-match line names how much was checked", async () => {
-    // No name: a CR filter scans the first 600 entries. The 2024 Psychic Gray
-    // Ooze is CR 1, its 2014 twin CR 1/2, and nothing else in the scan is CR 1/2.
+  it("a filter-only search over the full list: the no-match line has no scope", async () => {
+    // No name: a CR filter reads the full list. The 2024 Psychic Gray Ooze is
+    // CR 1, its 2014 twin CR 1/2, and nothing else in the list is CR 1/2.
     const lines = (await searchMonsters({ cr: 0.5 })).split("\n");
     expect(lines).toEqual([
       HEADER,
-      `No monsters found matching the search criteria (checked the first 600 of ${ALL_MONSTERS.length} entries).`,
+      "No monsters found matching the search criteria.",
       FOOTER,
     ]);
     expect(o5SearchMonstersSection).not.toHaveBeenCalled();
@@ -1731,21 +1737,22 @@ describe("monster edges", () => {
     }
   });
 
-  it("the checked count never exceeds the total", async () => {
+  it("a total that grows mid-scan gives the exact count", async () => {
     // 160 entries in RtHW; the first page still reports 150, the second the grown total.
     extraMonsters = Array.from({ length: 158 }, (_, i) => monster({
       id: 3_100_000 + i, name: `Grown ${String(i).padStart(3, "0")}`, sourceId: 232, sources: sources(232),
     }));
     firstPageTotal = 150;
     const result = await searchMonsters({ source: "rthw", cr: 0.25 });
-    expect(result).toContain("checked 160 of 160");
-    expect(result).not.toMatch(/checked 160 of 150/);
-    expect(result).not.toContain("Only the first");
+    // 160 entries; all but the CR 1 Psychic Gray Ooze are CR 1/4.
+    expect(result).toContain("(100 shown of 159 matching)");
+    expect(result).not.toContain("of 150");
+    expect(result).not.toContain("could be read");
   });
 
-  it("a name search that fills the 100-entry cap for a spelling says so", async () => {
+  it("a name search with more hits than a page counts them all, with no per-name cap note", async () => {
     const header = (await searchMonsters({ name: "Filler" })).split("\n").find(l => l.startsWith("**Monster Search**"));
-    expect(header).toBe("**Monster Search** (100 shown, 652 total matched by name) (the first 100 matches per name were checked)");
+    expect(header).toBe("**Monster Search** (100 shown of 652 matching)");
     const small = (await searchMonsters({ name: "Zombie" })).split("\n").find(l => l.startsWith("**Monster Search**"));
     expect(small).not.toContain("per name were checked");
   });
@@ -2000,14 +2007,17 @@ describe("both D&D Beyond and Open5e failing, logged out (item 4)", () => {
 });
 
 describe("partial-scan flag when page 1 under-reports its total (item 6)", () => {
-  it("a full first page whose total says 99 keeps the partial note", async () => {
+  it("a full first page whose total says 99: the tail reads on to all 160, exactly", async () => {
     extraMonsters = Array.from({ length: 158 }, (_, i) => monster({
       id: 3_200_000 + i, name: `Lagging ${String(i).padStart(3, "0")}`, sourceId: 232, sources: sources(232),
     }));
     firstPageTotal = 99;
     const out = await searchMonsters({ source: "rthw", cr: 0.25 });
-    expect(out).toContain("checked 100 of 100+");
-    expect(out).toContain("Only the first 100 of 100+ were checked against the CR/type/size filters");
+    // 160 entries; all but the CR 1 Psychic Gray Ooze are CR 1/4.
+    expect(out).toContain("(100 shown of 159 matching)");
+    expect(out).not.toContain("+ matching");
+    expect(out).not.toContain("could be read");
+    expect(listUrls.filter(u => u.includes("sources=232"))).toHaveLength(2);
   });
 
   it("a genuine total of exactly 100 stays plain", async () => {
@@ -2016,15 +2026,16 @@ describe("partial-scan flag when page 1 under-reports its total (item 6)", () =>
       id: 3_300_000 + i, name: `Exact ${String(i).padStart(3, "0")}`, sourceId: 232, sources: sources(232),
     }));
     const out = await searchMonsters({ source: "rthw", cr: 0.25 });
-    expect(out).toContain("checked 100 of 100 matched by source");
+    // All but the CR 1 Psychic Gray Ooze are CR 1/4.
+    expect(out).toContain("(99 shown of 99 matching)");
     expect(out).not.toContain("100+");
-    expect(out).not.toContain("Only the first");
+    expect(out).not.toContain("could be read");
   });
 
   it("a complete short scan stays plain", async () => {
     const out = await searchMonsters({ source: "rthw", cr: 0.25 });
     expect(out).not.toContain("+");
-    expect(out).not.toContain("Only the first");
+    expect(out).not.toContain("could be read");
   });
 });
 
@@ -2125,24 +2136,24 @@ describe("minors C #6: an SRD record with a null AC or HP prints dashes for that
 });
 
 describe("minors C #7: a scan of exactly the cap is complete", () => {
-  it("600 entries in all, 600 checked: no 600+ and no partial note", async () => {
+  it("600 entries in all: the exact count, no 600+ and no partial note", async () => {
     // 598 + the two RtHW entries in ALL_MONSTERS: exactly MAX_FILTER_SCAN.
     extraMonsters = Array.from({ length: 598 }, (_, i) => monster({
       id: 3_400_000 + i, name: `Cap ${String(i).padStart(3, "0")}`, sourceId: 232, sources: sources(232),
     }));
     const out = await searchMonsters({ source: "rthw", cr: 0.25 });
-    expect(out).toContain("checked 600 of 600 matched by source");
+    expect(out).toContain("(100 shown of 599 matching)"); // all but the CR 1 Psychic Gray Ooze
     expect(out).not.toContain("600+");
-    expect(out).not.toContain("Only the first");
+    expect(out).not.toContain("could be read");
   });
 
-  it("more than the cap still says so", async () => {
+  it("more than the old 600 cap: the exact book count", async () => {
     extraMonsters = Array.from({ length: 640 }, (_, i) => monster({
       id: 3_500_000 + i, name: `Over ${String(i).padStart(3, "0")}`, sourceId: 232, sources: sources(232),
     }));
     const out = await searchMonsters({ source: "rthw", cr: 0.25 });
-    expect(out).toContain("checked 600 of 642 matched by source");
-    expect(out).toContain("Only the first 600 of 642 were checked");
+    expect(out).toContain("(100 shown of 641 matching)"); // all but the CR 1 Psychic Gray Ooze
+    expect(out).not.toContain("could be read");
   });
 });
 
@@ -2775,6 +2786,176 @@ describe("near matches (B11 option B)", () => {
     const labelAt = lines.findIndex(l => l.startsWith("No monster names match"));
     expect(labelAt).toBeGreaterThan(empty);
     expect(lines.findIndex(l => l.includes("**Goblin Warrior**"))).toBeGreaterThan(labelAt);
+  });
+});
+
+// ── Exact candidate sets and totals (B11, G4/G5/G8) ──────────────────────────
+
+describe("exact candidate sets and totals (B11)", () => {
+  const countLine = (out: string) => out.split("\n").find(l => l.startsWith("**Monster Search**"));
+  const entryLines = (out: string) => out.split("\n").filter(l => l.startsWith("- **"));
+  const searchRequests = () => listUrls.filter(u => u.includes("/v1/Monster?search="));
+  const INCOMPLETE_NOTE = "*Only 675 of 900+ entries could be read from D&D Beyond, so the count may be short. Try again in a few minutes.*";
+
+  describe("split-twin fixture: a twin pair whose type differs between editions", () => {
+    beforeEach(() => {
+      // The 2014 entry sits inside the old 600-entry scan, its 2024 twin beyond it.
+      leadMonsters = [monster({ id: 8_500_001, name: "Gnarl Hag", typeId: 16, isLegacy: true, sourceId: 1, sources: sources(1) })];
+      extraMonsters = [monster({ id: 8_500_002, name: "Gnarl Hag", typeId: 8, sourceId: 147, sources: sources(147) })];
+    });
+
+    it("a 2024 type filter only the 2014 twin passes hides it and counts it, with no false reason", async () => {
+      const out = await searchMonsters({ type: "undead" });
+      expect(out).not.toContain("Gnarl Hag");
+      expect(out).not.toContain("no 2024 version found");
+      // The footer also counts the base fixtures' undead twin pairs (Zombie,
+      // Zombie Clot, Beholder): the Gnarl Hag pair adds exactly one hidden 2014 version.
+      const hiddenCount = (o: string) => Number(/^(\d+) 2014 versions? hidden — /.exec(o.split("\n").at(-1) ?? "")?.[1] ?? 0);
+      expect(out.split("\n").at(-1)).toBe('4 2014 versions hidden — rules_edition: "2014" shows them.');
+      leadMonsters = [];
+      extraMonsters = [];
+      clearMonsterCache();
+      expect(hiddenCount(await searchMonsters({ type: "undead" }))).toBe(3);
+    });
+
+    it("the type the 2024 twin has lists it", async () => {
+      const out = await searchMonsters({ type: "humanoid" });
+      expect(entryLines(out).some(l => l.startsWith("- **Gnarl Hag** [2024]"))).toBe(true);
+      expect(out).not.toContain("- **Gnarl Hag** [2014]");
+    });
+  });
+
+  it("a CR only an entry beyond the first 600 has finds it, with an exact count", async () => {
+    const out = await searchMonsters({ cr: 21 });
+    expect(out).toContain("- **Filler Titan** [2024]");
+    expect(countLine(out)).toBe("**Monster Search** (1 shown of 1 matching)");
+  });
+
+  it("a bare browse counts every selected entry, from exactly one full-list scan", async () => {
+    // One line per official name (twins and same-edition copies collapse), plus each homebrew entry.
+    const official = new Set(ALL_MONSTERS.filter(m => m.isHomebrew === false).map(m => m.name)).size;
+    const homebrewCount = ALL_MONSTERS.filter(m => m.isHomebrew !== false).length;
+    const out = await searchMonsters({});
+    expect(countLine(out)).toBe(`**Monster Search** (100 shown of ${official + homebrewCount} matching)`);
+    expect(entryLines(out)).toHaveLength(100);
+    expect(searchRequests().every(u => u.includes("search=&") && u.includes("take=100"))).toBe(true);
+    expect(searchRequests().filter(u => u.includes("&skip=0&"))).toHaveLength(1);
+  });
+
+  it("a name with more than NAME_SCAN_LIMIT hits is matched over the full list, not paged by name", async () => {
+    const out = await searchMonsters({ name: "Filler" });
+    expect(listUrls.some(u => u.includes("search=Filler&skip=100"))).toBe(false);
+    expect(listUrls.some(u => u.includes("search=&skip=0"))).toBe(true);
+    expect(countLine(out)).toBe("**Monster Search** (100 shown of 652 matching)");
+    expect(out).not.toContain("per name were checked");
+  });
+
+  it("a name with more than a page of hits is paged in full", async () => {
+    extraMonsters = Array.from({ length: 150 }, (_, i) => monster({
+      id: 8_510_000 + i, name: `Murk ${String(i).padStart(3, "0")}`, sourceId: 147, sources: sources(147),
+    }));
+    const out = await searchMonsters({ name: "Murk" });
+    expect(listUrls.some(u => u.includes("search=Murk&skip=0&"))).toBe(true);
+    expect(listUrls.some(u => u.includes("search=Murk&skip=100&"))).toBe(true);
+    expect(listUrls.some(u => u.includes("search=&"))).toBe(false);
+    expect(countLine(out)).toBe("**Monster Search** (100 shown of 150 matching)");
+  });
+
+  describe("an unknown type or size asks D&D Beyond nothing", () => {
+    it("no source: Open5e's not-found answer", async () => {
+      expect(await searchMonsters({ type: "dragonish" })).toBe("O5 SEARCH RESULT");
+      expect(searchRequests()).toHaveLength(0);
+      expect(o5SearchMonstersSection).toHaveBeenCalledWith(expect.objectContaining({ type: "dragonish" }), "not-found");
+      expect(await searchMonsters({ size: "colossal", name: "Zombie" })).toBe("O5 SEARCH RESULT");
+      expect(searchRequests()).toHaveLength(0);
+    });
+
+    it("a book: the empty-book line, with no appears-in hint", async () => {
+      expect(await searchMonsters({ type: "dragonish", source: "mm-2024", name: "Zombie" }))
+        .toBe("No monsters matching the search criteria in Monster Manual [mm-2024].");
+      expect(searchRequests()).toHaveLength(0);
+      expect(o5SearchMonstersSection).not.toHaveBeenCalled();
+    });
+
+    it("homebrew: the homebrew no-match line, with the name when one was given", async () => {
+      expect(await searchMonsters({ type: "dragonish", source: "homebrew" }))
+        .toBe("No homebrew monsters found matching the search criteria.");
+      expect(await searchMonsters({ size: "colossal", source: "homebrew", name: "Zombie" }))
+        .toBe('No homebrew monsters found matching "Zombie".');
+      expect(searchRequests()).toHaveLength(0);
+    });
+
+    it("a known type or size still asks", async () => {
+      await searchMonsters({ type: "UNDEAD" });
+      expect(searchRequests().length).toBeGreaterThan(0);
+      listUrls.length = 0;
+      clearMonsterCache();
+      await searchMonsters({ size: "or small" }); // part of the config's combined "Medium or Small"
+      expect(searchRequests().length).toBeGreaterThan(0);
+    });
+  });
+
+  it('source: "homebrew" counts every homebrew entry, wherever it sits in the list', async () => {
+    extraMonsters = [monster({ id: 8_520_000, name: "Deep Homebrew Thing", isHomebrew: true, sourceId: 147, sources: sources(147) })];
+    const out = await searchMonsters({ source: "homebrew" });
+    expect(out).toContain("Deep Homebrew Thing");
+    expect(countLine(out)).toBe("**Monster Search** (3 shown of 3 matching)");
+  });
+
+  it("an incomplete scan says the total may be short", async () => {
+    firstPageTotal = 900; // 675 entries can be read, even after the retry
+    const out = await searchMonsters({ cr: 20 });
+    expect(countLine(out)).toBe("**Monster Search** (1 shown of 1+ matching)");
+    expect(out).toContain(INCOMPLETE_NOTE);
+  });
+
+  it("a complete scan carries no note and no +", async () => {
+    const out = await searchMonsters({ cr: 20 });
+    expect(countLine(out)).toBe("**Monster Search** (1 shown of 1 matching)");
+    expect(out).not.toContain("could be read");
+  });
+
+  describe("incomplete scans without a count line keep the note", () => {
+    beforeEach(() => { firstPageTotal = 900; });
+
+    it("a hidden-only no-match", async () => {
+      // The 2024 Psychic Gray Ooze is CR 1, its 2014 twin CR 1/2.
+      const out = await searchMonsters({ cr: 0.5 });
+      expect(out).toContain("No monsters found matching the search criteria.");
+      expect(out).toContain(INCOMPLETE_NOTE);
+    });
+
+    it("a homebrew no-match", async () => {
+      const out = await searchMonsters({ source: "homebrew", cr: 24 });
+      expect(out).toContain("No homebrew monsters found matching the search criteria.");
+      expect(out).toContain(INCOMPLETE_NOTE);
+    });
+
+    it("the Open5e not-found fallback", async () => {
+      const out = await searchMonsters({ cr: 24 });
+      expect(out).toContain("O5 SEARCH RESULT");
+      expect(out).toContain(INCOMPLETE_NOTE);
+    });
+
+    it("a near-match reply", async () => {
+      FUZZY.gobilnz = [WOLF_2024];
+      try {
+        const out = await searchMonsters({ name: "gobilnz" });
+        expect(out).toContain('No monster names match "gobilnz". Closest matches from D&D Beyond:');
+        expect(out).toContain("- **Wolf** [2024]");
+        expect(out).toContain(INCOMPLETE_NOTE);
+      } finally {
+        delete FUZZY.gobilnz;
+      }
+    });
+  });
+
+  it("a search leaves the shared cached list as it was", async () => {
+    const before = (await getFullMonsterList(LOGGED_IN)).entries.map(e => e.id);
+    await searchMonsters({});
+    await searchMonsters({ type: "undead" });
+    await searchMonsters({ name: "Filler" });
+    expect((await getFullMonsterList(LOGGED_IN)).entries.map(e => e.id)).toEqual(before);
   });
 });
 

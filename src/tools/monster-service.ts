@@ -158,7 +158,7 @@ export function mergeAccess(into: AccessMap, list: Pick<MonsterListResponse, "ac
 }
 
 /** Locked iff the list map says 4. Any other value, or no entry, counts as available. */
-export function isLockedIn(access: AccessMap, id: number): boolean {
+export function isLockedIn(access: ReadonlyMap<number, number>, id: number): boolean {
   return access.get(id) === 4;
 }
 

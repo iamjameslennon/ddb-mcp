@@ -332,8 +332,10 @@ export async function getMonster(
 
     // 20 slots per spelling so a crowded name (e.g. "Zombie" has Ash/Beholder/
     // Girallon/Greater/Ogre/Strahd/Yellow Musk/plain across both editions)
-    // doesn't miss the intended entry. Homebrew pages through the same
-    // MAX_FILTER_SCAN entries as searchMonsters, so get and search agree.
+    // doesn't miss the intended entry. Homebrew pages through the name's first
+    // MAX_FILTER_SCAN hits. The search reads every hit (or the full list), so it
+    // can list a homebrew entry past that cap that this lookup misses (a spec
+    // non-goal: ddb_get_monster is unchanged).
     const { data: candidates, access, snapshot } = homebrew
       ? await fetchMonsterPages(monsterName, [], MAX_FILTER_SCAN, asker)
       : await fetchCandidates(monsterName, 20, sourceIds, asker);

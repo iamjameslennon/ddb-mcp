@@ -3,7 +3,7 @@ import { buildSourceIndex, definitionTiebreak, normalizeName, twinNames, type Ed
 import { resolveSource, sourceLabel } from "../src/source-filter.js";
 import {
   selectCatalog, lookupCatalog, paginateResults, renderSection, plainSection, withSourceCaveatSection,
-  lookupCatalogAdapter, type CatalogAdapter, type CatalogOwner, type LookupAdapter,
+  lookupCatalogAdapter, formatCount, type CatalogAdapter, type CatalogOwner, type LookupAdapter,
 } from "../src/tools/edition-search.js";
 
 // The real snapshot ids and categories of the books these tests name.
@@ -522,5 +522,14 @@ describe("withSourceCaveatSection keeps the section structure (minors B item 2)"
   it("returns the section untouched with no source", () => {
     const s = { header: "H", body: "B", footer: "F", hidden: 0 };
     expect(withSourceCaveatSection(s, undefined)).toBe(s);
+  });
+});
+
+describe("formatCount", () => {
+  it("groups thousands with commas, whatever the process locale", () => {
+    expect(formatCount(0)).toBe("0");
+    expect(formatCount(652)).toBe("652");
+    expect(formatCount(1601)).toBe("1,601");
+    expect(formatCount(1234567)).toBe("1,234,567");
   });
 });

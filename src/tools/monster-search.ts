@@ -3,7 +3,7 @@
  * its Open5e fallback.
  */
 
-import { captureSession } from "../session-fetch.js";
+import { captureSession, type SessionSnapshot } from "../session-fetch.js";
 import { getSourceIndex } from "../game-config.js";
 import {
   classifyEdition, groupAndSelect, monsterTiebreak, twinAliases,
@@ -17,10 +17,11 @@ import { resolveSource, isHomebrewSource, sourceLabel, unknownSourceError, type 
 import { wrapUntrusted } from "../utils.js";
 import { matchesAtWordStart } from "../name-match.js";
 import { o5SearchMonstersSection, o5MonsterInEdition, type O5EditionMonster } from "../open5e.js";
-import { renderSection, plainSection, noMatchSection, sourceFraming, withSourceCaveatSection, type SearchSection } from "./edition-search.js";
+import { renderSection, plainSection, noMatchSection, sourceFraming, withSourceCaveatSection, formatCount, type SearchSection } from "./edition-search.js";
 import {
-  askerNow, configFor, assertCurrentAfter, fetchMonsterList, fetchMonsterPages, mergeAccess, isLockedIn, availableSourcesFor,
-  sizeName, crDisplay, monsterTwin, PAGE_SIZE, MAX_FILTER_SCAN, type DdbMonster, type AccessMap,
+  askerNow, configFor, assertCurrentAfter, fetchMonsterList, scanAllPages, getFullMonsterList, mergeAccess, isLockedIn, availableSourcesFor,
+  sizeName, crDisplay, monsterTwin, PAGE_SIZE, SIZE_MAP,
+  type Asker, type AccessMap, type MonsterListEntry, type MonsterListResponse, type MonsterScan,
 } from "./monster-service.js";
 
 // `source: "homebrew"` never returns official entries, so when D&D Beyond
@@ -65,7 +66,7 @@ interface RowContext {
   sourceIds: number[];
   anonymous: boolean;
 }
-type ListedRow = { m: DdbMonster; info: EditionInfo; reason?: SelectionReason; srd?: O5EditionMonster; statsUnknown?: boolean };
+type ListedRow = { m: MonsterListEntry; info: EditionInfo; reason?: SelectionReason; srd?: O5EditionMonster; statsUnknown?: boolean };
 
 /**
  * One result line, wrapped whole unless the entry is explicitly official. Normal
@@ -104,6 +105,126 @@ export const NEAR_MATCH_LIMIT = 10;
 /** Not edition text: it says the lines below are not name matches. */
 export const nearMatchLabel = (searchTerm: string): string =>
   `No monster names match "${searchTerm}". Closest matches from D&D Beyond:`;
+
+/**
+ * R2: a name whose spellings each have at most this many hits is paged in full
+ * by name; with more in any spelling, the name rules run over the full list.
+ */
+export const NAME_SCAN_LIMIT = 500;
+
+/**
+ * Everything a search judges. `entries` and `access` may be a cached scan's own
+ * arrays, shared by every caller: read only. `checked` entries were read of the
+ * `scanTotal` reported; `complete` is false when a scan came up short (R3).
+ * `typedFirstPage` is the typed spelling's first page, in D&D Beyond's order,
+ * for near matches (R10). `snapshot` is the one every request was held to.
+ */
+interface Candidates {
+  entries: readonly MonsterListEntry[];
+  access: ReadonlyMap<number, number>;
+  complete: boolean;
+  checked: number;
+  scanTotal: number;
+  typedFirstPage: readonly MonsterListEntry[];
+  snapshot: SessionSnapshot;
+}
+
+type ScanPart = Pick<Candidates, "entries" | "access" | "complete" | "checked" | "scanTotal">;
+
+const scanPart = (scan: MonsterScan): ScanPart =>
+  ({ entries: scan.entries, access: scan.access, complete: scan.complete, checked: scan.entries.length, scanTotal: scan.scanTotal });
+
+/**
+ * A spelling's first page is all of its hits unless its total says there are
+ * more, or a full page outnumbers its total (a total that lags, as in scanAllPages).
+ */
+function pageIsWhole(page: MonsterListResponse): boolean {
+  const data = page.data ?? [];
+  const total = page.pagination?.total ?? 0;
+  return total <= PAGE_SIZE && !(data.length >= PAGE_SIZE && data.length > total);
+}
+
+function pageScan(page: MonsterListResponse): ScanPart {
+  const entries = page.data ?? [];
+  const access: AccessMap = new Map();
+  mergeAccess(access, page);
+  return { entries, access, complete: true, checked: entries.length, scanTotal: Math.max(page.pagination?.total ?? 0, entries.length) };
+}
+
+/**
+ * Every candidate a search judges, all under one session snapshot.
+ * - No name: the full list (of the book, when `sourceIds` names one).
+ * - A name: page 1 of each twin spelling. When any spelling has more than
+ *   NAME_SCAN_LIMIT hits, the name rules (G1/G2) run over the full list instead,
+ *   keeping each matching entry's whole twin group for edition selection;
+ *   otherwise each spelling with more than a page is scanned in full. Only the
+ *   typed spelling's failure fails the search.
+ * Never mutates a scan: merged results are new arrays and maps.
+ */
+async function gatherCandidates(searchTerm: string, sourceIds: number[], asker: Asker): Promise<Candidates> {
+  const snapshot = captureSession();
+  if (!searchTerm) {
+    const scan = await getFullMonsterList(asker, { sourceIds, bound: snapshot });
+    assertCurrentAfter(snapshot, asker);
+    return { ...scanPart(scan), typedFirstPage: [], snapshot };
+  }
+
+  const spellings = twinAliases(searchTerm, monsterTwin);
+  const firstPages = await Promise.all(spellings.map((term, i) => {
+    const page = fetchMonsterList(term, PAGE_SIZE, { sourceIds, asker, bound: snapshot });
+    return i === 0 ? page : page.catch(() => null);
+  }));
+  const typedFirstPage = firstPages[0]?.data ?? [];
+
+  let part: ScanPart;
+  if (firstPages.some(page => (page?.pagination?.total ?? 0) > NAME_SCAN_LIMIT)) {
+    const scan = await getFullMonsterList(asker, { sourceIds, bound: snapshot });
+    const matches = nameMatcher(searchTerm);
+    const twins = new Set(scan.entries.filter(matches).map(m => monsterTwin(m.name)));
+    part = { ...scanPart(scan), entries: scan.entries.filter(m => twins.has(monsterTwin(m.name))) };
+  } else {
+    const parts = await Promise.all(spellings.map(async (term, i): Promise<ScanPart | null> => {
+      const page = firstPages[i];
+      if (!page) return null;
+      if (pageIsWhole(page)) return pageScan(page);
+      const scan = scanAllPages(term, sourceIds, asker, snapshot).then(scanPart);
+      return i === 0 ? scan : scan.catch(() => null);
+    }));
+    const seen = new Set<number>();
+    const entries: MonsterListEntry[] = [];
+    const access: AccessMap = new Map();
+    part = { entries, access, complete: true, checked: 0, scanTotal: 0 };
+    for (const p of parts) {
+      if (!p) continue;
+      for (const m of p.entries) {
+        if (!seen.has(m.id)) { seen.add(m.id); entries.push(m); }
+      }
+      for (const [id, value] of p.access) access.set(id, value);
+      part.complete &&= p.complete;
+      part.checked += p.checked;
+      part.scanTotal += p.scanTotal;
+    }
+  }
+  assertCurrentAfter(snapshot, asker);
+  return { ...part, typedFirstPage, snapshot };
+}
+
+/** The note an answer from an incomplete scan carries, wherever it has no count line to mark. */
+function incompleteNote(c: Pick<Candidates, "complete" | "checked" | "scanTotal">): string {
+  return c.complete ? ""
+    : `\n*Only ${formatCount(c.checked)} of ${formatCount(c.scanTotal)}+ entries could be read from D&D Beyond, so the count may be short. Try again in a few minutes.*`;
+}
+
+/**
+ * A reply with the incomplete-scan note after its body. Not `noMatch`: nothing
+ * matched only in what could be read, so ddb_search_site must keep the note.
+ */
+function withIncompleteNote(s: SearchSection, note: string): SearchSection {
+  if (!note) return s;
+  const out: SearchSection = { ...s, body: s.body + note };
+  delete out.noMatch;
+  return out;
+}
 
 export interface MonsterSearchParams {
   name?: string;
@@ -149,13 +270,12 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
   if (!config && (asker.anonymous || params.cr !== undefined || params.type || params.size)) {
     throw new Error("Game config unavailable");
   }
-  const info = (m: DdbMonster) => classifyEdition(m, index);
+  const info = (m: MonsterListEntry) => classifyEdition(m, index);
   const crMap = new Map(config?.challengeRatings.map(cr => [cr.id, cr]) ?? []);
   const typeMap = new Map(config?.monsterTypes.map(t => [t.id, t.name]) ?? []);
 
   const searchTerm = params.name?.trim() ?? "";
 
-  // Resolve filter IDs up front so we can pass them to the API.
   const targetCrId = params.cr !== undefined
     ? config?.challengeRatings.find(cr => cr.value === params.cr)?.id
     : undefined;
@@ -167,67 +287,65 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
   const sourceIds = book?.ids ?? [];
   const rowCtx: RowContext = { crMap, typeMap, config, index, sourceIds, anonymous: asker.anonymous };
 
-  // Source filters server-side. CR/type/size (and homebrew) filter client-side,
-  // so page through results (up to MAX_FILTER_SCAN) rather than judging one page.
-  const attributeFilters = targetCrId !== undefined || Boolean(params.type) || Boolean(params.size);
-  const clientFilters = attributeFilters || homebrew;
-  // A name search takes the service's cap per spelling, so twin grouping sees
-  // as much of each group as one request can; a bare browse keeps 20.
-  const take = searchTerm || params.source ? PAGE_SIZE : 20;
-  const fetchTerm = async (term: string): Promise<{ data: DdbMonster[]; total: number; access: AccessMap; incomplete: boolean }> => {
-    if (clientFilters) return fetchMonsterPages(term, sourceIds, MAX_FILTER_SCAN, asker);
-    const page = await fetchMonsterList(term, take, { sourceIds, asker });
-    const access: AccessMap = new Map();
-    mergeAccess(access, page);
-    return { data: page.data ?? [], total: page.pagination.total, access, incomplete: false };
-  };
-  // Every spelling of the term's twin group (Thug and Tough are one creature,
-  // but a search for one never returns the other), under one snapshot, as in
-  // fetchCandidates. Only the typed term's own query fails the search.
-  const snapshot = captureSession();
-  const [typed, ...aliases] = searchTerm ? twinAliases(searchTerm, monsterTwin) : [""];
-  const results = await Promise.all([fetchTerm(typed), ...aliases.map(alias => fetchTerm(alias).catch(() => null))]);
-  assertCurrentAfter(snapshot, asker);
-  // `total` is the alias totals' sum minus the duplicates met while merging:
-  // exact when every scan is complete, an upper bound otherwise.
-  const seen = new Set<number>();
-  const fetched: DdbMonster[] = [];
-  const access: AccessMap = new Map();
-  let total = 0;
-  for (const result of results) {
-    if (!result) continue;
-    total += result.total;
-    for (const [id, value] of result.access) access.set(id, value);
-    for (const m of result.data) {
-      if (seen.has(m.id)) total--;
-      else { seen.add(m.id); fetched.push(m); }
-    }
-  }
-  const checked = fetched.length;
-  // Never "checked N of M" with N > M: the service's totals can lag its pages.
-  total = Math.max(total, checked);
-  // A scan known to be incomplete although the totals agree prints "M+".
-  const incomplete = clientFilters && results.some(r => r?.incomplete);
-  const partialScan = clientFilters && (checked < total || incomplete);
-  const totalText = checked < total ? String(total) : `${total}+`;
-  // A name search asks for the service's cap per spelling; when a spelling has
-  // more matches than that, its twins beyond the cap were never seen.
-  const nameCapped = Boolean(searchTerm) && !clientFilters
-    && results.some(r => r !== null && r.data.length >= PAGE_SIZE && r.total > r.data.length);
-
+  // CR, type and size filter locally (the service's own filters would split
+  // twin groups whose CR, type or size changed between editions).
   const searchType = params.type?.toLowerCase();
   const searchSize = params.size?.toLowerCase();
-  const passes = (m: DdbMonster) =>
+  const passes = (m: MonsterListEntry) =>
     (targetCrId === undefined || m.challengeRatingId === targetCrId)
     && (!searchType || (typeMap.get(m.typeId) ?? "").toLowerCase().includes(searchType))
     && (!searchSize || (sizeName(config, m.sizeId) ?? "").toLowerCase().includes(searchSize));
+
+  /** No entry matched (the candidates, when known, say whether everything could be read). */
+  async function noMatchReply(hidden: number, c?: Candidates): Promise<SearchSection> {
+    const note = c ? incompleteNote(c) : "";
+    if (homebrew) {
+      return withIncompleteNote(noMatchSection(searchTerm
+        ? `No homebrew monsters found matching "${searchTerm}".`
+        : "No homebrew monsters found matching the search criteria."), note);
+    }
+    if (book) {
+      // Open5e only carries the SRD — never substitute it for a requested book.
+      let msg = `No monsters matching the search criteria in ${sourceLabel(index, sourceIds[0])}.`;
+      if (searchTerm && c) {
+        const available = await availableSourcesFor(searchTerm, index, asker, c.snapshot);
+        if (available.length) msg += ` "${searchTerm}" appears in: ${available.join(", ")}.`;
+      }
+      return withIncompleteNote(noMatchSection(msg), note);
+    }
+    // Only the other edition has a match: say so, rather than substitute the SRD.
+    if (hidden > 0) {
+      return withIncompleteNote({
+        header: searchHeader({ requested }),
+        body: "No monsters found matching the search criteria.",
+        footer: searchFooter(requested, hidden),
+        hidden,
+        noMatch: true,
+      }, note);
+    }
+    const o5 = await o5SearchMonstersSection(params, "not-found").catch(() => noMatchSection("No monsters found matching the search criteria."));
+    return withIncompleteNote(o5, note);
+  }
+
+  // A type or size no name contains can match nothing: answer without asking D&D Beyond.
+  const sizeNames = [...(config?.creatureSizes ?? []).map(s => s.id), ...Object.keys(SIZE_MAP).map(Number)]
+    .map(id => (sizeName(config, id) ?? "").toLowerCase());
+  if ((searchType && ![...typeMap.values()].some(t => t.toLowerCase().includes(searchType)))
+    || (searchSize && !sizeNames.some(s => s.includes(searchSize)))) {
+    return noMatchReply(0);
+  }
+
+  // Every candidate, under one snapshot (a book narrows them server-side).
+  const candidates = await gatherCandidates(searchTerm, sourceIds, asker);
+  const { entries: fetched, access } = candidates;
+  const note = incompleteNote(candidates);
 
   // With a source (a book, or homebrew), every matching entry is listed (no
   // edition selection, no swap); otherwise one entry per twin group, the other
   // edition's twins hidden, and a locked group shows its available twin.
   // `srd`: logged out, the requested entry is locked but its SRD has it, so the
   // line shows the SRD record's AC and HP (the locked list entry's are zeroed).
-  type Row = { m: DdbMonster; info: EditionInfo; reason?: SelectionReason; srd?: O5EditionMonster };
+  type Row = { m: MonsterListEntry; info: EditionInfo; reason?: SelectionReason; srd?: O5EditionMonster };
   let monsters: Row[];
   let hidden = 0;
   const nameOk = searchTerm ? nameMatcher(searchTerm) : () => true;
@@ -272,96 +390,56 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
   monsters = orderRows(monsters, searchTerm);
 
   /** R10: the typed spelling's hits as the service ranked them, past CR/type/size (and, for homebrew, only non-official). */
-  function nearMatchHits(typedHits: DdbMonster[]): DdbMonster[] {
+  function nearMatchHits(typedHits: readonly MonsterListEntry[]): MonsterListEntry[] {
     return typedHits.filter(m => passes(m) && (!homebrew || m.isHomebrew !== false)).slice(0, NEAR_MATCH_LIMIT);
   }
 
   if (monsters.length === 0) {
-    const scope = partialScan ? ` (checked the first ${checked} of ${totalText} entries)` : "";
     // G3: nothing fetched, from any spelling, matches the typed name. The typed
-    // spelling's own hits (never an alias's) are then listed as D&D Beyond's closest.
-    const nearHits = searchTerm && !fetched.some(nameOk) ? nearMatchHits(results[0]?.data ?? []) : [];
+    // spelling's own first page (never an alias's) is then listed as D&D Beyond's closest.
+    const nearHits = searchTerm && !fetched.some(nameOk) ? nearMatchHits(candidates.typedFirstPage) : [];
     if (nearHits.length) {
       const shownNear = await withListStats(nearHits.map(m => ({ m, info: homebrew ? HOMEBREW_INFO : info(m) })), access);
       // The edition-neutral header replaces the path's edition claim (and the book header's
       // "every entry"); the book's own source note is kept.
       const header = NEAR_MATCH_RULES_LINE;
-      const note = book ? sectionHeader().note : null;
+      const bookNote = book ? sectionHeader().note : null;
       const body: string[] = [];
       // R9: a book search leads with today's empty-book line and its "appears in" hint.
       if (params.source && !homebrew) {
-        let msg = `No monsters matching the search criteria in ${sourceLabel(index, sourceIds[0])}${scope}.`;
-        const available = await availableSourcesFor(searchTerm, index, asker, snapshot);
+        let msg = `No monsters matching the search criteria in ${sourceLabel(index, sourceIds[0])}.`;
+        const available = await availableSourcesFor(searchTerm, index, asker, candidates.snapshot);
         if (available.length) msg += ` "${searchTerm}" appears in: ${available.join(", ")}.`;
         body.push(msg);
       }
-      if (note) body.push(note);
+      if (bookNote) body.push(bookNote);
       body.push(nearMatchLabel(searchTerm));
       for (const row of shownNear) body.push(formatRow(row, rowCtx));
+      // A near match judged over an incomplete scan may have missed a real match: say so.
+      if (note) body.push(note);
       // No noMatch: ddb_search_site's "all" must keep this section.
       return { header, body: body.join("\n"), footer: searchFooter(requested, 0), hidden: 0 };
     }
-    if (homebrew) {
-      return noMatchSection(searchTerm
-        ? `No homebrew monsters found matching "${searchTerm}"${scope}.`
-        : `No homebrew monsters found matching the search criteria${scope}.`);
-    }
-    if (params.source) {
-      // Open5e only carries the SRD — never substitute it for a requested book.
-      const where = sourceLabel(index, sourceIds[0]);
-      let msg = `No monsters matching the search criteria in ${where}${scope}.`;
-      if (searchTerm) {
-        const available = await availableSourcesFor(searchTerm, index, asker, snapshot);
-        if (available.length) msg += ` "${searchTerm}" appears in: ${available.join(", ")}.`;
-      }
-      return noMatchSection(msg);
-    }
-    // Only the other edition has a match: say so, rather than substitute the SRD.
-    if (hidden > 0) {
-      return {
-        header: searchHeader({ requested }),
-        body: `No monsters found matching the search criteria${scope}.`,
-        footer: searchFooter(requested, hidden),
-        hidden,
-        noMatch: true,
-      };
-    }
-    return await o5SearchMonstersSection(params, "not-found").catch(() => noMatchSection("No monsters found matching the search criteria."));
+    return noMatchReply(hidden, candidates);
   }
 
-  const matchedBy = searchTerm && params.source ? "matched by name and source"
-    : searchTerm ? "matched by name"
-    : params.source ? "matched by source"
-    : "in the compendium";
   const shown = await withListStats(monsters.slice(0, PAGE_SIZE), access);
 
   const lines: string[] = [];
-  const { header, note } = sectionHeader();
-  if (note) lines.push(note);
-  // The note and the swap summary count every selected entry, as the header
-  // total does, not just the lines shown.
+  const { header, note: bookNote } = sectionHeader();
+  if (bookNote) lines.push(bookNote);
+  // The note and the swap summary count every selected entry, as the count line does, not just the lines shown.
   const lockedNote = lockedEntriesNote(monsters.filter(r => isLockedIn(access, r.m.id)).length, asker.anonymous);
   if (lockedNote) lines.push(lockedNote);
 
-  // Totals count the result after hiding: the fetched entries the selection
-  // dropped (hidden twins, same-edition duplicates) come off the service total.
-  const countText = clientFilters
-    ? `${shown.length} shown of ${monsters.length} matching; checked ${checked} of ${partialScan ? totalText : total} ${matchedBy}`
-    : `${shown.length} shown, ${total - (checked - monsters.length)} total ${matchedBy}`;
-  const capNote = nameCapped ? ` (the first ${PAGE_SIZE} matches per name were checked)` : "";
-  lines.push(`**Monster Search** (${countText})${capNote}\n`);
+  // The total is the selected, filtered rows themselves; "+" when a scan came up short.
+  lines.push(`**Monster Search** (${formatCount(shown.length)} shown of ${formatCount(monsters.length)}${candidates.complete ? "" : "+"} matching)\n`);
   for (const row of shown) lines.push(formatRow(row, rowCtx));
 
   if (shown.length < monsters.length) {
     lines.push(`\n*${monsters.length - shown.length} more matches not shown.*`);
   }
-  if (partialScan) {
-    lines.push(homebrew
-      ? `\n*Only the first ${checked} of ${totalText} were checked for homebrew entries — add a name to narrow the search.*`
-      : `\n*Only the first ${checked} of ${totalText} were checked against the CR/type/size filters — add a name or source to narrow the search.*`);
-  } else if (!clientFilters && checked < total) {
-    lines.push(`\n*Refine your search with a name term for more specific results.*`);
-  }
+  if (note) lines.push(note);
   const summary = lockedSwapSummary(requested, monsters.filter(r => isLockedReason(r.reason)).length, asker.anonymous);
   if (summary) lines.push(summary);
 
@@ -384,8 +462,8 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
  * that isn't 2014/2024) sets `statsUnknown`: the line prints dashes. Other
  * entries are returned as they are.
  */
-export async function withListStats<R extends { m: DdbMonster; info: EditionInfo; srd?: O5EditionMonster }>(
-  rows: R[], access: AccessMap,
+export async function withListStats<R extends { m: MonsterListEntry; info: EditionInfo; srd?: O5EditionMonster }>(
+  rows: R[], access: ReadonlyMap<number, number>,
 ): Promise<Array<R & { statsUnknown?: boolean }>> {
   return Promise.all(rows.map(async row => {
     const { m, info } = row;
@@ -405,12 +483,12 @@ export async function withListStats<R extends { m: DdbMonster; info: EditionInfo
  * either way, so a filtered search that matches nothing asks Open5e nothing.
  */
 export async function srdBackedGroups(
-  fetched: DdbMonster[], access: AccessMap, requested: RulesEdition,
-  info: (m: DdbMonster) => EditionInfo, tiebreak: (a: DdbMonster, b: DdbMonster) => number,
-  passes: (m: DdbMonster) => boolean,
+  fetched: readonly MonsterListEntry[], access: ReadonlyMap<number, number>, requested: RulesEdition,
+  info: (m: MonsterListEntry) => EditionInfo, tiebreak: (a: MonsterListEntry, b: MonsterListEntry) => number,
+  passes: (m: MonsterListEntry) => boolean,
 ): Promise<Map<string, O5EditionMonster>> {
   const other: RulesEdition = requested === "2024" ? "2014" : "2024";
-  const groups = new Map<string, DdbMonster[]>();
+  const groups = new Map<string, MonsterListEntry[]>();
   for (const m of fetched) {
     const key = monsterTwin(m.name);
     groups.set(key, [...(groups.get(key) ?? []), m]);
