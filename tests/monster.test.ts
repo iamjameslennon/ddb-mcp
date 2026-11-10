@@ -2796,6 +2796,8 @@ describe("exact candidate sets and totals (B11)", () => {
   const entryLines = (out: string) => out.split("\n").filter(l => l.startsWith("- **"));
   const searchRequests = () => listUrls.filter(u => u.includes("/v1/Monster?search="));
   const INCOMPLETE_NOTE = "*Only 675 of 900+ entries could be read from D&D Beyond, so the count may be short. Try again in a few minutes.*";
+  /** The note on a reply with no count line (owner ruling 2026-11-10). */
+  const MISSED_NOTE = "*Only 675 of 900+ entries could be read from D&D Beyond, so a match may have been missed. Try again in a few minutes.*";
 
   describe("split-twin fixture: a twin pair whose type differs between editions", () => {
     beforeEach(() => {
@@ -2922,19 +2924,22 @@ describe("exact candidate sets and totals (B11)", () => {
       // The 2024 Psychic Gray Ooze is CR 1, its 2014 twin CR 1/2.
       const out = await searchMonsters({ cr: 0.5 });
       expect(out).toContain("No monsters found matching the search criteria.");
-      expect(out).toContain(INCOMPLETE_NOTE);
+      expect(out).toContain(MISSED_NOTE);
+        expect(out).not.toContain("the count may be short");
     });
 
     it("a homebrew no-match", async () => {
       const out = await searchMonsters({ source: "homebrew", cr: 24 });
       expect(out).toContain("No homebrew monsters found matching the search criteria.");
-      expect(out).toContain(INCOMPLETE_NOTE);
+      expect(out).toContain(MISSED_NOTE);
+        expect(out).not.toContain("the count may be short");
     });
 
     it("the Open5e not-found fallback", async () => {
       const out = await searchMonsters({ cr: 24 });
       expect(out).toContain("O5 SEARCH RESULT");
-      expect(out).toContain(INCOMPLETE_NOTE);
+      expect(out).toContain(MISSED_NOTE);
+        expect(out).not.toContain("the count may be short");
     });
 
     it("a near-match reply", async () => {
@@ -2943,19 +2948,92 @@ describe("exact candidate sets and totals (B11)", () => {
         const out = await searchMonsters({ name: "gobilnz" });
         expect(out).toContain('No monster names match "gobilnz". Closest matches from D&D Beyond:');
         expect(out).toContain("- **Wolf** [2024]");
-        expect(out).toContain(INCOMPLETE_NOTE);
+        expect(out).toContain(MISSED_NOTE);
+        expect(out).not.toContain("the count may be short");
       } finally {
         delete FUZZY.gobilnz;
       }
     });
+
+    it("is not noMatch, so ddb_search_site keeps it; a complete no-match still is", async () => {
+      expect((await searchMonstersSection({ cr: 0.5 })).noMatch).toBeUndefined();
+      expect((await searchMonstersSection({ source: "homebrew", cr: 24 })).noMatch).toBeUndefined();
+      firstPageTotal = null;
+      clearMonsterCache();
+      expect((await searchMonstersSection({ cr: 0.5 })).noMatch).toBe(true);
+      expect((await searchMonstersSection({ source: "homebrew", cr: 24 })).noMatch).toBe(true);
+    });
   });
 
-  it("a search leaves the shared cached list as it was", async () => {
-    const before = (await getFullMonsterList(LOGGED_IN)).entries.map(e => e.id);
+  describe("a name's own scan (the per-spelling path)", () => {
+    const named = (prefix: string, n: number, base: number) => Array.from({ length: n }, (_, i) => monster({
+      id: base + i, name: `${prefix} ${String(i).padStart(3, "0")}`, sourceId: 147, sources: sources(147),
+    }));
+
+    it("a page 1 holding fewer entries than its total is scanned, and stays incomplete when the total is never reached", async () => {
+      extraMonsters = named("Hush", 60, 8_530_000);
+      firstPageTotal = 80; // under NAME_SCAN_LIMIT and under a page: the name path, not the full list
+      const out = await searchMonsters({ name: "Hush" });
+      expect(listUrls.some(u => u.includes("search=&"))).toBe(false);
+      expect(countLine(out)).toBe("**Monster Search** (60 shown of 60+ matching)");
+      expect(out).toContain("*Only 60 of 80+ entries could be read from D&D Beyond, so the count may be short. Try again in a few minutes.*");
+    });
+
+    it("a full page 1 whose total says it is all is still read past, then exact", async () => {
+      extraMonsters = named("Lull", 100, 8_540_000);
+      const out = await searchMonsters({ name: "Lull" });
+      expect(listUrls.some(u => u.includes("search=Lull&skip=100&"))).toBe(true);
+      expect(countLine(out)).toBe("**Monster Search** (100 shown of 100 matching)");
+      expect(out).not.toContain("could be read");
+    });
+  });
+
+  describe("a failed alias spelling marks the result incomplete (owner ruling 2026-11-10)", () => {
+    const THUG = monster({ id: 8_550_000, name: "Thug", typeId: 8, isLegacy: true, sourceId: 5, sources: sources(5) });
+
+    it("the alias's page 1 fails: +, and the note over what was read", async () => {
+      extraMonsters = [THUG];
+      failSearchTerms.add("tough");
+      const out = await searchMonsters({ name: "thug" });
+      expect(out).toContain("- **Thug** [2014]");
+      expect(countLine(out)).toBe("**Monster Search** (1 shown of 1+ matching)");
+      expect(out).toContain("*Only 1 of 1+ entries could be read from D&D Beyond, so the count may be short. Try again in a few minutes.*");
+    });
+
+    it("the alias's scan fails past page 1: +, and its page-1 total joins the note", async () => {
+      extraMonsters = [THUG, ...Array.from({ length: 150 }, (_, i) => monster({
+        id: 8_551_000 + i, name: `Tough Hide ${String(i).padStart(3, "0")}`, sourceId: 147, sources: sources(147),
+      }))];
+      const routed = vi.mocked(sessionFetch).getMockImplementation()!;
+      vi.mocked(sessionFetch).mockImplementation(async (input: string | URL | Request) =>
+        /search=tough&skip=100&/i.test(String(input)) ? mockResponse({}, 500) : routed(String(input)));
+      const out = await searchMonsters({ name: "thug" });
+      expect(countLine(out)).toBe("**Monster Search** (1 shown of 1+ matching)");
+      // Thug's 1 plus the alias's first page of 100, of 1 + 150 reported.
+      expect(out).toContain("*Only 101 of 151+ entries could be read from D&D Beyond, so the count may be short. Try again in a few minutes.*");
+    });
+
+    it("both spellings answering stays exact", async () => {
+      extraMonsters = [THUG];
+      const out = await searchMonsters({ name: "thug" });
+      expect(countLine(out)).toBe("**Monster Search** (1 shown of 1 matching)");
+      expect(out).not.toContain("could be read");
+    });
+  });
+
+  it("a search leaves the shared cached list as it was: entries and access map", async () => {
+    unownedIds.add(FILLERS[3].id as number); // a locked entry, so the access map holds a 4
+    const cached = await getFullMonsterList(LOGGED_IN);
+    const before = structuredClone({ entries: cached.entries, access: cached.access });
     await searchMonsters({});
     await searchMonsters({ type: "undead" });
     await searchMonsters({ name: "Filler" });
-    expect((await getFullMonsterList(LOGGED_IN)).entries.map(e => e.id)).toEqual(before);
+    await searchMonsters({ name: "Filler", cr: 20 });
+    const after = await getFullMonsterList(LOGGED_IN);
+    expect(after).toBe(cached); // still the one cached scan
+    expect(after.entries).toEqual(before.entries);
+    expect(after.access).toEqual(before.access);
+    expect(after.access.get(FILLERS[3].id as number)).toBe(4);
   });
 });
 

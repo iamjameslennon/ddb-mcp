@@ -135,21 +135,26 @@ const scanPart = (scan: MonsterScan): ScanPart =>
   ({ entries: scan.entries, access: scan.access, complete: scan.complete, checked: scan.entries.length, scanTotal: scan.scanTotal });
 
 /**
- * A spelling's first page is all of its hits unless its total says there are
- * more, or a full page outnumbers its total (a total that lags, as in scanAllPages).
+ * A spelling's first page is all of its hits only by scanAllPages' own rule
+ * (summarizeScan): it holds at least the reported total and came back short.
+ * Anything else (fewer entries than the total, or a full page) is scanned,
+ * which re-reads a short scan and flags it when it stays short (R3).
  */
 function pageIsWhole(page: MonsterListResponse): boolean {
   const data = page.data ?? [];
-  const total = page.pagination?.total ?? 0;
-  return total <= PAGE_SIZE && !(data.length >= PAGE_SIZE && data.length > total);
+  return data.length >= (page.pagination?.total ?? 0) && data.length < PAGE_SIZE;
 }
 
-function pageScan(page: MonsterListResponse): ScanPart {
+/** One page as a scan part; `complete` says whether it is all the spelling's hits. */
+function pageScan(page: MonsterListResponse, complete: boolean): ScanPart {
   const entries = page.data ?? [];
   const access: AccessMap = new Map();
   mergeAccess(access, page);
-  return { entries, access, complete: true, checked: entries.length, scanTotal: Math.max(page.pagination?.total ?? 0, entries.length) };
+  return { entries, access, complete, checked: entries.length, scanTotal: Math.max(page.pagination?.total ?? 0, entries.length) };
 }
+
+/** An alias spelling whose page 1 failed: nothing read, total unknown, so the result is incomplete ("+"). */
+const FAILED_ALIAS: ScanPart = { entries: [], access: new Map(), complete: false, checked: 0, scanTotal: 0 };
 
 /**
  * Every candidate a search judges, all under one session snapshot.
@@ -183,19 +188,24 @@ async function gatherCandidates(searchTerm: string, sourceIds: number[], asker: 
     const twins = new Set(scan.entries.filter(matches).map(m => monsterTwin(m.name)));
     part = { ...scanPart(scan), entries: scan.entries.filter(m => twins.has(monsterTwin(m.name))) };
   } else {
-    const parts = await Promise.all(spellings.map(async (term, i): Promise<ScanPart | null> => {
+    // A failed alias (owner ruling 2026-11-10) makes the result incomplete
+    // rather than silently short: its page 1 failing counts nothing read of an
+    // unknown total; its scan failing (a timeout included) keeps its page 1
+    // and that page's total. No retry. The typed spelling's failure still fails the search.
+    const parts = await Promise.all(spellings.map(async (term, i): Promise<ScanPart> => {
       const page = firstPages[i];
-      if (!page) return null;
-      if (pageIsWhole(page)) return pageScan(page);
+      if (!page) return FAILED_ALIAS;
+      if (pageIsWhole(page)) return pageScan(page, true);
       const scan = scanAllPages(term, sourceIds, asker, snapshot).then(scanPart);
-      return i === 0 ? scan : scan.catch(() => null);
+      return i === 0 ? scan : scan.catch(() => pageScan(page, false));
     }));
     const seen = new Set<number>();
     const entries: MonsterListEntry[] = [];
     const access: AccessMap = new Map();
     part = { entries, access, complete: true, checked: 0, scanTotal: 0 };
+    // `checked` and `scanTotal` are summed per spelling, so an entry two
+    // spellings both return counts twice: the note's numbers are upper bounds.
     for (const p of parts) {
-      if (!p) continue;
       for (const m of p.entries) {
         if (!seen.has(m.id)) { seen.add(m.id); entries.push(m); }
       }
@@ -209,10 +219,15 @@ async function gatherCandidates(searchTerm: string, sourceIds: number[], asker: 
   return { ...part, typedFirstPage, snapshot };
 }
 
-/** The note an answer from an incomplete scan carries, wherever it has no count line to mark. */
-function incompleteNote(c: Pick<Candidates, "complete" | "checked" | "scanTotal">): string {
-  return c.complete ? ""
-    : `\n*Only ${formatCount(c.checked)} of ${formatCount(c.scanTotal)}+ entries could be read from D&D Beyond, so the count may be short. Try again in a few minutes.*`;
+/**
+ * The note every answer from an incomplete scan carries. Under a count line the
+ * count may be short; a reply with none (no match, Open5e not-found, near
+ * matches) may have missed a match (owner ruling 2026-11-10).
+ */
+function incompleteNote(c: Pick<Candidates, "complete" | "checked" | "scanTotal">, countLine: boolean): string {
+  if (c.complete) return "";
+  const risk = countLine ? "the count may be short" : "a match may have been missed";
+  return `\n*Only ${formatCount(c.checked)} of ${formatCount(c.scanTotal)}+ entries could be read from D&D Beyond, so ${risk}. Try again in a few minutes.*`;
 }
 
 /**
@@ -298,7 +313,7 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
 
   /** No entry matched (the candidates, when known, say whether everything could be read). */
   async function noMatchReply(hidden: number, c?: Candidates): Promise<SearchSection> {
-    const note = c ? incompleteNote(c) : "";
+    const note = c ? incompleteNote(c, false) : "";
     if (homebrew) {
       return withIncompleteNote(noMatchSection(searchTerm
         ? `No homebrew monsters found matching "${searchTerm}".`
@@ -338,7 +353,8 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
   // Every candidate, under one snapshot (a book narrows them server-side).
   const candidates = await gatherCandidates(searchTerm, sourceIds, asker);
   const { entries: fetched, access } = candidates;
-  const note = incompleteNote(candidates);
+  const countNote = incompleteNote(candidates, true);
+  const noCountNote = incompleteNote(candidates, false);
 
   // With a source (a book, or homebrew), every matching entry is listed (no
   // edition selection, no swap); otherwise one entry per twin group, the other
@@ -416,7 +432,7 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
       body.push(nearMatchLabel(searchTerm));
       for (const row of shownNear) body.push(formatRow(row, rowCtx));
       // A near match judged over an incomplete scan may have missed a real match: say so.
-      if (note) body.push(note);
+      if (noCountNote) body.push(noCountNote);
       // No noMatch: ddb_search_site's "all" must keep this section.
       return { header, body: body.join("\n"), footer: searchFooter(requested, 0), hidden: 0 };
     }
@@ -439,7 +455,7 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
   if (shown.length < monsters.length) {
     lines.push(`\n*${monsters.length - shown.length} more matches not shown.*`);
   }
-  if (note) lines.push(note);
+  if (countNote) lines.push(countNote);
   const summary = lockedSwapSummary(requested, monsters.filter(r => isLockedReason(r.reason)).length, asker.anonymous);
   if (summary) lines.push(summary);
 
