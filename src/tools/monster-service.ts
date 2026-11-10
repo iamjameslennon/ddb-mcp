@@ -13,7 +13,7 @@ import { getGameConfig, getPublicGameConfig, type GameConfig } from "../game-con
 import { monsterTiebreak, twinNames, twinAliases, dedupeById, type SourceIndex } from "../edition.js";
 import { sourceLabel } from "../source-filter.js";
 import { TtlCache } from "../cache.js";
-import { stripHtmlRich } from "../utils.js";
+import { stripHtmlRich, mapWithConcurrency } from "../utils.js";
 
 export const MONSTER_SERVICE = "https://monster-service.dndbeyond.com";
 
@@ -28,9 +28,32 @@ export const SIZE_MAP: Record<number, string> = {
 
 export const monsterCache = new TtlCache<string>(24 * 60 * 60_000, 200); // 24 h, 200 entries
 
-/** Wipe the in-process monster cache. */
+/** How many entries `monsterCache` holds. Exported for tests. */
+export function monsterCacheSize(): number {
+  return monsterCache.size;
+}
+
+/** A complete full-list scan is kept 24 h. */
+export const FULL_LIST_TTL_MS = 24 * 60 * 60_000;
+/** A short scan (fewer entries than a reported total, R3) is kept only 5 min. */
+export const SHORT_LIST_TTL_MS = 5 * 60_000;
+
+/**
+ * Slim full-list scans (`getFullMonsterList`), one per asker key and sources
+ * list. Separate from `monsterCache`, which 62 raw pages would flush.
+ */
+const fullListCache = new TtlCache<MonsterScan>(FULL_LIST_TTL_MS, 32);
+/**
+ * The in-flight scan per key, so concurrent cold callers share one. A scan
+ * writes the cache, and releases its slot, only while it is still the entry here.
+ */
+const fullListPending = new Map<string, Promise<MonsterScan>>();
+
+/** Wipe the in-process monster caches, in-flight full-list scans included. */
 export function clearMonsterCache(): void {
   monsterCache.clear();
+  fullListCache.clear();
+  fullListPending.clear();
 }
 
 // Drop account-derived monster state on every session transition — the
@@ -38,6 +61,8 @@ export function clearMonsterCache(): void {
 // config itself. Registered once per module lifetime.
 onSessionInvalidated(() => {
   monsterCache.clear();
+  fullListCache.clear();
+  fullListPending.clear();
 });
 
 export function crDisplay(crValue: number): string {
@@ -197,7 +222,8 @@ export function isExpectedOutage(e: unknown): boolean {
     || e instanceof GameConfigUnavailableError
     || e instanceof CobaltTokenError
     || e instanceof CobaltTokenTimeoutError
-    || e instanceof MalformedCobaltTokenError;
+    || e instanceof MalformedCobaltTokenError
+    || e instanceof MonsterScanTimeoutError;
 }
 
 export function askerNow(): Asker {
@@ -248,6 +274,8 @@ export interface ListOptions {
    * another account's list.
    */
   bound?: SessionSnapshot;
+  /** Neither read nor write `monsterCache` (page scans, which keep their own slim cache). */
+  noCache?: boolean;
 }
 
 /**
@@ -256,7 +284,7 @@ export interface ListOptions {
  * an entry's primary *or* reprint sources and keep `pagination.total` honest.
  */
 export async function fetchMonsterList(search: string, take: number, opts: ListOptions = {}): Promise<MonsterListResponse> {
-  const { sourceIds = [], skip = 0, asker = LOGGED_IN, bound } = opts;
+  const { sourceIds = [], skip = 0, asker = LOGGED_IN, bound, noCache = false } = opts;
   const sourceQs = sourceIds.map(id => `&sources=${id}`).join("");
   const url = `${MONSTER_SERVICE}/v1/Monster?search=${encodeURIComponent(search)}&skip=${skip}&take=${take}${sourceQs}`;
   const cacheKey = cacheKeyFor(asker, `monsters:list:${search.toLowerCase()}:skip${skip}:take${take}:src${sourceIds.join(",")}`);
@@ -264,7 +292,7 @@ export async function fetchMonsterList(search: string, take: number, opts: ListO
   // the cache rather than serving the previous account's list.
   const snapshot = captureSession();
   if (bound && !asker.anonymous) assertSessionCurrent(bound);
-  const cached = monsterCache.get(cacheKey);
+  const cached = noCache ? undefined : monsterCache.get(cacheKey);
   if (cached !== undefined) return JSON.parse(cached) as MonsterListResponse;
 
   const resp = await monsterFetch(url, asker);
@@ -277,7 +305,7 @@ export async function fetchMonsterList(search: string, take: number, opts: ListO
     throw e instanceof SyntaxError ? new MonsterServiceParseError(e.message, { cause: e }) : e;
   }
   assertCurrentAfter(bound ?? snapshot, asker);
-  monsterCache.set(cacheKey, JSON.stringify(list));
+  if (!noCache) monsterCache.set(cacheKey, JSON.stringify(list));
   return list;
 }
 
@@ -343,6 +371,179 @@ export async function fetchMonsterPages(
   // (A first page of exactly PAGE_SIZE reporting PAGE_SIZE is a genuine single page.)
   const incomplete = (first.data?.length ?? 0) >= PAGE_SIZE && first.pagination.total < PAGE_SIZE;
   return { data, total, access, snapshot, incomplete };
+}
+
+// ── Full-list page scans ──────────────────────────────────────────────────────
+
+/** Pages a scan has in flight at once (R7). */
+export const SCAN_CONCURRENCY = 8;
+/** Most pages one scan pass reads (10,000 entries; the live list is ~6,100). */
+export const MAX_SCAN_PAGES = 100;
+/** One deadline over a whole scan, tail and retry included (R11). */
+export const FULL_SCAN_DEADLINE_MS = 60_000;
+
+/** A full-list scan ran past `FULL_SCAN_DEADLINE_MS`: an outage-class failure. */
+export class MonsterScanTimeoutError extends Error {
+  constructor() {
+    super(`Monster list scan did not finish within ${FULL_SCAN_DEADLINE_MS / 1000} s`);
+    this.name = "MonsterScanTimeoutError";
+  }
+}
+
+/**
+ * The fields a list search reads, without the stat-block HTML (a raw page is
+ * ~247 KB). `isLegendary`/`isMythic` are kept because result lines print them.
+ */
+export type MonsterListEntry = Pick<DdbMonster,
+  "id" | "name" | "challengeRatingId" | "typeId" | "sizeId" | "armorClass" | "averageHitPoints"
+  | "isLegacy" | "isHomebrew" | "isLegendary" | "isMythic" | "sourceId" | "sources">;
+
+/**
+ * Every entry a scan saw, each id once, in page order. Cached scans are shared
+ * by every caller: treat them as read-only.
+ */
+export interface MonsterScan {
+  entries: MonsterListEntry[];
+  access: AccessMap;
+  /** The largest total any page reported, or the distinct entries seen if more. */
+  scanTotal: number;
+  /** Every reported total was reached and the last page read came back short. */
+  complete: boolean;
+}
+
+function slimEntry(m: DdbMonster): MonsterListEntry {
+  return {
+    id: m.id, name: m.name, challengeRatingId: m.challengeRatingId, typeId: m.typeId, sizeId: m.sizeId,
+    armorClass: m.armorClass, averageHitPoints: m.averageHitPoints, isLegacy: m.isLegacy, isHomebrew: m.isHomebrew,
+    isLegendary: m.isLegendary, isMythic: m.isMythic, sourceId: m.sourceId, sources: m.sources,
+  };
+}
+
+const pageEntries = (page: MonsterListResponse): DdbMonster[] => page.data ?? [];
+const isFullPage = (page: MonsterListResponse): boolean => pageEntries(page).length >= PAGE_SIZE;
+
+/** Merge pages by id (first copy kept) and judge completeness from `last`, the final page read. */
+function summarizeScan(pages: MonsterListResponse[], last: MonsterListResponse): MonsterScan {
+  const seen = new Set<number>();
+  const entries: MonsterListEntry[] = [];
+  const access: AccessMap = new Map();
+  let reported = 0;
+  for (const page of pages) {
+    for (const m of pageEntries(page)) {
+      if (seen.has(m.id)) continue;
+      seen.add(m.id);
+      entries.push(slimEntry(m));
+    }
+    mergeAccess(access, page);
+    reported = Math.max(reported, page.pagination?.total ?? 0);
+  }
+  return {
+    entries,
+    access,
+    scanTotal: Math.max(reported, entries.length),
+    complete: entries.length >= reported && !isFullPage(last),
+  };
+}
+
+/**
+ * Read every page of a monster search, uncached (`noCache`), each page held to
+ * `snapshot`. Page 1 reveals the total and the rest go `SCAN_CONCURRENCY` at a
+ * time; while the last page comes back full (a first-page total that lags), the
+ * next is read one at a time, up to `MAX_SCAN_PAGES` in all. The service can
+ * reorder entries between requests, so a scan short of a reported total
+ * re-reads every page once and merges by id (R3). One `FULL_SCAN_DEADLINE_MS`
+ * deadline covers it all (R11): on expiry no further page is dispatched and the
+ * scan rejects with `MonsterScanTimeoutError`.
+ */
+export async function scanAllPages(search: string, sourceIds: number[], asker: Asker, snapshot: SessionSnapshot): Promise<MonsterScan> {
+  let expired = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      expired = true;
+      reject(new MonsterScanTimeoutError());
+    }, FULL_SCAN_DEADLINE_MS);
+  });
+
+  // Checked before each dispatch, so workers still holding a page when the
+  // deadline passes start no more (mapWithConcurrency stops on a rejection).
+  const page = async (skip: number): Promise<MonsterListResponse> => {
+    if (expired) throw new MonsterScanTimeoutError();
+    const list = await fetchMonsterList(search, PAGE_SIZE, { sourceIds, skip, asker, bound: snapshot, noCache: true });
+    if (expired) throw new MonsterScanTimeoutError();
+    return list;
+  };
+
+  const run = async (): Promise<MonsterScan> => {
+    const first = await page(0);
+    const skips = [0];
+    for (let skip = PAGE_SIZE; skip < (first.pagination?.total ?? 0) && skips.length < MAX_SCAN_PAGES; skip += PAGE_SIZE) skips.push(skip);
+    const pages = [first, ...await mapWithConcurrency(skips.slice(1), SCAN_CONCURRENCY, page)];
+    let last = pages[pages.length - 1];
+    while (isFullPage(last) && skips.length < MAX_SCAN_PAGES) {
+      const skip = skips[skips.length - 1] + PAGE_SIZE;
+      skips.push(skip);
+      last = await page(skip);
+      pages.push(last);
+    }
+    let scan = summarizeScan(pages, last);
+    if (!scan.complete) {
+      const again = await mapWithConcurrency(skips, SCAN_CONCURRENCY, page);
+      scan = summarizeScan([...pages, ...again], again[again.length - 1]);
+    }
+    assertCurrentAfter(snapshot, asker);
+    return scan;
+  };
+
+  const scan = run();
+  // Once the deadline has answered the caller, the abandoned scan's own
+  // rejection (a late page failure, or its post-deadline check) is nobody's.
+  scan.catch(() => {});
+  try {
+    return await Promise.race([scan, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Every monster in D&D Beyond's list (or in `sourceIds`' books), slim, cached
+ * per asker: `anon:` for logged-out askers, the session generation otherwise.
+ * A complete scan is kept `FULL_LIST_TTL_MS`, a short one `SHORT_LIST_TTL_MS`.
+ * `bound` is the caller's snapshot, which every page is held to. Concurrent
+ * cold callers share one scan; a scan whose pending entry was dropped
+ * meanwhile (`clearMonsterCache`, a session transition) caches nothing.
+ */
+export async function getFullMonsterList(
+  asker: Asker, opts: { sourceIds?: number[]; bound?: SessionSnapshot } = {},
+): Promise<MonsterScan> {
+  const sourceIds = opts.sourceIds ?? [];
+  const snapshot = opts.bound ?? captureSession();
+  const key = `${asker.anonymous ? "anon" : `gen${snapshot.generation}`}:src${sourceIds.join(",")}`;
+  // Boundary check before the cache read, as in fetchMonsterList.
+  if (!asker.anonymous) assertSessionCurrent(snapshot);
+  const cached = fullListCache.get(key);
+  if (cached) return cached;
+  const pending = fullListPending.get(key);
+  if (pending) return pending;
+
+  // The entry is published before the scan sends its first request.
+  let start!: () => void;
+  const started = new Promise<void>(resolve => { start = resolve; });
+  const thisScan: Promise<MonsterScan> = started
+    .then(() => scanAllPages("", sourceIds, asker, snapshot))
+    .then(scan => {
+      if (fullListPending.get(key) === thisScan) {
+        fullListCache.set(key, scan, scan.complete ? FULL_LIST_TTL_MS : SHORT_LIST_TTL_MS);
+      }
+      return scan;
+    })
+    .finally(() => {
+      if (fullListPending.get(key) === thisScan) fullListPending.delete(key);
+    });
+  fullListPending.set(key, thisScan);
+  start();
+  return thisScan;
 }
 
 /** Fetch (or serve from cache) one monster's stat block. */

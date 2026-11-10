@@ -41,6 +41,11 @@ export class TtlCache<T> {
     });
   }
 
+  /** Entries held, counting expired ones not yet read (a `get` drops those). */
+  get size(): number {
+    return this.entries.size;
+  }
+
   invalidate(key: string): void {
     this.entries.delete(key);
   }

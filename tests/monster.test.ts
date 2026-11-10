@@ -35,9 +35,13 @@ vi.mock("../src/open5e.js", () => ({
 import { getMonster, searchMonsters, searchMonstersSection, getMonsterStats, clearMonsterCache, statBlockText } from "../src/tools/monster.js";
 import { rateEncounter } from "../src/tools/encounter.js";
 import { generateTreasure } from "../src/tools/treasure.js";
-import { sessionFetch, hasValidSession, onSessionInvalidated, beginAuthenticatedSession, captureSession, AnonymousFetchTimeoutError, NoSessionError, CobaltTokenError, CobaltTokenTimeoutError, MalformedCobaltTokenError } from "../src/session-fetch.js";
+import { sessionFetch, hasValidSession, onSessionInvalidated, beginAuthenticatedSession, captureSession, assertSessionCurrent, AnonymousFetchTimeoutError, NoSessionError, CobaltTokenError, CobaltTokenTimeoutError, MalformedCobaltTokenError } from "../src/session-fetch.js";
 import { SessionChangedError, SessionLayerError } from "../src/session-state.js";
 import { stripHtmlRich } from "../src/utils.js";
+import {
+  getFullMonsterList, scanAllPages, fetchMonsterList, monsterCacheSize, MonsterScanTimeoutError, isExpectedOutage, LOGGED_IN,
+  FULL_SCAN_DEADLINE_MS, SHORT_LIST_TTL_MS, FULL_LIST_TTL_MS, MAX_SCAN_PAGES,
+} from "../src/tools/monster-service.js";
 import { o5SearchMonstersSection, o5GetMonster, o5GetMonsterStats, o5MonsterInEdition } from "../src/open5e.js";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -384,6 +388,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  // Fake-timer tests must not leak into the next test.
+  vi.useRealTimers();
 });
 
 // ── Default selection ─────────────────────────────────────────────────────────
@@ -2657,5 +2663,378 @@ describe("word-start name matching (B11)", () => {
     ];
     const names = entryLines(await searchMonsters({ cr: 17 })).map(l => /\*\*(.+?)\*\*/.exec(l)![1]);
     expect(names).toEqual(["Alpha Lord", "Zeta Lord"]);
+  });
+});
+
+// ── Page scans and the full-list cache (B11) ─────────────────────────────────
+
+describe("monster page scans and the full-list cache", () => {
+  const ANON = { anonymous: true };
+  /** `n` MM-2024 fillers with ids clear of every other fixture. */
+  const scanFillers = (n: number, overrides: Record<string, unknown> = {}) => Array.from({ length: n }, (_, i) => monster({
+    id: 3_000_000 + i, name: `Scan Filler ${String(i).padStart(4, "0")}`, sourceId: 147, sources: sources(147), ...overrides,
+  }));
+  /** Full-list page requests (the empty search term) the router has answered, logged in or out. */
+  const fullListRequests = () => listUrls.filter(u => u.includes("/v1/Monster?search=&")).length;
+  const anonFullListRequests = () => anonymousRequests.filter(r => r.url.includes("/v1/Monster?search=&")).length;
+  type Route = (input: string | URL | Request) => Promise<Response>;
+  const route = (): Route => vi.mocked(sessionFetch).getMockImplementation()! as Route;
+
+  afterEach(() => {
+    vi.mocked(captureSession).mockImplementation((() => ({})) as never);
+    vi.mocked(assertSessionCurrent).mockImplementation(() => {});
+  });
+
+  it("keeps at most 8 pages in flight and reads every entry", async () => {
+    extraMonsters = scanFillers(1000); // 1,675 entries: 17 pages
+    const routed = route();
+    let inFlight = 0;
+    let maxInFlight = 0;
+    vi.mocked(sessionFetch).mockImplementation(async (input: string | URL | Request) => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      try {
+        await new Promise(r => setTimeout(r, 0));
+        return await routed(input);
+      } finally {
+        inFlight--;
+      }
+    });
+    const scan = await getFullMonsterList(LOGGED_IN);
+    expect(maxInFlight).toBe(8);
+    expect(fullListRequests()).toBe(17);
+    expect(scan.entries).toHaveLength(1675);
+    expect(scan.entries.length).toBe(scan.scanTotal);
+    expect(new Set(scan.entries.map(e => e.id)).size).toBe(1675);
+    expect(scan.complete).toBe(true);
+  });
+
+  it("stores slim entries, without the stat-block text, and the merged access map", async () => {
+    unownedIds.add(BEHOLDER_2024.id as number);
+    const scan = await getFullMonsterList(LOGGED_IN);
+    expect("actionsDescription" in scan.entries[0]).toBe(false);
+    expect(Object.keys(scan.entries[0]).sort()).toEqual([
+      "armorClass", "averageHitPoints", "challengeRatingId", "id", "isHomebrew", "isLegacy", "isLegendary",
+      "isMythic", "name", "sizeId", "sourceId", "sources", "typeId",
+    ]);
+    expect(scan.access.get(BEHOLDER_2024.id as number)).toBe(4);
+    expect(scan.access.get(BEHOLDER_2014.id as number)).toBe(1);
+  });
+
+  it("reads its pages past the stat-block cache: neither served from it nor written to it", async () => {
+    await fetchMonsterList("", 100, { asker: LOGGED_IN }); // page 1, cached the ordinary way
+    const before = monsterCacheSize();
+    expect(before).toBe(1);
+    await getFullMonsterList(LOGGED_IN);
+    expect(monsterCacheSize()).toBe(before);
+    expect(fullListRequests()).toBe(1 + 7); // page 1 asked for again
+  });
+
+  it("scanAllPages itself is uncached", async () => {
+    await scanAllPages("", [], LOGGED_IN, captureSession());
+    await scanAllPages("", [], LOGGED_IN, captureSession());
+    expect(fullListRequests()).toBe(14);
+  });
+
+  it("serves a second call from the cache, and keys it by the sources asked for", async () => {
+    await getFullMonsterList(LOGGED_IN);
+    expect(fullListRequests()).toBe(7);
+    await getFullMonsterList(LOGGED_IN);
+    expect(fullListRequests()).toBe(7);
+    const book = await getFullMonsterList(LOGGED_IN, { sourceIds: [232] });
+    expect(fullListRequests()).toBe(8);
+    expect(book.entries.map(e => e.id).sort()).toEqual([OOZE_ADVENTURE.id, ZOMBIE_CLOT_2024.id].sort());
+  });
+
+  it("concurrent cold callers share one scan", async () => {
+    const [a, b] = await Promise.all([getFullMonsterList(LOGGED_IN), getFullMonsterList(LOGGED_IN)]);
+    expect(fullListRequests()).toBe(7);
+    expect(b).toBe(a);
+  });
+
+  it("a clear mid-scan leaves nothing cached, and the old scan can't evict a newer one", async () => {
+    const first = getFullMonsterList(LOGGED_IN);
+    clearMonsterCache();
+    const second = getFullMonsterList(LOGGED_IN); // doesn't join the cleared scan
+    expect((await first).complete).toBe(true); // its caller still gets an answer
+    await second;
+    expect(fullListRequests()).toBe(14);
+    // The second scan was the authoritative one: it alone is cached.
+    await getFullMonsterList(LOGGED_IN);
+    expect(fullListRequests()).toBe(14);
+    // And with no newer scan, a clear mid-scan means the next call scans again.
+    const third = getFullMonsterList(LOGGED_IN, { sourceIds: [232] });
+    clearMonsterCache();
+    await third;
+    await getFullMonsterList(LOGGED_IN, { sourceIds: [232] });
+    expect(listUrls.filter(u => u.includes("sources=232"))).toHaveLength(2);
+  });
+
+  it("a scan that settles after a clear doesn't release the newer scan's slot", async () => {
+    const routed = route();
+    const held: Array<() => void> = [];
+    vi.mocked(sessionFetch).mockImplementation(async (input: string | URL | Request) => {
+      if (!String(input).includes("/v1/Monster?search=")) return routed(input);
+      return new Promise<Response>(resolve => { held.push(() => resolve(routed(input))); });
+    });
+    const tick = () => new Promise(r => setTimeout(r, 0));
+    /** Answer every held page until `until` reports done. */
+    const answerUntil = async (until: () => boolean): Promise<void> => {
+      for (let i = 0; i < 50 && !until(); i++) {
+        for (const release of held.splice(0)) release();
+        await tick();
+      }
+      expect(until()).toBe(true);
+    };
+
+    const first = getFullMonsterList(LOGGED_IN);
+    await tick();
+    clearMonsterCache();
+    const second = getFullMonsterList(LOGGED_IN);
+    await tick();
+    expect(held).toHaveLength(2); // each scan's page 1
+    const [firstPage, secondPage] = held.splice(0);
+    firstPage();
+    let firstDone = false;
+    void first.then(() => { firstDone = true; });
+    await answerUntil(() => firstDone);
+    // The first scan has settled; the second is still waiting on its page 1.
+    const third = getFullMonsterList(LOGGED_IN);
+    await tick();
+    expect(held).toHaveLength(0); // joined the second scan rather than starting one
+    secondPage();
+    let laterDone = false;
+    void Promise.all([second, third]).then(() => { laterDone = true; });
+    await answerUntil(() => laterDone);
+    expect(await third).toBe(await second);
+    expect(fullListRequests()).toBe(14);
+    await getFullMonsterList(LOGGED_IN); // the second scan, cached
+    expect(fullListRequests()).toBe(14);
+  });
+
+  it("a list whose pages never come back short stops at MAX_SCAN_PAGES and is not complete", async () => {
+    // Every page full and every total stale (99): only the last-page rule can tell.
+    vi.mocked(sessionFetch).mockImplementation(async (input: string | URL | Request) => {
+      const url = String(input);
+      listUrls.push(url);
+      const skip = Number(new URL(url).searchParams.get("skip"));
+      const data = Array.from({ length: 100 }, (_, i) => monster({ id: 5_000_000 + skip + i, name: `Endless ${skip + i}` }));
+      return mockResponse({ pagination: { total: 99, currentPage: 1, pages: 1 }, data });
+    });
+    const scan = await getFullMonsterList(LOGGED_IN);
+    expect(fullListRequests()).toBe(2 * MAX_SCAN_PAGES); // one pass, then the retry
+    expect(scan.entries).toHaveLength(100 * MAX_SCAN_PAGES);
+    expect(scan.scanTotal).toBe(100 * MAX_SCAN_PAGES);
+    expect(scan.complete).toBe(false);
+  });
+
+  it("an inflated total reads at most MAX_SCAN_PAGES pages a pass", async () => {
+    vi.mocked(sessionFetch).mockImplementation(async (input: string | URL | Request) => {
+      const url = String(input);
+      listUrls.push(url);
+      const skip = Number(new URL(url).searchParams.get("skip"));
+      const data = skip === 0 ? [ZOMBIE_2024] : [];
+      return mockResponse({ pagination: { total: 1_000_000, currentPage: 1, pages: 1 }, data });
+    });
+    const scan = await getFullMonsterList(LOGGED_IN);
+    expect(fullListRequests()).toBe(2 * MAX_SCAN_PAGES);
+    expect(scan).toMatchObject({ scanTotal: 1_000_000, complete: false });
+    expect(scan.entries).toHaveLength(1);
+  });
+
+  it("a session transition mid-scan (the invalidation hook) leaves nothing cached", async () => {
+    const pending = getFullMonsterList(LOGGED_IN);
+    invalidateMonsterModule();
+    await pending;
+    await getFullMonsterList(LOGGED_IN);
+    expect(fullListRequests()).toBe(14);
+  });
+
+  it("a session change mid-scan rejects with it, caches nothing, and the next call scans afresh", async () => {
+    vi.mocked(assertSessionCurrent).mockImplementation(() => {
+      if (listUrls.length >= 3) throw new SessionChangedError();
+    });
+    await expect(getFullMonsterList(LOGGED_IN)).rejects.toBeInstanceOf(SessionChangedError);
+    vi.mocked(assertSessionCurrent).mockImplementation(() => {});
+    await new Promise(r => setTimeout(r, 0)); // let the dead scan's in-flight pages land
+    const before = fullListRequests();
+    const scan = await getFullMonsterList(LOGGED_IN);
+    expect(fullListRequests() - before).toBe(7);
+    expect(scan.complete).toBe(true);
+  });
+
+  it("holds every page request, and the result, to the caller's snapshot", async () => {
+    const bound = { generation: 7 };
+    vi.mocked(captureSession).mockImplementation((() => ({ generation: 8 })) as never);
+    await getFullMonsterList(LOGGED_IN, { bound: bound as never });
+    const checked = vi.mocked(assertSessionCurrent).mock.calls.map(call => call[0]);
+    // The cache-read check, a pre-dispatch and a post-fetch check per page, and the final check.
+    expect(checked.length).toBeGreaterThanOrEqual(1 + 2 * 7 + 1);
+    expect(checked.every(s => s === bound)).toBe(true);
+  });
+
+  it("a logged-in call checks its snapshot before serving the cache", async () => {
+    await getFullMonsterList(LOGGED_IN);
+    vi.mocked(assertSessionCurrent).mockImplementation(() => { throw new SessionChangedError(); });
+    await expect(getFullMonsterList(LOGGED_IN)).rejects.toBeInstanceOf(SessionChangedError);
+    expect(fullListRequests()).toBe(7);
+  });
+
+  it("is keyed by session generation", async () => {
+    let generation = 1;
+    vi.mocked(captureSession).mockImplementation((() => ({ generation })) as never);
+    await getFullMonsterList(LOGGED_IN);
+    await getFullMonsterList(LOGGED_IN);
+    expect(fullListRequests()).toBe(7);
+    generation = 2;
+    await getFullMonsterList(LOGGED_IN);
+    expect(fullListRequests()).toBe(14);
+  });
+
+  it("anonymous and logged-in lists are cached apart", async () => {
+    goLoggedOut();
+    const anon = await getFullMonsterList(ANON);
+    await getFullMonsterList(ANON);
+    expect(anonFullListRequests()).toBe(7);
+    expect(anon.complete).toBe(true);
+    expectNoCredentials();
+    // Log back in: the anonymous list doesn't serve the account.
+    vi.unstubAllGlobals();
+    vi.mocked(hasValidSession).mockReturnValue(true);
+    vi.mocked(beginAuthenticatedSession).mockImplementation((async () => ({ fetch: (url: string) => sessionFetch(url) })) as never);
+    setupFetch();
+    await getFullMonsterList(LOGGED_IN);
+    await getFullMonsterList(LOGGED_IN);
+    expect(fullListRequests()).toBe(14); // 7 anonymous + 7 logged in
+    expect(anonFullListRequests()).toBe(7);
+  });
+
+  it("a short scan re-reads every page once and reports the larger total, not complete", async () => {
+    firstPageTotal = 900; // 675 entries: each pass asks for 9 pages
+    const scan = await getFullMonsterList(LOGGED_IN);
+    expect(fullListRequests()).toBe(18);
+    expect(scan.complete).toBe(false);
+    expect(scan.scanTotal).toBe(900);
+    expect(scan.entries).toHaveLength(675);
+  });
+
+  it("the retry fills in entries a page missed the first time, merged by id", async () => {
+    const routed = route();
+    let dropped = false;
+    vi.mocked(sessionFetch).mockImplementation(async (input: string | URL | Request) => {
+      const resp = await routed(input);
+      if (!dropped && String(input).includes("search=&skip=300&")) {
+        dropped = true;
+        const body = await resp.json() as { data: unknown[] };
+        return mockResponse({ ...body, data: [] });
+      }
+      return resp;
+    });
+    const scan = await getFullMonsterList(LOGGED_IN);
+    expect(fullListRequests()).toBe(14);
+    expect(scan.entries).toHaveLength(675);
+    expect(new Set(scan.entries.map(e => e.id)).size).toBe(675);
+    expect(scan.complete).toBe(true);
+    expect(scan.scanTotal).toBe(675);
+  });
+
+  it("a lagging first-page total: the tail reads on until a page comes back short", async () => {
+    firstPageTotal = 99;
+    extraMonsters = scanFillers(158, { sourceId: 232, sources: sources(232) }); // + 2 base RtHW entries = 160
+    const scan = await getFullMonsterList(LOGGED_IN, { sourceIds: [232] });
+    expect(listUrls.filter(u => u.includes("sources=232"))).toHaveLength(2);
+    expect(scan.entries).toHaveLength(160);
+    expect(scan.scanTotal).toBe(160);
+    expect(scan.complete).toBe(true);
+  });
+
+  it("a short scan is cached 5 minutes, a complete one 24 hours", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    firstPageTotal = 900;
+    await getFullMonsterList(LOGGED_IN);
+    await getFullMonsterList(LOGGED_IN);
+    expect(fullListRequests()).toBe(18);
+    vi.advanceTimersByTime(SHORT_LIST_TTL_MS + 1);
+    await getFullMonsterList(LOGGED_IN);
+    expect(fullListRequests()).toBe(36);
+
+    firstPageTotal = null;
+    clearMonsterCache();
+    listUrls.length = 0;
+    await getFullMonsterList(LOGGED_IN);
+    expect(fullListRequests()).toBe(7);
+    vi.advanceTimersByTime(6 * 60_000);
+    await getFullMonsterList(LOGGED_IN);
+    expect(fullListRequests()).toBe(7);
+    vi.advanceTimersByTime(FULL_LIST_TTL_MS - 6 * 60_000 + 1);
+    await getFullMonsterList(LOGGED_IN);
+    expect(fullListRequests()).toBe(14);
+  });
+
+  describe("the 60 s deadline", () => {
+    it("rejects with MonsterScanTimeoutError, an expected outage, and releases the slot", async () => {
+      vi.useFakeTimers();
+      const routed = route();
+      vi.mocked(sessionFetch).mockImplementation(async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.includes("/v1/Monster?search=")) {
+          listUrls.push(url);
+          return new Promise<Response>(() => {}); // never answers
+        }
+        return routed(input);
+      });
+      let settled = false;
+      const first = getFullMonsterList(LOGGED_IN);
+      const firstRejects = expect(first).rejects.toBeInstanceOf(MonsterScanTimeoutError);
+      first.catch(() => {}).finally(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(FULL_SCAN_DEADLINE_MS - 1);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await firstRejects;
+      expect(isExpectedOutage(new MonsterScanTimeoutError())).toBe(true);
+      expect(fullListRequests()).toBe(1);
+
+      // Nothing cached and the pending slot released: a fresh call scans anew.
+      const second = getFullMonsterList(LOGGED_IN);
+      const secondRejects = expect(second).rejects.toBeInstanceOf(MonsterScanTimeoutError);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fullListRequests()).toBe(2);
+      await vi.advanceTimersByTimeAsync(FULL_SCAN_DEADLINE_MS);
+      await secondRejects;
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("stops dispatching pages once it expires", async () => {
+      vi.useFakeTimers();
+      extraMonsters = scanFillers(1000); // 17 pages: 8 in flight, 8 queued behind them
+      const routed = route();
+      const held: Array<() => void> = [];
+      let dispatched = 0;
+      vi.mocked(sessionFetch).mockImplementation(async (input: string | URL | Request) => {
+        const url = String(input);
+        if (!url.includes("/v1/Monster?search=")) return routed(input);
+        dispatched++;
+        if (url.includes("&skip=0&")) return routed(input);
+        return new Promise<Response>(resolve => { held.push(() => resolve(routed(input))); });
+      });
+      const scan = getFullMonsterList(LOGGED_IN);
+      const rejects = expect(scan).rejects.toBeInstanceOf(MonsterScanTimeoutError);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(dispatched).toBe(1 + 8);
+      await vi.advanceTimersByTimeAsync(FULL_SCAN_DEADLINE_MS);
+      await rejects;
+      // The held pages answer late: their workers must not start the queued pages.
+      for (const release of held.splice(0)) release();
+      await vi.advanceTimersByTimeAsync(0);
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+      expect(dispatched).toBe(1 + 8);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("a scan that finishes in time leaves no timer behind", async () => {
+      vi.useFakeTimers();
+      await getFullMonsterList(LOGGED_IN);
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 });
