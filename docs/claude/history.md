@@ -125,7 +125,7 @@ plus the docs commit that records the push. Behaviour is in [tool-notes.md](tool
 
 ### Monster search quality and Critical Role books 2026-11-10 (regression items B11, B12)
 
-Spec [docs/superpowers/specs/2026-11-10-monster-search-and-critical-role-design.md](../superpowers/specs/2026-11-10-monster-search-and-critical-role-design.md), plan `docs/superpowers/plans/2026-11-10-monster-search-and-critical-role.md`. **B11 and B12 are closed.** Commits on `main`, not pushed: B12 `be82007..3196364` (`be82007` is the spec and plan docs commit; Task 1 `5166230`, then the Checkpoint A fix commit `3196364`); B11 `3196364..744b3ac` (Task 2 `f52c1a0`, 3 `f323071`, 4 `acac8ad`, 5 `ac88aa1`, 6 `7470626`, 7 `313af4a`, 8 `68f6ee6`, 9 `3572e2d`, 10 `744b3ac`, each with its review-fix commits); the docs commit is on top. Every task had a Claude review and a DeepSeek (opencode Zen) adversarial review, one at a time. Behaviour: [tool-notes.md](tool-notes.md) "Monster search quality"; caches: [caching.md](caching.md) "Monster full list".
+Spec [docs/superpowers/specs/2026-11-10-monster-search-and-critical-role-design.md](../superpowers/specs/2026-11-10-monster-search-and-critical-role-design.md), plan `docs/superpowers/plans/2026-11-10-monster-search-and-critical-role.md`. **B11 and B12 are closed.** Commits on `main`, not pushed: B12 `be82007..3196364` (`be82007` is the spec and plan docs commit; Task 1 `5166230`, then the Checkpoint A fix commit `3196364`); B11 `3196364..744b3ac` (Task 2 `f52c1a0`, 3 `f323071`, 4 `acac8ad`, 5 `ac88aa1`, 6 `7470626`, 7 `313af4a`, 8 `68f6ee6`, 9 `3572e2d`, 10 `744b3ac`, each with its review-fix commits); the final-review fix wave is A1 `5c5e720`, B1 `abc4300`, C1–C6 `9dd28cd`, D/E comments and docs `96e9a89`, and then this docs commit. Every task had a Claude review and a DeepSeek (opencode Zen) adversarial review, one at a time. Behaviour: [tool-notes.md](tool-notes.md) "Monster search quality"; caches: [caching.md](caching.md) "Monster full list".
 
 **Spec owner rulings 2026-11-10** (brainstorming session; the spec's goal numbers):
 - G1 name matching is word-start; G2 a renamed twin still counts ("thug" finds Tough); G3 near matches when no name matches (option B), labelled, never looking like matches.
@@ -161,6 +161,8 @@ Spec [docs/superpowers/specs/2026-11-10-monster-search-and-critical-role-design.
 - **C5** the Open5e monster list uses R5 order with a name (twin first, A–Z, ties by key).
 - **C6** a locked near match gets the locked-entries note a normal locked row gets; near matches stay raw otherwise.
 - **D1–D3** comment fixes (`askerNow`, `SEARCH_CAP`, `MAX_FILTER_SCAN`); **E1–E8** these doc corrections.
+
+**B1 measured check (owner ruling 2026-11-10, leave as is):** B1 reads only page 1 of each missing twin spelling. Measured live 2026-11-10: of the 54 monster rename spellings, 13 return over 100 hits (D&D Beyond matches any word), but for each one the twin-group members rank within the top 32 of that spelling's own results. The one deep hit (position 168 under "Giant Seahorse") is at position 0 under "Giant Sea Horse", which B1 also fetches. So page 1 misses nothing today. A "full page → +" safety net was rejected because it would mark ~13 common spellings incomplete on every search.
 
 **Checkpoint A results (live 2026-11-10, owner's free account, logged in):**
 - `dump-edition-renames --snapshot-only` exit 0. The full run: monster 2014 orphans 2,468 to 2,569 (+101; the spec estimated ~104); spell, item, species, class, background and feat counts unchanged; no rename pairs added.
