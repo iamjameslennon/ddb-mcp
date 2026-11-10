@@ -23,6 +23,7 @@ import {
 } from "./edition.js";
 import { paginateResults, renderSection, type SearchSection } from "./tools/edition-search.js";
 import { EDITION_RENAMES, OPEN5E_ARMOUR_RENAMES, OPEN5E_EQUIPMENT_RENAMES, type RenameKind } from "./edition-renames.js";
+import { nameFold } from "./name-match.js";
 
 // 1-hour cache — Open5e data doesn't change often
 const open5eCache = new TtlCache<unknown>(60 * 60_000, 100);
@@ -187,7 +188,7 @@ const o5Info = (e: O5Entry<unknown>): EditionInfo => ({ ruleset: e.edition, book
 const foldPunctuation = (name: string): string => name.replace(/-/g, " ").replace(/['‘’]/g, "");
 
 /** A name as its own twin key would be without renames: normalized, hyphens and apostrophes folded. */
-const o5Folded = (name: string): string => normalizeName(foldPunctuation(name));
+const o5Folded = nameFold;
 
 /** The rename kind of each endpoint (decision 5): only that kind's pairs twin its records. */
 const O5_ENDPOINT_KIND: Readonly<Record<O5Endpoint, RenameKind | "none">> = {
