@@ -2588,7 +2588,7 @@ describe("word-start name matching (B11)", () => {
   const AARDVARK_GOBLIN_2024 = monster({ id: 8_100_004, name: "Aardvark Goblin", sourceId: 147, sources: sources(147) });
   const HOBGOBLIN_WARRIOR_2024 = monster({ id: 8_100_005, name: "Hobgoblin Warrior", sourceId: 147, sources: sources(147) });
   const KOBOLD_WARRIOR_2024 = monster({ id: 8_100_006, name: "Kobold Warrior", sourceId: 147, sources: sources(147) });
-  const GOBLINS = [GOBLIN_2014, GOBLIN_WARRIOR_2024, GOBLIN_BOSS_2024, AARDVARK_GOBLIN_2024, HOBGOBLIN_WARRIOR_2024, KOBOLD_WARRIOR_2024];
+  const GOBLINS = [AARDVARK_GOBLIN_2024, GOBLIN_BOSS_2024, GOBLIN_2014, GOBLIN_WARRIOR_2024, HOBGOBLIN_WARRIOR_2024, KOBOLD_WARRIOR_2024];
   const entryLines = (out: string) => out.split("\n").filter(l => l.startsWith("- **"));
 
   beforeEach(() => {
@@ -2604,7 +2604,8 @@ describe("word-start name matching (B11)", () => {
     expect(out).not.toContain("Kobold Warrior");
     expect(out).not.toContain("Hobgoblin Warrior");
     expect(out).toContain('1 2014 version hidden — rules_edition: "2014" shows it.');
-    expect(entryLines(out)[0]).toContain("**Goblin Warrior**");
+    const names = entryLines(out).map(l => /\*\*(.+?)\*\*/.exec(l)![1]);
+    expect(names).toEqual(["Goblin Warrior", "Aardvark Goblin", "Goblin Boss"]);
   });
 
   it("the twin's own name keeps the other edition's group matching", async () => {
@@ -2621,6 +2622,16 @@ describe("word-start name matching (B11)", () => {
     ];
     const out = await searchMonsters({ name: "thug" });
     expect(entryLines(out).some(l => l.includes("**Tough**"))).toBe(true);
+    expect(out).toContain('1 2014 version hidden — rules_edition: "2014" shows it.');
+  });
+
+  it("a book search lists the renamed twin by its old name, where only rule 2 matches it", async () => {
+    extraMonsters = [
+      monster({ id: 8_000_410, name: "Thug", typeId: 8, isLegacy: true, sourceId: 5, sources: sources(5) }),
+      monster({ id: 8_000_100, name: "Tough", typeId: 8, sourceId: 147, sources: sources(147), challengeRatingId: 4 }),
+    ];
+    const out = await searchMonsters({ source: "mm-2024", name: "thug" });
+    expect(entryLines(out).some(l => l.includes("**Tough**"))).toBe(true);
   });
 
   it("a book filter doesn't let an any-word hit through", async () => {
@@ -2631,9 +2642,11 @@ describe("word-start name matching (B11)", () => {
 
   it("homebrew search drops any-word hits", async () => {
     const hb = { ...KOBOLD_WARRIOR_2024, id: 8_100_007, name: "Kobold Warrior", isHomebrew: true };
-    extraMonsters = [...GOBLINS, hb];
+    const chief = { ...KOBOLD_WARRIOR_2024, id: 8_100_008, name: "Goblin Chief", isHomebrew: true };
+    extraMonsters = [...GOBLINS, hb, chief];
     ANY_WORD = { goblin: [hb] };
     const out = await searchMonsters({ source: "homebrew", name: "goblin" });
+    expect(out).toContain("Goblin Chief");
     expect(out).not.toContain("Kobold Warrior");
   });
 
