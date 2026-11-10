@@ -790,11 +790,45 @@ describe("Open5e searches capped at 20 lines", () => {
     Array.from({ length: n }, (_, i) => ({ ...o5Record<Record<string, unknown>>(doc, endpoint, base), key: `${doc}_x${i}`, name: `${base} ${String(i).padStart(2, "0")}` }));
   const REFINE = "*Refine your search to see more results.*";
 
-  it("a capped monster search adds the refine hint before the footer", async () => {
-    stubFetch(o5FixtureFetch({ "srd-2024/creatures": [...o5Fixture("srd-2024", "creatures"), ...many("srd-2024", "creatures", "Wolf", 25)] }));
+  it("a capped monster search shows 50 lines, then the narrowing hint before the footer", async () => {
+    stubFetch(o5FixtureFetch({ "srd-2024/creatures": [...o5Fixture("srd-2024", "creatures"), ...many("srd-2024", "creatures", "Wolf", 55)] }));
     const out = (await o5SearchMonsters({ name: "wolf", rulesEdition: "2024" }, "unavailable")).split("\n");
-    expect(out.filter(l => l.startsWith("• "))).toHaveLength(20);
-    expect(out.slice(-3)).toEqual(["", REFINE, '1 2014 version hidden — rules_edition: "2014" shows it.']);
+    expect(out.filter(l => l.startsWith("• "))).toHaveLength(50);
+    expect(out.some(l => l.startsWith("Found ") && l.includes("(showing 50, SRD only):"))).toBe(true);
+    expect(out.join("\n")).not.toContain(REFINE);
+    const hint = out.find(l => l.startsWith("Narrow the search"))!;
+    expect(hint).toMatch(/^Narrow the search \(add cr, type, size or source\), or repeat with `list_all: true` to list all \d+ \(about \d+ KB\)\.$/);
+    expect(out[out.length - 1]).toBe('1 2014 version hidden — rules_edition: "2014" shows it.');
+  });
+
+  it("monster hint names only the unused filters, and ddb_search_monsters under siteSearch", async () => {
+    stubFetch(o5FixtureFetch({ "srd-2024/creatures": many("srd-2024", "creatures", "Wolf", 55) }));
+    const some = await o5SearchMonsters({ name: "wolf", source: "x", rulesEdition: "2024" }, "unavailable");
+    expect(some).toContain("(add cr, type or size)");
+    const site = await o5SearchMonsters({ name: "wolf", siteSearch: true, listAll: true, rulesEdition: "2024" }, "unavailable");
+    expect(site.split("\n").filter(l => l.startsWith("• "))).toHaveLength(50);
+    expect(site).toContain("use ddb_search_monsters with `list_all: true`");
+  });
+
+  it("a size search over more than 50 records lists 50 plus the hint, or all with listAll", async () => {
+    const meds = many("srd-2024", "creatures", "Wolf", 60).map(r => ({ ...r, size: { key: "medium", name: "Medium" } }));
+    stubFetch(o5FixtureFetch({ "srd-2024/creatures": meds, "srd-2014/creatures": [o5Record("srd-2014", "creatures", "Goblin")] }));
+    const capped = await o5SearchMonsters({ size: "medium", rulesEdition: "2024" }, "unavailable");
+    expect(capped.split("\n").filter(l => l.startsWith("• "))).toHaveLength(50);
+    expect(capped).toContain("`list_all: true`");
+    const all = await o5SearchMonsters({ size: "medium", listAll: true, rulesEdition: "2024" }, "unavailable");
+    expect(all.split("\n").filter(l => l.startsWith("• "))).toHaveLength(60);
+    expect(all).toContain("(showing 60, SRD only):");
+    expect(all).not.toContain("list_all");
+  });
+
+  it("monster name matching is at word starts: goblin skips Hobgoblin, will o wisp finds Will-o'-Wisp", async () => {
+    const mk = (key: string, name: string) => ({ ...o5Record<Record<string, unknown>>("srd-2024", "creatures", "Wolf"), key: `srd-2024_${key}`, name });
+    stubFetch(o5FixtureFetch({ "srd-2024/creatures": [mk("goblin-x", "Goblin Scout"), mk("hob", "Hobgoblin Captain"), mk("wisp", "Will-o'-Wisp")], "srd-2014/creatures": [o5Record("srd-2014", "creatures", "Goblin")] }));
+    const gob = await o5SearchMonsters({ name: "goblin", rulesEdition: "2024" }, "unavailable");
+    expect(gob).toContain("Goblin Scout");
+    expect(gob).not.toContain("Hobgoblin");
+    expect(await o5SearchMonsters({ name: "will o wisp", rulesEdition: "2024" }, "unavailable")).toContain("Will-o'-Wisp");
   });
 
   it("a capped item search adds the refine hint; an uncapped one does not", async () => {
@@ -802,8 +836,8 @@ describe("Open5e searches capped at 20 lines", () => {
     const out = (await o5SearchItems({ name: "rope", rulesEdition: "2024" }, "unavailable")).split("\n");
     expect(out.filter(l => l.startsWith("• "))).toHaveLength(20);
     expect(out.slice(-2)).toEqual(["", REFINE]);
+    expect(out.join("\n")).toContain("showing 20");
     expect(await o5SearchItems({ name: "rope 0", rulesEdition: "2024" }, "unavailable")).not.toContain(REFINE);
-    expect(await o5SearchMonsters({ name: "wolf", rulesEdition: "2024" }, "unavailable")).not.toContain(REFINE);
   });
 });
 

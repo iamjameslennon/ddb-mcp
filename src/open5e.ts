@@ -21,9 +21,9 @@ import {
   searchHeader, selectByEdition,
   type EditionInfo, type Open5eOrigin, type RulesEdition, type RulesLineReason, type SelectionReason, type TwinNamer,
 } from "./edition.js";
-import { paginateResults, renderSection, type SearchSection } from "./tools/edition-search.js";
+import { paginateResults, renderSection, narrowingHint, MONSTER_SEARCH_LIMIT, formatCount, type SearchSection } from "./tools/edition-search.js";
 import { EDITION_RENAMES, OPEN5E_ARMOUR_RENAMES, OPEN5E_EQUIPMENT_RENAMES, type RenameKind } from "./edition-renames.js";
-import { nameFold } from "./name-match.js";
+import { nameFold, matchesAtWordStart } from "./name-match.js";
 
 // 1-hour cache — Open5e data doesn't change often
 const open5eCache = new TtlCache<unknown>(60 * 60_000, 100);
@@ -495,7 +495,7 @@ function o5Renamed(
 async function o5Select<T extends O5Record>(
   endpoints: readonly O5Endpoint[],
   requested: RulesEdition,
-  opts: { name?: string; passes?: (e: O5Entry<T>) => boolean },
+  opts: { name?: string; passes?: (e: O5Entry<T>) => boolean; wordStart?: boolean },
 ): Promise<{ selected: Array<{ entry: O5Entry<T>; reason?: SelectionReason }>; hidden: number }> {
   const entries = await o5Entries<T>(endpoints, requested);
   const namer = await o5GuardedNamer(endpoints, entries);
@@ -508,7 +508,9 @@ async function o5Select<T extends O5Record>(
     // SRD 5.1's "Acid (vial)" lists it, not its same-group "Acid".
     tiebreak: (a, b) => (query && o5Folded(a.record.name) === query ? 0 : 1) - (query && o5Folded(b.record.name) === query ? 0 : 1)
       || byEndpoint(a, b),
-    nameMatches: query ? e => o5Folded(e.record.name).includes(query) : undefined,
+    nameMatches: !query ? undefined : opts.wordStart
+      ? e => matchesAtWordStart(e.record.name, opts.name!)
+      : e => o5Folded(e.record.name).includes(query),
     passes: opts.passes,
     countFilteredPicks: true,
   });
@@ -843,6 +845,10 @@ type O5MonsterSearchParams = {
   type?: string;
   size?: string;
   rulesEdition?: RulesEdition;
+  /** Only used to work out which filters the narrowing hint can still suggest: Open5e does not filter by book. */
+  source?: string;
+  listAll?: boolean;
+  siteSearch?: boolean;
 };
 
 export async function o5SearchMonsters(params: O5MonsterSearchParams, origin: "unavailable" | "not-found"): Promise<string> {
@@ -853,21 +859,30 @@ export async function o5SearchMonstersSection(params: O5MonsterSearchParams, ori
   const requested = params.rulesEdition ?? "2024";
   const { selected, hidden } = await o5Select<O5Creature>(["creatures"], requested, {
     name: params.name,
+    wordStart: true,
     passes: ({ record: m }) =>
       (params.cr === undefined || m.challenge_rating === params.cr)
       && (!params.type || lowerHas(params.type, m.type?.key, m.type?.name))
       && (!params.size || lowerHas(params.size, m.size?.key, m.size?.name)),
   });
 
-  const lines = selected.slice(0, SEARCH_CAP + 1).map(({ entry }) => {
+  const listAll = params.listAll === true && !params.siteSearch;
+  const shown = listAll ? selected : selected.slice(0, MONSTER_SEARCH_LIMIT);
+  const lines = shown.map(({ entry }) => {
     const m = entry.record;
     const kind = [m.size?.name, m.type?.name].filter(Boolean).join(" ");
     return `• ${m.name} ${editionTag(o5Info(entry))} (CR ${crText(m.challenge_rating)}${kind ? `, ${kind}` : ""})`;
   });
+  if (selected.length > shown.length) {
+    const avgBytes = lines.reduce((n, l) => n + Buffer.byteLength(l), 0) / lines.length;
+    const unused = ([["cr", params.cr], ["type", params.type], ["size", params.size], ["source", params.source]] as const)
+      .filter(([, v]) => v === undefined).map(([k]) => k);
+    lines.push(`\n${narrowingHint({ total: selected.length, approxKb: Math.round(avgBytes * selected.length / 1024), unused, siteSearch: params.siteSearch === true })}`);
+  }
   return o5SearchReply(
     requested, origin,
-    `Found ${selected.length} monster(s) (showing ${Math.min(selected.length, SEARCH_CAP)}, SRD only):`,
-    capped(lines), hidden, "No monsters found (SRD only).",
+    `Found ${formatCount(selected.length)} monster(s) (showing ${formatCount(shown.length)}, SRD only):`,
+    lines, hidden, "No monsters found (SRD only).",
   );
 }
 
