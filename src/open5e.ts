@@ -560,7 +560,7 @@ function o5Section(header: string | null, body: string, footer: string | null, h
   return { header, body, footer, hidden, open5e: true };
 }
 
-/** Monster and item searches list at most this many lines, then D&D Beyond's refine hint. */
+/** Item searches list at most this many lines, then D&D Beyond's refine hint (monsters use MONSTER_SEARCH_LIMIT and the narrowing hint). */
 const SEARCH_CAP = 20;
 
 /** The first SEARCH_CAP lines, plus D&D Beyond's refine hint when more were found. */

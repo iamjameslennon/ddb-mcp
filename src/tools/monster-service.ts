@@ -180,7 +180,6 @@ export interface Asker {
 
 export const LOGGED_IN: Asker = { anonymous: false };
 
-/** The asker for a call starting now. */
 /** monster-service answered with a non-OK status: an outage-class failure. */
 export class MonsterServiceHttpError extends Error {
   constructor(message: string) {
@@ -227,6 +226,7 @@ export function isExpectedOutage(e: unknown): boolean {
     || e instanceof MonsterListEmptyError;
 }
 
+/** The asker for a call starting now. */
 export function askerNow(): Asker {
   return hasValidSession() ? LOGGED_IN : { anonymous: true };
 }
@@ -336,12 +336,15 @@ export async function fetchCandidates(
 
 /** Page size the monster service actually honours — larger `take` values are silently capped. */
 export const PAGE_SIZE = 100;
-/** Most entries a CR/type/size-filtered search pages through (covers the 510-entry 2024 Monster Manual). */
+/**
+ * Most entries getMonster's `source: "homebrew"` lookup pages through by name
+ * (its only use). The search reads every hit or the full list instead (B11).
+ */
 export const MAX_FILTER_SCAN = 600;
 
 /**
  * Fetch up to `limit` entries by paging: the first page reveals the total,
- * the rest are fetched in parallel. Used when CR/type/size filter client-side.
+ * the rest are fetched in parallel. Used by getMonster's homebrew lookup.
  * The service can reorder entries between requests, so pages may overlap (and
  * miss entries); each ID is kept once and callers compare the distinct count
  * with `total` to tell whether the scan was complete.
