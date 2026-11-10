@@ -93,7 +93,9 @@ Full detail: [docs/claude/architecture.md](docs/claude/architecture.md).
 | `src/open5e.ts` | Open5e **v2** SRD fallback (SRD 5.2 + 5.1 loaded together) and primary source for the rules tools. Heavy on twin-name folding rules; read architecture.md first |
 | `src/tools/reference.ts` | Spells, items, species, classes, backgrounds, feats, class features, racial traits (DDB character-service game-data) |
 | `src/tools/spell-store.ts`, `src/tools/features-traits.ts` | Pure id-keyed spell store; pure class-feature/racial-trait normalization |
-| `src/tools/monster.ts` | Monster search/stat blocks/`getMonsterStats` (anonymous when logged out, Open5e fallback) |
+| `src/tools/monster.ts` | Monster get/stat blocks/`getMonsterStats` (anonymous when logged out, Open5e fallback); re-exports the search |
+| `src/tools/monster-service.ts` | Monster-service fetch layer, asker/session binding, the full monster list scan and its cache (8-way, 60 s deadline, 24 h / 5 min TTL) |
+| `src/tools/monster-search.ts`, `src/name-match.ts` | `ddb_search_monsters`: word-start/twin name rule (`matchesAtWordStart`), near matches, the 50 / `list_all` rule, incomplete-scan notes |
 | `src/tools/character.ts` + `src/tools/character/*` | Character fetch/cache and the per-domain sheet parser (`parse.ts`, `editions.ts`, `definition.ts`, `actions.ts` + `spell-attacks.ts` for the combat block, `item-gate.ts`, …) |
 | `src/tools/campaign.ts`, `library.ts`, `search.ts` | Campaigns/party, library + book reading (cheerio, no browser), `ddb_search_site` |
 | `src/tools/conditions.ts` | Vendored conditions: SRD 5.1 (2014) and SRD 5.2.1 (2024), with CC-BY-4.0 attribution |
@@ -115,9 +117,9 @@ Full detail: [docs/claude/architecture.md](docs/claude/architecture.md).
   - Official `isHomebrew: false` content stays plain, so test that.
   - Details: [history.md#security-findings](docs/claude/history.md#security-findings).
 - **Open5e responses are distrusted.** Reject off-origin redirects, an empty `resp.url`, empty documents, and a `count` above the records collected. A failure is never cached as data, but is remembered for 60 s per URL. Either SRD document failing fails the whole call (owner decision).
-- **Caches** are generation-keyed or hook-cleared, and dedupe concurrent cold callers through a `*Pending` entry. A pending fetch may write the cache only while it is still the authoritative entry (an identity or epoch check), so `ddb_clear_cache` or a session change mid-fetch leaves nothing behind. Read [caching.md](docs/claude/caching.md) before touching one.
+- **Caches** are generation-keyed or hook-cleared, and dedupe concurrent cold callers through a `*Pending` entry. A pending fetch may write the cache only while it is still the authoritative entry (an identity or epoch check), so `ddb_clear_cache` or a session change mid-fetch leaves nothing behind. The full monster list (`getFullMonsterList`: keys `anon:`/`gen<n>:`, 24 h or 5 min when short, 60 s scan deadline, an empty unfiltered list is never cached) follows the same rules. Read [caching.md](docs/claude/caching.md) before touching one.
 - **MCP annotations.** Every registration passes one (`READ_ONLY_NET` / `READ_ONLY_LOCAL` in `server.ts`, or an inline object). Only `ddb_interact`, `ddb_download_character` and `ddb_logout` are `destructiveHint: true`. Keep annotations accurate when adding tools.
-- **Safety gates.** `ddb_interact` `fill` requires `confirm_fill: true`. `ddb_get_character_raw` requires `confirm_large_response: true` (300–500 KB). `ddb_download_character` writes only under `~/Downloads` or `~/Documents`.
+- **Safety gates.** `ddb_interact` `fill` requires `confirm_fill: true`. `ddb_get_character_raw` requires `confirm_large_response: true` (300–500 KB). `ddb_download_character` writes only under `~/Downloads` or `~/Documents`. `ddb_search_monsters` shows at most 50 entries by default, with the exact total and a size estimate; `list_all: true` lists everything, so use it only after a search has reported the count and size.
 - **Character tools** take no `rules_edition` and do no twin selection. They label entries by the sheet's main edition. Prefer the `summary` or `combat` section of `ddb_get_character` over `full`.
 - **Owner rulings are recorded with dates** in the docs ("owner ruling 2026-…"). Don't relitigate them. If a change would alter a ruled behaviour, put the choice to the owner with the measured impact of each option.
 - Live checks run against the owner's **free** DDB account, which owns no books. "Locked" content is therefore expected, and anything that needs paid or homebrew content can't be verified live.
@@ -143,7 +145,7 @@ Full detail: [docs/claude/architecture.md](docs/claude/architecture.md).
 
 ## Open work (history and closed items in [history.md](docs/claude/history.md))
 
-Last updated 2026-11-09. Releases and pushes go straight to `main`. The rules-edition work (phases 1–5) is complete, as are the follow-up rounds of minors A–E, the F-2026-10-20 residuals and the combat section completeness run (I1–I3). Since v2.10.2, 285 commits are unreleased.
+Last updated 2026-11-10. Releases and pushes go straight to `main`. The rules-edition work (phases 1–5) is complete, as are the follow-up rounds of minors A–E, the F-2026-10-20 residuals and the combat section completeness run (I1–I3). Since v2.10.2, 304 commits are unreleased.
 
 1. **Stateless-safe plan, Task 2 onward**: [docs/superpowers/plans/2026-09-17-stateless-safe-ddb-mcp.md](docs/superpowers/plans/2026-09-17-stateless-safe-ddb-mcp.md). Nothing blocks it. The plan predates some moves, so refresh it first:
    - the registrations are in `src/server.ts`, not `src/index.ts`;
@@ -152,5 +154,5 @@ Last updated 2026-11-09. Releases and pushes go straight to `main`. The rules-ed
 
    Task 4 (delete `characterSpellBuffer`) is also unblocked.
 2. **Open carry-overs that need a book-owning or homebrew account**: (b) owner-only subclass renames; (aa) slug joins for paid books; (ah) a feature-level homebrew flag on optional features; (ay) item- and background-granted action entries (wrapping is covered by synthetic tests only).
-3. **Regression handover (B11, B12, I4, I5)**: needs owner decisions, see docs/superpowers/specs/2026-11-06-regression-report.md. The rest of the 2026-11-06 run is done (history.md "Regression run 2026-11-06"); I1–I3 closed 2026-11-09, and their carry-overs (ba)–(bo) are listed ((bg) closed, (bh) closed for save advantages) under history.md "Combat section completeness 2026-11-09".
+3. **Regression handover (I4, I5)**: needs owner decisions, see docs/superpowers/specs/2026-11-06-regression-report.md. The rest of the 2026-11-06 run is done (history.md "Regression run 2026-11-06"); B11 (monster search quality) and B12 (Critical Role books) closed 2026-11-10 (history.md "Monster search quality and Critical Role books 2026-11-10"; carry-overs (bp), (bq) and four open owner questions are listed there); I1–I3 closed 2026-11-09, and their carry-overs (ba)–(bo) are listed ((bg) closed, (bh) closed for save advantages) under history.md "Combat section completeness 2026-11-09".
 4. **Open by design** (no change planned): (q) either Open5e document failing fails the call; (y) the sheet keeps empty slots for nameless entries; (ab) "dual-edition" means only 2024 + 2014 books.

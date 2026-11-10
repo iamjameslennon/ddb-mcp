@@ -1,6 +1,6 @@
 # Monster search quality (B11) and Critical Role books (B12) — design
 
-Date: 2026-11-10. Source: regression report B11 and B12
+Date: 2026-11-10. **Status: implemented 2026-11-10** (B12 `be82007..3196364`, B11 `3196364..744b3ac`; run record and the rulings made during the run in [history.md](../../claude/history.md)). Source: regression report B11 and B12
 ([2026-11-06-regression-report.md](2026-11-06-regression-report.md)). Every
 decision marked **owner ruling 2026-11-10** was made by the owner in the
 brainstorming session; everything marked **builder's call** may be changed by
