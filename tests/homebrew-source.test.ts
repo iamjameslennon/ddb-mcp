@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import { HOMEBREW_SOURCE_BOOK, searchHeader, homebrewLoginRequired, homebrewUnreachable } from "../src/edition.js";
+import { HOMEBREW_SEARCH_HEADER, homebrewLoginRequired, homebrewUnreachable } from "../src/edition.js";
 import { wrapUntrusted } from "../src/utils.js";
 
 /**
@@ -91,7 +91,7 @@ describe("source: homebrew on the catalog tools", () => {
     installSpells();
     const out = await reference.searchSpells({ source: "homebrew" });
     const lines = out.split("\n");
-    expect(lines[0]).toBe(searchHeader({ sourceBook: HOMEBREW_SOURCE_BOOK }));
+    expect(lines[0]).toBe(HOMEBREW_SEARCH_HEADER);
     expect(out).toContain(wrapUntrusted("- **Moon Beam** [homebrew] — Level 1 Evocation"));
     expect(out).not.toContain("Sleep");
     expect(out).not.toContain("hidden");
@@ -117,7 +117,7 @@ describe("source: homebrew on the catalog tools", () => {
   it("ddb_search_equipment source homebrew lists only homebrew items", async () => {
     installGameData({ items: [item(1, "Moon Blade", {}, [148]), item(2, "Moon Blade", { isHomebrew: true })] });
     const out = await reference.searchItems({ source: "homebrew" });
-    expect(out.split("\n")[0]).toBe(searchHeader({ sourceBook: HOMEBREW_SOURCE_BOOK }));
+    expect(out.split("\n")[0]).toBe(HOMEBREW_SEARCH_HEADER);
     expect(out).toContain(wrapUntrusted("- **Moon Blade** [homebrew] — Common Weapon"));
     expect(out.match(/- \*\*Moon Blade\*\*/g)).toHaveLength(1);
   });
@@ -150,7 +150,7 @@ describe("source: homebrew on the catalog tools", () => {
         { id: 2, name: "Lucky Star", description: "d", isHomebrew: true, prerequisite: null, snippet: "" },
       ],
     });
-    const header = searchHeader({ sourceBook: HOMEBREW_SOURCE_BOOK });
+    const header = HOMEBREW_SEARCH_HEADER;
     for (const [out, name] of [
       [await reference.searchRaces({ source: "homebrew" }), "Moonling"],
       [await reference.searchClasses({ source: "homebrew" }), "Witch"],
@@ -311,7 +311,7 @@ describe("source: homebrew for class features and racial traits", () => {
 
   it("lists a homebrew class feature and racial trait, tagged [homebrew] and wrapped", async () => {
     installOwned();
-    const header = searchHeader({ sourceBook: HOMEBREW_SOURCE_BOOK });
+    const header = HOMEBREW_SEARCH_HEADER;
     const cf = await reference.searchClassFeatures({ source: "homebrew" });
     expect(cf.split("\n")[0]).toBe(header);
     expect(cf).toContain("Riposte Flourish");

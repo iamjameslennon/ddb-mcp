@@ -491,11 +491,11 @@ function o5Renamed(
   return entry.edition === "2024" ? { name2014: otherName, name2024: shownName } : { name2014: shownName, name2024: otherName };
 }
 
-/** A search over both documents: one entry per twin group, the other edition's twins hidden and counted. Sorted by name. */
+/** A search over both documents: one entry per twin group, the other edition's twins hidden and counted. Sorted by name (monsters: `twinFirst`). */
 async function o5Select<T extends O5Record>(
   endpoints: readonly O5Endpoint[],
   requested: RulesEdition,
-  opts: { name?: string; passes?: (e: O5Entry<T>) => boolean; wordStart?: boolean },
+  opts: { name?: string; passes?: (e: O5Entry<T>) => boolean; wordStart?: boolean; twinFirst?: boolean },
 ): Promise<{ selected: Array<{ entry: O5Entry<T>; reason?: SelectionReason }>; hidden: number }> {
   const entries = await o5Entries<T>(endpoints, requested);
   const namer = await o5GuardedNamer(endpoints, entries);
@@ -514,10 +514,18 @@ async function o5Select<T extends O5Record>(
     passes: opts.passes,
     countFilteredPicks: true,
   });
+  // `twinFirst` (monsters, C5): D&D Beyond's R5 order. With a name, the rows whose
+  // twin key equals the query's come first, then A-Z (en), ties by record key.
+  const queryTwin = opts.twinFirst && opts.name ? namer.twin(opts.name) : null;
+  const twinRank = (e: O5Entry<T>) => queryTwin !== null && namer.twin(e.record.name) === queryTwin ? 0 : 1;
+  const order = opts.twinFirst
+    ? (a: O5Entry<T>, b: O5Entry<T>) => twinRank(a) - twinRank(b)
+      || a.record.name.localeCompare(b.record.name, "en") || a.record.key.localeCompare(b.record.key)
+    : (a: O5Entry<T>, b: O5Entry<T>) => a.record.name.localeCompare(b.record.name);
   return {
     selected: selected
       .map(({ entry, reason }) => ({ entry, reason }))
-      .sort((a, b) => a.entry.record.name.localeCompare(b.entry.record.name)),
+      .sort((a, b) => order(a.entry, b.entry)),
     hidden,
   };
 }
@@ -845,7 +853,7 @@ type O5MonsterSearchParams = {
   type?: string;
   size?: string;
   rulesEdition?: RulesEdition;
-  /** Only used to work out which filters the narrowing hint can still suggest: Open5e does not filter by book. */
+  /** Accepted and ignored: Open5e cannot filter by book, so the hint never suggests it (the caller adds the source caveat). */
   source?: string;
   listAll?: boolean;
   siteSearch?: boolean;
@@ -860,6 +868,7 @@ export async function o5SearchMonstersSection(params: O5MonsterSearchParams, ori
   const { selected, hidden } = await o5Select<O5Creature>(["creatures"], requested, {
     name: params.name,
     wordStart: true,
+    twinFirst: true,
     passes: ({ record: m }) =>
       (params.cr === undefined || m.challenge_rating === params.cr)
       && (!params.type || lowerHas(params.type, m.type?.key, m.type?.name))
@@ -875,7 +884,8 @@ export async function o5SearchMonstersSection(params: O5MonsterSearchParams, ori
   });
   if (selected.length > shown.length) {
     const avgBytes = lines.reduce((n, l) => n + Buffer.byteLength(l), 0) / lines.length;
-    const unused = ([["cr", params.cr], ["type", params.type], ["size", params.size], ["source", params.source]] as const)
+    // Open5e cannot filter by book, so `source` is never suggested (C2).
+    const unused = ([["cr", params.cr], ["type", params.type], ["size", params.size]] as const)
       .filter(([, v]) => v === undefined).map(([k]) => k);
     lines.push(`\n${narrowingHint({ total: selected.length, approxKb: Math.round(avgBytes * selected.length / 1024), unused, siteSearch: params.siteSearch === true })}`);
   }

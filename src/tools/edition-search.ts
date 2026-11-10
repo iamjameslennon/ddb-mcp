@@ -29,7 +29,7 @@
 
 import {
   classifyEdition, classifyForEdition, editionSourceId, editionSourceIdFor, editionTag, isDualEdition, isEdition, groupAndSelect, lookupByName, definitionTiebreak,
-  rulesLine, renameLine, sourceNote, lookupSourceNote, searchHeader, bookChoiceNote, alsoInLine, HOMEBREW_INFO, HOMEBREW_SOURCE_BOOK,
+  rulesLine, renameLine, sourceNote, lookupSourceNote, searchHeader, bookChoiceNote, alsoInLine, HOMEBREW_INFO, HOMEBREW_SEARCH_HEADER,
   type EditionInfo, type EditionMarkers, type RulesEdition, type Ruleset, type SourceIndex, type TiebreakFields, type TwinNamer,
 } from "../edition.js";
 import { inSources, sourceLabel, withSourceCaveat, type ResolvedSource } from "../source-filter.js";
@@ -357,7 +357,7 @@ export function selectCatalog<T>(
         && (adapter.nameMatches?.(t) ?? true) && (adapter.passes?.(t) ?? true))
       .sort(order)
       .map(entry => ({ entry, info: HOMEBREW_INFO, label: editionTag(HOMEBREW_INFO) }));
-    return { hits, hidden: 0, header: searchHeader({ sourceBook: HOMEBREW_SOURCE_BOOK }), note: null };
+    return { hits, hidden: 0, header: HOMEBREW_SEARCH_HEADER, note: null };
   }
   const classify = classifier(all, adapter, index, requested, source);
   const info = classify.info;

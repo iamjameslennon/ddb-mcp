@@ -7,10 +7,10 @@ import { captureSession, type SessionSnapshot } from "../session-fetch.js";
 import { getSourceIndex } from "../game-config.js";
 import {
   classifyEdition, groupAndSelect, monsterTiebreak, twinAliases, normalizeName,
-  isEdition, editionTag, searchHeader, NEAR_MATCH_RULES_LINE, searchFooter,
+  isEdition, editionTag, searchHeader, NEAR_MATCH_RULES_LINE, HOMEBREW_NEAR_MATCH_RULES_LINE, HOMEBREW_SEARCH_HEADER, searchFooter, cappedList,
   isLockedReason, lockedLineSuffix, lockedSwapSummary, lockedEntriesNote,
   NOT_LOGGED_IN_SUFFIX,
-  HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO, homebrewLoginRequired, homebrewUnreachable,
+  HOMEBREW_INFO, homebrewLoginRequired, homebrewUnreachable,
   type EditionInfo, type RulesEdition, type SelectionReason, type SourceIndex,
 } from "../edition.js";
 import { resolveSource, isHomebrewSource, sourceLabel, unknownSourceError, type ResolvedSource } from "../source-filter.js";
@@ -111,6 +111,14 @@ export const nearMatchLabel = (searchTerm: string): string =>
  * by name; with more in any spelling, the name rules run over the full list.
  */
 export const NAME_SCAN_LIMIT = 500;
+
+/** The most books the search's "appears in" hint names; the rest are counted ("and N more", C3). */
+export const APPEARS_IN_CAP = 10;
+
+/** The empty-book reply's appears-in hint: ` "<name>" appears in: A, B, and N more.`, or "" with no other book. */
+function appearsInHint(searchTerm: string, books: readonly string[]): string {
+  return books.length ? ` "${searchTerm}" appears in: ${cappedList(books, APPEARS_IN_CAP)}.` : "";
+}
 
 /**
  * R8: the books a name "appears in" for the search's empty-book reply, by the
@@ -307,6 +315,8 @@ async function twinSpellings(
 function incompleteNote(c: Pick<Candidates, "complete" | "checked" | "scanTotal">, countLine: boolean): string {
   if (c.complete) return "";
   const risk = countLine ? "the count may be short" : "a match may have been missed";
+  // C4: with no total to give (only failed spellings reported one), no "Only 0 of 0+".
+  if (c.scanTotal === 0) return `\n*Some of D&D Beyond's results could not be read, so ${risk}. Try again in a few minutes.*`;
   return `\n*Only ${formatCount(c.checked)} of ${formatCount(c.scanTotal)}+ entries could be read from D&D Beyond, so ${risk}. Try again in a few minutes.*`;
 }
 
@@ -410,8 +420,7 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
       // Open5e only carries the SRD — never substitute it for a requested book.
       let msg = `No monsters matching the search criteria in ${sourceLabel(index, sourceIds[0])}.`;
       if (searchTerm && c) {
-        const available = await searchAppearsIn(searchTerm, index, asker, c.snapshot);
-        if (available.length) msg += ` "${searchTerm}" appears in: ${available.join(", ")}.`;
+        msg += appearsInHint(searchTerm, await searchAppearsIn(searchTerm, index, asker, c.snapshot));
       }
       return withIncompleteNote(noMatchSection(msg), note);
     }
@@ -484,7 +493,7 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
 
   // The path's normal header: homebrew (no edition, so no sourceNote), a book, or the plain search.
   function sectionHeader(): { header: string; note?: string | null } {
-    if (homebrew) return { header: searchHeader({ sourceBook: HOMEBREW_SOURCE_BOOK }) };
+    if (homebrew) return { header: HOMEBREW_SEARCH_HEADER };
     // Slugs aren't unique; the header names the lowest-id book, not a premade-character pack.
     if (book) return sourceFraming(book, requested, index);
     return { header: searchHeader({ requested }) };
@@ -504,18 +513,22 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
     if (nearHits.length) {
       const shownNear = await withListStats(nearHits.map(m => ({ m, info: homebrew ? HOMEBREW_INFO : info(m) })), access);
       // The edition-neutral header replaces the path's edition claim (and the book header's
-      // "every entry"); the book's own source note is kept.
-      const header = NEAR_MATCH_RULES_LINE;
+      // "every entry"); the book's own source note is kept. Homebrew lines are all
+      // [homebrew], so they get the homebrew form (C1).
+      const header = homebrew ? HOMEBREW_NEAR_MATCH_RULES_LINE : NEAR_MATCH_RULES_LINE;
       const bookNote = book ? sectionHeader().note : null;
       const body: string[] = [];
       // R9: a book search leads with today's empty-book line and its "appears in" hint.
       if (params.source && !homebrew) {
         let msg = `No monsters matching the search criteria in ${sourceLabel(index, sourceIds[0])}.`;
-        const available = await searchAppearsIn(searchTerm, index, asker, candidates.snapshot);
-        if (available.length) msg += ` "${searchTerm}" appears in: ${available.join(", ")}.`;
+        msg += appearsInHint(searchTerm, await searchAppearsIn(searchTerm, index, asker, candidates.snapshot));
         body.push(msg);
       }
       if (bookNote) body.push(bookNote);
+      // C6: a locked near match gets the note a normal locked row gets (its AC and
+      // HP may print as dashes); still no swap, suffix, summary or hidden count (R10).
+      const lockedNote = lockedEntriesNote(shownNear.filter(r => isLockedIn(access, r.m.id)).length, asker.anonymous);
+      if (lockedNote) body.push(lockedNote);
       body.push(nearMatchLabel(searchTerm));
       for (const row of shownNear) body.push(formatRow(row, rowCtx));
       // A near match judged over an incomplete scan may have missed a real match: say so.

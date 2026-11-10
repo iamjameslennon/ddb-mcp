@@ -804,10 +804,16 @@ export function alsoInLine(others: readonly string[]): string {
   return `(also in ${others.join(", ")} — pass source to choose)`;
 }
 
-/** The "book" of a monster search with source: "homebrew". */
-export const HOMEBREW_SOURCE_BOOK = "homebrew content";
 /** What every entry under source: "homebrew" is labelled. */
 export const HOMEBREW_INFO: EditionInfo = { ruleset: "homebrew", book: null };
+/**
+ * First line of a `source: "homebrew"` search (monsters and every catalog
+ * search). Every line is tagged [homebrew], so it claims no per-line edition
+ * (C1, owner ruling 2026-11-10).
+ */
+export const HOMEBREW_SEARCH_HEADER = `Rules: listing homebrew entries only, each tagged ${editionTag(HOMEBREW_INFO)}.`;
+/** First line of a `source: "homebrew"` monster near-match section: NEAR_MATCH_RULES_LINE's homebrew form (C1). */
+export const HOMEBREW_NEAR_MATCH_RULES_LINE = `Rules: closest homebrew matches only — no edition was selected; each line is tagged ${editionTag(HOMEBREW_INFO)}.`;
 
 /** `source: "homebrew"` never returns official entries, so without a login there is nothing to fall back to. `kind` is singular ("monster", "class feature"). */
 export function homebrewLoginRequired(kind: string): string {
@@ -835,10 +841,10 @@ export const AMBIGUITY_LIST_CAP = 20;
 /** An ambiguity candidate whose CR the data does not give (`cr: null`) prints as `(CR unknown)`. */
 export const CR_UNKNOWN_TEXT = "unknown";
 
-/** A comma list of at most AMBIGUITY_LIST_CAP names, then ", and N more". */
-export function cappedList(names: readonly string[]): string {
-  const shown = names.slice(0, AMBIGUITY_LIST_CAP).join(", ");
-  const more = names.length - AMBIGUITY_LIST_CAP;
+/** A comma list of at most `cap` names (default AMBIGUITY_LIST_CAP), then ", and N more". */
+export function cappedList(names: readonly string[], cap = AMBIGUITY_LIST_CAP): string {
+  const shown = names.slice(0, cap).join(", ");
+  const more = names.length - cap;
   return more > 0 ? `${shown}, and ${more} more` : shown;
 }
 

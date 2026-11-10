@@ -5,7 +5,7 @@ import {
   dedupeById, dedupeByKey, definitionTiebreak, monsterTiebreak,
   selectByEdition, lookupByName, groupAndSelect,
   cappedList, rulesLine, CUSTOM_ITEM_RULES_LINE, reasonLine, renameLine, RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, PARTY_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, lookupSourceNote, editionTag, searchHeader, NEAR_MATCH_RULES_LINE, open5eSearchHeader, searchFooter, ambiguityMessage,
-  lockedLineSuffix, lockedSwapSummary, lockedEntriesNote, availableElsewhereHint, HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO,
+  lockedLineSuffix, lockedSwapSummary, lockedEntriesNote, availableElsewhereHint, HOMEBREW_SEARCH_HEADER, HOMEBREW_NEAR_MATCH_RULES_LINE, HOMEBREW_INFO,
   loggedOutReason, LOGGED_OUT_RESTRICTED_NOTE, NOT_LOGGED_IN_SUFFIX,
   characterMainEdition, characterTag, characterRulesLine, classifyForEdition, sourceIdRuleset, isDualEdition,
   type CategoryRecord, type CharacterEditionEntry, type CharacterEntryKind,
@@ -1176,7 +1176,10 @@ describe("locked-content labels", () => {
   });
 
   it("homebrew source labels", () => {
-    expect(searchHeader({ sourceBook: HOMEBREW_SOURCE_BOOK })).toBe("Rules: listing entries of every edition in homebrew content, each tagged with its edition.");
+    // C1 (owner ruling 2026-11-10): every homebrew line is [homebrew], so neither header claims an edition per line.
+    expect(HOMEBREW_SEARCH_HEADER).toBe("Rules: listing homebrew entries only, each tagged [homebrew].");
+    expect(HOMEBREW_NEAR_MATCH_RULES_LINE).toBe("Rules: closest homebrew matches only — no edition was selected; each line is tagged [homebrew].");
+    for (const h of [HOMEBREW_SEARCH_HEADER, HOMEBREW_NEAR_MATCH_RULES_LINE]) expect(h).not.toMatch(/its (own )?edition/);
     expect(rulesLine(HOMEBREW_INFO)).toBe("Rules: homebrew (edition not stated)");
     expect(editionTag(HOMEBREW_INFO)).toBe("[homebrew]");
   });

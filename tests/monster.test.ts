@@ -57,7 +57,7 @@ import {
 } from "../src/tools/monster-service.js";
 import { o5SearchMonstersSection, o5GetMonster, o5GetMonsterStats, o5MonsterInEdition } from "../src/open5e.js";
 import { search } from "../src/tools/search.js";
-import { NEAR_MATCH_RULES_LINE, searchHeader } from "../src/edition.js";
+import { NEAR_MATCH_RULES_LINE, HOMEBREW_NEAR_MATCH_RULES_LINE, searchHeader, lockedEntriesNote } from "../src/edition.js";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 // IDs, source attribution, and categories mirror live monster-service / game
@@ -885,6 +885,27 @@ describe("the search's appears-in hint uses word-start matching (R8, B11)", () =
   });
 });
 
+describe("the search's appears-in hint is capped at 10 books (C3)", () => {
+  const BOOKS = [25, 27, 33, 35, 36, 37, 38, 41, 43, 44, 47, 48];
+
+  it("names the first 10 books, then counts the rest", async () => {
+    extraMonsters = BOOKS.map((id, i) => monster({ id: 8_330_000 + i, name: "Murkling", sourceId: id, sources: sources(id) }));
+    const out = await searchMonsters({ name: "murkling", source: "cos" });
+    const hint = /"murkling" appears in: ([^\n]*)/.exec(out)?.[1];
+    expect(hint).toBeDefined();
+    expect(hint!.endsWith(", and 2 more.")).toBe(true);
+    expect(hint!.replace(/, and 2 more\.$/, "").split(", ")).toHaveLength(10);
+  });
+
+  it("10 books or fewer are all named, with no count", async () => {
+    extraMonsters = BOOKS.slice(0, 10).map((id, i) => monster({ id: 8_330_100 + i, name: "Murkling", sourceId: id, sources: sources(id) }));
+    const out = await searchMonsters({ name: "murkling", source: "cos" });
+    const hint = /"murkling" appears in: ([^\n]*)/.exec(out)?.[1];
+    expect(hint).not.toContain("more");
+    expect(hint!.replace(/\.$/, "").split(", ")).toHaveLength(10);
+  });
+});
+
 describe("the search's appears-in hint paging (R8)", () => {
   const filler = (n: number, i: number) =>
     monster({ id: 8_320_000 + i, name: `Hobgoblin Filler ${i}`, sourceId: 147, sources: sources(147) });
@@ -1472,7 +1493,7 @@ describe('source: "homebrew"', () => {
   it("searchMonsters lists only homebrew entries, tagged and wrapped, with no hiding", async () => {
     extraMonsters = [monster({ id: 8_000_070, name: "Zombie Wisp", isHomebrew: undefined, sourceId: 147, sources: sources(147) })];
     const lines = (await searchMonsters({ name: "Zombie", source: "homebrew" })).split("\n");
-    expect(lines[0]).toBe("Rules: listing entries of every edition in homebrew content, each tagged with its edition.");
+    expect(lines[0]).toBe("Rules: listing homebrew entries only, each tagged [homebrew].");
     const entries = lines.filter(l => l.startsWith("- **"));
     expect(entries).toHaveLength(3); // ZOMBIE_HOMEBREW, HOMEBREW_IN_BOOK, and the isHomebrew-unset Zombie Wisp
     for (const l of entries) {
@@ -2884,6 +2905,35 @@ describe("near matches (B11 option B)", () => {
       expect((await search("gobiln", "monsters", "2024")).split("\n")[0]).toBe(NEAR_MATCH_RULES_LINE);
     }));
 
+  it("C6: a locked near match gets the locked-entries note a normal row gets, and nothing else", () => withFuzzy(
+    { gobilnq: [GOBLIN_WARRIOR_2024, GOBLIN_2014] }, async () => {
+      unownedIds.add(GOBLIN_WARRIOR_2024.id as number);
+      const out = await searchMonsters({ name: "gobilnq" });
+      const lines = out.split("\n");
+      const note = lockedEntriesNote(1, false)!;
+      expect(lines).toContain(note);
+      expect(lines.indexOf(note)).toBeLessThan(lines.indexOf(label("gobilnq")));
+      // Still raw: no swap suffix, no swap summary, no hidden count.
+      expect(out).not.toContain("isn't available to this account)");
+      expect(out).not.toContain("entry shows its");
+      expect(out).not.toContain("hidden");
+      expect(entryLines(out).map(l => /\*\*(.+?)\*\*/.exec(l)![1])).toEqual(["Goblin Warrior", "Goblin"]);
+    }));
+
+  it("C6: logged out, a locked zero-stat near match is explained by the logged-out note", () => withFuzzy(
+    { gobilnr: [monster({ id: 8_200_030, name: "Goblin Warrior", sourceId: 147, sources: sources(147), armorClass: 0, averageHitPoints: 0 })] }, async () => {
+      unownedIds.add(8_200_030);
+      goLoggedOut();
+      const out = await searchMonsters({ name: "gobilnr" });
+      expect(out).toContain("AC —, — HP");
+      expect(out).toContain(lockedEntriesNote(1, true)!);
+    }));
+
+  it("C6: no locked near match, no note", () => withFuzzy({ vorpal: [AVORAL] }, async () => {
+    const out = await searchMonsters({ name: "vorpal" });
+    expect(out).not.toContain("isn't available");
+  }));
+
   it("a homebrew near-match line is wrapped", () => withFuzzy(
     { vorpall: [monster({ id: 8_200_010, name: "Vorpal Horror", isHomebrew: true, sourceId: 147, sources: sources(147) })] }, async () => {
       const out = await searchMonsters({ name: "vorpall" });
@@ -2896,6 +2946,9 @@ describe("near matches (B11 option B)", () => {
   it("homebrew source: only non-official fuzzy hits are listed, wrapped, under the label", () => withFuzzy(
     { vorpalll: [AVORAL, monster({ id: 8_200_011, name: "Vorpal Horror", isHomebrew: true, sourceId: 147, sources: sources(147) })] }, async () => {
       const out = await searchMonsters({ source: "homebrew", name: "vorpalll" });
+      // C1: the homebrew near-match header, not "tagged with its own edition".
+      expect(out.split("\n")[0]).toBe(HOMEBREW_NEAR_MATCH_RULES_LINE);
+      expect(out).not.toContain("its own edition");
       expect(out).toContain(label("vorpalll"));
       expect(out).not.toContain("Avoral Guardinal");
       expect(out).toMatch(/<untrusted_dndbeyond_content>[^]*Vorpal Horror/);
@@ -3072,6 +3125,15 @@ describe("exact candidate sets and totals (B11)", () => {
     const out = await searchMonsters({ cr: 20 });
     expect(countLine(out)).toBe("**Monster Search** (1 shown of 1 matching)");
     expect(out).not.toContain("could be read");
+  });
+
+  it("C4: when nothing could be counted, the note doesn't say \"Only 0 of 0+\"", async () => {
+    // "thug" has no hits of its own; its alias "tough" fails, so nothing was counted.
+    failSearchTerms.add("tough");
+    const out = await searchMonsters({ name: "thug" });
+    expect(out).toContain("O5 SEARCH RESULT");
+    expect(out).not.toContain("Only 0 of 0+");
+    expect(out).toContain("*Some of D&D Beyond's results could not be read, so a match may have been missed. Try again in a few minutes.*");
   });
 
   describe("incomplete scans without a count line keep the note", () => {

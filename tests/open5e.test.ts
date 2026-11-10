@@ -797,7 +797,8 @@ describe("Open5e searches capped at 20 lines", () => {
     expect(out.some(l => l.startsWith("Found ") && l.includes("(showing 50, SRD only):"))).toBe(true);
     expect(out.join("\n")).not.toContain(REFINE);
     const hint = out.find(l => l.startsWith("Narrow the search"))!;
-    expect(hint).toMatch(/^Narrow the search \(add cr, type, size or source\), or repeat with `list_all: true` to list all \d+ \(about \d+ KB\)\.$/);
+    // C2: Open5e cannot filter by book, so the hint never suggests source.
+    expect(hint).toMatch(/^Narrow the search \(add cr, type or size\), or repeat with `list_all: true` to list all \d+ \(about \d+ KB\)\.$/);
     expect(out[out.length - 1]).toBe('1 2014 version hidden — rules_edition: "2014" shows it.');
   });
 
@@ -820,6 +821,20 @@ describe("Open5e searches capped at 20 lines", () => {
     expect(all.split("\n").filter(l => l.startsWith("• "))).toHaveLength(60);
     expect(all).toContain("(showing 60, SRD only):");
     expect(all).not.toContain("list_all");
+  });
+
+  it("C5: a monster name search lists the query's twin first (R5), then A-Z", async () => {
+    const mk = (key: string, name: string) => ({ ...o5Record<Record<string, unknown>>("srd-2024", "creatures", "Wolf"), key: `srd-2024_${key}`, name });
+    stubFetch(o5FixtureFetch({
+      "srd-2024/creatures": [mk("goblin-minion", "Goblin Minion"), mk("goblin-warrior", "Goblin Warrior"), mk("goblin-boss", "Goblin Boss"), mk("aardvark", "Aardvark Goblin")],
+      "srd-2014/creatures": [o5Record("srd-2014", "creatures", "Wolf")],
+    }));
+    const names = (out: string) => out.split("\n").filter(l => l.startsWith("• ")).map(l => l.slice(2, l.indexOf(" [")));
+    expect(names(await o5SearchMonsters({ name: "goblin", rulesEdition: "2024" }, "unavailable")))
+      .toEqual(["Goblin Warrior", "Aardvark Goblin", "Goblin Boss", "Goblin Minion"]);
+    // Without a name: A-Z.
+    expect(names(await o5SearchMonsters({ size: "medium", rulesEdition: "2024" }, "unavailable")).filter(n => n.includes("Goblin")))
+      .toEqual(["Aardvark Goblin", "Goblin Boss", "Goblin Minion", "Goblin Warrior"]);
   });
 
   it("monster name matching is at word starts: goblin skips Hobgoblin, will o wisp finds Will-o'-Wisp", async () => {
