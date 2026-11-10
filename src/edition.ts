@@ -695,7 +695,7 @@ export type SearchHeaderMode = { requested: RulesEdition } | { sourceBook: strin
 
 /** First line of every search result, above the tool's own heading. */
 export function searchHeader(mode: SearchHeaderMode): string {
-  if ("sourceBook" in mode) return `Rules: showing every entry in ${mode.sourceBook}, each tagged with its edition.`;
+  if ("sourceBook" in mode) return `Rules: listing entries of every edition in ${mode.sourceBook}, each tagged with its edition.`;
   if ("rulesDoc" in mode) return `Rules: sections from ${SRD_NAME[mode.rulesDoc]} (${mode.rulesDoc}).`;
   return mode.requested === "2024"
     ? `Rules: 2024 by default — 2014 entries appear only where no 2024 version was found. Use rules_edition: "2014" for 2014 versions.`

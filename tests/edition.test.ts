@@ -874,7 +874,7 @@ describe("search labels", () => {
   it("searchHeader", () => {
     expect(searchHeader({ requested: "2024" })).toBe(`Rules: 2024 by default — 2014 entries appear only where no 2024 version was found. Use rules_edition: "2014" for 2014 versions.`);
     expect(searchHeader({ requested: "2014" })).toBe("Rules: 2014 requested — 2024 entries appear only where no 2014 version was found.");
-    expect(searchHeader({ sourceBook: "Monster Manual (2024)" })).toBe("Rules: showing every entry in Monster Manual (2024), each tagged with its edition.");
+    expect(searchHeader({ sourceBook: "Monster Manual (2024)" })).toBe("Rules: listing entries of every edition in Monster Manual (2024), each tagged with its edition.");
     expect(searchHeader({ rulesDoc: "2024" })).toBe("Rules: sections from SRD 5.2 (2024).");
     expect(searchHeader({ rulesDoc: "2014" })).toBe("Rules: sections from SRD 5.1 (2014).");
   });
@@ -1176,7 +1176,7 @@ describe("locked-content labels", () => {
   });
 
   it("homebrew source labels", () => {
-    expect(searchHeader({ sourceBook: HOMEBREW_SOURCE_BOOK })).toBe("Rules: showing every entry in homebrew content, each tagged with its edition.");
+    expect(searchHeader({ sourceBook: HOMEBREW_SOURCE_BOOK })).toBe("Rules: listing entries of every edition in homebrew content, each tagged with its edition.");
     expect(rulesLine(HOMEBREW_INFO)).toBe("Rules: homebrew (edition not stated)");
     expect(editionTag(HOMEBREW_INFO)).toBe("[homebrew]");
   });

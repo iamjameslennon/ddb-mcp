@@ -639,7 +639,7 @@ describe("searchMonsters", () => {
     extraMonsters = [monster({ id: 8_000_300, name: "Crypt Wolf", isLegacy: true, sourceId: 6, sources: sources(6) }),
                      monster({ id: 8_000_301, name: "Crypt Wolf", sourceId: 147, sources: sources(147, 6) })];
     const out = await searchMonsters({ name: "Crypt Wolf", source: "cos" });
-    expect(out.split("\n")[0]).toBe("Rules: showing every entry in Curse of Strahd, each tagged with its edition.");
+    expect(out.split("\n")[0]).toBe("Rules: listing entries of every edition in Curse of Strahd, each tagged with its edition.");
     expect(out).toContain("- **Crypt Wolf** [2014]");
     expect(out).toContain("- **Crypt Wolf** [2024]");
     expect(out).not.toContain("hidden");
@@ -1406,7 +1406,7 @@ describe('source: "homebrew"', () => {
   it("searchMonsters lists only homebrew entries, tagged and wrapped, with no hiding", async () => {
     extraMonsters = [monster({ id: 8_000_070, name: "Zombie Wisp", isHomebrew: undefined, sourceId: 147, sources: sources(147) })];
     const lines = (await searchMonsters({ name: "Zombie", source: "homebrew" })).split("\n");
-    expect(lines[0]).toBe("Rules: showing every entry in homebrew content, each tagged with its edition.");
+    expect(lines[0]).toBe("Rules: listing entries of every edition in homebrew content, each tagged with its edition.");
     const entries = lines.filter(l => l.startsWith("- **"));
     expect(entries).toHaveLength(3); // ZOMBIE_HOMEBREW, HOMEBREW_IN_BOOK, and the isHomebrew-unset Zombie Wisp
     for (const l of entries) {
@@ -1492,7 +1492,7 @@ describe("monster name searches take 100 per spelling", () => {
 });
 
 describe("the locked-entry note and the swap summary count every selected entry", () => {
-  it("counts entries beyond the first PAGE_SIZE lines shown", async () => {
+  it("counts entries beyond the first MONSTER_SEARCH_LIMIT lines shown", async () => {
     const twins = (name: string, base: number) => [
       monster({ id: base, name, sourceId: 147, sources: sources(147) }),
       monster({ id: base + 1, name, isLegacy: true, sourceId: 1, sources: sources(1) }),
@@ -2977,6 +2977,7 @@ describe("exact candidate sets and totals (B11)", () => {
       expect(listUrls.some(u => u.includes("search=&"))).toBe(false);
       expect(countLine(out)).toBe("**Monster Search** (50 shown of 60+ matching)");
       expect(out).toContain("*Only 60 of 80+ entries could be read from D&D Beyond, so the count may be short. Try again in a few minutes.*");
+      expect(out).toMatch(/to list all 60\+ \(about [\d,]+ KB\)\./);
     });
 
     it("a full page 1 whose total says it is all is still read past, then exact", async () => {
@@ -3566,6 +3567,26 @@ describe("50 shown, narrowing hint, list_all (B11)", () => {
     const both = await searchMonsters({ cr: 0.25, siteSearch: true, listAll: true });
     expect(entryLines(both)).toHaveLength(50);
     expect(both).toContain("use ddb_search_monsters");
+  });
+
+  it("a book with more than 50 entries: the edition-claim header, 50 lines and the hint", async () => {
+    extraMonsters = Array.from({ length: 60 }, (_, i) => monster({
+      id: 8_720_000 + i, name: `Bookling ${String(i).padStart(2, "0")}`, sourceId: 232, sources: sources(232),
+    }));
+    const out = await searchMonsters({ source: "rthw" });
+    expect(out.split("\n")[0]).toBe("Rules: listing entries of every edition in Ravenloft: The Horrors Within, each tagged with its edition.");
+    expect(countLine(out)).toMatch(/^\*\*Monster Search\*\* \(50 shown of \d+ matching\)$/);
+    expect(entryLines(out)).toHaveLength(50);
+    expect(out).toContain("Narrow the search (add cr, type or size)");
+  });
+
+  it("homebrew rows in the window are counted: wrapped lines still print as rows", async () => {
+    extraMonsters = Array.from({ length: 60 }, (_, i) => monster({
+      id: 8_730_000 + i, name: `Zealot ${String(i).padStart(2, "0")}`, isHomebrew: i % 10 === 0, sourceId: 147, sources: sources(147),
+    }));
+    const out = await searchMonsters({ name: "Zealot" });
+    expect(out).toContain("<untrusted_dndbeyond_content>");
+    expect(entryLines(out)).toHaveLength(50);
   });
 
   it("50 matches or fewer: no hint", async () => {

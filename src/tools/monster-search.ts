@@ -467,7 +467,7 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
     const unused = ([["cr", params.cr], ["type", params.type], ["size", params.size], ["source", params.source]] as const)
       .filter(([, v]) => v === undefined).map(([k]) => k);
     lines.push(`\n${narrowingHint({
-      total: monsters.length, approxKb: Math.round(avgBytes * monsters.length / 1024), unused, siteSearch: params.siteSearch === true,
+      total: monsters.length, complete: candidates.complete, approxKb: Math.round(avgBytes * monsters.length / 1024), unused, siteSearch: params.siteSearch === true,
     })}`);
   }
   if (countNote) lines.push(countNote);

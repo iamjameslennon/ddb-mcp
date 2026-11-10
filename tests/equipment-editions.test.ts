@@ -145,7 +145,7 @@ describe("ddb_search_equipment rules_edition and source", () => {
   it("source basic-rules-2014 lists the reprint, tagged with the book's edition (it is dual-edition)", async () => {
     installItems();
     const lines = (await reference.searchItems({ name: "studded", source: "basic-rules-2014" })).split("\n");
-    expect(lines[0]).toMatch(/^Rules: showing every entry in .*Basic Rules/);
+    expect(lines[0]).toMatch(/^Rules: listing entries of every edition in .*Basic Rules/);
     expect(lines[1]).toBe(sourceNote("basic-rules-2014", "2014", "2024"));
     expect(lines[2]).toBe("**Item Search** (1 found)");
     expect(lines).toContain("- **Studded Leather** [2014] — Common Armor");

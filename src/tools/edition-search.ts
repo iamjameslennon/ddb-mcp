@@ -49,8 +49,8 @@ export function orList(items: string[]): string {
 }
 
 /** The line a capped monster search ends with: how to narrow it, and what the full list costs. */
-export function narrowingHint(o: { total: number; approxKb: number; unused: string[]; siteSearch: boolean }): string {
-  const cost = `to list all ${formatCount(o.total)} (about ${formatCount(o.approxKb)} KB).`;
+export function narrowingHint(o: { total: number; complete?: boolean; approxKb: number; unused: string[]; siteSearch: boolean }): string {
+  const cost = `to list all ${formatCount(o.total)}${o.complete === false ? "+" : ""} (about ${formatCount(o.approxKb)} KB).`;
   if (o.siteSearch) return `Narrow the search, or use ddb_search_monsters with \`list_all: true\` ${cost}`;
   const add = o.unused.length ? ` (add ${orList(o.unused)})` : "";
   return `Narrow the search${add}, or repeat with \`list_all: true\` ${cost}`;

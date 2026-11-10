@@ -629,7 +629,7 @@ describe("searchClassFeatures — rules_edition and source", () => {
 
   it("source phb-2024: only the 2024 Fighter's features, tagged, under the source header", async () => {
     const out = await reference.searchClassFeatures({ source: "phb-2024" });
-    expect(out.split("\n")[0]).toBe("Rules: showing every entry in Player's Handbook (2024), each tagged with its edition.");
+    expect(out.split("\n")[0]).toBe("Rules: listing entries of every edition in Player's Handbook (2024), each tagged with its edition.");
     const lines = entryLines(out);
     expect(lines).toHaveLength(FULL_CLASS_ENTRIES.filter((e) => e.classId === 2190879).length);
     for (const l of lines) expect(l).toMatch(/^- \*\*[^*]+\*\* \[2024\] — Fighter/);
@@ -774,7 +774,7 @@ describe("searchRacialTraits — rules_edition and source", () => {
 
   it("source vgtm lists the Volo's Goblin's trait, tagged", async () => {
     const out = await reference.searchRacialTraits({ raceName: "goblin", source: "vgtm" });
-    expect(out.split("\n")[0]).toBe("Rules: showing every entry in Volo's Guide to Monsters, each tagged with its edition.");
+    expect(out.split("\n")[0]).toBe("Rules: listing entries of every edition in Volo's Guide to Monsters, each tagged with its edition.");
     expect(entryLines(out)).toEqual(["- **Fury of the Small** [2014] *(Goblin)* — Fury of the Small snippet"]);
   });
 });

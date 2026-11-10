@@ -232,7 +232,7 @@ describe("source on the spell tools", () => {
   it("search with a source lists the book's entries, tagged, with no hidden footer", async () => {
     installBasics();
     const lines = (await reference.searchSpells({ source: "phb-2024" })).split("\n");
-    expect(lines[0]).toBe("Rules: showing every entry in Player's Handbook (2024), each tagged with its edition.");
+    expect(lines[0]).toBe("Rules: listing entries of every edition in Player's Handbook (2024), each tagged with its edition.");
     const results = lines.filter(l => l.startsWith("- **"));
     expect(results.length).toBe(4);
     expect(results.every(l => l.includes("** [2024] — "))).toBe(true);

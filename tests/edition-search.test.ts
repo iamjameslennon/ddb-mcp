@@ -121,7 +121,7 @@ describe("selectCatalog, flat mode", () => {
     const sel = selectCatalog([GOBLIN_VGTM, GOBLIN_MOTM], "2024", flat(), INDEX, source);
     expect(sel.hits.map(h => h.entry)).toEqual([GOBLIN_VGTM]);
     expect(sel.hits[0].label).toBe("[2014]");
-    expect(sel.header).toBe("Rules: showing every entry in Volo's Guide to Monsters, each tagged with its edition.");
+    expect(sel.header).toBe("Rules: listing entries of every edition in Volo's Guide to Monsters, each tagged with its edition.");
     expect(sel.note).toBe('(source "vgtm" is a 2014 book — its entries are listed whatever rules_edition says)');
     expect(sel.hidden).toBe(0);
   });
@@ -550,6 +550,12 @@ describe("narrowingHint and orList", () => {
   it("with no unused filters", () => {
     expect(narrowingHint({ total: 120, approxKb: 30, unused: [], siteSearch: false }))
       .toBe("Narrow the search, or repeat with `list_all: true` to list all 120 (about 30 KB).");
+  });
+  it("an incomplete scan carries the same plus as the count line", () => {
+    expect(narrowingHint({ total: 60, complete: false, approxKb: 5, unused: ["cr"], siteSearch: false }))
+      .toBe("Narrow the search (add cr), or repeat with `list_all: true` to list all 60+ (about 5 KB).");
+    expect(narrowingHint({ total: 60, complete: false, approxKb: 5, unused: [], siteSearch: true }))
+      .toBe("Narrow the search, or use ddb_search_monsters with `list_all: true` to list all 60+ (about 5 KB).");
   });
   it("site search", () => {
     expect(narrowingHint({ total: 1601, approxKb: 400, unused: ["cr"], siteSearch: true }))
