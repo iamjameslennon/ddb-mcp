@@ -88,6 +88,27 @@ export function categoryRuleset(categoryId: number | null | undefined): Ruleset 
   return (categoryId != null ? CATEGORY_RULESET.get(categoryId) : undefined) ?? "unstated";
 }
 
+/**
+ * Per-source ruleset overrides (B12, owner ruling 2026-11-10). D&D Beyond files
+ * these books under category 2 (Critical Role, [third-party]), but Wizards of
+ * the Coast published them as 5e (2014) books.
+ *  - 59: Explorer's Guide to Wildemount, Wizards of the Coast, 2020.
+ *  - 62: Frozen Sick (WA), Wizards of the Coast, 2020.
+ *  - 83: Call of the Netherdeep, Wizards of the Coast, 2022.
+ * Source 31 (Critical Role / Blood Hunter) and 123 (Tal'Dorei Campaign Setting
+ * Reborn, Darrington Press, 2022) stay third-party.
+ */
+const SOURCE_RULESET_OVERRIDES: ReadonlyMap<number, Ruleset> = new Map<number, Ruleset>([
+  [59, "2014"],
+  [62, "2014"],
+  [83, "2014"],
+]);
+
+/** A source's ruleset: its per-source override, else its category's. Every derivation goes through here. */
+export function sourceIdRuleset(sourceId: number, categoryId: number | null | undefined): Ruleset {
+  return SOURCE_RULESET_OVERRIDES.get(sourceId) ?? categoryRuleset(categoryId);
+}
+
 // ── Source index ──────────────────────────────────────────────────────────────
 
 const YEAR_SUFFIX = /\s*\(\d{4}\)\s*$/;
@@ -107,7 +128,7 @@ export function buildSourceIndex(sources: readonly SourceRecord[], categories: r
   const decoded = sources.map(s => ({
     s,
     book: decodeBookName(s.description) || decodeBookName(s.name),
-    ruleset: categoryRuleset(s.sourceCategoryId),
+    ruleset: sourceIdRuleset(s.id, s.sourceCategoryId),
   }));
   const stem = (book: string) => book.replace(YEAR_SUFFIX, "").toLowerCase();
   const index = new Map<number, IndexedSource>();
@@ -181,7 +202,7 @@ function classifyWithSource(
     const s = index.sources.get(id);
     if (s) known.push({ id, s });
   }
-  const firstIn = (ruleset: Ruleset) => known.find(k => categoryRuleset(k.s.categoryId) === ruleset);
+  const firstIn = (ruleset: Ruleset) => known.find(k => sourceIdRuleset(k.id, k.s.categoryId) === ruleset);
   const firstDescribed = () => known.find(k => k.s.description != null && k.s.description.trim() !== "") ?? null;
 
   if (entry.isLegacy === true) {
@@ -651,7 +672,7 @@ export function sourceNote(source: string, bookRuleset: RulesEdition, requested:
  * the shown entry is not the requested edition, since `source` won. When the
  * entry is the book's edition the wording is sourceNote's; a reprint of the
  * other edition names both, and a 2014/2024 entry in a book that is neither
- * (live: Legacy Bullywug in egtw, category 2, [third-party]) names the entry's
+ * (e.g. a Legacy entry in tcsr, category 2, [third-party]) names the entry's
  * only (carry-over ap). A shown entry that is not 2014/2024 keeps the book's
  * note, as searches do, so a third-party book's own entries get none.
  */
@@ -886,7 +907,7 @@ function dualBook(
   if (edition === "unstated" || entry.isHomebrew === true || entry.isLegacy === true) return null;
   const books = entrySourceIds(entry).flatMap(id => {
     const src = index.sources.get(id);
-    return src ? [{ id, ruleset: categoryRuleset(src.categoryId), book: src.book }] : [];
+    return src ? [{ id, ruleset: sourceIdRuleset(id, src.categoryId), book: src.book }] : [];
   });
   const mine = books.find(b => b.ruleset === edition);
   const other = edition === "2024" ? "2014" : "2024";

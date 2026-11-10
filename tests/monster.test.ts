@@ -652,16 +652,26 @@ describe("searchMonsters", () => {
       .toBe('(source "cos" is a 2014 book — its entries are listed whatever rules_edition says)');
   });
 
-  it("a get of a Legacy entry in a book that is not 2014/2024 notes the unmet rules_edition (live: Bullywug in egtw)", async () => {
-    // Explorer's Guide to Wildemount (id 59) is in category 2, which classifies [third-party].
+  it("a get in a Wizards-published Critical Role book notes the book's 2014 edition (B12: egtw is 2014)", async () => {
+    // Explorer's Guide to Wildemount (id 59) is category 2 but overridden to 2014 (Wizards of the Coast).
+    const note = '(source "egtw" is a 2014 book — its entries are listed whatever rules_edition says)';
     extraMonsters = [monster({ id: 8_000_320, name: "Wildemount Bullywug", isLegacy: true, sourceId: 59, sources: sources(59) })];
     const unmet = await getMonster("Wildemount Bullywug", { source: "egtw" });
     expect(unmet).toContain("Rules: 2014");
-    expect(unmet).toContain('(this entry from source "egtw" is 2014 text — shown whatever rules_edition says)');
+    expect(unmet).toContain(note);
     expect(await getMonster("Wildemount Bullywug", { source: "egtw", rulesEdition: "2014" })).not.toContain("whatever rules_edition says");
-    // The book's own (third-party) entries get no note: there is no edition to contradict.
     extraMonsters = [monster({ id: 8_000_321, name: "Wildemount Native", sourceId: 59, sources: sources(59) })];
-    expect(await getMonster("Wildemount Native", { source: "egtw" })).not.toContain("whatever rules_edition says");
+    expect(await getMonster("Wildemount Native", { source: "egtw" })).toContain(note);
+    expect(await getMonster("Wildemount Native", { source: "egtw", rulesEdition: "2014" })).not.toContain("whatever rules_edition says");
+  });
+
+  it("a get of a Legacy entry in a book that is not 2014/2024 notes the unmet rules_edition (carry-over ap, tcsr)", async () => {
+    // Tal'Dorei Campaign Setting Reborn (id 123, Darrington Press) stays category 2, [third-party].
+    extraMonsters = [monster({ id: 8_000_322, name: "Tal'Dorei Bullywug", isLegacy: true, sourceId: 123, sources: sources(123) })];
+    const unmet = await getMonster("Tal'Dorei Bullywug", { source: "tcsr" });
+    expect(unmet).toContain("Rules: 2014");
+    expect(unmet).toContain('(this entry from source "tcsr" is 2014 text — shown whatever rules_edition says)');
+    expect(await getMonster("Tal'Dorei Bullywug", { source: "tcsr", rulesEdition: "2014" })).not.toContain("whatever rules_edition says");
   });
 
   it("filters by source server-side, including source-only searches", async () => {

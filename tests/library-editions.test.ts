@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { buildSourceIndex } from "../src/edition.js";
+import { SNAPSHOT_CATEGORIES, SNAPSHOT_SOURCES } from "../src/source-snapshot.js";
 import { INDEX } from "./fixtures/character-edition-helpers.js";
 import { buildFixture } from "./fixtures/library-rsc.js";
 
@@ -333,5 +334,13 @@ describe("library tools", () => {
   it("listLibrary adds an edition to each book", async () => {
     route([PHB]);
     expect(JSON.parse(await listLibrary()).books[0].edition).toBe("[2024]");
+  });
+});
+
+describe("libraryBookInfo: Critical Role books (B12)", () => {
+  const idx = buildSourceIndex(SNAPSHOT_SOURCES, SNAPSHOT_CATEGORIES);
+  it("Frozen Sick is 2014, TCSR stays third-party", () => {
+    expect(libraryBookInfo({ slug: "sources/dnd/wa", title: "Frozen Sick" }, idx).ruleset).toBe("2014");
+    expect(libraryBookInfo({ slug: "sources/dnd/tcsr", title: "Tal'Dorei Campaign Setting Reborn" }, idx).ruleset).toBe("third-party");
   });
 });

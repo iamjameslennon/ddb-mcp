@@ -7,7 +7,7 @@ import {
   cappedList, rulesLine, CUSTOM_ITEM_RULES_LINE, reasonLine, renameLine, RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, PARTY_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, SERVER_INSTRUCTIONS, TREASURE_RULES_EDITION_NOTE, DMG_SOURCE_ID, sourceNote, lookupSourceNote, editionTag, searchHeader, open5eSearchHeader, searchFooter, ambiguityMessage,
   lockedLineSuffix, lockedSwapSummary, lockedEntriesNote, availableElsewhereHint, HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO,
   loggedOutReason, LOGGED_OUT_RESTRICTED_NOTE, NOT_LOGGED_IN_SUFFIX,
-  characterMainEdition, characterTag, characterRulesLine, classifyForEdition,
+  characterMainEdition, characterTag, characterRulesLine, classifyForEdition, sourceIdRuleset, isDualEdition,
   type CategoryRecord, type CharacterEditionEntry, type CharacterEntryKind,
   type EditionInfo, type EditionMarkers, type Ruleset, type SourceRecord,
 } from "../src/edition.js";
@@ -1192,4 +1192,19 @@ describe("cappedList (minors B item 10)", () => {
     expect(cappedList(names.slice(0, 20))).toBe(names.slice(0, 20).join(", "));
     expect(cappedList(names)).toBe(`${names.slice(0, 20).join(", ")}, and 3 more`);
   });
+});
+
+describe("sourceIdRuleset: per-source overrides (B12)", () => {
+  const SNAPSHOT_INDEX = buildSourceIndex(SNAPSHOT_SOURCES, SNAPSHOT_CATEGORIES);
+  it.each([[59, "2014"], [62, "2014"], [83, "2014"], [31, "third-party"], [123, "third-party"]] as const)(
+    "Critical Role source %i is %s", (id, ruleset) => expect(sourceIdRuleset(id, 2)).toBe(ruleset));
+  it("an unlisted category-2 source stays third-party", () => expect(sourceIdRuleset(999_999, 2)).toBe("third-party"));
+  it("falls back to the category table", () => expect(sourceIdRuleset(145, 24)).toBe("2024"));
+  it("classifyEdition: a non-Legacy EGtW entry is 2014", () =>
+    expect(classifyEdition({ sourceId: 59, sources: [{ sourceId: 59 }] }, SNAPSHOT_INDEX))
+      .toEqual({ ruleset: "2014", book: "Explorer's Guide to Wildemount" }));
+  it("isDualEdition: EGtW + PHB 2024 is dual-edition", () =>
+    expect(isDualEdition({ sourceId: 59, sources: [{ sourceId: 59 }, { sourceId: 145 }] }, SNAPSHOT_INDEX)).toBe(true));
+  it("isDualEdition: TCSR + PHB 2024 is not", () =>
+    expect(isDualEdition({ sourceId: 123, sources: [{ sourceId: 123 }, { sourceId: 145 }] }, SNAPSHOT_INDEX)).toBe(false));
 });
