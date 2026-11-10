@@ -39,7 +39,8 @@ import { sessionFetch, hasValidSession, onSessionInvalidated, beginAuthenticated
 import { SessionChangedError, SessionLayerError } from "../src/session-state.js";
 import { stripHtmlRich } from "../src/utils.js";
 import {
-  getFullMonsterList, scanAllPages, fetchMonsterList, monsterCacheSize, MonsterScanTimeoutError, isExpectedOutage, LOGGED_IN,
+  getFullMonsterList, scanAllPages, fetchMonsterList, monsterCacheSize, MonsterScanTimeoutError, MonsterListEmptyError,
+  isExpectedOutage, LOGGED_IN,
   FULL_SCAN_DEADLINE_MS, SHORT_LIST_TTL_MS, FULL_LIST_TTL_MS, MAX_SCAN_PAGES,
 } from "../src/tools/monster-service.js";
 import { o5SearchMonstersSection, o5GetMonster, o5GetMonsterStats, o5MonsterInEdition } from "../src/open5e.js";
@@ -2685,6 +2686,39 @@ describe("monster page scans and the full-list cache", () => {
     vi.mocked(assertSessionCurrent).mockImplementation(() => {});
   });
 
+  const tick = () => new Promise(r => setTimeout(r, 0));
+  /** Seen only by pages answered while it is the fixture: tells an old scan's list from a newer one's. */
+  const STALE = monster({ id: 3_100_001, name: "Stale Wight", sourceId: 147, sources: sources(147) });
+  const FRESH = monster({ id: 3_100_002, name: "Fresh Wight", sourceId: 147, sources: sources(147) });
+  const ids = (scan: { entries: Array<{ id: number }> }) => new Set(scan.entries.map(e => e.id));
+  /**
+   * Hold every list request until released. A released page is answered from
+   * the fixtures as they are at release time, not at dispatch.
+   */
+  function holdListPages(): Array<() => void> {
+    const routed = route();
+    const held: Array<() => void> = [];
+    vi.mocked(sessionFetch).mockImplementation(async (input: string | URL | Request) => {
+      if (!String(input).includes("/v1/Monster?search=")) return routed(input);
+      return new Promise<Response>(resolve => { held.push(() => resolve(routed(input))); });
+    });
+    return held;
+  }
+  /** Answer every held page until `until` reports done. */
+  async function answerUntil(held: Array<() => void>, until: () => boolean): Promise<void> {
+    for (let i = 0; i < 50 && !until(); i++) {
+      for (const release of held.splice(0)) release();
+      await tick();
+    }
+    expect(until()).toBe(true);
+  }
+  /** A flag that turns true once `p` settles either way. */
+  function settledFlag(p: Promise<unknown>): () => boolean {
+    let done = false;
+    void p.then(() => { done = true; }, () => { done = true; });
+    return () => done;
+  }
+
   it("keeps at most 8 pages in flight and reads every entry", async () => {
     extraMonsters = scanFillers(1000); // 1,675 entries: 17 pages
     const routed = route();
@@ -2752,41 +2786,32 @@ describe("monster page scans and the full-list cache", () => {
     expect(b).toBe(a);
   });
 
-  it("a clear mid-scan leaves nothing cached, and the old scan can't evict a newer one", async () => {
+  it("a clear mid-scan leaves nothing cached: the next call scans again and caches its own list", async () => {
+    const held = holdListPages();
+    extraMonsters = [STALE];
     const first = getFullMonsterList(LOGGED_IN);
+    await tick();
+    expect(held).toHaveLength(1); // page 1 sent: the scan is in flight
     clearMonsterCache();
-    const second = getFullMonsterList(LOGGED_IN); // doesn't join the cleared scan
-    expect((await first).complete).toBe(true); // its caller still gets an answer
-    await second;
+    await answerUntil(held, settledFlag(first));
+    expect(ids(await first).has(STALE.id as number)).toBe(true); // its caller still gets an answer
+    expect(fullListRequests()).toBe(7);
+
+    extraMonsters = [FRESH];
+    const second = getFullMonsterList(LOGGED_IN);
+    await tick();
+    expect(held).toHaveLength(1); // a new scan, not the stale list
+    await answerUntil(held, settledFlag(second));
     expect(fullListRequests()).toBe(14);
-    // The second scan was the authoritative one: it alone is cached.
-    await getFullMonsterList(LOGGED_IN);
+    const cached = await getFullMonsterList(LOGGED_IN);
     expect(fullListRequests()).toBe(14);
-    // And with no newer scan, a clear mid-scan means the next call scans again.
-    const third = getFullMonsterList(LOGGED_IN, { sourceIds: [232] });
-    clearMonsterCache();
-    await third;
-    await getFullMonsterList(LOGGED_IN, { sourceIds: [232] });
-    expect(listUrls.filter(u => u.includes("sources=232"))).toHaveLength(2);
+    expect(ids(cached).has(FRESH.id as number)).toBe(true);
+    expect(ids(cached).has(STALE.id as number)).toBe(false);
   });
 
-  it("a scan that settles after a clear doesn't release the newer scan's slot", async () => {
-    const routed = route();
-    const held: Array<() => void> = [];
-    vi.mocked(sessionFetch).mockImplementation(async (input: string | URL | Request) => {
-      if (!String(input).includes("/v1/Monster?search=")) return routed(input);
-      return new Promise<Response>(resolve => { held.push(() => resolve(routed(input))); });
-    });
-    const tick = () => new Promise(r => setTimeout(r, 0));
-    /** Answer every held page until `until` reports done. */
-    const answerUntil = async (until: () => boolean): Promise<void> => {
-      for (let i = 0; i < 50 && !until(); i++) {
-        for (const release of held.splice(0)) release();
-        await tick();
-      }
-      expect(until()).toBe(true);
-    };
-
+  it("a scan that settles after a clear neither caches its list nor releases the newer scan's slot", async () => {
+    const held = holdListPages();
+    extraMonsters = [STALE];
     const first = getFullMonsterList(LOGGED_IN);
     await tick();
     clearMonsterCache();
@@ -2795,21 +2820,22 @@ describe("monster page scans and the full-list cache", () => {
     expect(held).toHaveLength(2); // each scan's page 1
     const [firstPage, secondPage] = held.splice(0);
     firstPage();
-    let firstDone = false;
-    void first.then(() => { firstDone = true; });
-    await answerUntil(() => firstDone);
-    // The first scan has settled; the second is still waiting on its page 1.
+    await answerUntil(held, settledFlag(first)); // the stale scan settles first, with the stale list
+    expect(ids(await first).has(STALE.id as number)).toBe(true);
+    // The second scan is still waiting on its page 1: a new caller joins it.
     const third = getFullMonsterList(LOGGED_IN);
     await tick();
-    expect(held).toHaveLength(0); // joined the second scan rather than starting one
+    expect(held).toHaveLength(0);
+    extraMonsters = [FRESH];
     secondPage();
-    let laterDone = false;
-    void Promise.all([second, third]).then(() => { laterDone = true; });
-    await answerUntil(() => laterDone);
+    await answerUntil(held, settledFlag(Promise.all([second, third])));
     expect(await third).toBe(await second);
     expect(fullListRequests()).toBe(14);
-    await getFullMonsterList(LOGGED_IN); // the second scan, cached
+    const cached = await getFullMonsterList(LOGGED_IN);
     expect(fullListRequests()).toBe(14);
+    expect(cached).toBe(await second);
+    expect(ids(cached).has(FRESH.id as number)).toBe(true);
+    expect(ids(cached).has(STALE.id as number)).toBe(false);
   });
 
   it("a list whose pages never come back short stops at MAX_SCAN_PAGES and is not complete", async () => {
@@ -2843,23 +2869,36 @@ describe("monster page scans and the full-list cache", () => {
   });
 
   it("a session transition mid-scan (the invalidation hook) leaves nothing cached", async () => {
-    const pending = getFullMonsterList(LOGGED_IN);
+    const held = holdListPages();
+    extraMonsters = [STALE];
+    const first = getFullMonsterList(LOGGED_IN);
+    await tick();
+    expect(held).toHaveLength(1); // page 1 sent: the scan is in flight
     invalidateMonsterModule();
-    await pending;
-    await getFullMonsterList(LOGGED_IN);
+    await answerUntil(held, settledFlag(first));
+    extraMonsters = [FRESH];
+    const second = getFullMonsterList(LOGGED_IN);
+    await answerUntil(held, settledFlag(second));
     expect(fullListRequests()).toBe(14);
+    const cached = await getFullMonsterList(LOGGED_IN);
+    expect(fullListRequests()).toBe(14);
+    expect(ids(cached).has(FRESH.id as number)).toBe(true);
+    expect(ids(cached).has(STALE.id as number)).toBe(false);
   });
 
-  it("a session change mid-scan rejects with it, caches nothing, and the next call scans afresh", async () => {
+  it("a session change mid-scan rejects with it, stops the queued pages, caches nothing, and the next call scans afresh", async () => {
+    extraMonsters = scanFillers(1000); // 17 pages: 8 in flight, 8 queued
     vi.mocked(assertSessionCurrent).mockImplementation(() => {
       if (listUrls.length >= 3) throw new SessionChangedError();
     });
     await expect(getFullMonsterList(LOGGED_IN)).rejects.toBeInstanceOf(SessionChangedError);
     vi.mocked(assertSessionCurrent).mockImplementation(() => {});
-    await new Promise(r => setTimeout(r, 0)); // let the dead scan's in-flight pages land
-    const before = fullListRequests();
+    await tick(); // let the dead scan's in-flight pages land
+    const dispatched = fullListRequests();
+    expect(dispatched).toBeLessThan(17);
+    expect(dispatched).toBe(1 + 8); // page 1, then one batch; nothing from the queue
     const scan = await getFullMonsterList(LOGGED_IN);
-    expect(fullListRequests() - before).toBe(7);
+    expect(fullListRequests() - dispatched).toBe(17);
     expect(scan.complete).toBe(true);
   });
 
@@ -2871,6 +2910,16 @@ describe("monster page scans and the full-list cache", () => {
     // The cache-read check, a pre-dispatch and a post-fetch check per page, and the final check.
     expect(checked.length).toBeGreaterThanOrEqual(1 + 2 * 7 + 1);
     expect(checked.every(s => s === bound)).toBe(true);
+  });
+
+  it("is keyed by the bound snapshot's generation, not the current one", async () => {
+    vi.mocked(captureSession).mockImplementation((() => ({ generation: 8 })) as never);
+    await getFullMonsterList(LOGGED_IN, { bound: { generation: 7 } as never });
+    expect(fullListRequests()).toBe(7);
+    await getFullMonsterList(LOGGED_IN, { bound: { generation: 7 } as never }); // a different object, same generation
+    expect(fullListRequests()).toBe(7);
+    await getFullMonsterList(LOGGED_IN); // captureSession: generation 8
+    expect(fullListRequests()).toBe(14);
   });
 
   it("a logged-in call checks its snapshot before serving the cache", async () => {
@@ -2907,6 +2956,29 @@ describe("monster page scans and the full-list cache", () => {
     await getFullMonsterList(LOGGED_IN);
     expect(fullListRequests()).toBe(14); // 7 anonymous + 7 logged in
     expect(anonFullListRequests()).toBe(7);
+  });
+
+  it("an empty unfiltered list is an outage: it rejects, caches nothing, and the next call scans again", async () => {
+    vi.mocked(sessionFetch).mockImplementation(async (input: string | URL | Request) => {
+      listUrls.push(String(input));
+      return mockResponse({ pagination: { total: 0, currentPage: 1, pages: 0 }, data: [] });
+    });
+    const first = getFullMonsterList(LOGGED_IN);
+    await expect(first).rejects.toBeInstanceOf(MonsterListEmptyError);
+    expect(isExpectedOutage(await first.catch((e: unknown) => e))).toBe(true);
+    expect(fullListRequests()).toBe(1);
+    await expect(getFullMonsterList(LOGGED_IN)).rejects.toBeInstanceOf(MonsterListEmptyError);
+    expect(fullListRequests()).toBe(2);
+    // scanAllPages itself refuses it too.
+    await expect(scanAllPages("", [], LOGGED_IN, captureSession())).rejects.toBeInstanceOf(MonsterListEmptyError);
+  });
+
+  it("an empty book, or a name with no hits, is a real answer and a book's is cached", async () => {
+    const book = await getFullMonsterList(LOGGED_IN, { sourceIds: [999] });
+    expect(book).toMatchObject({ entries: [], scanTotal: 0, complete: true });
+    await getFullMonsterList(LOGGED_IN, { sourceIds: [999] });
+    expect(listUrls.filter(u => u.includes("sources=999"))).toHaveLength(1);
+    expect(await scanAllPages("zzyzx nothing", [], LOGGED_IN, captureSession())).toMatchObject({ entries: [], complete: true });
   });
 
   it("a short scan re-reads every page once and reports the larger total, not complete", async () => {
@@ -3028,6 +3100,59 @@ describe("monster page scans and the full-list cache", () => {
       await vi.advanceTimersByTimeAsync(0);
       for (let i = 0; i < 10; i++) await Promise.resolve();
       expect(dispatched).toBe(1 + 8);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("expiring during the tail requests nothing past the held tail page", async () => {
+      vi.useFakeTimers();
+      extraMonsters = scanFillers(1000); // 1,675 entries
+      firstPageTotal = 650; // pages 1-7 answer at once and are all full, so the tail asks for skip=700
+      const routed = route();
+      const skips: number[] = [];
+      const held: Array<() => void> = [];
+      vi.mocked(sessionFetch).mockImplementation(async (input: string | URL | Request) => {
+        const url = String(input);
+        if (!url.includes("/v1/Monster?search=")) return routed(input);
+        const skip = Number(new URL(url).searchParams.get("skip"));
+        skips.push(skip);
+        if (skip < 700) return routed(input);
+        return new Promise<Response>(resolve => { held.push(() => resolve(routed(input))); });
+      });
+      const scan = getFullMonsterList(LOGGED_IN);
+      const rejects = expect(scan).rejects.toBeInstanceOf(MonsterScanTimeoutError);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(skips).toEqual([0, 100, 200, 300, 400, 500, 600, 700]);
+      expect(held).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(FULL_SCAN_DEADLINE_MS);
+      await rejects;
+      for (const release of held.splice(0)) release(); // the tail page answers late, full
+      await vi.advanceTimersByTimeAsync(0);
+      expect(Math.max(...skips)).toBe(700);
+      expect(skips).toHaveLength(8); // no further tail page, no retry
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("expiring during the R3 retry stops the retry's queued pages", async () => {
+      vi.useFakeTimers();
+      firstPageTotal = 900; // 675 entries: a short scan, so all 9 pages are read again
+      const routed = route();
+      let dispatched = 0;
+      const held: Array<() => void> = [];
+      vi.mocked(sessionFetch).mockImplementation(async (input: string | URL | Request) => {
+        if (!String(input).includes("/v1/Monster?search=")) return routed(input);
+        dispatched++;
+        if (dispatched <= 9) return routed(input); // the first pass answers at once
+        return new Promise<Response>(resolve => { held.push(() => resolve(routed(input))); });
+      });
+      const scan = getFullMonsterList(LOGGED_IN);
+      const rejects = expect(scan).rejects.toBeInstanceOf(MonsterScanTimeoutError);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(dispatched).toBe(9 + 8); // the retry's first batch, one page queued
+      await vi.advanceTimersByTimeAsync(FULL_SCAN_DEADLINE_MS);
+      await rejects;
+      for (const release of held.splice(0)) release();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(dispatched).toBe(9 + 8); // the queued ninth page was never sent
       expect(vi.getTimerCount()).toBe(0);
     });
 

@@ -223,7 +223,8 @@ export function isExpectedOutage(e: unknown): boolean {
     || e instanceof CobaltTokenError
     || e instanceof CobaltTokenTimeoutError
     || e instanceof MalformedCobaltTokenError
-    || e instanceof MonsterScanTimeoutError;
+    || e instanceof MonsterScanTimeoutError
+    || e instanceof MonsterListEmptyError;
 }
 
 export function askerNow(): Asker {
@@ -391,6 +392,18 @@ export class MonsterScanTimeoutError extends Error {
 }
 
 /**
+ * A scan of the whole unfiltered list came back with no monsters at all: the
+ * service is broken, not empty (owner ruling 2026-11-10). An outage-class
+ * failure, never cached. A book or a name with no hits is a real answer.
+ */
+export class MonsterListEmptyError extends Error {
+  constructor() {
+    super("D&D Beyond's monster list came back empty");
+    this.name = "MonsterListEmptyError";
+  }
+}
+
+/**
  * The fields a list search reads, without the stat-block HTML (a raw page is
  * ~247 KB). `isLegendary`/`isMythic` are kept because result lines print them.
  */
@@ -453,7 +466,8 @@ function summarizeScan(pages: MonsterListResponse[], last: MonsterListResponse):
  * reorder entries between requests, so a scan short of a reported total
  * re-reads every page once and merges by id (R3). One `FULL_SCAN_DEADLINE_MS`
  * deadline covers it all (R11): on expiry no further page is dispatched and the
- * scan rejects with `MonsterScanTimeoutError`.
+ * scan rejects with `MonsterScanTimeoutError`. An empty unfiltered list (no
+ * search term, no sources) rejects with `MonsterListEmptyError`.
  */
 export async function scanAllPages(search: string, sourceIds: number[], asker: Asker, snapshot: SessionSnapshot): Promise<MonsterScan> {
   let expired = false;
@@ -465,8 +479,10 @@ export async function scanAllPages(search: string, sourceIds: number[], asker: A
     }, FULL_SCAN_DEADLINE_MS);
   });
 
-  // Checked before each dispatch, so workers still holding a page when the
-  // deadline passes start no more (mapWithConcurrency stops on a rejection).
+  // The check after the fetch is what stops dispatch: a worker whose page
+  // lands after the deadline throws, and mapWithConcurrency then starts no
+  // queued page. Only microtasks separate that check from the next dispatch,
+  // so the check before it is defence in depth.
   const page = async (skip: number): Promise<MonsterListResponse> => {
     if (expired) throw new MonsterScanTimeoutError();
     const list = await fetchMonsterList(search, PAGE_SIZE, { sourceIds, skip, asker, bound: snapshot, noCache: true });
@@ -492,6 +508,7 @@ export async function scanAllPages(search: string, sourceIds: number[], asker: A
       scan = summarizeScan([...pages, ...again], again[again.length - 1]);
     }
     assertCurrentAfter(snapshot, asker);
+    if (!search && !sourceIds.length && !scan.entries.length) throw new MonsterListEmptyError();
     return scan;
   };
 
