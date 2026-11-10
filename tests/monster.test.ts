@@ -2744,6 +2744,82 @@ describe("word-start name matching (B11)", () => {
   });
 });
 
+describe("a partial name fetches its matches' renamed twins (B1, owner ruling 2026-11-10)", () => {
+  const GOBLIN_2014 = monster({ id: 8_150_001, name: "Goblin", isLegacy: true, sourceId: 1, sources: sources(1) });
+  const GOBLIN_WARRIOR_2024 = monster({ id: 8_150_002, name: "Goblin Warrior", sourceId: 147, sources: sources(147) });
+  const KOBOLD_WARRIOR_2024 = monster({ id: 8_150_003, name: "Kobold Warrior", sourceId: 147, sources: sources(147) });
+  const entryLines = (out: string) => out.split("\n").filter(l => l.startsWith("- **"));
+  const names = (out: string) => entryLines(out).map(l => /\*\*(.+?)\*\*/.exec(l)![1]);
+  const countLine = (out: string) => out.split("\n").find(l => l.startsWith("**Monster Search**"));
+  const termRequests = (term: string) => listUrls.filter(u => new URL(u).searchParams.get("search")?.toLowerCase() === term);
+
+  beforeEach(() => { extraMonsters = [GOBLIN_2014, GOBLIN_WARRIOR_2024, KOBOLD_WARRIOR_2024]; });
+
+  it('"warrior" under 2014 lists Goblin [2014], not Goblin Warrior', async () => {
+    const out = await searchMonsters({ name: "warrior", rulesEdition: "2014" });
+    expect(entryLines(out).some(l => l.startsWith("- **Goblin** [2014]"))).toBe(true);
+    expect(out).not.toContain("**Goblin Warrior**");
+    expect(names(out)).toEqual(["Goblin", "Kobold Warrior"]);
+    expect(out).toContain('1 2024 version hidden — omit rules_edition to show it.');
+  });
+
+  it('"warrior" under 2024 hides Goblin [2014] and counts it in the footer', async () => {
+    const out = await searchMonsters({ name: "warrior" });
+    expect(names(out)).toEqual(["Goblin Warrior", "Kobold Warrior"]);
+    expect(out.split("\n").at(-1)).toBe('1 2014 version hidden — rules_edition: "2014" shows it.');
+  });
+
+  it("each missing spelling's page 1 is fetched once, never a spelling already queried or a match's own name", async () => {
+    await searchMonsters({ name: "warrior" });
+    expect(termRequests("goblin")).toHaveLength(1);
+    expect(termRequests("goblin")[0]).toContain("&skip=0&take=100");
+    expect(termRequests("kobold")).toHaveLength(1);
+    expect(termRequests("warrior")).toHaveLength(1);
+    expect(termRequests("goblin warrior")).toHaveLength(0);
+    expect(termRequests("kobold warrior")).toHaveLength(0);
+  });
+
+  it("a failed extra spelling makes the result incomplete", async () => {
+    failSearchTerms.add("goblin");
+    const out = await searchMonsters({ name: "warrior" });
+    expect(countLine(out)).toBe("**Monster Search** (2 shown of 2+ matching)");
+    expect(out).toContain("could be read from D&D Beyond, so the count may be short");
+  });
+
+  it("no extra spelling is fetched when nothing renamed matched", async () => {
+    await searchMonsters({ name: "wolf" });
+    expect(listUrls.every(u => new URL(u).searchParams.get("search")?.toLowerCase() === "wolf")).toBe(true);
+  });
+
+  it("extra spellings go at most 8 at a time", async () => {
+    const renamed2024 = [
+      "Sahuagin Warrior", "Seahorse", "Shrieker Fungus", "Sphinx of Valor", "Sphinx of Lore", "Swarm of Piranhas",
+      "Swarm of Venomous Snakes", "Venomous Snake", "Giant Seahorse", "Animated Flying Sword", "Giant Venomous Snake",
+    ];
+    extraMonsters = renamed2024.map((name, i) => monster({ id: 8_150_100 + i, name, sourceId: 147, sources: sources(147) }));
+    const extraTerms = new Set(["sahuagin", "sea horse", "shrieker", "androsphinx", "gynosphinx", "swarm of quippers",
+      "swarm of poisonous snakes", "poisonous snake", "giant sea horse", "flying sword", "giant poisonous snake"]);
+    const routed = vi.mocked(sessionFetch).getMockImplementation()!;
+    let inFlight = 0;
+    let maxInFlight = 0;
+    vi.mocked(sessionFetch).mockImplementation(async (input: string | URL | Request) => {
+      const term = String(input).includes("/v1/Monster?search=") ? new URL(String(input)).searchParams.get("search")!.toLowerCase() : "";
+      if (!extraTerms.has(term)) return routed(String(input));
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      try {
+        await new Promise(r => setTimeout(r, 0));
+        return await routed(String(input));
+      } finally {
+        inFlight--;
+      }
+    });
+    await searchMonsters({ name: "s" });
+    expect([...extraTerms].every(t => termRequests(t).length === 1)).toBe(true);
+    expect(maxInFlight).toBe(8);
+  });
+});
+
 describe("near matches (B11 option B)", () => {
   const GOBLIN_2014 = monster({ id: 8_200_001, name: "Goblin", isLegacy: true, sourceId: 1, sources: sources(1) });
   const GOBLIN_WARRIOR_2024 = monster({ id: 8_200_002, name: "Goblin Warrior", sourceId: 147, sources: sources(147) });

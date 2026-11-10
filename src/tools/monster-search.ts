@@ -6,7 +6,7 @@
 import { captureSession, type SessionSnapshot } from "../session-fetch.js";
 import { getSourceIndex } from "../game-config.js";
 import {
-  classifyEdition, groupAndSelect, monsterTiebreak, twinAliases,
+  classifyEdition, groupAndSelect, monsterTiebreak, twinAliases, normalizeName,
   isEdition, editionTag, searchHeader, NEAR_MATCH_RULES_LINE, searchFooter,
   isLockedReason, lockedLineSuffix, lockedSwapSummary, lockedEntriesNote,
   NOT_LOGGED_IN_SUFFIX,
@@ -20,7 +20,7 @@ import { o5SearchMonstersSection, o5MonsterInEdition, type O5EditionMonster } fr
 import { renderSection, plainSection, noMatchSection, sourceFraming, withSourceCaveatSection, formatCount, narrowingHint, MONSTER_SEARCH_LIMIT, type SearchSection } from "./edition-search.js";
 import {
   askerNow, configFor, assertCurrentAfter, fetchMonsterList, scanAllPages, getFullMonsterList, mergeAccess, isLockedIn,
-  sizeName, crDisplay, monsterTwin, PAGE_SIZE, SIZE_MAP,
+  sizeName, crDisplay, monsterTwin, PAGE_SIZE, SIZE_MAP, SCAN_CONCURRENCY,
   type Asker, type AccessMap, type MonsterListEntry, type MonsterListResponse, type MonsterScan,
 } from "./monster-service.js";
 
@@ -191,11 +191,13 @@ const FAILED_ALIAS: ScanPart = { entries: [], access: new Map(), complete: false
  * - A name: page 1 of each twin spelling. When any spelling has more than
  *   NAME_SCAN_LIMIT hits, the name rules (G1/G2) run over the full list instead,
  *   keeping each matching entry's whole twin group for edition selection;
- *   otherwise each spelling with more than a page is scanned in full. Only the
- *   typed spelling's failure fails the search.
+ *   otherwise each spelling with more than a page is scanned in full, and
+ *   (with `twinGroups`) the matches' renamed twins are added (twinSpellings).
+ *   Only the typed spelling's failure fails the search.
+ * `twinGroups`: the caller selects by edition over whole twin groups (no `source`).
  * Never mutates a scan: merged results are new arrays and maps.
  */
-async function gatherCandidates(searchTerm: string, sourceIds: number[], asker: Asker): Promise<Candidates> {
+async function gatherCandidates(searchTerm: string, sourceIds: number[], asker: Asker, twinGroups: boolean): Promise<Candidates> {
   const snapshot = captureSession();
   if (!searchTerm) {
     const scan = await getFullMonsterList(asker, { sourceIds, bound: snapshot });
@@ -243,9 +245,58 @@ async function gatherCandidates(searchTerm: string, sourceIds: number[], asker: 
       part.checked += p.checked;
       part.scanTotal += p.scanTotal;
     }
+    if (twinGroups) {
+      const twins = await twinSpellings(searchTerm, spellings, entries, sourceIds, asker, snapshot);
+      for (const m of twins.entries) {
+        if (!seen.has(m.id)) { seen.add(m.id); entries.push(m); }
+      }
+      for (const [id, value] of twins.access) access.set(id, value);
+      part.complete &&= twins.complete;
+    }
   }
   assertCurrentAfter(snapshot, asker);
   return { ...part, typedFirstPage, snapshot };
+}
+
+/**
+ * B1 (owner ruling 2026-11-10): a partial name can match a renamed entry
+ * ("warrior" → Goblin Warrior) whose other-edition twin (Goblin) none of the
+ * typed name's spellings return, so edition selection would see half a group.
+ * Every other spelling of each match's twin group (twinAliases), less those
+ * already queried and the matches' own names (their query returned them), has
+ * its page 1 fetched: at most one per rename pair, SCAN_CONCURRENCY at a time,
+ * under the call's snapshot and asker. Only entries of the matches' twin groups
+ * are kept. A failed spelling makes the result incomplete, like a failed alias.
+ */
+async function twinSpellings(
+  searchTerm: string, queried: readonly string[], fetched: readonly MonsterListEntry[],
+  sourceIds: number[], asker: Asker, bound: SessionSnapshot,
+): Promise<{ entries: MonsterListEntry[]; access: AccessMap; complete: boolean }> {
+  const matched = fetched.filter(nameMatcher(searchTerm));
+  const covered = new Set([...queried, ...matched.map(m => m.name)].map(normalizeName));
+  const missing = new Map<string, string>();
+  for (const m of matched) {
+    for (const spelling of twinAliases(m.name, monsterTwin)) {
+      const key = normalizeName(spelling);
+      if (!covered.has(key)) missing.set(key, spelling);
+    }
+  }
+  const groups = new Set(matched.map(m => monsterTwin(m.name)));
+  const pages = await mapWithConcurrency([...missing.values()], SCAN_CONCURRENCY, term =>
+    fetchMonsterList(term, PAGE_SIZE, { sourceIds, asker, bound }).catch(() => null));
+  const entries: MonsterListEntry[] = [];
+  const access: AccessMap = new Map();
+  for (const page of pages) {
+    const pageAccess: AccessMap = new Map();
+    mergeAccess(pageAccess, page);
+    for (const m of page?.data ?? []) {
+      if (!groups.has(monsterTwin(m.name))) continue;
+      entries.push(m);
+      const value = pageAccess.get(m.id);
+      if (value !== undefined) access.set(m.id, value);
+    }
+  }
+  return { entries, access, complete: pages.every(page => page !== null) };
 }
 
 /**
@@ -387,7 +438,7 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
   }
 
   // Every candidate, under one snapshot (a book narrows them server-side).
-  const candidates = await gatherCandidates(searchTerm, sourceIds, asker);
+  const candidates = await gatherCandidates(searchTerm, sourceIds, asker, !params.source);
   const { entries: fetched, access } = candidates;
   const countNote = incompleteNote(candidates, true);
   const noCountNote = incompleteNote(candidates, false);
