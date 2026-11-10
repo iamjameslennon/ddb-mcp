@@ -11,7 +11,7 @@ import {
   isLockedReason, lockedLineSuffix, lockedSwapSummary, lockedEntriesNote,
   NOT_LOGGED_IN_SUFFIX,
   HOMEBREW_SOURCE_BOOK, HOMEBREW_INFO, homebrewLoginRequired, homebrewUnreachable,
-  type EditionInfo, type RulesEdition, type SelectionReason,
+  type EditionInfo, type RulesEdition, type SelectionReason, type SourceIndex,
 } from "../edition.js";
 import { resolveSource, isHomebrewSource, sourceLabel, unknownSourceError, type ResolvedSource } from "../source-filter.js";
 import { wrapUntrusted, mapWithConcurrency } from "../utils.js";
@@ -19,7 +19,7 @@ import { matchesAtWordStart } from "../name-match.js";
 import { o5SearchMonstersSection, o5MonsterInEdition, type O5EditionMonster } from "../open5e.js";
 import { renderSection, plainSection, noMatchSection, sourceFraming, withSourceCaveatSection, formatCount, narrowingHint, MONSTER_SEARCH_LIMIT, type SearchSection } from "./edition-search.js";
 import {
-  askerNow, configFor, assertCurrentAfter, fetchMonsterList, scanAllPages, getFullMonsterList, mergeAccess, isLockedIn, availableSourcesFor,
+  askerNow, configFor, assertCurrentAfter, fetchMonsterList, scanAllPages, getFullMonsterList, mergeAccess, isLockedIn,
   sizeName, crDisplay, monsterTwin, PAGE_SIZE, SIZE_MAP,
   type Asker, type AccessMap, type MonsterListEntry, type MonsterListResponse, type MonsterScan,
 } from "./monster-service.js";
@@ -111,6 +111,32 @@ export const nearMatchLabel = (searchTerm: string): string =>
  * by name; with more in any spelling, the name rules run over the full list.
  */
 export const NAME_SCAN_LIMIT = 500;
+
+/**
+ * R8: the books a name "appears in" for the search's empty-book reply, by the same
+ * word-start/twin rule as the search itself. Reads at most NAME_SCAN_LIMIT unfiltered
+ * hits, page by page under the caller's snapshot (never the full list). Best effort:
+ * any failure, a session change included, yields no hint rather than another account's.
+ */
+async function searchAppearsIn(name: string, index: SourceIndex, asker: Asker, bound: SessionSnapshot): Promise<string[]> {
+  try {
+    const hits: MonsterListEntry[] = [];
+    for (let skip = 0; skip < NAME_SCAN_LIMIT; skip += PAGE_SIZE) {
+      const page = await fetchMonsterList(name, PAGE_SIZE, { asker, bound, skip });
+      const data = page.data ?? [];
+      hits.push(...data);
+      if (data.length < PAGE_SIZE || skip + PAGE_SIZE >= (page.pagination?.total ?? 0)) break;
+    }
+    // Official entries in books the source index knows (as availableSourcesFor).
+    const matches = nameMatcher(name);
+    const named = hits
+      .filter(m => m.isHomebrew === false && index.sources.has(m.sourceId) && matches(m))
+      .sort(monsterTiebreak(index));
+    return [...new Set(named.map(m => sourceLabel(index, m.sourceId)))];
+  } catch {
+    return [];
+  }
+}
 
 /**
  * Everything a search judges. `entries` and `access` may be a cached scan's own
@@ -330,7 +356,7 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
       // Open5e only carries the SRD — never substitute it for a requested book.
       let msg = `No monsters matching the search criteria in ${sourceLabel(index, sourceIds[0])}.`;
       if (searchTerm && c) {
-        const available = await availableSourcesFor(searchTerm, index, asker, c.snapshot);
+        const available = await searchAppearsIn(searchTerm, index, asker, c.snapshot);
         if (available.length) msg += ` "${searchTerm}" appears in: ${available.join(", ")}.`;
       }
       return withIncompleteNote(noMatchSection(msg), note);
@@ -431,7 +457,7 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
       // R9: a book search leads with today's empty-book line and its "appears in" hint.
       if (params.source && !homebrew) {
         let msg = `No monsters matching the search criteria in ${sourceLabel(index, sourceIds[0])}.`;
-        const available = await availableSourcesFor(searchTerm, index, asker, candidates.snapshot);
+        const available = await searchAppearsIn(searchTerm, index, asker, candidates.snapshot);
         if (available.length) msg += ` "${searchTerm}" appears in: ${available.join(", ")}.`;
         body.push(msg);
       }

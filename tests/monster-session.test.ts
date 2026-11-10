@@ -210,4 +210,15 @@ describe("the available-sources hint and account changes", () => {
     expect(search).not.toContain("Player’s Handbook");
     expect(search).not.toContain("appears in");
   });
+
+  it("searchAppearsIn drops a hint fetched after an account change", async () => {
+    // Search: #5 (config, index, list before/after request, candidates' merge); the hint's
+    // own list reads follow, so swap after assert 6 to hit the hint's page 1.
+    for (const n of [5, 6, 7]) {
+      S.gen = 1; S.lastSeen = 1; clearMonsterCache(); S.hooks.forEach(h => h());
+      swapAfterAssert(n);
+      const search = await searchMonsters({ name: "Lich", source: "cos" });
+      expect(search).not.toContain("Player’s Handbook");
+    }
+  });
 });

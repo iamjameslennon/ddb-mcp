@@ -843,6 +843,34 @@ describe("the available-sources hint lists official entries only", () => {
   });
 });
 
+describe("the search's appears-in hint uses word-start matching (R8, B11)", () => {
+  const sourcesNote = (out: string) => /appears in: ([^\n]*)/.exec(out)?.[1] ?? null;
+
+  it("getMonster's Available sources text is unchanged", async () => {
+    const out = await getMonster("Zombie", { source: "cos" });
+    expect(out).toMatchInlineSnapshot(`"No "Zombie" entry found in source "cos". Similar names in that source: Strahd Zombie. Available sources for "Zombie": Basic Rules (2014) [basic-rules-2014], Monster Manual [mm-2024]."`);
+  });
+
+  it("does not advertise a book whose only hit is Hobgoblin Warrior or Kobold Warrior", async () => {
+    const HOB = monster({ id: 8_300_001, name: "Hobgoblin Warrior", sourceId: 232, sources: sources(232) });
+    const KOB = monster({ id: 8_300_002, name: "Kobold Warrior", sourceId: 232, sources: sources(232) });
+    extraMonsters = [HOB, KOB];
+    ANY_WORD = { goblin: [KOB] };
+    const out = await searchMonsters({ name: "goblin", source: "cos" });
+    expect(out).toContain("No monsters matching the search criteria in Curse of Strahd");
+    expect(out).not.toContain("appears in");
+    expect(out).not.toContain("Ravenloft: The Horrors Within");
+  });
+
+  it("names a book whose only real hit comes after 120 earlier fillers", async () => {
+    leadMonsters = Array.from({ length: 120 }, (_, i) =>
+      monster({ id: 8_310_000 + i, name: `Hobgoblin Filler ${i}`, sourceId: 147, sources: sources(147) }));
+    extraMonsters = [monster({ id: 8_310_900, name: "Goblin Scout", sourceId: 232, sources: sources(232) })];
+    const out = await searchMonsters({ name: "goblin", source: "cos" });
+    expect(sourcesNote(out)).toContain("Ravenloft: The Horrors Within [rthw]");
+  });
+});
+
 describe("search listings delimit homebrew names as untrusted", () => {
   it("wraps each homebrew line, leaving official lines plain", async () => {
     const lines = (await searchMonsters({ name: "Zombie" })).split("\n");
