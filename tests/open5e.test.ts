@@ -343,6 +343,14 @@ describe("Open5e v2 equipment and character options", () => {
     expect(all).toContain("• Longsword [2024]");
     expect(await o5SearchItems({ name: "longsword", rarity: "rare", rulesEdition: "2024" }, "unavailable")).not.toContain("• Longsword [2024]");
   });
+  it("G6: item and spell searches keep substring matching (only monster names are word-start)", async () => {
+    const items = await o5SearchItems({ name: "ongsword", rulesEdition: "2024" }, "unavailable");
+    expect(items).toContain("• Longsword [2024]");
+    expect(items).toContain("• Flame Tongue Longsword [2024]");
+    const spells = await o5SearchSpells({ name: "eeblemin", rulesEdition: "2024" }, "unavailable");
+    expect(spells).toContain("• Feeblemind [2014]");
+    expect(await o5SearchSpells({ name: "ireball", rulesEdition: "2024" }, "unavailable")).toContain("• Fireball [2024]");
+  });
   it("a 2014 feat request with no SRD 5.1 match shows SRD 5.2 with the reason", async () => {
     const out = await o5SearchFeats({ name: "alert", rulesEdition: "2014" }, "unavailable");
     expect(out.split("\n").slice(0, 3)).toEqual(["Alert", U24, "(no 2014 version found — 2024 text shown)"]);
@@ -800,6 +808,23 @@ describe("Open5e searches capped at 20 lines", () => {
     // C2: Open5e cannot filter by book, so the hint never suggests source.
     expect(hint).toMatch(/^Narrow the search \(add cr, type or size\), or repeat with `list_all: true` to list all \d+ \(about \d+ KB\)\.$/);
     expect(out[out.length - 1]).toBe('1 2014 version hidden — rules_edition: "2014" shows it.');
+  });
+
+  it("G5: the capped heading counts every match, and the hint's size estimate is the shown lines' average times the total", async () => {
+    // Long names, so the size estimate is several KB and a wrong count or average changes the rounded figure.
+    const long = many("srd-2024", "creatures", "Wolf", 55).map(r => ({ ...r, name: `${r.name} ${"x".repeat(300)}` }));
+    stubFetch(o5FixtureFetch({ "srd-2024/creatures": long }));
+    // The 55 added Wolf records plus the fixture's 2014 Wolf (no 2024 twin, so it stays).
+    const TOTAL = 56;
+    const lines = (await o5SearchMonsters({ name: "wolf", rulesEdition: "2024" }, "unavailable")).split("\n");
+    expect(lines).toContain(`Found ${TOTAL} monster(s) (showing 50, SRD only):`);
+    const shown = lines.filter(l => l.startsWith("• "));
+    expect(shown).toHaveLength(50);
+    const avg = shown.reduce((n, l) => n + Buffer.byteLength(l), 0) / shown.length;
+    const kb = Math.round(avg * TOTAL / 1024);
+    const hint = lines.find(l => l.startsWith("Narrow the search"))!;
+    expect(hint).toContain(`to list all ${TOTAL} (about`);
+    expect(hint).toBe(`Narrow the search (add cr, type or size), or repeat with \`list_all: true\` to list all ${TOTAL} (about ${kb} KB).`);
   });
 
   it("monster hint names only the unused filters, and ddb_search_monsters under siteSearch", async () => {

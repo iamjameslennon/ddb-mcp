@@ -907,13 +907,13 @@ describe("the search's appears-in hint is capped at 10 books (C3)", () => {
 });
 
 describe("the search's appears-in hint paging (R8)", () => {
-  const filler = (n: number, i: number) =>
+  const filler = (i: number) =>
     monster({ id: 8_320_000 + i, name: `Hobgoblin Filler ${i}`, sourceId: 147, sources: sources(147) });
   const real = monster({ id: 8_329_000, name: "Goblin Scout", sourceId: 232, sources: sources(232) });
 
   it("a lagging first-page total does not truncate the read", async () => {
     // 149 fillers then the real hit at #150; page 1 claims a total of 100.
-    leadMonsters = Array.from({ length: 149 }, (_, i) => filler(0, i));
+    leadMonsters = Array.from({ length: 149 }, (_, i) => filler(i));
     extraMonsters = [real];
     firstPageTotal = 100;
     const out = await searchMonsters({ name: "goblin", source: "cos" });
@@ -921,7 +921,7 @@ describe("the search's appears-in hint paging (R8)", () => {
   });
 
   it("reads at most NAME_SCAN_LIMIT entries and never the full list", async () => {
-    leadMonsters = Array.from({ length: 600 }, (_, i) => filler(0, i));
+    leadMonsters = Array.from({ length: 600 }, (_, i) => filler(i));
     await searchMonsters({ name: "goblin", source: "cos" });
     const unfiltered = listUrls.filter(u => !u.includes("sources="));
     expect(unfiltered.length).toBeLessThanOrEqual(5);
@@ -2737,6 +2737,22 @@ describe("word-start name matching (B11)", () => {
     ];
     const out = await searchMonsters({ source: "mm-2024", name: "thug" });
     expect(entryLines(out).some(l => l.includes("**Tough**"))).toBe(true);
+    // The 2014 Thug sits outside the book; source wins, so no twin hiding and no hidden footer either.
+    expect(entryLines(out).map(l => /\*\*(.+?)\*\*/.exec(l)![1])).toEqual(["Tough"]);
+    expect(out).not.toContain("**Thug**");
+    expect(out).not.toContain("version hidden");
+    expect(out).not.toContain("hidden");
+  });
+
+  it("a book search lists a 2014 twin that the book also carries, with no hiding and no footer", async () => {
+    extraMonsters = [
+      monster({ id: 8_000_411, name: "Thug", typeId: 8, isLegacy: true, sourceId: 5, sources: sources(5, 147) }),
+      monster({ id: 8_000_101, name: "Tough", typeId: 8, sourceId: 147, sources: sources(147), challengeRatingId: 4 }),
+    ];
+    const out = await searchMonsters({ source: "mm-2024", name: "thug" });
+    expect(entryLines(out).map(l => /\*\*(.+?)\*\*/.exec(l)![1]).sort()).toEqual(["Thug", "Tough"]);
+    expect(entryLines(out).some(l => l.startsWith("- **Thug** [2014]"))).toBe(true);
+    expect(out).not.toContain("hidden");
   });
 
   it("a book filter doesn't let an any-word hit through", async () => {
@@ -2762,6 +2778,62 @@ describe("word-start name matching (B11)", () => {
     ];
     const names = entryLines(await searchMonsters({ cr: 17 })).map(l => /\*\*(.+?)\*\*/.exec(l)![1]);
     expect(names).toEqual(["Alpha Lord", "Zeta Lord"]);
+  });
+});
+
+describe("list_all and the narrowing hint on the book and homebrew paths (G3)", () => {
+  const entryLines = (out: string) => out.split("\n").filter(l => l.startsWith("- **"));
+  const hintLine = (out: string) => out.split("\n").find(l => l.includes("list_all: true"));
+  const HB_COUNT = 60;
+  const homebrew = () => Array.from({ length: HB_COUNT }, (_, i) =>
+    monster({ id: 8_400_000 + i, name: `Hb Beast ${String(i).padStart(2, "0")}`, isHomebrew: true, sourceId: 147, sources: sources(147) }));
+
+  describe("homebrew", () => {
+    beforeEach(() => { extraMonsters = homebrew(); });
+
+    it("shows 50 lines and the narrowing hint by default", async () => {
+      const out = await searchMonsters({ source: "homebrew", name: "Hb Beast" });
+      expect(entryLines(out)).toHaveLength(50);
+      expect(out).toContain(`**Monster Search** (50 shown of ${HB_COUNT} matching)`);
+      expect(hintLine(out)).toMatch(new RegExp(`^Narrow the search \\(add cr, type or size\\), or repeat with \`list_all: true\` to list all ${HB_COUNT} \\(about \\d+ KB\\)\\.$`));
+    });
+
+    it("list_all shows every entry and no hint", async () => {
+      const out = await searchMonsters({ source: "homebrew", name: "Hb Beast", listAll: true });
+      expect(entryLines(out)).toHaveLength(HB_COUNT);
+      expect(out).toContain(`**Monster Search** (${HB_COUNT} shown of ${HB_COUNT} matching)`);
+      expect(out).not.toContain("list_all");
+      expect(out).not.toContain("Narrow the search");
+    });
+  });
+
+  describe("a book with more than 50 entries", () => {
+    const BOOK_COUNT = 70;
+    beforeEach(() => {
+      extraMonsters = Array.from({ length: BOOK_COUNT }, (_, i) =>
+        monster({ id: 8_410_000 + i, name: `Bk Beast ${String(i).padStart(2, "0")}`, sourceId: 6, sources: sources(6) }));
+    });
+
+    it("shows 50 lines and the hint, which does not offer source again", async () => {
+      const out = await searchMonsters({ source: "cos", name: "Bk Beast" });
+      expect(entryLines(out)).toHaveLength(50);
+      expect(out).toContain(`**Monster Search** (50 shown of ${BOOK_COUNT} matching)`);
+      expect(hintLine(out)).toMatch(new RegExp(`^Narrow the search \\(add cr, type or size\\), or repeat with \`list_all: true\` to list all ${BOOK_COUNT} \\(about \\d+ KB\\)\\.$`));
+    });
+
+    it("list_all shows every entry and no hint", async () => {
+      const out = await searchMonsters({ source: "cos", name: "Bk Beast", listAll: true });
+      expect(entryLines(out)).toHaveLength(BOOK_COUNT);
+      expect(out).toContain(`**Monster Search** (${BOOK_COUNT} shown of ${BOOK_COUNT} matching)`);
+      expect(out).not.toContain("list_all");
+      expect(out).not.toContain("Narrow the search");
+    });
+
+    it("siteSearch ignores list_all: still 50 lines, and the hint names ddb_search_monsters", async () => {
+      const out = await searchMonsters({ source: "cos", name: "Bk Beast", listAll: true, siteSearch: true });
+      expect(entryLines(out)).toHaveLength(50);
+      expect(hintLine(out)).toMatch(new RegExp(`^Narrow the search, or use ddb_search_monsters with \`list_all: true\` to list all ${BOOK_COUNT} \\(about \\d+ KB\\)\\.$`));
+    });
   });
 });
 
@@ -2798,6 +2870,22 @@ describe("a partial name fetches its matches' renamed twins (B1, owner ruling 20
     expect(termRequests("warrior")).toHaveLength(1);
     expect(termRequests("goblin warrior")).toHaveLength(0);
     expect(termRequests("kobold warrior")).toHaveLength(0);
+  });
+
+  it("logged out, the extra spellings are fetched anonymously and the 2014 result is still right", async () => {
+    goLoggedOut();
+    const out = await searchMonsters({ name: "warrior", rulesEdition: "2014" });
+    expect(names(out)).toEqual(["Goblin", "Kobold Warrior"]);
+    expect(entryLines(out).some(l => l.startsWith("- **Goblin** [2014]"))).toBe(true);
+    expect(out).toContain('1 2024 version hidden — omit rules_edition to show it.');
+    // Every twin spelling went out on the anonymous path, once each, with no credentials.
+    const anonTerms = anonymousRequests
+      .filter(r => r.url.includes("/v1/Monster?search="))
+      .map(r => new URL(r.url).searchParams.get("search")!.toLowerCase());
+    expect(anonTerms.filter(t => t === "goblin")).toHaveLength(1);
+    expect(anonTerms.filter(t => t === "kobold")).toHaveLength(1);
+    expect(anonTerms.filter(t => t === "warrior")).toHaveLength(1);
+    expectNoCredentials();
   });
 
   it("a failed extra spelling makes the result incomplete", async () => {
@@ -2984,6 +3072,20 @@ describe("near matches (B11 option B)", () => {
       expect(out).not.toContain("- **Goblin** [2014]");
     }));
 
+  it("R9: a 2014 book's source note sits after the empty-book line and its hint, before the label and the book's hit", async () => {
+    // The 2014 Monster Manual holds the hit; the substring match elsewhere keeps the mock from going fuzzy.
+    extraMonsters = [monster({ id: 8_200_024, name: "Gobiln Scout", sourceId: 6, sources: sources(6) })];
+    ANY_WORD = { gobiln: [monster({ id: 8_200_023, name: "Goblin Warrior", isLegacy: true, sourceId: 5, sources: sources(5) })] };
+    const out = await searchMonsters({ source: "mm-2014", name: "gobiln" });
+    expect(out.split("\n")).toEqual([
+      NEAR_MATCH_RULES_LINE,
+      'No monsters matching the search criteria in Monster Manual (2014) [mm-2014]. "gobiln" appears in: Curse of Strahd [cos].',
+      '(source "mm-2014" is a 2014 book — its entries are listed whatever rules_edition says)',
+      label("gobiln"),
+      "- **Goblin Warrior** [2014] — Monster Manual (2014) [mm-2014] — CR 1/4, Medium Undead, AC 8, 22 HP",
+    ]);
+  });
+
   it("R9: the appears-in hint follows the empty-book line, before the label", async () => {
     // The substring match elsewhere keeps the mock from going fuzzy, so the book's hit comes in as an any-word hit.
     extraMonsters = [monster({ id: 8_200_022, name: "Gobiln Scout", sourceId: 1, sources: sources(1) })];
@@ -3144,21 +3246,21 @@ describe("exact candidate sets and totals (B11)", () => {
       const out = await searchMonsters({ cr: 0.5 });
       expect(out).toContain("No monsters found matching the search criteria.");
       expect(out).toContain(MISSED_NOTE);
-        expect(out).not.toContain("the count may be short");
+      expect(out).not.toContain("the count may be short");
     });
 
     it("a homebrew no-match", async () => {
       const out = await searchMonsters({ source: "homebrew", cr: 24 });
       expect(out).toContain("No homebrew monsters found matching the search criteria.");
       expect(out).toContain(MISSED_NOTE);
-        expect(out).not.toContain("the count may be short");
+      expect(out).not.toContain("the count may be short");
     });
 
     it("the Open5e not-found fallback", async () => {
       const out = await searchMonsters({ cr: 24 });
       expect(out).toContain("O5 SEARCH RESULT");
       expect(out).toContain(MISSED_NOTE);
-        expect(out).not.toContain("the count may be short");
+      expect(out).not.toContain("the count may be short");
     });
 
     it("a near-match reply", async () => {
@@ -3168,7 +3270,7 @@ describe("exact candidate sets and totals (B11)", () => {
         expect(out).toContain('No monster names match "gobilnz". Closest matches from D&D Beyond:');
         expect(out).toContain("- **Wolf** [2024]");
         expect(out).toContain(MISSED_NOTE);
-        expect(out).not.toContain("the count may be short");
+      expect(out).not.toContain("the count may be short");
       } finally {
         delete FUZZY.gobilnz;
       }
