@@ -871,6 +871,30 @@ describe("the search's appears-in hint uses word-start matching (R8, B11)", () =
   });
 });
 
+describe("the search's appears-in hint paging (R8)", () => {
+  const filler = (n: number, i: number) =>
+    monster({ id: 8_320_000 + i, name: `Hobgoblin Filler ${i}`, sourceId: 147, sources: sources(147) });
+  const real = monster({ id: 8_329_000, name: "Goblin Scout", sourceId: 232, sources: sources(232) });
+
+  it("a lagging first-page total does not truncate the read", async () => {
+    // 149 fillers then the real hit at #150; page 1 claims a total of 100.
+    leadMonsters = Array.from({ length: 149 }, (_, i) => filler(0, i));
+    extraMonsters = [real];
+    firstPageTotal = 100;
+    const out = await searchMonsters({ name: "goblin", source: "cos" });
+    expect(out).toContain("Ravenloft: The Horrors Within [rthw]");
+  });
+
+  it("reads at most NAME_SCAN_LIMIT entries and never the full list", async () => {
+    leadMonsters = Array.from({ length: 600 }, (_, i) => filler(0, i));
+    await searchMonsters({ name: "goblin", source: "cos" });
+    const unfiltered = listUrls.filter(u => !u.includes("sources="));
+    expect(unfiltered.length).toBeLessThanOrEqual(5);
+    expect(Math.max(...unfiltered.map(u => Number(new URL(u).searchParams.get("skip"))))).toBeLessThan(500);
+    expect(listUrls.some(u => u.includes("search=&"))).toBe(false);
+  });
+});
+
 describe("search listings delimit homebrew names as untrusted", () => {
   it("wraps each homebrew line, leaving official lines plain", async () => {
     const lines = (await searchMonsters({ name: "Zombie" })).split("\n");

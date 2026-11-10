@@ -113,19 +113,22 @@ export const nearMatchLabel = (searchTerm: string): string =>
 export const NAME_SCAN_LIMIT = 500;
 
 /**
- * R8: the books a name "appears in" for the search's empty-book reply, by the same
- * word-start/twin rule as the search itself. Reads at most NAME_SCAN_LIMIT unfiltered
+ * R8: the books a name "appears in" for the search's empty-book reply, by the
+ * search's word-start/twin rule applied to the typed spelling only (an alias-only
+ * book, e.g. "Tough" for "thug", is not found: only the typed name is fetched). Reads at most NAME_SCAN_LIMIT unfiltered
  * hits, page by page under the caller's snapshot (never the full list). Best effort:
  * any failure, a session change included, yields no hint rather than another account's.
  */
 async function searchAppearsIn(name: string, index: SourceIndex, asker: Asker, bound: SessionSnapshot): Promise<string[]> {
   try {
     const hits: MonsterListEntry[] = [];
+    // A page's total can lag or be missing, so it is not trusted: a full page always
+    // asks for the next one, and only a short page (or the limit) ends the read.
     for (let skip = 0; skip < NAME_SCAN_LIMIT; skip += PAGE_SIZE) {
       const page = await fetchMonsterList(name, PAGE_SIZE, { asker, bound, skip });
       const data = page.data ?? [];
       hits.push(...data);
-      if (data.length < PAGE_SIZE || skip + PAGE_SIZE >= (page.pagination?.total ?? 0)) break;
+      if (data.length < PAGE_SIZE) break;
     }
     // Official entries in books the source index knows (as availableSourcesFor).
     const matches = nameMatcher(name);

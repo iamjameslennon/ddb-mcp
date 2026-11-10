@@ -211,14 +211,36 @@ describe("the available-sources hint and account changes", () => {
     expect(search).not.toContain("appears in");
   });
 
-  it("searchAppearsIn drops a hint fetched after an account change", async () => {
-    // Search: #5 (config, index, list before/after request, candidates' merge); the hint's
-    // own list reads follow, so swap after assert 6 to hit the hint's page 1.
-    for (const n of [5, 6, 7]) {
-      S.gen = 1; S.lastSeen = 1; clearMonsterCache(); S.hooks.forEach(h => h());
-      swapAfterAssert(n);
-      const search = await searchMonsters({ name: "Lich", source: "cos" });
-      expect(search).not.toContain("Player’s Handbook");
-    }
+});
+
+describe("the search's appears-in hint pages under one snapshot", () => {
+  it("drops the hint when the account changes between its pages", async () => {
+    let swapOnNextCapture = false;
+    vi.mocked(captureSession).mockImplementation((() => {
+      if (swapOnNextCapture) { swapOnNextCapture = false; S.gen = 2; }
+      if (S.gen !== S.lastSeen) { S.lastSeen = S.gen; S.hooks.forEach(h => h()); }
+      return { gen: S.gen };
+    }) as never);
+    const book = (id: number, name: string) => ({ id, name: name.slice(0, 6), description: name, sourceURL: `sources/dnd/${id}`, sourceCategoryId: 24 });
+    const config = { data: { ...CONFIG.data, sources: [...CONFIG.data.sources.map(s => ({ ...s, description: "Monster Manual" })), book(145, "Player's Handbook")] } };
+    vi.mocked(sessionFetch).mockImplementation((async (input: string, account: number) => {
+      const url = String(input);
+      if (url.includes("api/config/json")) return response(config);
+      if (url.includes("sources=")) return response({ pagination: { total: 0, currentPage: 1, pages: 1 }, data: [] });
+      const skip = Number(new URL(url).searchParams.get("skip"));
+      // The account changes just before the hint asks for its second page (the next capture).
+      if (skip === 0) swapOnNextCapture = true;
+      const sourceId = account === 1 ? 147 : 145;
+      const data = Array.from({ length: Math.min(100, 150 - skip) }, (_, i) =>
+        ({ ...monster(skip + i + 1, `Lich Servant ${skip + i}`), sourceId, sources: [{ sourceId, pageNumber: 1, sourceType: 1 }] }));
+      return response({ pagination: { total: 150, currentPage: 1, pages: 2 }, data });
+    }) as never);
+    const out = await searchMonsters({ name: "Lich", source: "cos" });
+    expect(out).toContain("No monsters matching the search criteria in Curse of Strahd");
+    expect(out).not.toContain("appears in");
+    expect(out).not.toContain("Player’s Handbook");
+    expect(out).not.toContain("Player's Handbook");
+    expect(out).not.toContain("Monster Manual");
+    expect(vi.mocked(sessionFetch).mock.calls.some(c => String(c[0]).includes("skip=100"))).toBe(false);
   });
 });
