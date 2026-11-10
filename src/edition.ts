@@ -157,11 +157,11 @@ export function buildSourceIndex(sources: readonly SourceRecord[], categories: r
 /**
  * Classify one definition. The first matching rule wins:
  * 1. isHomebrew → homebrew (no book)
- * 2. isLegacy → 2014 (book: first 2014-category source, else first source with a known description)
- * 3. any 2024-category source → 2024
- * 4. any 2014-category source → 2014
- * 5. any playtest-category source → playtest
- * 6. any third-party-category source → third-party
+ * 2. isLegacy → 2014 (book: first source whose ruleset is 2014 (per sourceIdRuleset), else first source with a known description)
+ * 3. any source whose ruleset is 2024 → 2024
+ * 4. any source whose ruleset is 2014 → 2014
+ * 5. any source whose ruleset is playtest → playtest
+ * 6. any source whose ruleset is third-party → third-party
  * 7. otherwise → unstated (book: first source with a known description, else null)
  *
  * Reprint policy: D&D Beyond makes a new definition when 2024 changes an entry
@@ -893,7 +893,7 @@ export function editionSourceIdFor(entry: EditionMarkers, index: SourceIndex, ed
   return dualBook(entry, index, edition)?.id ?? editionSourceId(entry, index);
 }
 
-/** Whether the dual-edition rule applies: non-Legacy, non-homebrew, with a 2024-category book and a 2014-category book. */
+/** Whether the dual-edition rule applies: non-Legacy, non-homebrew, with a 2024-ruleset book and a 2014-ruleset book (ruleset per sourceIdRuleset). */
 export function isDualEdition(entry: EditionMarkers, index: SourceIndex): boolean {
   return dualBook(entry, index, "2024") !== null;
 }
