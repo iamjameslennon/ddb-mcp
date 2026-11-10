@@ -14,10 +14,10 @@ import {
   type EditionInfo, type RulesEdition, type SelectionReason,
 } from "../edition.js";
 import { resolveSource, isHomebrewSource, sourceLabel, unknownSourceError, type ResolvedSource } from "../source-filter.js";
-import { wrapUntrusted } from "../utils.js";
+import { wrapUntrusted, mapWithConcurrency } from "../utils.js";
 import { matchesAtWordStart } from "../name-match.js";
 import { o5SearchMonstersSection, o5MonsterInEdition, type O5EditionMonster } from "../open5e.js";
-import { renderSection, plainSection, noMatchSection, sourceFraming, withSourceCaveatSection, formatCount, type SearchSection } from "./edition-search.js";
+import { renderSection, plainSection, noMatchSection, sourceFraming, withSourceCaveatSection, formatCount, narrowingHint, MONSTER_SEARCH_LIMIT, type SearchSection } from "./edition-search.js";
 import {
   askerNow, configFor, assertCurrentAfter, fetchMonsterList, scanAllPages, getFullMonsterList, mergeAccess, isLockedIn, availableSourcesFor,
   sizeName, crDisplay, monsterTwin, PAGE_SIZE, SIZE_MAP,
@@ -248,7 +248,14 @@ export interface MonsterSearchParams {
   size?: string;
   source?: string;
   rulesEdition?: RulesEdition;
+  /** List every match instead of the first MONSTER_SEARCH_LIMIT. Ignored with `siteSearch`. */
+  listAll?: boolean;
+  /** Called from ddb_search_site: the narrowing hint names ddb_search_monsters, and `listAll` is ignored. */
+  siteSearch?: boolean;
 }
+
+/** Open5e probes in flight at once, for the per-line SRD lookups. */
+const O5_PROBE_CONCURRENCY = 8;
 
 export async function searchMonsters(params: MonsterSearchParams): Promise<string> {
   return renderSection(await searchMonstersSection(params));
@@ -439,7 +446,10 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
     return noMatchReply(hidden, candidates);
   }
 
-  const shown = await withListStats(monsters.slice(0, PAGE_SIZE), access);
+  const listAll = params.listAll === true && !params.siteSearch;
+  // Only the rows printed are probed for list stats.
+  const shown = await withListStats(listAll ? monsters : monsters.slice(0, MONSTER_SEARCH_LIMIT), access);
+  const shownLines = shown.map(row => formatRow(row, rowCtx));
 
   const lines: string[] = [];
   const { header, note: bookNote } = sectionHeader();
@@ -450,10 +460,15 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
 
   // The total is the selected, filtered rows themselves; "+" when a scan came up short.
   lines.push(`**Monster Search** (${formatCount(shown.length)} shown of ${formatCount(monsters.length)}${candidates.complete ? "" : "+"} matching)\n`);
-  for (const row of shown) lines.push(formatRow(row, rowCtx));
+  lines.push(...shownLines);
 
-  if (shown.length < monsters.length) {
-    lines.push(`\n*${monsters.length - shown.length} more matches not shown.*`);
+  if (!listAll && monsters.length > MONSTER_SEARCH_LIMIT) {
+    const avgBytes = shownLines.reduce((n, l) => n + Buffer.byteLength(l), 0) / shownLines.length;
+    const unused = ([["cr", params.cr], ["type", params.type], ["size", params.size], ["source", params.source]] as const)
+      .filter(([, v]) => v === undefined).map(([k]) => k);
+    lines.push(`\n${narrowingHint({
+      total: monsters.length, approxKb: Math.round(avgBytes * monsters.length / 1024), unused, siteSearch: params.siteSearch === true,
+    })}`);
   }
   if (countNote) lines.push(countNote);
   const summary = lockedSwapSummary(requested, monsters.filter(r => isLockedReason(r.reason)).length, asker.anonymous);
@@ -481,12 +496,12 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
 export async function withListStats<R extends { m: MonsterListEntry; info: EditionInfo; srd?: O5EditionMonster }>(
   rows: R[], access: ReadonlyMap<number, number>,
 ): Promise<Array<R & { statsUnknown?: boolean }>> {
-  return Promise.all(rows.map(async row => {
+  return mapWithConcurrency(rows, O5_PROBE_CONCURRENCY, async row => {
     const { m, info } = row;
     if (row.srd || !isLockedIn(access, m.id) || m.armorClass !== 0 || m.averageHitPoints !== 0) return row;
     const srd = isEdition(info.ruleset) ? await o5MonsterInEdition(m.name, info.ruleset).catch(() => null) : null;
     return srd ? { ...row, srd } : { ...row, statsUnknown: true };
-  }));
+  });
 }
 
 /**
@@ -510,14 +525,14 @@ export async function srdBackedGroups(
     groups.set(key, [...(groups.get(key) ?? []), m]);
   }
   const backed = new Map<string, O5EditionMonster>();
-  await Promise.all([...groups].map(async ([key, group]) => {
+  await mapWithConcurrency([...groups], O5_PROBE_CONCURRENCY, async ([key, group]) => {
     const wanted = group.filter(m => info(m).ruleset === requested).sort(tiebreak);
     if (!wanted.length || wanted.some(m => !isLockedIn(access, m.id))) return;
     if (!group.some(m => info(m).ruleset === other && !isLockedIn(access, m.id))) return;
     if (!passes(wanted[0]) && !group.some(m => info(m).ruleset === other && passes(m))) return;
     const srd = await o5MonsterInEdition(wanted[0].name, requested).catch(() => null);
     if (srd) backed.set(key, srd);
-  }));
+  });
   return backed;
 }
 

@@ -57,6 +57,11 @@ describe("search (ddb_search_site)", () => {
     expect(text).toContain("Avoral Guardinal");
   });
 
+  it("passes siteSearch: true to the monster search, never listAll", async () => {
+    await search("goblin", "monsters", "2024");
+    expect(sections.monsters).toHaveBeenCalledWith({ name: "goblin", rulesEdition: "2024", siteSearch: true });
+  });
+
   it("a single category keeps its own header and footer", async () => {
     const s = ddb("**Spell Search** (1 found)", 1);
     sections.spells.mockResolvedValue(s);

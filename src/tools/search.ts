@@ -68,7 +68,7 @@ async function runCategory(category: SpecificCategory, query: string, rulesEditi
   const bookNotes = false;
   switch (category) {
     case "spells":   return searchSpellsSection({ name: query, limit: 10, rulesEdition, bookNotes });
-    case "monsters": return searchMonstersSection({ name: query, rulesEdition });
+    case "monsters": return searchMonstersSection({ name: query, rulesEdition, siteSearch: true });
     case "items":    return searchItemsSection({ name: query, rulesEdition, bookNotes });
     case "races":    return searchRacesSection({ name: query, limit: 10, offset: 0, rulesEdition, bookNotes });
     case "classes":  return searchClassesSection({ name: query, limit: 10, offset: 0, rulesEdition, bookNotes });

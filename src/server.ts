@@ -144,7 +144,7 @@ server.tool(
     cache: z
       .enum(["spells", "characters", "monsters", "all"])
       .default("spells")
-      .describe("Which cache to clear. 'spells' (default) — the spell / equipment / races / classes / feats compendium. 'characters' — character JSON cache. 'monsters' — monster stat-block cache, the game config, and the Open5e SRD creature data (including a remembered Open5e failure). 'all' — everything, including the library list, campaigns and Open5e responses."),
+      .describe("Which cache to clear. 'spells' (default) — the spell / equipment / races / classes / feats compendium. 'characters' — character JSON cache. 'monsters' — monster stat-block cache, the full monster list, the game config, and the Open5e SRD creature data (including a remembered Open5e failure). 'all' — everything, including the library list, campaigns and Open5e responses."),
   },
   { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   async ({ cache }) => {
@@ -330,7 +330,7 @@ server.tool(
 // ─── ddb_search_monsters ──────────────────────────────────────────────────────
 server.tool(
   "ddb_search_monsters",
-  "Search the D&D Beyond monster compendium by name, CR, type, size, or source. Returns a summary list with each entry's source and edition tag. Where a monster exists in both editions, only the rules_edition version is listed and the other is counted as hidden. A source lists every entry in that book, of either edition, and wins over rules_edition; a book of the other edition adds a note. Use ddb_get_monster for the full stat block. Works logged out (free D&D Beyond content; the rest is listed as not available without logging in), and falls back to the Open5e SRD when D&D Beyond can't be reached. source: \"homebrew\" requires login. " + RULES_EDITION_TOOL_NOTE,
+  "Search the D&D Beyond monster compendium by name, CR, type, size, or source. Returns a summary list with each entry's source and edition tag. Where a monster exists in both editions, only the rules_edition version is listed and the other is counted as hidden. A source lists every entry in that book, of either edition, and wins over rules_edition; a book of the other edition adds a note. Lists at most 50 matches, with the exact total and a hint on narrowing; list_all: true lists every match (use only after a search has reported the total and size). Use ddb_get_monster for the full stat block. Works logged out (free D&D Beyond content; the rest is listed as not available without logging in), and falls back to the Open5e SRD when D&D Beyond can't be reached. source: \"homebrew\" requires login. " + RULES_EDITION_TOOL_NOTE,
   {
     name: z.string().optional().describe("Partial name to search for (e.g. 'goblin', 'dragon')"),
     cr: z.number().optional().describe("Challenge Rating filter (e.g. 0.25, 1, 5, 20). Valid values: 0, 0.125, 0.25, 0.5, 1–30; any other value returns an 'Unknown CR' error"),
@@ -341,12 +341,13 @@ server.tool(
                 "brackets in results), short name, or full title. Matches reprints too. An unknown or " +
                 "non-matching book returns an error naming the alternatives. Wins over rules_edition. " +
                 "Pass 'homebrew' to list homebrew entries only."),
+    list_all: z.boolean().optional().describe("List every match instead of the first 50. Use only after a search has reported the total and size; a full list can be hundreds of KB."),
     rules_edition: RULES_EDITION_PARAM,
   },
   READ_ONLY_NET,
-  async ({ name, cr, type, size, source, rules_edition }) => {
+  async ({ name, cr, type, size, source, list_all, rules_edition }) => {
     try {
-      const result = await searchMonsters({ name, cr, type, size, source, rulesEdition: rules_edition });
+      const result = await searchMonsters({ name, cr, type, size, source, listAll: list_all, rulesEdition: rules_edition });
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

@@ -824,7 +824,7 @@ describe("paged scans tolerate the service reordering between requests", () => {
     // The first pass overlaps and misses entries; its retry (R3) reads every page again and fills them in.
     // 202 entries; all but the CR 1 Psychic Gray Ooze are CR 1/4.
     expect(listUrls.filter(u => u.includes("sources=232"))).toHaveLength(6); // two passes of 3 pages
-    expect(result).toContain("(100 shown of 201 matching)");
+    expect(result).toContain("(50 shown of 201 matching)");
     expect(result).not.toContain("could be read");
   });
 });
@@ -1485,7 +1485,7 @@ describe("monster name searches take 100 per spelling", () => {
 
   it("the header total is exact when the service has more than 100 hits", async () => {
     const out = await searchMonsters({ name: "Filler" });
-    expect(out).toContain("(100 shown of 652 matching)");
+    expect(out).toContain("(50 shown of 652 matching)");
     expect(out).not.toContain("Refine your search");
     expect(out).not.toContain("per name were checked");
   });
@@ -1505,8 +1505,8 @@ describe("the locked-entry note and the swap summary count every selected entry"
     for (const id of [8_300_500, 8_300_510, 8_300_520, 8_300_521, 8_300_530, 8_300_531]) unownedIds.add(id);
     const lines = (await searchMonsters({ name: "Gloomling", cr: 0.25 })).split("\n");
     expect(lines[1]).toBe("2 entries aren't available to this account; their stat blocks fall back to the SRD or show a restricted notice.");
-    expect(lines[2]).toBe("**Monster Search** (100 shown of 109 matching)");
-    expect(lines.filter(l => l.startsWith("- **"))).toHaveLength(100);
+    expect(lines[2]).toBe("**Monster Search** (50 shown of 109 matching)");
+    expect(lines.filter(l => l.startsWith("- **"))).toHaveLength(50);
     expect(lines.join("\n")).not.toContain("Gloomling Banshee"); // beyond the lines shown
     expect(lines.at(-2)).toBe("2 entries show their 2014 versions because the 2024 versions aren't available to this account.");
     expect(lines.at(-1)).toBe('2 2014 versions hidden — rules_edition: "2014" shows them.');
@@ -1745,14 +1745,14 @@ describe("monster edges", () => {
     firstPageTotal = 150;
     const result = await searchMonsters({ source: "rthw", cr: 0.25 });
     // 160 entries; all but the CR 1 Psychic Gray Ooze are CR 1/4.
-    expect(result).toContain("(100 shown of 159 matching)");
+    expect(result).toContain("(50 shown of 159 matching)");
     expect(result).not.toContain("of 150");
     expect(result).not.toContain("could be read");
   });
 
   it("a name search with more hits than a page counts them all, with no per-name cap note", async () => {
     const header = (await searchMonsters({ name: "Filler" })).split("\n").find(l => l.startsWith("**Monster Search**"));
-    expect(header).toBe("**Monster Search** (100 shown of 652 matching)");
+    expect(header).toBe("**Monster Search** (50 shown of 652 matching)");
     const small = (await searchMonsters({ name: "Zombie" })).split("\n").find(l => l.startsWith("**Monster Search**"));
     expect(small).not.toContain("per name were checked");
   });
@@ -2014,7 +2014,7 @@ describe("partial-scan flag when page 1 under-reports its total (item 6)", () =>
     firstPageTotal = 99;
     const out = await searchMonsters({ source: "rthw", cr: 0.25 });
     // 160 entries; all but the CR 1 Psychic Gray Ooze are CR 1/4.
-    expect(out).toContain("(100 shown of 159 matching)");
+    expect(out).toContain("(50 shown of 159 matching)");
     expect(out).not.toContain("+ matching");
     expect(out).not.toContain("could be read");
     expect(listUrls.filter(u => u.includes("sources=232"))).toHaveLength(2);
@@ -2027,7 +2027,7 @@ describe("partial-scan flag when page 1 under-reports its total (item 6)", () =>
     }));
     const out = await searchMonsters({ source: "rthw", cr: 0.25 });
     // All but the CR 1 Psychic Gray Ooze are CR 1/4.
-    expect(out).toContain("(99 shown of 99 matching)");
+    expect(out).toContain("(50 shown of 99 matching)");
     expect(out).not.toContain("100+");
     expect(out).not.toContain("could be read");
   });
@@ -2142,7 +2142,7 @@ describe("minors C #7: a scan of exactly the cap is complete", () => {
       id: 3_400_000 + i, name: `Cap ${String(i).padStart(3, "0")}`, sourceId: 232, sources: sources(232),
     }));
     const out = await searchMonsters({ source: "rthw", cr: 0.25 });
-    expect(out).toContain("(100 shown of 599 matching)"); // all but the CR 1 Psychic Gray Ooze
+    expect(out).toContain("(50 shown of 599 matching)"); // all but the CR 1 Psychic Gray Ooze
     expect(out).not.toContain("600+");
     expect(out).not.toContain("could be read");
   });
@@ -2152,7 +2152,7 @@ describe("minors C #7: a scan of exactly the cap is complete", () => {
       id: 3_500_000 + i, name: `Over ${String(i).padStart(3, "0")}`, sourceId: 232, sources: sources(232),
     }));
     const out = await searchMonsters({ source: "rthw", cr: 0.25 });
-    expect(out).toContain("(100 shown of 641 matching)"); // all but the CR 1 Psychic Gray Ooze
+    expect(out).toContain("(50 shown of 641 matching)"); // all but the CR 1 Psychic Gray Ooze
     expect(out).not.toContain("could be read");
   });
 });
@@ -2838,8 +2838,8 @@ describe("exact candidate sets and totals (B11)", () => {
     const official = new Set(ALL_MONSTERS.filter(m => m.isHomebrew === false).map(m => m.name)).size;
     const homebrewCount = ALL_MONSTERS.filter(m => m.isHomebrew !== false).length;
     const out = await searchMonsters({});
-    expect(countLine(out)).toBe(`**Monster Search** (100 shown of ${official + homebrewCount} matching)`);
-    expect(entryLines(out)).toHaveLength(100);
+    expect(countLine(out)).toBe(`**Monster Search** (50 shown of ${official + homebrewCount} matching)`);
+    expect(entryLines(out)).toHaveLength(50);
     expect(searchRequests().every(u => u.includes("search=&") && u.includes("take=100"))).toBe(true);
     expect(searchRequests().filter(u => u.includes("&skip=0&"))).toHaveLength(1);
   });
@@ -2848,7 +2848,7 @@ describe("exact candidate sets and totals (B11)", () => {
     const out = await searchMonsters({ name: "Filler" });
     expect(listUrls.some(u => u.includes("search=Filler&skip=100"))).toBe(false);
     expect(listUrls.some(u => u.includes("search=&skip=0"))).toBe(true);
-    expect(countLine(out)).toBe("**Monster Search** (100 shown of 652 matching)");
+    expect(countLine(out)).toBe("**Monster Search** (50 shown of 652 matching)");
     expect(out).not.toContain("per name were checked");
   });
 
@@ -2860,7 +2860,7 @@ describe("exact candidate sets and totals (B11)", () => {
     expect(listUrls.some(u => u.includes("search=Murk&skip=0&"))).toBe(true);
     expect(listUrls.some(u => u.includes("search=Murk&skip=100&"))).toBe(true);
     expect(listUrls.some(u => u.includes("search=&"))).toBe(false);
-    expect(countLine(out)).toBe("**Monster Search** (100 shown of 150 matching)");
+    expect(countLine(out)).toBe("**Monster Search** (50 shown of 150 matching)");
   });
 
   describe("an unknown type or size asks D&D Beyond nothing", () => {
@@ -2975,7 +2975,7 @@ describe("exact candidate sets and totals (B11)", () => {
       firstPageTotal = 80; // under NAME_SCAN_LIMIT and under a page: the name path, not the full list
       const out = await searchMonsters({ name: "Hush" });
       expect(listUrls.some(u => u.includes("search=&"))).toBe(false);
-      expect(countLine(out)).toBe("**Monster Search** (60 shown of 60+ matching)");
+      expect(countLine(out)).toBe("**Monster Search** (50 shown of 60+ matching)");
       expect(out).toContain("*Only 60 of 80+ entries could be read from D&D Beyond, so the count may be short. Try again in a few minutes.*");
     });
 
@@ -2983,7 +2983,7 @@ describe("exact candidate sets and totals (B11)", () => {
       extraMonsters = named("Lull", 100, 8_540_000);
       const out = await searchMonsters({ name: "Lull" });
       expect(listUrls.some(u => u.includes("search=Lull&skip=100&"))).toBe(true);
-      expect(countLine(out)).toBe("**Monster Search** (100 shown of 100 matching)");
+      expect(countLine(out)).toBe("**Monster Search** (50 shown of 100 matching)");
       expect(out).not.toContain("could be read");
     });
   });
@@ -3530,6 +3530,82 @@ describe("monster page scans and the full-list cache", () => {
       vi.useFakeTimers();
       await getFullMonsterList(LOGGED_IN);
       expect(vi.getTimerCount()).toBe(0);
+    });
+  });
+});
+
+describe("50 shown, narrowing hint, list_all (B11)", () => {
+  const entryLines = (out: string) => out.split("\n").filter(l => l.startsWith("- **"));
+  const countLine = (out: string) => out.split("\n").find(l => l.startsWith("**Monster Search**"))!;
+  const total = (out: string) => Number(/shown of ([\d,]+)\+? matching/.exec(countLine(out))![1].replace(/,/g, ""));
+
+  it("cr alone: 50 lines, a count line and a hint naming the unused filters", async () => {
+    const out = await searchMonsters({ cr: 0.25 });
+    const n = total(out);
+    expect(n).toBeGreaterThan(50);
+    expect(entryLines(out)).toHaveLength(50);
+    expect(countLine(out)).toBe(`**Monster Search** (50 shown of ${n.toLocaleString("en-US")} matching)`);
+    const hint = out.split("\n").find(l => l.startsWith("Narrow the search"))!;
+    expect(hint).toContain("(add type, size or source)");
+    expect(hint).toContain("`list_all: true` to list all");
+    expect(hint).toMatch(/about [\d,]+ KB\)\.$/);
+    expect(out).not.toContain("more matches not shown");
+  });
+
+  it("list_all shows every match with no hint", async () => {
+    const n = total(await searchMonsters({ cr: 0.25 }));
+    const out = await searchMonsters({ cr: 0.25, listAll: true });
+    expect(entryLines(out)).toHaveLength(n);
+    expect(countLine(out)).toBe(`**Monster Search** (${n.toLocaleString("en-US")} shown of ${n.toLocaleString("en-US")} matching)`);
+    expect(out).not.toContain("Narrow the search");
+  });
+
+  it("siteSearch gets the site-search wording, and ignores listAll", async () => {
+    const out = await searchMonsters({ cr: 0.25, siteSearch: true });
+    expect(out).toMatch(/Narrow the search, or use ddb_search_monsters with `list_all: true` to list all [\d,]+ \(about [\d,]+ KB\)\./);
+    const both = await searchMonsters({ cr: 0.25, siteSearch: true, listAll: true });
+    expect(entryLines(both)).toHaveLength(50);
+    expect(both).toContain("use ddb_search_monsters");
+  });
+
+  it("50 matches or fewer: no hint", async () => {
+    const out = await searchMonsters({ cr: 21 });
+    expect(out).not.toContain("Narrow the search");
+  });
+
+  describe("Open5e probes are bounded", () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    beforeEach(() => {
+      inFlight = 0; maxInFlight = 0;
+      vi.mocked(o5MonsterInEdition).mockImplementation((async () => {
+        inFlight++; maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise(r => setTimeout(r, 0));
+        inFlight--;
+        return null;
+      }) as never);
+    });
+
+    it("withListStats bounded", async () => {
+      goLoggedOut();
+      extraMonsters = Array.from({ length: 40 }, (_, i) => monster({
+        id: 8_700_000 + i, name: `Lockling ${String(i).padStart(2, "0")}`, armorClass: 0, averageHitPoints: 0, sourceId: 147, sources: sources(147),
+      }));
+      for (const m of extraMonsters) unownedIds.add(m.id as number);
+      const out = await searchMonsters({ name: "Lockling", listAll: true });
+      expect(entryLines(out)).toHaveLength(40);
+      expect(maxInFlight).toBe(8);
+    });
+
+    it("srdBackedGroups bounded", async () => {
+      goLoggedOut();
+      extraMonsters = Array.from({ length: 40 }, (_, i) => [
+        monster({ id: 8_710_000 + i * 2, name: `Twinling ${String(i).padStart(2, "0")}`, sourceId: 147, sources: sources(147) }),
+        monster({ id: 8_710_001 + i * 2, name: `Twinling ${String(i).padStart(2, "0")}`, isLegacy: true, sourceId: 1, sources: sources(1) }),
+      ]).flat();
+      for (let i = 0; i < 40; i++) unownedIds.add(8_710_000 + i * 2);
+      await searchMonsters({ name: "Twinling" });
+      expect(maxInFlight).toBe(8);
     });
   });
 });

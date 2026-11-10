@@ -3,7 +3,7 @@ import { buildSourceIndex, definitionTiebreak, normalizeName, twinNames, type Ed
 import { resolveSource, sourceLabel } from "../src/source-filter.js";
 import {
   selectCatalog, lookupCatalog, paginateResults, renderSection, plainSection, withSourceCaveatSection,
-  lookupCatalogAdapter, formatCount, type CatalogAdapter, type CatalogOwner, type LookupAdapter,
+  lookupCatalogAdapter, formatCount, narrowingHint, orList, MONSTER_SEARCH_LIMIT, type CatalogAdapter, type CatalogOwner, type LookupAdapter,
 } from "../src/tools/edition-search.js";
 
 // The real snapshot ids and categories of the books these tests name.
@@ -531,5 +531,28 @@ describe("formatCount", () => {
     expect(formatCount(652)).toBe("652");
     expect(formatCount(1601)).toBe("1,601");
     expect(formatCount(1234567)).toBe("1,234,567");
+  });
+});
+
+describe("narrowingHint and orList", () => {
+  it("orList joins with a final 'or'", () => {
+    expect(orList(["cr"])).toBe("cr");
+    expect(orList(["cr", "type"])).toBe("cr or type");
+    expect(orList(["cr", "type", "size", "source"])).toBe("cr, type, size or source");
+  });
+  it("MONSTER_SEARCH_LIMIT is 50", () => expect(MONSTER_SEARCH_LIMIT).toBe(50));
+  it("names the unused filters", () => {
+    expect(narrowingHint({ total: 1601, approxKb: 400, unused: ["type"], siteSearch: false }))
+      .toBe("Narrow the search (add type), or repeat with `list_all: true` to list all 1,601 (about 400 KB).");
+    expect(narrowingHint({ total: 120, approxKb: 30, unused: ["type", "size", "source"], siteSearch: false }))
+      .toBe("Narrow the search (add type, size or source), or repeat with `list_all: true` to list all 120 (about 30 KB).");
+  });
+  it("with no unused filters", () => {
+    expect(narrowingHint({ total: 120, approxKb: 30, unused: [], siteSearch: false }))
+      .toBe("Narrow the search, or repeat with `list_all: true` to list all 120 (about 30 KB).");
+  });
+  it("site search", () => {
+    expect(narrowingHint({ total: 1601, approxKb: 400, unused: ["cr"], siteSearch: true }))
+      .toBe("Narrow the search, or use ddb_search_monsters with `list_all: true` to list all 1,601 (about 400 KB).");
   });
 });

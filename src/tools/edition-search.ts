@@ -39,6 +39,23 @@ export function formatCount(n: number): string {
   return n.toLocaleString("en-US");
 }
 
+/** The most monster lines a search prints unless `list_all` asks for every one. */
+export const MONSTER_SEARCH_LIMIT = 50;
+
+/** "a", "a or b", "a, b or c". */
+export function orList(items: string[]): string {
+  if (items.length <= 1) return items.join("");
+  return `${items.slice(0, -1).join(", ")} or ${items[items.length - 1]}`;
+}
+
+/** The line a capped monster search ends with: how to narrow it, and what the full list costs. */
+export function narrowingHint(o: { total: number; approxKb: number; unused: string[]; siteSearch: boolean }): string {
+  const cost = `to list all ${formatCount(o.total)} (about ${formatCount(o.approxKb)} KB).`;
+  if (o.siteSearch) return `Narrow the search, or use ddb_search_monsters with \`list_all: true\` ${cost}`;
+  const add = o.unused.length ? ` (add ${orList(o.unused)})` : "";
+  return `Narrow the search${add}, or repeat with \`list_all: true\` ${cost}`;
+}
+
 // ── Sections ──────────────────────────────────────────────────────────────────
 
 /**
