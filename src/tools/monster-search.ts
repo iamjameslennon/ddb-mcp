@@ -15,6 +15,7 @@ import {
 } from "../edition.js";
 import { resolveSource, isHomebrewSource, sourceLabel, unknownSourceError, type ResolvedSource } from "../source-filter.js";
 import { wrapUntrusted } from "../utils.js";
+import { matchesAtWordStart } from "../name-match.js";
 import { o5SearchMonstersSection, o5MonsterInEdition, type O5EditionMonster } from "../open5e.js";
 import { renderSection, plainSection, noMatchSection, sourceFraming, withSourceCaveatSection, type SearchSection } from "./edition-search.js";
 import {
@@ -36,6 +37,23 @@ export const VALID_CRS = new Set([0, 0.125, 0.25, 0.5, ...Array.from({ length: 3
  */
 export function unknownCrError(cr: number): string | null {
   return VALID_CRS.has(cr) ? null : `Unknown CR "${cr}". Valid CRs: 0, 0.125, 0.25, 0.5, 1–30.`;
+}
+
+/** G1/G2: a word-start match of the typed name, or the same twin group as the typed name. */
+function nameMatcher(query: string): (m: { name: string }) => boolean {
+  const twin = monsterTwin(query);
+  return m => matchesAtWordStart(m.name, query) || monsterTwin(m.name) === twin;
+}
+
+/**
+ * R5: with a query, the rows whose twin key equals the query's come first; then A-Z
+ * (en locale), then id. Without a query, A-Z.
+ */
+function orderRows<R extends { m: { name: string; id: number } }>(rows: R[], query: string): R[] {
+  const twin = query ? monsterTwin(query) : null;
+  const exact = (r: R) => twin !== null && monsterTwin(r.m.name) === twin ? 0 : 1;
+  return [...rows].sort((a, b) =>
+    exact(a) - exact(b) || a.m.name.localeCompare(b.m.name, "en") || a.m.id - b.m.id);
 }
 
 export interface MonsterSearchParams {
@@ -162,11 +180,12 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
   type Row = { m: DdbMonster; info: EditionInfo; reason?: SelectionReason; srd?: O5EditionMonster };
   let monsters: Row[];
   let hidden = 0;
+  const nameOk = searchTerm ? nameMatcher(searchTerm) : () => true;
   if (homebrew) {
     // Fail closed, as the untrusted wrapping does: anything not explicitly official.
-    monsters = fetched.filter(m => m.isHomebrew !== false && passes(m)).map(m => ({ m, info: HOMEBREW_INFO }));
+    monsters = fetched.filter(m => m.isHomebrew !== false && nameOk(m) && passes(m)).map(m => ({ m, info: HOMEBREW_INFO }));
   } else if (params.source) {
-    monsters = fetched.filter(passes).map(m => ({ m, info: info(m) }));
+    monsters = fetched.filter(m => nameOk(m) && passes(m)).map(m => ({ m, info: info(m) }));
   } else {
     // countFilteredPicks: a group whose requested pick fails the CR/type/size
     // filters while the other edition's pick passes is counted as hidden, as in
@@ -176,9 +195,12 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
     // the creature: its stat block is that SRD text (owner ruling 2026-11-02).
     // Such a group counts as available before selection, so the filters and the
     // hidden count judge its requested pick like any other.
-    const srdBacked = asker.anonymous ? await srdBackedGroups(fetched, access, requested, info, monsterTiebreak(index), passes) : new Map<string, O5EditionMonster>();
+    const matchedTwins = new Set(fetched.filter(nameOk).map(m => monsterTwin(m.name)));
+    const named = searchTerm ? fetched.filter(m => matchedTwins.has(monsterTwin(m.name))) : fetched;
+    const srdBacked = asker.anonymous ? await srdBackedGroups(named, access, requested, info, monsterTiebreak(index), passes) : new Map<string, O5EditionMonster>();
     const picked = groupAndSelect(fetched, requested, {
       info, twinKey: m => monsterTwin(m.name), tiebreak: monsterTiebreak(index), passes,
+      nameMatches: searchTerm ? nameOk : undefined,
       available: m => !isLockedIn(access, m.id) || srdBacked.has(monsterTwin(m.name)),
       countFilteredPicks: true,
     });
@@ -188,6 +210,8 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
     }));
     hidden = picked.hidden;
   }
+
+  monsters = orderRows(monsters, searchTerm);
 
   if (monsters.length === 0) {
     const scope = partialScan ? ` (checked the first ${checked} of ${totalText} entries)` : "";

@@ -281,6 +281,10 @@ let firstPageTotal: number | null = null;
 const failSearchTerms = new Set<string>();
 // Per-test monsters, kept out of ALL_MONSTERS so they can't shift other tests' counts.
 let extraMonsters: Array<Record<string, unknown>> = [];
+// Prepended before ALL_MONSTERS, so a fixture sits inside today's 600-entry scan.
+let leadMonsters: Array<Record<string, unknown>> = [];
+// Lowercased term -> hits the live any-word matching adds to the substring hits (before the sources filter).
+let ANY_WORD: Record<string, unknown[]> = {};
 const listUrls: string[] = [];
 const detailUrls: string[] = [];
 
@@ -307,7 +311,8 @@ function setupFetch(): void {
       const wanted = params.getAll("sources").map(Number);
       if (failUnfilteredSearch && !wanted.length) return mockResponse({}, 500);
       if (failSearchTerms.has(term)) return mockResponse({}, 500);
-      let data = [...ALL_MONSTERS, ...extraMonsters].filter(m => m.name === null || foldName(m.name as string).includes(foldName(term)));
+      let data = [...leadMonsters, ...ALL_MONSTERS, ...extraMonsters].filter(m => m.name === null || foldName(m.name as string).includes(foldName(term)));
+      for (const extra of ANY_WORD[term] ?? []) if (!data.includes(extra as never)) data.push(extra as never);
       let fuzzy = false;
       if (!data.length && FUZZY[term]) { data = FUZZY[term] as typeof data; fuzzy = true; }
       if (wanted.length) {
@@ -364,6 +369,8 @@ beforeEach(() => {
   vi.mocked(o5GetMonster).mockResolvedValue("O5 MONSTER RESULT");
   failSearchTerms.clear();
   extraMonsters = [];
+  leadMonsters = [];
+  ANY_WORD = {};
   listUrls.length = 0;
   detailUrls.length = 0;
   unownedIds.clear();
@@ -2571,5 +2578,71 @@ describe("locked stat block prints dashes, not zeros (B8)", () => {
     expect(out).toContain("**Armor Class** 0");
     expect(out).toContain("**Hit Points** 0 (d0)");
     expect(out).toContain("**Senses** passive Perception 0");
+  });
+});
+
+describe("word-start name matching (B11)", () => {
+  const GOBLIN_2014 = monster({ id: 8_100_001, name: "Goblin", isLegacy: true, sourceId: 1, sources: sources(1) });
+  const GOBLIN_WARRIOR_2024 = monster({ id: 8_100_002, name: "Goblin Warrior", sourceId: 147, sources: sources(147) });
+  const GOBLIN_BOSS_2024 = monster({ id: 8_100_003, name: "Goblin Boss", sourceId: 147, sources: sources(147) });
+  const AARDVARK_GOBLIN_2024 = monster({ id: 8_100_004, name: "Aardvark Goblin", sourceId: 147, sources: sources(147) });
+  const HOBGOBLIN_WARRIOR_2024 = monster({ id: 8_100_005, name: "Hobgoblin Warrior", sourceId: 147, sources: sources(147) });
+  const KOBOLD_WARRIOR_2024 = monster({ id: 8_100_006, name: "Kobold Warrior", sourceId: 147, sources: sources(147) });
+  const GOBLINS = [GOBLIN_2014, GOBLIN_WARRIOR_2024, GOBLIN_BOSS_2024, AARDVARK_GOBLIN_2024, HOBGOBLIN_WARRIOR_2024, KOBOLD_WARRIOR_2024];
+  const entryLines = (out: string) => out.split("\n").filter(l => l.startsWith("- **"));
+
+  beforeEach(() => {
+    extraMonsters = GOBLINS;
+    ANY_WORD = { "goblin warrior": [KOBOLD_WARRIOR_2024] };
+  });
+
+  it("a name lists word-start and twin matches, twin first, and hides the other edition", async () => {
+    const out = await searchMonsters({ name: "goblin" });
+    expect(out).toContain("Goblin Warrior");
+    expect(out).toContain("Goblin Boss");
+    expect(out).toContain("Aardvark Goblin");
+    expect(out).not.toContain("Kobold Warrior");
+    expect(out).not.toContain("Hobgoblin Warrior");
+    expect(out).toContain('1 2014 version hidden — rules_edition: "2014" shows it.');
+    expect(entryLines(out)[0]).toContain("**Goblin Warrior**");
+  });
+
+  it("the twin's own name keeps the other edition's group matching", async () => {
+    const out = await searchMonsters({ name: "goblin warrior" });
+    expect(out).toContain("Goblin Warrior");
+    expect(out).not.toContain("Kobold Warrior");
+    expect(out).toContain('1 2014 version hidden — rules_edition: "2014" shows it.');
+  });
+
+  it("a renamed creature is still found under its old name (G2)", async () => {
+    extraMonsters = [
+      monster({ id: 8_000_410, name: "Thug", typeId: 8, isLegacy: true, sourceId: 5, sources: sources(5) }),
+      monster({ id: 8_000_100, name: "Tough", typeId: 8, sourceId: 147, sources: sources(147), challengeRatingId: 4 }),
+    ];
+    const out = await searchMonsters({ name: "thug" });
+    expect(entryLines(out).some(l => l.includes("**Tough**"))).toBe(true);
+  });
+
+  it("a book filter doesn't let an any-word hit through", async () => {
+    const out = await searchMonsters({ source: "mm-2024", name: "goblin" });
+    expect(out).toContain("Goblin Warrior");
+    expect(out).not.toContain("Kobold Warrior");
+  });
+
+  it("homebrew search drops any-word hits", async () => {
+    const hb = { ...KOBOLD_WARRIOR_2024, id: 8_100_007, name: "Kobold Warrior", isHomebrew: true };
+    extraMonsters = [...GOBLINS, hb];
+    ANY_WORD = { goblin: [hb] };
+    const out = await searchMonsters({ source: "homebrew", name: "goblin" });
+    expect(out).not.toContain("Kobold Warrior");
+  });
+
+  it("a search without a name lists A-Z", async () => {
+    leadMonsters = [
+      monster({ id: 8_100_020, name: "Zeta Lord", sourceId: 147, sources: sources(147), challengeRatingId: 21 }),
+      monster({ id: 8_100_021, name: "Alpha Lord", sourceId: 147, sources: sources(147), challengeRatingId: 21 }),
+    ];
+    const names = entryLines(await searchMonsters({ cr: 17 })).map(l => /\*\*(.+?)\*\*/.exec(l)![1]);
+    expect(names).toEqual(["Alpha Lord", "Zeta Lord"]);
   });
 });
