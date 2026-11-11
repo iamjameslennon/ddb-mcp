@@ -43,6 +43,8 @@ Data-refresh scripts. All except the last need `ddb_login`, and their output fil
 
 Regression check before a release (needs no login): `npx tsx scripts/regress-all-characters.mts [--baseline <version>]`. It parses all 56 `testcharacters.md` characters × 8 sections with the published npm package and with HEAD's `src/`, diffs them with wrappers, `Rules:` lines and edition tags stripped, and scans HEAD for anomalies and section consistency. It fails only on a HEAD crash, an inconsistency or a new anomaly; differences need reading. Its output holds other people's characters, so it goes to the OS temp dir, never the repo. See [docs/character-refactor.md](docs/character-refactor.md#layer-4--whole-corpus-regression-before-a-release).
 
+Testing through an AI client: [skills/ddb-mcp-regression/](skills/ddb-mcp-regression/) is a skill contributors load into Claude Desktop (README, "Testing your change in Claude Desktop"). It plays players and DMs across every tool and test character, judges each reply's suitability and writes a findings report. **Keep its `references/` in step in the same commit** when you add or change a tool or its parameters, an owner ruling, a carry-over (opened or closed) or the test-character list. `tests/regression-skill.test.ts` fails on drift in the tool list, tool parameters, the character list and closed carry-overs, but not on a new ruling or a new carry-over, which need the manual update (`intended-behaviour.md`, `known-open-issues.md`).
+
 ## Architecture
 
 This is an [MCP](https://modelcontextprotocol.io) server exposing D&D Beyond (DDB) data over stdio. `src/index.ts` is the entrypoint (transport, signals, `main()`). `src/server.ts` builds the `McpServer` (with `SERVER_INSTRUCTIONS` from `src/edition.ts`) and registers all 36 tools. They are still `server.tool(...)` calls, and the move to `registerTool` is open work. The tools delegate to `src/tools/`. Tests connect `server` to an in-memory transport.
@@ -147,7 +149,7 @@ Full detail: [docs/claude/architecture.md](docs/claude/architecture.md).
 
 ## Open work (history and closed items in [history.md](docs/claude/history.md))
 
-Last updated 2026-11-11. Releases and pushes go straight to `main`. The rules-edition work (phases 1–5) is complete, as are the follow-up rounds of minors A–E, the F-2026-10-20 residuals and the combat section completeness run (I1–I3). Since v2.10.2, 315 commits are unreleased.
+Last updated 2026-11-11. Releases and pushes go straight to `main`. The rules-edition work (phases 1–5) is complete, as are the follow-up rounds of minors A–E, the F-2026-10-20 residuals and the combat section completeness run (I1–I3). Since v2.10.2, 324 commits are unreleased.
 
 1. **Stateless-safe plan, Task 2 onward**: [docs/superpowers/plans/2026-09-17-stateless-safe-ddb-mcp.md](docs/superpowers/plans/2026-09-17-stateless-safe-ddb-mcp.md). Nothing blocks it. The plan predates some moves, so refresh it first:
    - the registrations are in `src/server.ts`, not `src/index.ts`;

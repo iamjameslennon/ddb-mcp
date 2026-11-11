@@ -641,6 +641,35 @@ npm test
 
 </details>
 
+### Testing your change in Claude Desktop
+
+After `npm test`, check your change the way users meet it, through an AI client. The repo ships a skill, [`skills/ddb-mcp-regression/`](skills/ddb-mcp-regression/), that has the AI play players and DMs across every tool and all the test characters in [testcharacters.md](testcharacters.md), judge whether each reply suits the user, and write a findings report you can hand to a coding assistant.
+
+1. **Build your change:** `npm run build`.
+2. **Point Claude Desktop at your build.** In the config file listed under [Claude Desktop](#claude-desktop-recommended), set the server to your checkout instead of the npm package, then restart Claude Desktop:
+
+   ```json
+   {
+     "mcpServers": {
+       "dndbeyond": {
+         "command": "node",
+         "args": ["/absolute/path/to/ddb-mcp/dist/index.js"]
+       }
+     }
+   }
+   ```
+
+   Rebuild and restart Claude Desktop after each further change.
+3. **Load the skill.** Zip the skill folder so the zip contains `ddb-mcp-regression/SKILL.md` and `ddb-mcp-regression/references/`:
+
+   ```bash
+   cd skills && zip -r ddb-mcp-regression.zip ddb-mcp-regression
+   ```
+
+   Upload the zip in Claude Desktop's Skills settings (under Settings → Capabilities at the time of writing). Custom skills need "Code execution and file creation" turned on, which also lets the AI save the report as a file. If the upload is rejected, zip the folder's contents instead and open an issue so this step can be corrected. In a client without skills, paste `SKILL.md` into the chat and attach the files in `references/`.
+4. **Run it:** ask "Run the ddb-mcp regression skill on my change". It tells you up front what it will do on your machine (a sign-in window if you aren't logged in, one character JSON saved to `~/Downloads`, and logging out at the end only if you agree), works in batches, and keeps notes so a long run can resume.
+5. **Read the report.** You get `ddb-mcp-regression-<date>.md` (or the same report printed in the chat). It lists findings with evidence and severity, known issues it saw, what it couldn't cover, and ready-to-paste prompts for a coding assistant. Nothing needs committing: keep it, or attach it to your PR.
+
 ---
 
 ## Credits
