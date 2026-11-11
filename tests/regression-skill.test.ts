@@ -62,7 +62,7 @@ describe("regression skill: test characters", () => {
 });
 
 describe("regression skill: coverage matrix and tool map", () => {
-  const VOCAB = ["normal", "invalid", "not-found", "ambiguous", "locked", "edition", "source", "pagination", "gate", "logged-out"];
+  const VOCAB = ["normal", "invalid", "not-found", "ambiguous", "locked", "edition", "source", "homebrew", "pagination", "gate", "logged-out"];
   const matrixMd = () => read("skills/ddb-mcp-regression/references/coverage-matrix.md");
   const sections = (md: string) =>
     new Map([...md.matchAll(/^## `(ddb_[a-z_]+)`\n+Scenarios: (.+)$/gm)].map(m => [m[1], m[2].split(",").map(s => s.trim())]));
@@ -82,6 +82,30 @@ describe("regression skill: coverage matrix and tool map", () => {
       expect([...bullets(matrixMd(), tool)].sort(), tool).toEqual([...scenarios].sort()); // one bullet per scenario
     }
     expect(matrixMd()).toContain("\n## Characters\n");
+  });
+
+  it("marks every scenario of every tool as applicable or not (spec goal 5)", () => {
+    const md = matrixMd();
+    for (const [tool, scenarios] of sections(md)) {
+      const body = md.split(/^## /m).find(part => part.startsWith(`\`${tool}\``)) ?? "";
+      const na = /^Not applicable: (.+)$/m.exec(body)?.[1].split(",").map(x => x.trim()).filter(x => x !== "none") ?? null;
+      expect(na, `${tool} has no "Not applicable:" line`).not.toBeNull();
+      expect([...scenarios, ...na!].sort(), tool).toEqual([...VOCAB].sort());
+    }
+  });
+
+  it("tests homebrew wherever a tool takes source", async () => {
+    const matrix = sections(matrixMd());
+    for (const { name, params } of await listedTools()) if (params.includes("source")) expect(matrix.get(name), name).toContain("homebrew");
+  });
+
+  it("expects ddb_get_monster to pick a match, and keeps the 50 cap out of 'ambiguous'", () => {
+    const md = matrixMd();
+    const bullet = (tool: string, scenario: string) =>
+      (md.split(/^## /m).find(part => part.startsWith(`\`${tool}\``)) ?? "").split("\n").find(l => l.startsWith(`- ${scenario}:`)) ?? "";
+    expect(bullet("ddb_get_monster", "ambiguous")).toMatch(/picks|names which/);
+    expect(bullet("ddb_get_monster", "ambiguous")).not.toMatch(/asks which|lists choices/);
+    expect(bullet("ddb_search_monsters", "ambiguous")).not.toContain("capped at 50");
   });
 
   it("derives schema-driven scenarios from each tool's parameters", async () => {
@@ -141,7 +165,20 @@ describe("regression skill: judgement references and templates", () => {
   it("notes template records coverage, evidence and a resume point", () => {
     const md = read("skills/ddb-mcp-regression/references/notes-template.md");
     for (const h of ["## Run", "## Coverage", "## Findings so far", "## Resume from"]) expect(md).toContain(`\n${h}\n`);
-    expect(md).toMatch(/\[x\] Batch \d+/);
+    expect(md).toMatch(/\[x\] Batch \d+/); // shown once, as an example
+  });
+
+  it("notes template starts with nothing ticked (examples sit outside the copied part)", () => {
+    const md = read("skills/ddb-mcp-regression/references/notes-template.md");
+    const coverage = md.slice(md.indexOf("\n## Coverage\n"), md.indexOf("\n## Findings so far\n"));
+    expect(coverage).not.toMatch(/\[x\]|✓/);
+  });
+
+  it("report header records the account category, not the books owned", () => {
+    const md = read("skills/ddb-mcp-regression/references/report-template.md");
+    const account = md.split("\n").find(l => l.startsWith("| **Account** |")) ?? "";
+    expect(account).toMatch(/free|owns paid books/);
+    expect(account).not.toMatch(/<books>|owns: </);
   });
 });
 
@@ -168,6 +205,32 @@ describe("regression skill: SKILL.md", () => {
     expect(refs.length).toBe(7); // update when a reference is added
     for (const f of refs) expect(skill()).toContain(`references/${f}`);
     for (const [, link] of skill().matchAll(/\((references\/[^)#]+)(?:#[^)]*)?\)/g)) expect(existsSync(join(SKILL_DIR, link)), link).toBe(true);
+  });
+
+  const section = (h: string) => {
+    const text = skill();
+    const start = text.indexOf(`\n${h}\n`);
+    const next = text.indexOf("\n## ", start + 1);
+    return text.slice(start, next < 0 ? undefined : next);
+  };
+
+  it("keeps outages and session drops out of the findings", () => {
+    const outage = section("## If a service is slow or down");
+    expect(outage).not.toMatch(/is a finding/);
+    expect(outage).toMatch(/environment/);
+    const drop = section("## If the session drops");
+    expect(drop).toMatch(/same account/);
+    expect(drop).toMatch(/Known open issues/);
+  });
+
+  it("never needs a click on a character sheet for the spot-checks", () => {
+    const batches = section("## Batches");
+    expect(batches).toMatch(/only where the page text shows/);
+    expect(batches).toMatch(/Never click or fill anything on a sheet/);
+  });
+
+  it("keeps the contributor's library out of the report", () => {
+    expect(section("## Account type")).toMatch(/report header records only the category/);
   });
 
   it("covers the procedure and the failure modes", () => {

@@ -39,7 +39,7 @@ Work through the sections below in order. Keep going without asking for permissi
 
 ## Account type
 
-Call `ddb_list_library` and record what you see in the notes and the report header:
+Call `ddb_list_library` and record the account type in the notes. The report header records only the category (free, or owns paid books; homebrew yes or no), never the book titles: what someone has bought is private, and the report may be shared.
 
 - **Free account.** The library marks every book "Owned", including the free ones every account gets: both Basic Rules (2014 and 2024), Lost Mine of Phandelver, Frozen Sick, Monstrous Compendium Vol. 1, Unearthed Arcana and the Sage Advice books. If the library holds only books like these and no core rulebook (Player's Handbook, Dungeon Master's Guide, Monster Manual, of either edition), treat it as free. Content from paid books is locked: locked replies are expected and are not findings; judge only whether they say so clearly.
 - **Owns books.** Content from owned books should be readable. A "locked" reply for an owned book is a finding.
@@ -81,7 +81,7 @@ Work in this order. After each batch, update your notes (see "Notes and checkpoi
    6. library and books;
    7. site search.
 4. **Session, cache and browser tools:** `ddb_clear_cache`, `ddb_navigate`, `ddb_get_page`, `ddb_interact`, `ddb_close_browser`, `ddb_get_character_raw` and `ddb_download_character`, following "Safety".
-5. **Spot-check three public test characters against dndbeyond.com.** Pick one low-level, one level 9–12 and one multiclass or mixed-edition character. Open each sheet read-only with `ddb_navigate` and `ddb_get_page`, and compare AC, HP, initiative, speed, saves, passive Perception and spell attack/DC with the `ddb_get_character` output. Never click or fill anything on a sheet.
+5. **Spot-check three public test characters against dndbeyond.com.** Pick one low-level, one level 9–12 and one multiclass or mixed-edition character. Open each sheet read-only with `ddb_navigate` and `ddb_get_page`, and compare AC, HP, initiative, speed, saves, passive Perception and spell attack/DC with the `ddb_get_character` output, each only where the page text shows it (some values sit on tabs that need a click). Never click or fill anything on a sheet: a value you can't see unclicked is "not compared", not a finding.
 6. **Logged-out pass** (see "Logged-out pass").
 7. **Reconcile coverage.** Go through every matrix row and every character: each is either done, or listed under "Not covered" with the reason.
 
@@ -155,19 +155,22 @@ If the conversation has been compacted, or you're in a new conversation and the 
 
 When a tool that worked before fails with a login, token or session error:
 
-1. Call `ddb_list_characters`.
+1. Pause the batch and call `ddb_list_characters`.
 2. If that fails too, the session has gone: tell the contributor, ask them to sign in again with `ddb_login`, then re-run the failed call once.
-3. If `ddb_list_characters` works but the tool still fails, file it as a `suspected` finding. It may be the known issue (bq), where a login change during a monster search reads as "Open5e unavailable".
+3. If it works, check it is the same account as at the start (the same characters as in your notes). If it isn't, a login changed mid-run: confirm the intended account with the contributor, then re-run the failed call once.
+4. If the failed call now works, record an environment note, not a finding. If a monster search failed with "Open5e unavailable" around a login change, that is the known issue (bq): put it under "Known open issues". Only a call that still fails, on the same account, with a working session, is a `suspected` finding.
 
-Don't file the failures caused by a dropped session as findings.
+Don't file the failures caused by a dropped or changed session as findings.
 
 ## If a service is slow or down
 
 D&D Beyond and Open5e sometimes time out (an earlier run saw five Open5e timeouts in eight minutes, then recovery). When a call times out or a service reports it is unavailable:
 
 1. Note it, carry on with other work, and retry the call once a few minutes later.
-2. If it works on retry, record an environment note, not a finding.
-3. If it still fails, record it under "Not covered" with the reason. Judge only whether the error message was clear: a message that names the service and says to try again is suitable; a bare "operation aborted" is a finding.
+2. If it works on retry, record an environment note.
+3. If it still fails, record it under "Not covered" with the reason, and an environment note.
+
+An outage is never a code finding. If the error message itself was unclear (a bare "operation aborted" rather than one naming the service and saying to try again), put that under "Improvements".
 
 ## Logged-out pass
 

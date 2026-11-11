@@ -17,7 +17,7 @@ Rules for the whole report:
 | **Code under test** | <branch and commit, as the contributor gave them> |
 | **Date** | <YYYY-MM-DD> |
 | **Client** | <Claude Desktop / other>; files: <could create files / printed checkpoints> |
-| **Account** | <free (owns no books) / owns: <books> / has homebrew: yes/no>, as observed via `ddb_list_library` |
+| **Account** | <free / owns paid books>; homebrew: <yes / no>. The category only, never the titles: the library is private. |
 | **Characters** | <covered> of <total> test characters, plus <N> of the contributor's own |
 | **Tools** | <covered> of 36 tools fully covered; see "Not covered" |
 
