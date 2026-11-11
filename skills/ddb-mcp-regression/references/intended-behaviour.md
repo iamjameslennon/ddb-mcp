@@ -123,3 +123,23 @@ Source: `src/tools/character/inventory.ts` header comment.
 ### Encounter and treasure lookups count an exact name match
 Looks like: a name that exactly matches one creature is counted even when other creatures share part of the name, including a third-party one (D&D Beyond has a third-party monster named "Dragon", CR 4). Only a name that matches several creatures without an exact match is reported as ambiguous.
 Source: the `ddb_rate_encounter` and `ddb_roll_treasure` descriptions ("exact, then partial").
+
+### Chosen class options print on their parent feature line
+Looks like: `• Fighting Style (Fighter 1): Archery`; `ddb_character_lookup` resolves the option by name, and its Rules line uses the option's own source (Eldritch Smite reads Xanathar's Guide to Everything), falling back to the owning subclass or class.
+Source: history.md, Regression remediation 2026-11-11 (owner rulings R1 and R6, 2026-11-11).
+
+### EQUIPPED lists armour and magic or attunable gear
+Looks like: EQUIPPED holds equipped armour with `(AC n)` and equipped items that are magic or attunable; mundane equipped gear (Backpack, Pouch, Arrows) stays in INVENTORY. The attunement line names the items: `ATTUNEMENT (1/3): Staff of the Woodlands`.
+Source: history.md, Regression remediation 2026-11-11 (owner ruling R2, 2026-11-11).
+
+### `ddb_get_monster` takes a fuzzy hit only when it is close
+Looks like: a close top hit is used and says so on its own line; a distant one gives "not found" with near matches.
+Source: history.md, Regression remediation 2026-11-11 (owner ruling R3, 2026-11-11).
+
+### `br-2024` redirects to `phb-2024` outside equipment
+Looks like: `source: "br-2024"` for spells, feats, species, classes and backgrounds replies with a redirect to `phb-2024`, because D&D Beyond tags none of those entries with source 148. Equipment is unchanged (items do carry 148).
+Source: history.md, Regression remediation 2026-11-11 (owner ruling R4, 2026-11-11).
+
+### Dueling follows dndbeyond.com
+Looks like: +2 on every one-handed melee row, so two unflagged one-handed weapons both show it. A sheet that flags an off-hand weapon (`characterValues` typeId 18) gives no row Dueling.
+Source: history.md, Regression remediation 2026-11-11 (owner ruling R5, 2026-11-11).
