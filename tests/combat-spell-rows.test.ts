@@ -57,7 +57,11 @@ const CHROMATIC_ORB = spellDef("Chromatic Orb", 1, {
 });
 const GREEN_FLAME_BLADE = spellDef("Green-Flame Blade", 0, {
   attackType: 1, range: { origin: "Self", rangeValue: null, aoeType: "Sphere", aoeValue: 5 }, scaleType: "characterlevel",
-  modifiers: [damage("fire", null, scaled([5, "1d8"], [11, "2d8"], [17, "3d8"])), damage("fire", null, scaled([5, "1d8"], [11, "2d8"], [17, "3d8"]), "To Second Target")],
+  // Live shape (Ezra 127373542): the leap's component adds the spellcasting modifier (usePrimaryStat).
+  modifiers: [
+    damage("fire", null, scaled([5, "1d8"], [11, "2d8"], [17, "3d8"])),
+    { ...damage("fire", null, scaled([5, "1d8"], [11, "2d8"], [17, "3d8"]), "To Second Target"), usePrimaryStat: true },
+  ],
 });
 const SCORCHING_RAY = spellDef("Scorching Ray", 2, {
   attackType: 2, range: ranged(120), scaleType: "spellscale",
@@ -329,12 +333,36 @@ describe("spell rows in ACTIONS", () => {
     expect(rowFor(sheet(wizard(5, [known(ICE_KNIFE)])), "Ice Knife")).toContain("   1d10 piercing + 2d6 cold   ");
   });
 
-  it("prints Green-Flame Blade as a weapon attack", () => {
+  // Owner ruling 2026-11-11: the weapon's damage is named, the reach comes
+  // from the spell's 5-ft. radius, and the leap to a second creature is shown.
+  it("prints Green-Flame Blade as a weapon attack with its second-target damage", () => {
+    const head = `• ${"Green-Flame Blade (cantrip)".padEnd(26)} melee weapon attack`;
     const at5 = rowFor(sheet(wizard(5, [known(GREEN_FLAME_BLADE)])), "Green-Flame Blade");
-    expect(at5).toBe(`• ${"Green-Flame Blade (cantrip)".padEnd(26)} melee weapon attack   + 1d8 fire   self`);
+    expect(at5).toBe(`${head}   weapon damage + 1d8 fire   reach 5 ft.   (to second target: 1d8 + 3 fire)`);
     expect(at5).not.toContain("fire/fire");
+    const at11 = rowFor(sheet(wizard(11, [known(GREEN_FLAME_BLADE)])), "Green-Flame Blade");
+    expect(at11).toBe(`${head}   weapon damage + 2d8 fire   reach 5 ft.   (to second target: 2d8 + 3 fire)`);
     const at1 = rowFor(sheet(wizard(1, [known(GREEN_FLAME_BLADE)])), "Green-Flame Blade");
-    expect(at1).toBe(`• ${"Green-Flame Blade (cantrip)".padEnd(26)} melee weapon attack   self`);
+    expect(at1).toBe(`${head}   weapon damage   reach 5 ft.   (to second target: 3 fire)`);
+  });
+
+  it("signs a negative modifier on Green-Flame Blade's leap and drops a leap that deals nothing", () => {
+    const weak = (level: number) => wizard(level, [known(GREEN_FLAME_BLADE)], { stats: stats({ int: 8 }) });
+    expect(rowFor(sheet(weak(5)), "Green-Flame Blade")).toContain("   (to second target: 1d8 - 1 fire)");
+    const at1 = rowFor(sheet(weak(1)), "Green-Flame Blade");
+    expect(at1).toBe(`• ${"Green-Flame Blade (cantrip)".padEnd(26)} melee weapon attack   weapon damage   reach 5 ft.`);
+  });
+
+  it("names the modifier on Green-Flame Blade's leap when the casting ability is unknown", () => {
+    const o = { classes: [cls(1, "Fighter", 5, 0, {}, { canCastSpells: false })], classSpells: [list(1, known(GREEN_FLAME_BLADE))] };
+    const row = rowFor(sheet(o), "Green-Flame Blade");
+    expect(row).toContain("   (to second target: 1d8 fire + spellcasting modifier)");
+    expect(row).not.toMatch(/NaN|undefined/);
+  });
+
+  it("leaves a weapon-attack cantrip's range as the spell states without a radius", () => {
+    const noRadius = { ...GREEN_FLAME_BLADE, id: nextId++, range: { origin: "Self", rangeValue: null, aoeType: null, aoeValue: null } };
+    expect(rowFor(sheet(wizard(5, [known(noRadius)])), "Green-Flame Blade")).toContain("   weapon damage + 1d8 fire   self   (");
   });
 
   it("omits utility cantrips, leveled save spells and non-action spells", () => {
