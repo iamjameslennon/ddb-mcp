@@ -2737,11 +2737,9 @@ describe("word-start name matching (B11)", () => {
     ];
     const out = await searchMonsters({ source: "mm-2024", name: "thug" });
     expect(entryLines(out).some(l => l.includes("**Tough**"))).toBe(true);
-    // The 2014 Thug sits outside the book; source wins, so no twin hiding and no hidden footer either.
+    // The 2014 Thug sits outside the book, so the source filter never returns it (twin hiding is covered by the next test).
     expect(entryLines(out).map(l => /\*\*(.+?)\*\*/.exec(l)![1])).toEqual(["Tough"]);
     expect(out).not.toContain("**Thug**");
-    expect(out).not.toContain("version hidden");
-    expect(out).not.toContain("hidden");
   });
 
   it("a book search lists a 2014 twin that the book also carries, with no hiding and no footer", async () => {

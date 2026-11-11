@@ -36,9 +36,9 @@ describe("monster tool registrations (G4)", () => {
     const prop = (tool.inputSchema.properties as Record<string, { type?: string; description?: string }>).list_all;
     expect(prop).toBeDefined();
     expect(prop.type).toBe("boolean");
-    expect(prop.description).toContain("first 50");
+    expect(prop.description).toContain("instead of the first 50.");
     expect(tool.inputSchema.required ?? []).not.toContain("list_all");
-    expect(tool.description).toContain("at most 50");
+    expect(tool.description).toContain("at most 50 unless list_all");
     expect(tool.description).toContain("list_all: true");
   });
 
@@ -46,7 +46,7 @@ describe("monster tool registrations (G4)", () => {
     const { tools } = await client.listTools();
     const tool = tools.find(t => t.name === "ddb_clear_cache")!;
     const cache = (tool.inputSchema.properties as Record<string, { description?: string }>).cache;
-    expect(cache.description).toContain("the full monster list");
+    expect(cache.description).toMatch(/'monsters' — [^.]*the full monster list/);
   });
 
   it("list_all: true reaches searchMonsters as listAll: true", async () => {
