@@ -14,18 +14,63 @@ import { wrapIfHomebrew } from "../../utils.js";
 import { MASTERY_NAMES } from "../weapon-mastery.js";
 import { arr, records, isBonusMod, isHomebrewClassFeature, isHomebrewEntry, isProficiencyMod, num, obj, signed, str, weaponWordOrder } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats } from "./types.js";
-import { hiddenOptionIds, visibleClassFeatureIds } from "./actions.js";
+import { hiddenOptionIds, isVisibleAction, visibleClassFeatureIds } from "./actions.js";
+import { isActiveItemMod } from "./item-gate.js";
 
-/** Inventory ids flagged as the off-hand weapon: `characterValues` typeId 18, value true, `valueId` an integer (others skipped). */
-export function offHandItemIds(char: CharData): Set<number> {
+/** `characterValues` typeId of the off-hand weapon flag. */
+export const OFF_HAND_VALUE_TYPE = 18;
+/** `characterValues` typeId of the pact weapon flag (Pact of the Blade). */
+export const PACT_WEAPON_VALUE_TYPE = 28;
+
+/** Inventory ids flagged by a `characterValues` entry of `typeId`: value true, `valueId` an integer (others skipped). */
+export function flaggedItemIds(char: CharData, typeId: number): Set<number> {
   const ids = new Set<number>();
   for (const v of arr<unknown>(char.characterValues)) {
     const e = obj(v);
-    if (e.typeId !== 18 || e.value !== true) continue;
+    if (e.typeId !== typeId || e.value !== true) continue;
     const id = typeof e.valueId === "number" ? e.valueId : /^\d+$/.test(str(e.valueId).trim()) ? Number(str(e.valueId).trim()) : NaN;
     if (Number.isInteger(id)) ids.add(id);
   }
   return ids;
+}
+
+/** Inventory ids flagged as the off-hand weapon (typeId 18). */
+export function offHandItemIds(char: CharData): Set<number> {
+  return flaggedItemIds(char, OFF_HAND_VALUE_TYPE);
+}
+
+/**
+ * Flat weapon bonuses from modifiers (Archery, Dueling, an item's +N): `bonus`
+ * `ranged-/melee-/weapon-attacks` add to the attack roll, `damage`
+ * `one-handed-melee-attacks` (no dice) to one-handed melee damage. Gated like
+ * the save advantages: a class-bucket modifier of a feature or option the
+ * character hasn't reached is skipped, and so is an inactive item's. A
+ * modifier with a restriction is conditional and never added.
+ */
+export function weaponModifierBonuses(core: CoreStats): { rangedHit: number; meleeHit: number; oneHandedMeleeDamage: number } {
+  const { char, classes, inventory } = core;
+  const visibleIds = visibleClassFeatureIds(char, classes);
+  const hiddenOptions = hiddenOptionIds(char, visibleIds);
+  const out = { rangedHit: 0, meleeHit: 0, oneHandedMeleeDamage: 0 };
+  for (const [bucket, list] of Object.entries(obj(char.modifiers))) {
+    for (const m of arr<Record<string, unknown>>(list)) {
+      if (m == null || typeof m !== "object") continue;
+      const sub = str(m.subType);
+      const isHit = m.type === "bonus" && (sub === "ranged-weapon-attacks" || sub === "melee-weapon-attacks" || sub === "weapon-attacks");
+      const isDamage = m.type === "damage" && sub === "one-handed-melee-attacks" && !str(obj(m.dice).diceString);
+      if (!isHit && !isDamage) continue;
+      if (str(m.restriction).trim()) continue;
+      if (!isVisibleAction(bucket === "subclass" ? "class" : bucket, m, visibleIds, hiddenOptions)) continue;
+      if (!isActiveItemMod(m, inventory)) continue;
+      const value = num(m.value ?? m.fixedValue);
+      if (isDamage) out.oneHandedMeleeDamage += value;
+      else {
+        if (sub !== "melee-weapon-attacks") out.rangedHit += value;
+        if (sub !== "ranged-weapon-attacks") out.meleeHit += value;
+      }
+    }
+  }
+  return out;
 }
 
 /**
@@ -78,7 +123,11 @@ export function computeWeaponAttacks(core: CoreStats): { attacks: string[]; offH
   const weaponProfSlugs = new Set(
     allMods.filter(isProficiencyMod).map(m => m.subType)
   );
-  const isWeaponProficient = (def: Record<string, unknown>): boolean => {
+  const pactIds = flaggedItemIds(core.char, PACT_WEAPON_VALUE_TYPE);
+  const bonuses = weaponModifierBonuses(core);
+  const isWeaponProficient = (def: Record<string, unknown>, itemId: number): boolean => {
+    if (pactIds.has(itemId)) return true;
+    if (weaponProfSlugs.has("firearms") && arr<Record<string, unknown>>(def.properties).some(p => str(p.name) === "Ammunition (Firearms)")) return true;
     const catId = num(def.categoryId); // 1=simple, 2=martial
     const typeName = str(def.type).toLowerCase().replace(/[,\s]+/g, "-");
     return (catId === 1 && weaponProfSlugs.has("simple-weapons")) ||
@@ -149,14 +198,16 @@ export function computeWeaponAttacks(core: CoreStats): { attacks: string[]; offH
     // Ability modifier for attack/damage
     const usesDex = isRanged || ((isFinesse || isMonkWeapon) && dexMod > statMods[0]);
     const abilityMod = usesDex ? dexMod : statMods[0];
-    const profMod = isWeaponProficient(def) ? profBonus : 0;
-    const hitBonus = abilityMod + profMod + magicBonus;
+    const profMod = isWeaponProficient(def, num(i.id)) ? profBonus : 0;
+    const hitBonus = abilityMod + profMod + magicBonus + (isRanged ? bonuses.rangedHit : bonuses.meleeHit);
     // An off-hand weapon drops a positive ability modifier unless the character
     // has the Two-Weapon Fighting style; only that part changes.
     const offHand = offHandIds.has(num(i.id));
     const dmgAbility = offHand && abilityMod > 0 && !twoWeaponStyle ? 0 : abilityMod;
     const dmgBonus = dmgAbility + magicBonus;
-    const withBonus = (dice: string): string => dmgBonus !== 0 ? `${dice}${signed(dmgBonus)}` : dice;
+    // Dueling (owner ruling R5): +2 on one-handed melee rows, none while any item is flagged off-hand, never the versatile die.
+    const oneHandedBonus = !isRanged && !props.includes("Two-Handed") && offHandIds.size === 0 ? bonuses.oneHandedMeleeDamage : 0;
+    const withBonus = (dice: string, extra = 0): string => dmgBonus + extra !== 0 ? `${dice}${signed(dmgBonus + extra)}` : dice;
 
     // Versatile: the property's notes hold the two-handed die ("1d10").
     const versatileDie = str(properties.find(p => str(p.name) === "Versatile")?.notes).trim();
@@ -174,7 +225,7 @@ export function computeWeaponAttacks(core: CoreStats): { attacks: string[]; offH
         return ` + ${dice}${restriction ? ` (${restriction})` : ""}`;
       })
       .join("");
-    const dmgStr = `${withBonus(dmgDice)} ${dmgType}${twoHanded}${extraDice}`;
+    const dmgStr = `${withBonus(dmgDice, oneHandedBonus)} ${dmgType}${twoHanded}${extraDice}`;
 
     // A Thrown weapon with no range data prints only its reach, and one with
     // no long range only its normal range (owner ruling 2026-11-06).
@@ -202,7 +253,7 @@ export function computeWeaponAttacks(core: CoreStats): { attacks: string[]; offH
     // and mastery, which can carry text (owner ruling; unlike shownHomebrew's
     // name-only lines).
     const homebrew = isHomebrewEntry(i);
-    const key = `${Number(homebrew)}|${Number(offHand)}|${wLabel}${dmgDice}`;
+    const key = `${Number(homebrew)}|${Number(offHand)}|${Number(pactIds.has(num(i.id)))}|${wLabel}${dmgDice}`;
     const existing = weaponInventoryMap.get(key);
     if (existing) {
       existing.qty += num(i.quantity) || 1;
