@@ -63,6 +63,16 @@ const GREEN_FLAME_BLADE = spellDef("Green-Flame Blade", 0, {
     { ...damage("fire", null, scaled([5, "1d8"], [11, "2d8"], [17, "3d8"]), "To Second Target"), usePrimaryStat: true },
   ],
 });
+// Live 2024 shape (game-data, 2026-11-11): rides a weapon attack, its base die is
+// a zero-count "d6", and usePrimaryStat means the attack uses the casting ability.
+const TRUE_STRIKE = spellDef("True Strike", 0, {
+  attackType: 1, asPartOfWeaponAttack: true, range: { origin: "Self", rangeValue: null, aoeType: null, aoeValue: null }, scaleType: "characterlevel",
+  modifiers: [{
+    ...damage("radiant", null, scaled([5, "1d6"], [11, "2d6"], [17, "3d6"]), "The damage can be Radiant damage or the weapon’s normal damage type (your choice)."),
+    die: { diceCount: 0, diceValue: 6, diceMultiplier: null, fixedValue: null, diceString: "d6" },
+    usePrimaryStat: true,
+  }],
+});
 const SCORCHING_RAY = spellDef("Scorching Ray", 2, {
   attackType: 2, range: ranged(120), scaleType: "spellscale",
   atHigherLevels: { higherLevelDefinitions: [{ level: 1, typeId: 16, dice: null, value: 1, details: "Rays" }] },
@@ -360,9 +370,28 @@ describe("spell rows in ACTIONS", () => {
     expect(row).not.toMatch(/NaN|undefined/);
   });
 
-  it("leaves a weapon-attack cantrip's range as the spell states without a radius", () => {
+  it("prints no range for a weapon-attack cantrip without a radius (the weapon's own applies)", () => {
     const noRadius = { ...GREEN_FLAME_BLADE, id: nextId++, range: { origin: "Self", rangeValue: null, aoeType: null, aoeValue: null } };
-    expect(rowFor(sheet(wizard(5, [known(noRadius)])), "Green-Flame Blade")).toContain("   weapon damage + 1d8 fire   self   (");
+    const row = rowFor(sheet(wizard(5, [known(noRadius)])), "Green-Flame Blade");
+    expect(row).toContain("weapon attack   weapon damage + 1d8 fire   (to second target");
+    expect(row).not.toMatch(/self|melee/);
+  });
+
+  // Owner request 2026-11-11: the 2024 True Strike is a weapon attack with the
+  // casting ability, not a spell attack with a "d6 radiant" die.
+  it("prints the 2024 True Strike as a weapon attack with the casting ability", () => {
+    const head = `• ${"True Strike (cantrip)".padEnd(26)} weapon attack with INT`;
+    expect(rowFor(sheet(wizard(1, [known(TRUE_STRIKE)])), "True Strike")).toBe(`${head}   weapon damage`);
+    expect(rowFor(sheet(wizard(5, [known(TRUE_STRIKE)])), "True Strike")).toBe(`${head}   weapon damage + 1d6 radiant`);
+    expect(rowFor(sheet(wizard(17, [known(TRUE_STRIKE)])), "True Strike")).toBe(`${head}   weapon damage + 3d6 radiant`);
+    const wisCaster = rowFor(sheet(cleric(5, [known(TRUE_STRIKE)])), "True Strike");
+    expect(wisCaster).toContain("weapon attack with WIS   weapon damage + 1d6 radiant");
+    expect(wisCaster).not.toMatch(/to hit|d6 radiant\s+self|\(the damage/i);
+  });
+
+  it("names the casting ability generically on True Strike when it is unknown", () => {
+    const o = { classes: [cls(1, "Fighter", 5, 0, {}, { canCastSpells: false })], classSpells: [list(1, known(TRUE_STRIKE))] };
+    expect(rowFor(sheet(o), "True Strike")).toBe(`• ${"True Strike (cantrip)".padEnd(26)} weapon attack with spellcasting ability   weapon damage + 1d6 radiant`);
   });
 
   it("omits utility cantrips, leveled save spells and non-action spells", () => {

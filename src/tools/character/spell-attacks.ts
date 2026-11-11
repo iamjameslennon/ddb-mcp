@@ -154,13 +154,22 @@ function countPrefix(def: Rec, damageMods: readonly Rec[], level: number, totalL
 }
 
 /**
+ * A weapon-attack cantrip component's level-scaled dice at `totalLevel`, or
+ * null below the first step. The base die is ignored: the weapon supplies the
+ * base damage, and the 2024 True Strike's is a zero-count "d6".
+ */
+function scaledDice(mod: Rec, totalLevel: number): string | null {
+  return cantripDice({ ...mod, die: null }, totalLevel);
+}
+
+/**
  * A restricted component of a weapon-attack cantrip, e.g. Green-Flame Blade's
  * "To Second Target": `to second target: 1d8 + 3 fire`. `usePrimaryStat` adds
  * the casting ability's modifier, named when the ability is unknown. Null when
  * it deals nothing at this level.
  */
 function weaponCantripExtra(mod: Rec, totalLevel: number, abilityMod: number | null): string | null {
-  const dice = cantripDice(mod, totalLevel);
+  const dice = scaledDice(mod, totalLevel);
   const type = str(mod.subType);
   const label = str(mod.restriction).trim().toLowerCase();
   const usesMod = mod.usePrimaryStat === true;
@@ -175,8 +184,9 @@ function weaponCantripExtra(mod: Rec, totalLevel: number, abilityMod: number | n
 
 /**
  * The damage text and notes for one spell; `weapon` when it is made with a
- * melee weapon attack (Green-Flame Blade), whose `notes` then carry its
- * restricted components (owner ruling 2026-11-11).
+ * weapon attack (Green-Flame Blade, the 2024 True Strike), whose `notes` then
+ * carry its restricted components and `withAbility` says whether the attack
+ * uses the casting ability (owner rulings 2026-11-11).
  */
 function spellDamage(
   def: Rec,
@@ -185,22 +195,24 @@ function spellDamage(
   flatBonus: number,
   totalLevel: number,
   abilityMod: number | null,
-): { damage: string; weapon: boolean; notes: string[] } {
+): { damage: string; weapon: boolean; withAbility: boolean; notes: string[] } {
   const damageMods = records(def.modifiers).filter(m => m.type === "damage");
-  // No base die anywhere, but level-scaled dice: the cantrip rides a melee
-  // weapon attack. The weapon's own damage is named; the first unrestricted
-  // component's bonus dice add to it, and each restricted one is a note.
-  if (level === 0 && damageMods.length && damageMods.every(m => !diceString(m.die))
-      && damageMods.some(m => higherLevels(m).some(h => num(h.typeId) === 15 && diceString(h.dice)))) {
+  // A cantrip that rides a weapon attack: flagged `asPartOfWeaponAttack`, or
+  // with no base die anywhere but level-scaled dice. The weapon's own damage is
+  // named; the first unrestricted component's bonus dice add to it (else the
+  // first component's), and each other restricted one is a note.
+  if (level === 0 && damageMods.length && (def.asPartOfWeaponAttack === true || (damageMods.every(m => !diceString(m.die))
+      && damageMods.some(m => higherLevels(m).some(h => num(h.typeId) === 15 && diceString(h.dice)))))) {
     const isRestricted = (m: Rec) => str(m.restriction).trim() !== "";
     const main = damageMods.find(m => !isRestricted(m)) ?? damageMods[0];
-    const dice = cantripDice(main, totalLevel);
+    const dice = scaledDice(main, totalLevel);
     const type = str(main.subType);
     const notes = damageMods
       .filter(m => m !== main && isRestricted(m))
       .map(m => weaponCantripExtra(m, totalLevel, abilityMod))
       .filter((n): n is string => n != null);
-    return { damage: `weapon damage${dice ? ` + ${withBonus(dice, flatBonus)}${type ? ` ${type}` : ""}` : ""}`, weapon: true, notes };
+    const damage = `weapon damage${dice ? ` + ${withBonus(dice, flatBonus)}${type ? ` ${type}` : ""}` : ""}`;
+    return { damage, weapon: true, withAbility: main.usePrimaryStat === true, notes };
   }
   let slotNote = false;
   const groups: { dice: string; types: string[] }[] = [];
@@ -217,21 +229,22 @@ function spellDamage(
     if (!group) groups.push({ dice: key, types: type ? [type] : [] });
     else if (type && !group.types.includes(type)) group.types.push(type);
   }
-  if (!groups.length) return { damage: "", weapon: false, notes: [] };
+  if (!groups.length) return { damage: "", weapon: false, withAbility: false, notes: [] };
   const text = groups.map(g => `${g.dice}${g.types.length ? ` ${g.types.join("/")}` : ""}`).join(" + ");
   const note = slotNote ? ` (at ${slotOrdinal(cast)}-level slot: see spell)` : "";
-  return { damage: `${countPrefix(def, damageMods, level, totalLevel)}${text}${note}`, weapon: false, notes: [] };
+  return { damage: `${countPrefix(def, damageMods, level, totalLevel)}${text}${note}`, weapon: false, withAbility: false, notes: [] };
 }
 
 /**
  * `range N ft.`, `touch` or `self`, from the definition's range object; "" for
  * any other shape. A weapon-attack cantrip's self radius is its reach
- * (Green-Flame Blade: one creature within 5 feet).
+ * (Green-Flame Blade: one creature within 5 feet); without one the weapon's
+ * own reach or range applies, so none prints (True Strike).
  */
 function spellRange(def: Rec, weapon = false): string {
   const range = obj(def.range);
   const origin = str(range.origin);
-  if (weapon && origin === "Self" && num(range.aoeValue) > 0) return `reach ${num(range.aoeValue)} ft.`;
+  if (weapon && origin === "Self") return num(range.aoeValue) > 0 ? `reach ${num(range.aoeValue)} ft.` : "";
   if (origin === "Ranged" && num(range.rangeValue) > 0) return `range ${num(range.rangeValue)} ft.`;
   if (origin === "Touch") return "touch";
   if (origin === "Self") return "self";
@@ -281,12 +294,17 @@ export function computeSpellAttackRows(core: CoreStats): string[] {
 
     const cast = level === 0 ? 0 : castLevel(spell, level, list != null && list.className === "Warlock", classes);
     const abilityMod = isAbilityId(abilityId) ? statMods[abilityId - 1] : null;
-    const { damage, weapon, notes } = spellDamage(def, level, cast, flatBonus, totalLevel, abilityMod);
+    const { damage, weapon, withAbility, notes } = spellDamage(def, level, cast, flatBonus, totalLevel, abilityMod);
 
     const attackType = num(def.attackType);
     const saveId = num(def.saveDcAbilityId);
+    // A radius limits the attack to adjacent creatures (melee); without one any
+    // weapon attack will do (True Strike, which can be ranged).
+    const weaponAttack = `${num(obj(def.range).aoeValue) > 0 ? "melee " : ""}weapon attack`;
     const hitOrDc = weapon
-      ? "melee weapon attack"
+      ? withAbility
+        ? `${weaponAttack} with ${isAbilityId(abilityId) ? statNames[abilityId - 1] : "spellcasting ability"}`
+        : weaponAttack
       : nums
         ? [
           attackType === 1 || attackType === 2 ? `${signed(nums.attack)} to hit` : "",
