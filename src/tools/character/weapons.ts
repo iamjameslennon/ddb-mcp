@@ -225,7 +225,10 @@ export function computeWeaponAttacks(core: CoreStats): { attacks: string[]; offH
         return ` + ${dice}${restriction ? ` (${restriction})` : ""}`;
       })
       .join("");
-    const dmgStr = `${withBonus(dmgDice, oneHandedBonus)} ${dmgType}${twoHanded}${extraDice}`;
+    // No dice, no fixed damage and no extra dice (the Net): nothing to roll.
+    const dmgStr = dmgDice === "" && num(def.fixedDamage) === 0 && extraDice === ""
+      ? "no damage"
+      : `${withBonus(dmgDice, oneHandedBonus)} ${dmgType}${twoHanded}${extraDice}`;
 
     // A Thrown weapon with no range data prints only its reach, and one with
     // no long range only its normal range (owner ruling 2026-11-06).
@@ -236,8 +239,10 @@ export function computeWeaponAttacks(core: CoreStats): { attacks: string[]; offH
       : reach;
 
     // A mastery shows only when the character has mastered this weapon.
-    const mastered = (name: string): boolean =>
-      masteredSubTypes.has(`${slug(name)}-${slug(str(def.type) || wName)}`);
+    // D&D Beyond writes "Crossbow, Heavy" as the type but "push-heavy-crossbow" as the subType, so both orders match.
+    const typeName = str(def.type) || wName;
+    const typeSlugs = [slug(typeName), slug(weaponWordOrder(typeName))];
+    const mastered = (name: string): boolean => typeSlugs.some(t => masteredSubTypes.has(`${slug(name)}-${t}`));
     const shownProps = [
       ...props.filter(p => !MASTERY_NAMES.has(p) || mastered(p)),
       ...(grantsFinesse && !props.includes("Finesse") ? ["Finesse"] : []),

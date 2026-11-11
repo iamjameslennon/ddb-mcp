@@ -180,3 +180,29 @@ describe("Firearms proficiency", () => {
     expect(hit(row(combat({ inventory: [pistol] }), "Pistol"))).toBe(mod(c.statMods[1]));
   });
 });
+
+describe("weapon row details (F6, F13)", () => {
+  const masteryFeat = (subType: string) => ({ type: "weapon-mastery", subType });
+  it("shows the mastery of a weapon whose type D&D Beyond writes 'X, Y'", () => {
+    const xbow = weapon(4, "Crossbow, Heavy", {
+      attackType: 2, range: 100, longRange: 400, damage: { diceString: "1d10" }, damageType: "Piercing", sources: [{ sourceId: 145 }],
+      properties: [{ name: "Ammunition" }, { name: "Heavy" }, { name: "Loading" }, { name: "Two-Handed" }, { name: "Push" }],
+    });
+    const o = {
+      inventory: [xbow, longsword()],
+      classes: [fighter({ classFeatures: [feature(192, "Weapon Mastery")] })],
+      modifiers: modsOf([MARTIAL, masteryFeat("push-heavy-crossbow"), masteryFeat("sap-longsword")], "feat"),
+    };
+    const r = row(combat(o), "Heavy Crossbow");
+    expect(r.endsWith("Push")).toBe(true);
+  });
+  it("prints 'no damage' for a weapon with no damage dice and no fixed damage", () => {
+    const net = weapon(3, "Net", {
+      attackType: 2, range: 5, longRange: 15, damage: null, fixedDamage: 0, damageType: null, sources: [{ sourceId: 145 }],
+      properties: [{ name: "Special" }, { name: "Thrown" }],
+    });
+    const r = row(combat({ inventory: [net], modifiers: modsOf([MARTIAL]) }), "Net");
+    expect(r).toMatch(/• Net\s+\+\d+ to hit   no damage   range 5\/15 ft\.   Special, Thrown/);
+    expect(r).not.toContain("bludgeoning");
+  });
+});
