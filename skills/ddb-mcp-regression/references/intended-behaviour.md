@@ -115,3 +115,11 @@ Source: tool-notes.md (owner ruling 2026-11-06).
 ### Downloads go to fixed folders
 Looks like: `ddb_download_character` refuses any `output_path` outside `~/Downloads` or `~/Documents` (including `..` escapes) and says where it saved.
 Source: CLAUDE.md, Invariants, "Safety gates".
+
+### Equipped weapons appear in ACTIONS, not INVENTORY
+Looks like: the `inventory` section lists armor and gear but no equipped weapons; they appear as attack rows in ACTIONS (`combat`, `full`). This holds only for equipped weapons: a carried weapon that isn't equipped and appears nowhere is not covered by this entry.
+Source: `src/tools/character/inventory.ts` header comment.
+
+### Encounter and treasure lookups count an exact name match
+Looks like: a name that exactly matches one creature is counted even when other creatures share part of the name, including a third-party one (D&D Beyond has a third-party monster named "Dragon", CR 4). Only a name that matches several creatures without an exact match is reported as ambiguous.
+Source: the `ddb_rate_encounter` and `ddb_roll_treasure` descriptions ("exact, then partial").

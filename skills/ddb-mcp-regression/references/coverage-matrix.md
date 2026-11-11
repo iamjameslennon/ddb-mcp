@@ -274,7 +274,7 @@ Scenarios: normal, invalid, not-found, ambiguous, edition, logged-out
 - normal: "Four level 5s against a Wraith and two Ghouls — how hard?" → 2024 rating with the XP sums shown.
 - invalid: a bad CR or party level → clear refusal.
 - not-found: a monster name that matches nothing → listed as uncounted with "supply cr", and no headline rating that ignores it.
-- ambiguous: "dragon" → reported as ambiguous, never picked.
+- ambiguous: "Red Dragon" (the tool description's own example) → the candidates listed with their CRs, never picked. A name that exactly matches one creature is counted, even a third-party one (D&D Beyond has a third-party monster named "Dragon").
 - edition: same encounter with 2014 → Easy/Medium/Hard/Deadly with the multiplier.
 - logged-out: same → works (anonymous monster lookups).
 
@@ -294,7 +294,7 @@ Scenarios: normal, invalid, not-found, ambiguous, edition, logged-out
 - normal: "Roll treasure for a CR 7 hoard" → 2024 table results, labelled.
 - invalid: a negative CR or an oversized monster list → clear refusal.
 - not-found: a monster name that matches nothing → reported, not guessed.
-- ambiguous: a partial name matching several creatures → reported, not picked.
+- ambiguous: "Red Dragon" → reported with the candidates, not picked.
 - edition: asked for 2014 → rolls the 2024 tables and says so; monster CRs come from 2014 stat blocks.
 - logged-out: same → works.
 
