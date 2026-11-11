@@ -100,3 +100,47 @@ describe("regression skill: coverage matrix and tool map", () => {
     expect(mapped.sort()).toEqual((await listedTools()).map(t => t.name).sort());
   });
 });
+
+describe("regression skill: judgement references and templates", () => {
+  it("gives every intended behaviour a 'Looks like' and a 'Source', and covers the required topics", () => {
+    const md = read("skills/ddb-mcp-regression/references/intended-behaviour.md");
+    const n = md.match(/^### /gm)?.length ?? 0;
+    expect(n).toBeGreaterThanOrEqual(20);
+    expect(md.match(/^Looks like:/gm)?.length).toBe(n);
+    expect(md.match(/^Source:/gm)?.length).toBe(n);
+    for (const topic of ["rules_edition", 'source: "homebrew"', "getMonsterStats", "list_all", "untrusted_dndbeyond_content",
+      "isHomebrew: false", "confirm_fill", "confirm_click", "confirm_large_response", "~/Downloads", "free account", "(q)", "(y)",
+      "(ab)", "customItems", "Harness Divine Power", "Weapon Mastery", "Green-Flame Blade", "True Strike", "ddb_get_party"])
+      expect(md, topic).toContain(topic);
+  });
+
+  it("lists exactly the open carry-overs, none of them closed in history.md", () => {
+    const history = read("docs/claude/history.md");
+    const codes = [...read("skills/ddb-mcp-regression/references/known-open-issues.md").matchAll(/^### \(([A-Za-z0-9]+)\)/gm)].map(m => m[1]);
+    const expected = ["ba", "bb", "bc", "bd", "be", "bf", "bi", "bj", "bk", "bl", "bn", "bo", "bp", "bq", "b", "aa", "ah", "ay", "B14", "B14"];
+    expect([...codes].sort()).toEqual([...expected].sort());
+    // history.md closes a carry-over as `**(bg)** ~~…~~` or "(bg) closed".
+    for (const code of codes.filter(c => c !== "B14")) {
+      expect(history, code).toContain(`(${code})`);
+      expect(history, code).not.toMatch(new RegExp(`\\*\\*\\(${code}\\)\\*\\* ~~|\\(${code}\\) closed`));
+    }
+  });
+
+  it("report template has the agreed structure", () => {
+    const md = read("skills/ddb-mcp-regression/references/report-template.md");
+    const order = ["## Verdict", "## Method", "## Findings", "## Known open issues", "## By design", "## Improvements",
+      "## Prompts for a coding assistant", "## Discuss before building", "## Not covered", "## Files left behind"];
+    const at = order.map(h => md.indexOf(`\n${h}\n`));
+    expect(at.every(i => i > 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    for (const cell of ["Code under test", "Date", "Client", "Account", "Characters", "Tools"]) expect(md).toContain(`| **${cell}** |`);
+    for (const s of ["🔴 High", "🟠 Med", "🟡 Low", "⚪ Nit", "confirmed", "suspected", "suggested starting point"]) expect(md).toContain(s);
+    expect(md).toContain("| # | Sev | Status | Finding | Where | Evidence | Criterion |");
+  });
+
+  it("notes template records coverage, evidence and a resume point", () => {
+    const md = read("skills/ddb-mcp-regression/references/notes-template.md");
+    for (const h of ["## Run", "## Coverage", "## Findings so far", "## Resume from"]) expect(md).toContain(`\n${h}\n`);
+    expect(md).toMatch(/\[x\] Batch \d+/);
+  });
+});

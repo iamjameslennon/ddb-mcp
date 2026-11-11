@@ -295,7 +295,7 @@ Scenarios: normal, invalid, not-found, ambiguous, edition, logged-out
 - invalid: a negative CR or an oversized monster list → clear refusal.
 - not-found: a monster name that matches nothing → reported, not guessed.
 - ambiguous: a partial name matching several creatures → reported, not picked.
-- edition: asked for 2014 → says only the 2024 tables are available, rather than pretending.
+- edition: asked for 2014 → rolls the 2024 tables and says so; monster CRs come from 2014 stat blocks.
 - logged-out: same → works.
 
 ## `ddb_list_library`
