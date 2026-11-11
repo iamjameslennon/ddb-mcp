@@ -5,7 +5,7 @@
  * The skill's testing AI has only the MCP tools, so anything stale in these
  * references turns into false findings or missed coverage.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -142,5 +142,38 @@ describe("regression skill: judgement references and templates", () => {
     const md = read("skills/ddb-mcp-regression/references/notes-template.md");
     for (const h of ["## Run", "## Coverage", "## Findings so far", "## Resume from"]) expect(md).toContain(`\n${h}\n`);
     expect(md).toMatch(/\[x\] Batch \d+/);
+  });
+});
+
+const SKILL_DIR = join(ROOT, "skills/ddb-mcp-regression");
+
+describe("regression skill: SKILL.md", () => {
+  const skill = () => read("skills/ddb-mcp-regression/SKILL.md");
+  // Frontmatter: exactly `name` then a single-line `description`, nothing else.
+  const front = () => /^---\nname: (.+)\ndescription: (.+)\n---\n/.exec(skill());
+
+  it("has valid frontmatter", () => {
+    const m = front();
+    expect(m).not.toBeNull();
+    expect(m![1]).toBe("ddb-mcp-regression");
+    expect(m![1]).toMatch(/^[a-z0-9-]{1,64}$/);
+    expect(m![2].length).toBeGreaterThan(0);
+    expect(m![2].length).toBeLessThanOrEqual(1024);
+    expect(m![2]).not.toMatch(/[<>]/);
+  });
+
+  it("stays under 500 lines and links every reference file", () => {
+    expect(skill().trimEnd().split("\n").length).toBeLessThanOrEqual(500);
+    const refs = readdirSync(join(SKILL_DIR, "references")).filter(f => f.endsWith(".md"));
+    expect(refs.length).toBe(7); // update when a reference is added
+    for (const f of refs) expect(skill()).toContain(`references/${f}`);
+    for (const [, link] of skill().matchAll(/\((references\/[^)#]+)(?:#[^)]*)?\)/g)) expect(existsSync(join(SKILL_DIR, link)), link).toBe(true);
+  });
+
+  it("covers the procedure and the failure modes", () => {
+    for (const h of ["## Before you start", "## Account type", "## Personas", "## Batches", "## Judging a reply",
+      "## Evidence", "## Safety", "## Notes and checkpoints", "## If you cannot create files", "## Resuming",
+      "## If the session drops", "## If a service is slow or down", "## Logged-out pass", "## The report"])
+      expect(skill()).toContain(`\n${h}\n`);
   });
 });
