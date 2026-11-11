@@ -11,7 +11,6 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const SKILL_DIR = join(ROOT, "skills/ddb-mcp-regression");
 
 /** A repo-relative file as UTF-8. */
 const read = (rel: string): string => readFileSync(join(ROOT, rel), "utf8");
