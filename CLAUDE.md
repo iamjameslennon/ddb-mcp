@@ -41,6 +41,8 @@ Data-refresh scripts. All except the last need `ddb_login`, and their output fil
 - `npx tsx scripts/check-conditions.mts` sanity-checks the vendored 2024 conditions against D&D Beyond.
 - `npx tsx scripts/record-open5e-fixtures.mts [--check]` records the Open5e v2 fixtures. `--check` asserts only and writes nothing.
 
+Regression check before a release (needs no login): `npx tsx scripts/regress-all-characters.mts [--baseline <version>]`. It parses all 56 `testcharacters.md` characters × 8 sections with the published npm package and with HEAD's `src/`, diffs them with wrappers, `Rules:` lines and edition tags stripped, and scans HEAD for anomalies and section consistency. It fails only on a HEAD crash, an inconsistency or a new anomaly; differences need reading. Its output holds other people's characters, so it goes to the OS temp dir, never the repo. See [docs/character-refactor.md](docs/character-refactor.md#layer-4--whole-corpus-regression-before-a-release).
+
 ## Architecture
 
 This is an [MCP](https://modelcontextprotocol.io) server exposing D&D Beyond (DDB) data over stdio. `src/index.ts` is the entrypoint (transport, signals, `main()`). `src/server.ts` builds the `McpServer` (with `SERVER_INSTRUCTIONS` from `src/edition.ts`) and registers all 36 tools. They are still `server.tool(...)` calls, and the move to `registerTool` is open work. The tools delegate to `src/tools/`. Tests connect `server` to an in-memory transport.
@@ -145,7 +147,7 @@ Full detail: [docs/claude/architecture.md](docs/claude/architecture.md).
 
 ## Open work (history and closed items in [history.md](docs/claude/history.md))
 
-Last updated 2026-11-10. Releases and pushes go straight to `main`. The rules-edition work (phases 1–5) is complete, as are the follow-up rounds of minors A–E, the F-2026-10-20 residuals and the combat section completeness run (I1–I3). Since v2.10.2, 309 commits are unreleased.
+Last updated 2026-11-11. Releases and pushes go straight to `main`. The rules-edition work (phases 1–5) is complete, as are the follow-up rounds of minors A–E, the F-2026-10-20 residuals and the combat section completeness run (I1–I3). Since v2.10.2, 312 commits are unreleased.
 
 1. **Stateless-safe plan, Task 2 onward**: [docs/superpowers/plans/2026-09-17-stateless-safe-ddb-mcp.md](docs/superpowers/plans/2026-09-17-stateless-safe-ddb-mcp.md). Nothing blocks it. The plan predates some moves, so refresh it first:
    - the registrations are in `src/server.ts`, not `src/index.ts`;
@@ -154,5 +156,5 @@ Last updated 2026-11-10. Releases and pushes go straight to `main`. The rules-ed
 
    Task 4 (delete `characterSpellBuffer`) is also unblocked.
 2. **Open carry-overs that need a book-owning or homebrew account**: (b) owner-only subclass renames; (aa) slug joins for paid books; (ah) a feature-level homebrew flag on optional features; (ay) item- and background-granted action entries (wrapping is covered by synthetic tests only).
-3. **Regression handover (I4, I5)**: needs owner decisions, see docs/superpowers/specs/2026-11-06-regression-report.md. The rest of the 2026-11-06 run is done (history.md "Regression run 2026-11-06"); B11 (monster search quality) and B12 (Critical Role books) closed 2026-11-10 (history.md "Monster search quality and Critical Role books 2026-11-10"; carry-overs (bp), (bq) are listed there; the four questions the final reviews raised were decided by the owner, recorded there as owner rulings 2026-11-10); I1–I3 closed 2026-11-09, and their carry-overs (ba)–(bo) are listed ((bg) closed, (bh) closed for save advantages) under history.md "Combat section completeness 2026-11-09".
+3. **Regression handover (I5)**: I5 needs new test characters on D&D Beyond, see docs/superpowers/specs/2026-11-06-regression-report.md. I4 closed 2026-11-11 (`scripts/regress-all-characters.mts`; first run vs 2.10.2 found no regressions, history.md "Whole-corpus regression script 2026-11-11"). The rest of the 2026-11-06 run is done (history.md "Regression run 2026-11-06"); B11 (monster search quality) and B12 (Critical Role books) closed 2026-11-10 (history.md "Monster search quality and Critical Role books 2026-11-10"; carry-overs (bp), (bq) are listed there; the four questions the final reviews raised were decided by the owner, recorded there as owner rulings 2026-11-10); I1–I3 closed 2026-11-09, and their carry-overs (ba)–(bo) are listed ((bg) closed, (bh) closed for save advantages) under history.md "Combat section completeness 2026-11-09".
 4. **Open by design** (no change planned): (q) either Open5e document failing fails the call; (y) the sheet keeps empty slots for nameless entries; (ab) "dual-edition" means only 2024 + 2014 books.

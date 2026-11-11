@@ -62,8 +62,14 @@ Source: [docs/superpowers/specs/2026-11-06-regression-report.md](../superpowers/
 
 - ~~**B11** monster name search shows D&D Beyond fuzzy hits that don't contain the query, and filter-only searches check only the first 600 entries.~~ **Closed 2026-11-10** (commits `3196364..744b3ac`, see "Monster search quality and Critical Role books 2026-11-10" below).
 - ~~**B12** the Critical Role source category (2) is classed third-party although some books are Wizards-published.~~ **Closed 2026-11-10** (commits `be82007..3196364`).
-- **I4, I5**: the report's remaining improvement items (see the report). I1–I3 are done (2026-11-09, below).
+- **I5**: the report's remaining improvement item (see the report). I1–I3 are done (2026-11-09, below); I4 is done (2026-11-11, below).
 - **B14 nits:** blank-line runs in `ddb_read_book` output, and the `search_spells source: xgte` wording.
+
+### Whole-corpus regression script 2026-11-11 (regression item I4)
+
+`scripts/regress-all-characters.mts` turns the 2026-11-06 method into one command (usage in its header and in [character-refactor.md](../character-refactor.md#layer-4--whole-corpus-regression-before-a-release)). Each character's JSON is fetched once, anonymously, and cached, so both parsers read identical data. The baseline is the npm package installed with `--ignore-scripts` (or `--baseline-dir`); HEAD is `src/` through tsx. The double-space check of the 2026-11-06 run is narrowed to spaces before a tag or punctuation, because runs of spaces align the sheet's columns on purpose.
+
+First run (HEAD `45ee0b3` vs 2.10.2, about 13 s): 56/56 characters, 0 crashes, 0 consistency failures, 0 HEAD anomalies, 2 baseline `&mdash;` leaks fixed (Weslocke, Sister Baronessa); 957 changed lines in `full`, all traced to recorded changes: I1–I3 (Unarmed Strike, attack cantrips, OTHER, bonus-action dice, save advantages), action visibility (Harness Divine Power, Steady Aim hidden as on the website), B5 (hidden and level-gated racial traits), B6 (mastery gating, thrown ranges, versatile and extra damage), B14 proficiency names, the homebrew INVENTORY split, charged items in LIMITED USE, and 2024 Sleep as concentration. Two core numbers changed, both fixes checked against the JSON: Orion Skyborn 152720684 spell attack +6 → +8 (Staff of the Woodlands, `spell-attacks` +2 only) and Sister Baronessa 39876541 +8/DC 16 → +9/DC 17 (Amulet of the Devout +1). Wording left for the owner, not regressions: save-advantage lines print D&D Beyond's restriction text with its own capitals (`Made to avoid or end the Charmed condition`, `Against Poison`), and the Green-Flame Blade row reads `melee weapon attack   + 1d8 fire   self` (wording was left to the builder in the I1–I3 spec).
 
 ### Combat section completeness 2026-11-09 (regression items I1–I3)
 

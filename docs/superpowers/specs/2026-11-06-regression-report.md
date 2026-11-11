@@ -58,7 +58,7 @@ The run also found **one high-impact bug that predates this release**: spell cas
 - **I1 Save advantages:** the website shows "advantage on INT/WIS/CHA saves against magic" (Gnome Cunning), Danger Sense and similar under Saving Throws. The data is in `modifiers` (`type: advantage`, `restriction`). The MCP only names the trait.
 - **I2 Attack cantrips in ACTIONS:** the website lists Fire Bolt +9 2d10 and Ray of Frost under attacks. The MCP lists them only in SPELLS.
 - **I3 Sneak Attack dice and Two-Weapon Fighting** in combat (the website shows Sneak Attack 3d6 under OTHER).
-- **I4 Repeatable regression:** turn this run into `scripts/regress-all-characters.mts`, which parses every `testcharacters.md` ID for all sections on the published package and on HEAD, strips the cosmetic lines, and prints a diff plus the anomaly scan.
+- **I4 Repeatable regression (done 2026-11-11, `scripts/regress-all-characters.mts`):** turn this run into `scripts/regress-all-characters.mts`, which parses every `testcharacters.md` ID for all sections on the published package and on HEAD, strips the cosmetic lines, and prints a diff plus the anomaly scan.
 - **I5 Test-set gaps:** no Reach weapon, no character with save-advantage traits beyond Gnome/Barbarian, and no Warlock above L9. `testcharacters.md` can be marked "verified 2026-11-06"; 52514332 in the dead list is now 404 (was 403).
 
 ---

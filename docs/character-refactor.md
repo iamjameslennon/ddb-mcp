@@ -192,7 +192,7 @@ same PR.** That's how the next agent knows where things stand.
 
 ## Regression test layers
 
-Three layers, in increasing thoroughness:
+Four layers, in increasing thoroughness:
 
 ### Layer 1 — Existing unit tests (always required)
 
@@ -255,6 +255,32 @@ same code generation as `after.txt`.
 
 Requires `ddb_login` to have been run at least once on the local machine.
 Exits with status 2 and a message on stderr if no session is present.
+
+### Layer 4 — Whole-corpus regression (before a release)
+
+`scripts/regress-all-characters.mts` compares HEAD's `src/` with the last
+published npm release (or `--baseline <version>`, or a built dist with
+`--baseline-dir`) on every character in testcharacters.md's Character List, for
+all 8 sections. It needs no login: each character's JSON is fetched once,
+anonymously, cached under the work dir (`--refresh` re-fetches) and fed to both
+parsers, so D&D Beyond edits can't show up as differences.
+
+```bash
+npx tsx scripts/regress-all-characters.mts            # vs latest npm release
+npx tsx scripts/regress-all-characters.mts --diff     # also print the diffs
+```
+
+It strips untrusted wrappers, `Rules:` lines and edition tags before diffing
+(`--keep-tags` keeps them), scans HEAD for `NaN`, `undefined`,
+`[object Object]`, HTML entities, stray spaces before tags or punctuation, sign
+glitches and unbalanced wrappers, and checks that every line of the
+summary/combat/spells/inventory/features/notes sections appears in `full`. It
+exits 1 on a HEAD crash, an inconsistency or an anomaly the baseline lacks;
+differences alone don't fail it, since most are intended: read `report.md`.
+Characters run in the same order on both sides because the parser's spell
+buffer carries spells across characters (stateless plan Task 4 removes it).
+Output defaults to `<os tmpdir>/ddb-mcp-regress` and is never committed
+(other people's characters, PHB text).
 
 ---
 
