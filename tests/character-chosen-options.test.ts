@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { parseCharacterData } from "../src/tools/character.js";
 import { formatCharacterLookup } from "../src/tools/character/definition.js";
 import { wrapUntrusted } from "../src/utils.js";
+import { classifyEdition, rulesLine } from "../src/edition.js";
 import { INDEX } from "./fixtures/character-edition-helpers.js";
 import { BASE, CLASS_FEATURE, FIGHTER, feature, fighter } from "./fixtures/combat-helpers.js";
 
@@ -96,5 +97,20 @@ describe("chosen class options in lookup (R1, R6)", () => {
     const o = { classes: [style()], optionalClassFeatures: [{ classFeatureId: 999 }], options: { class: [opt(999, 5, "Canny")] } };
     expect(lookup(o, "Canny")).toContain("[Class Option]");
     expect(sheet(o)).not.toContain("Canny");
+  });
+
+  it("names the first class for an option under an unprinted optional feature, with the option's own Rules line", () => {
+    const ranger = fighter({
+      definition: { ...(FIGHTER.definition as Record<string, unknown>), name: "Ranger", sourceId: 1, sources: [{ sourceId: 1 }] },
+      classFeatures: [],
+    });
+    const canny = opt(3035679, 77, "Canny (1st Level)", { sourceId: 67, sources: [{ sourceId: 67 }] });
+    const out = lookup({ classes: [ranger], optionalClassFeatures: [{ classFeatureId: 3035679 }], options: { class: [canny] } }, "Canny");
+    const lines = out.split("\n");
+    expect(lines[0]).toBe("[Class Option]");
+    expect(lines[1]).toBe("Canny (1st Level) (Ranger)");
+    const own = rulesLine(classifyEdition({ sourceId: 67, sources: [{ sourceId: 67 }] }, INDEX));
+    expect(lines[2]).toBe(own);
+    expect(lines[2]).not.toBe(rulesLine(classifyEdition({ sourceId: 1, sources: [{ sourceId: 1 }] }, INDEX)));
   });
 });

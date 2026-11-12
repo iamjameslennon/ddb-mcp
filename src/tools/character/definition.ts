@@ -236,6 +236,10 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
     }
     if (!owner) {
       const optional = records(char.optionalClassFeatures).find(o => num(o.classFeatureId) === parentId);
+      // No data names the owner of an unprinted optional feature (its id appears only as a
+      // componentId on options, choices and modifiers), so the first class is used. On a
+      // multiclass sheet the class name may be wrong; the Rules line is unaffected, as it
+      // comes from the option's own source (owner ruling 2026-11-12).
       const first = classEntries[0] ?? {};
       owner = { cls: first, parentName: str(obj(obj(optional).definition).name) || str(obj(optional).name), viaSubclass: false };
     }
