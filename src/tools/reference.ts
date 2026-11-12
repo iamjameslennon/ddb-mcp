@@ -744,6 +744,7 @@ export async function searchItemsSection(params: ItemSearchParams): Promise<Sear
   return searchCatalogList<DdbItem>(params, {
     load: loadItemCompendium,
     plural: "items",
+    basicRulesRedirect: false,
     homebrew: ITEM_KIND,
     adapter: lookupCatalogAdapter({
       ...ITEM_ADAPTER,
@@ -840,12 +841,13 @@ async function searchCatalogList<T>(
     fallback: (kind: "not-found" | "unavailable") => Promise<SearchSection>;
     /** The reply when the load and Open5e both fail; omitted, the load error is rethrown. */
     unavailable?: string;
+    /** Whether `source: "br-2024"` redirects to phb-2024 (R4). False for items, which carry source 148. */
+    basicRulesRedirect: boolean;
   },
 ): Promise<SearchSection> {
   const source = await resolveSourceParam(params.source, spec.homebrew);
   if (isSourceReply(source)) return plainSection(source.reply);
-  // Items carry source 148, so equipment never redirects (R4).
-  const redirect = spec.plural === "items" ? undefined : await basicRulesRedirect(source, spec.plural);
+  const redirect = spec.basicRulesRedirect ? await basicRulesRedirect(source, spec.plural) : undefined;
   if (redirect) return plainSection(redirect);
   const requested = params.rulesEdition ?? "2024";
 
@@ -913,6 +915,7 @@ async function searchOptionList<T>(
       return spec.usable ? loaded.filter(spec.usable) : loaded;
     },
     plural: spec.plural,
+    basicRulesRedirect: true,
     homebrew: spec.homebrew,
     adapter: { ...spec.adapter, passes: spec.passes },
     // Homebrew lines (tag and book note included) can be another player's text.

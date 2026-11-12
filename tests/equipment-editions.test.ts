@@ -440,7 +440,9 @@ describe("honest not-found wording and the br-2024 exception (R4, F18, F19)", ()
   });
 
   it("items never redirect br-2024: they carry source 148", async () => {
-    installItems();
-    expect(await reference.searchItems({ source: "br-2024" })).not.toContain("D&D Beyond files the Basic Rules");
+    installItems([item(12, "Longsword", { isLegacy: false }, [148, 1])]);
+    const out = await reference.searchItems({ source: "br-2024", name: "longsword" });
+    expect(out).not.toContain("D&D Beyond files the Basic Rules");
+    expect(out).toContain("- **Longsword** [2024] — Common Weapon");
   });
 });
