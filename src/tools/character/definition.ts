@@ -223,8 +223,9 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
   }
 
   // ── Chosen Class Options (owner rulings R1, R6) ───────────────────────────
-  // Found by name even when the parent feature is not printed on the sheet
-  // (an optional class feature). The ruleset is the option's own source, else
+  // Found by name even when the parent is a chosen optional class feature, which the sheet
+  // doesn't print (options under a feature the character lacks are hidden: chosenClassOptions).
+  // The ruleset is the option's own source, else
   // the owning subclass's or class's.
   for (const [parentId, options] of chosen) {
     let owner: { cls: Record<string, unknown>; parentName: string; viaSubclass: boolean } | null = null;
@@ -236,7 +237,7 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
     }
     if (!owner) {
       const optional = records(char.optionalClassFeatures).find(o => num(o.classFeatureId) === parentId);
-      // No data names the owner of an unprinted optional feature (its id appears only as a
+      // No data names the owner of a chosen optional feature (its id appears only as a
       // componentId on options, choices and modifiers), so the first class is used. On a
       // multiclass sheet the class name may be wrong; the Rules line is unaffected, as it
       // comes from the option's own source (owner ruling 2026-11-12).
