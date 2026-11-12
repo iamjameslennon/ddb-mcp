@@ -63,6 +63,8 @@ export interface LoginFakeState {
   cobalt: CobaltAnswer;
   /** What the (deleted) DOM heuristic would have said; the old code consulted it. */
   domLoggedIn: boolean;
+  /** When set, every page.goto rejects with it. */
+  gotoError?: Error;
 }
 
 export class FakePage extends Emitter {
@@ -83,7 +85,11 @@ export class FakePage extends Emitter {
 
   constructor(private readonly ctx: FakeContext, state: LoginFakeState) {
     super();
-    this.goto = vi.fn(async (url: string) => { this.currentUrl = url; return null; });
+    this.goto = vi.fn(async (url: string) => {
+      if (state.gotoError) throw state.gotoError;
+      this.currentUrl = url;
+      return null;
+    });
     this.evaluate = vi.fn(async () => state.domLoggedIn);
   }
 
@@ -172,4 +178,19 @@ export class FakeBrowser extends Emitter {
       this.emit("disconnected", this);
     });
   }
+}
+
+/**
+ * A Playwright 1.64 APIRequestContext error as it really reads: the first line,
+ * then a "Call log:" that lists the request headers, the session cookie
+ * included (reproduced 2026-11-12). Coloured with ANSI codes, as Playwright does
+ * on a TTY.
+ */
+export function callLogError(firstLine: string, cookieValue: string): Error {
+  return new Error(
+    `apiRequestContext.post: \u001b[31m${firstLine}\u001b[39m\nCall log:\n` +
+    `  - → POST https://auth-service.dndbeyond.com/v1/cobalt-token\n` +
+    `    - user-agent: Mozilla/5.0\n` +
+    `    - cookie: CobaltSession=${cookieValue}; Preferences=x\n`,
+  );
 }

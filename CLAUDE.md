@@ -56,10 +56,11 @@ This is an [MCP](https://modelcontextprotocol.io) server exposing D&D Beyond (DD
   - character-service (`/character/v5/character/{id}`, `/characters/list`) ignores cookies and needs the cobalt Bearer token. Use `beginAuthenticatedSession()`, whose bound `fetch` sends the token and the cookies from one snapshot. **Never pair a separate `getCobaltToken()` with `sessionFetch()`**: an account swap between the two calls can mix accounts.
   - `anonymousFetch()` is the credential-free path for public endpoints while logged out (monster-service, the game config). It sends no Cookie or Authorization header, never reads the session, and has a 20 s overall deadline.
 - **Browser** (`src/browser.ts`, Playwright): only `ddb_login` (visible window), `ddb_navigate`, `ddb_interact` and `ddb_get_page`.
-  - The shared context is closed by an `onSessionInvalidated` hook on every session transition.
+  - The shared context is closed by an `onSessionInvalidated` hook on every session transition. Like the login context, it is seeded from a `captureSession()` snapshot (`buildContextOptions(snapshot)`: cookies only when authenticated and not revoked), never from `session.json` by path.
   - Login uses its own separate browser and context (`beginLoginSession()`/`endLoginSession()`), seeded from a `captureSession()` snapshot (only when authenticated and not revoked), never from a raw read of `session.json`. Only the call whose `beginLoginSession()` succeeded ends it.
   - Signed in is decided by D&D Beyond: `ddb_login` polls the cobalt-token exchange through the login context's own request API (`verifyLoginContext()`, the same `decodeCobaltToken()` as `mintCobaltToken`) for up to 180 s (`LOGIN_TIMEOUT_MS`). No DOM or URL heuristic.
-  - `saveVerifiedSession()` writes only with that proof, keeps only `dndbeyond.com` cookies and origins, and re-checks the generation it began under.
+  - `saveVerifiedSession()` writes only with that proof and only inside the active login (fail closed), keeps only `dndbeyond.com` cookies and origins, and re-checks the generation it began under.
+  - Login errors reach stderr and the client only through `safeErrorLine()` (`src/utils.ts`): Playwright's `Call log:` on request errors lists the cookie header.
   - navigate/interact/get_page carry a navigation allowlist guard (`ensureNavigationGuard` in `navigate.ts`). The login context deliberately bypasses it.
   - The sandbox is on by default. `DDB_NO_SANDBOX=1` turns it off for containers.
 

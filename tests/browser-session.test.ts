@@ -373,3 +373,62 @@ describe("the login context is seeded from a captureSession() snapshot (Future d
     await browser.endLoginSession();
   });
 });
+
+describe("fix round 1: saveVerifiedSession fails closed outside the active login", () => {
+  it("refuses a valid proof once no login is active", async () => {
+    const ctx = await browser.beginLoginSession();
+    const proof = await browser.verifyLoginContext(ctx);
+    expect(proof).not.toBeNull();
+    await browser.endLoginSession();
+
+    await expect(browser.saveVerifiedSession(ctx, proof!)).rejects.toThrow(/active login/);
+    expect(fsMock.renameSync).not.toHaveBeenCalled();
+  });
+
+  it("refuses a valid proof for a context that isn't the active login's", async () => {
+    await browser.beginLoginSession();
+    const other = makeContext();
+    const proof = await browser.verifyLoginContext(other as never);
+    expect(proof).not.toBeNull();
+
+    await expect(browser.saveVerifiedSession(other as never, proof!)).rejects.toThrow(/active login/);
+    expect(fsMock.renameSync).not.toHaveBeenCalled();
+    await browser.endLoginSession();
+  });
+});
+
+describe("fix round 1: the shared context is seeded from a captureSession() snapshot, not the file", () => {
+  it("seeds nothing after a revoke whose file deletion failed (the file is still there)", async () => {
+    setSessionFile(sessionJson("REVOKED_SECRET"));
+    observeTransition();
+    fsMock.rmSync.mockImplementation(() => { throw new Error("EPERM: operation not permitted"); });
+    await expect(state.revokeSession()).rejects.toThrow(/EPERM/);
+    expect(sessionFileExists).toBe(true);
+
+    const shared = makeBrowser();
+    // While revoked, getContext() still refuses afterwards (SessionChangedError,
+    // unchanged); what matters here is that the context never held the cookies.
+    await expect(browser.getContext(shared as never)).rejects.toThrow(sf.SessionChangedError);
+    const options = shared.newContext.mock.calls[0][0] as Record<string, unknown>;
+    expect(options).not.toHaveProperty("storageState");
+    expect(JSON.stringify(options)).not.toContain("REVOKED_SECRET");
+  });
+
+  it("seeds no storage state when there is no session", async () => {
+    const shared = makeBrowser();
+    await browser.getContext(shared as never);
+    expect(shared.newContext.mock.calls[0][0]).not.toHaveProperty("storageState");
+  });
+
+  it("seeds exactly the snapshot's cookies, as an object, never a path", async () => {
+    // (A file holding third-party cookies would be rewritten by the scrub, which
+    // this fs mock doesn't model; the login seeding test covers the filter.)
+    setSessionFile(sessionJson("SAVED_SECRET"));
+    const shared = makeBrowser();
+    await browser.getContext(shared as never);
+    const options = shared.newContext.mock.calls[0][0] as { storageState?: unknown };
+    expect(typeof options.storageState).toBe("object");
+    const seeded = options.storageState as { cookies: Array<{ value: string; domain: string }> };
+    expect(seeded.cookies.map(c => [c.domain, c.value])).toEqual([[".dndbeyond.com", "SAVED_SECRET"]]);
+  });
+});

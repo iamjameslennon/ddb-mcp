@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { wrapUntrusted, stripHtml, stripHtmlRich, mapWithConcurrency } from "../src/utils.js";
+import { wrapUntrusted, stripHtml, stripHtmlRich, mapWithConcurrency, safeErrorLine } from "../src/utils.js";
 
 describe("wrapUntrusted", () => {
   it("wraps content in untrusted delimiters", () => {
@@ -177,5 +177,29 @@ describe("mapWithConcurrency (fix round 1)", () => {
 
   it("keeps input order", async () => {
     expect(await mapWithConcurrency([3, 1, 2], 2, async x => { await new Promise(r => setTimeout(r, x)); return x * 10; })).toEqual([30, 10, 20]);
+  });
+});
+
+describe("safeErrorLine (Task 10b fix round 1: Playwright call logs carry cookies)", () => {
+  const ESC = String.fromCharCode(27);
+  it("keeps only the first line, without the call log, ANSI codes or Playwright's method prefix", () => {
+    const e = new Error(
+      `apiRequestContext.post: ${ESC}[31mconnect ECONNREFUSED 127.0.0.1:9${ESC}[39m\nCall log:\n  - → POST https://x\n    - cookie: CobaltSession=SECRET\n`,
+    );
+    expect(safeErrorLine(e)).toBe("connect ECONNREFUSED 127.0.0.1:9");
+  });
+
+  it("cuts a call log that starts on the first line too", () => {
+    expect(safeErrorLine(new Error("boom Call log: - cookie: CobaltSession=SECRET"))).toBe("boom");
+  });
+
+  it("handles non-Error throws and empty messages", () => {
+    expect(safeErrorLine("plain\nsecond")).toBe("plain");
+    expect(safeErrorLine(new TypeError(""))).toBe("TypeError");
+    expect(safeErrorLine(undefined)).toBe("undefined");
+  });
+
+  it("strips other control characters", () => {
+    expect(safeErrorLine(new Error(`a${ESC}]0;title\u0007b\tc`))).toBe("a]0;titleb c");
   });
 });

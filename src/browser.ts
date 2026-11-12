@@ -8,7 +8,8 @@ import {
   onSessionInvalidated, captureSession, assertSessionCurrent, SessionChangedError,
   decodeCobaltToken, MalformedCobaltTokenError,
 } from "./session-fetch.js";
-import { sanitizeSessionStorage, writeSessionFile, type PlaywrightCookie } from "./session-state.js";
+import { sanitizeSessionStorage, writeSessionFile, type PlaywrightCookie, type SessionSnapshot } from "./session-state.js";
+import { safeErrorLine } from "./utils.js";
 
 export { SESSION_DIR, SESSION_PATH };
 
@@ -48,13 +49,16 @@ const CONTEXT_OPTIONS = {
 };
 
 /**
- * Build the SHARED context's newContext() options, loading the saved
- * storageState when present. (The login context is seeded from a
- * captureSession() snapshot instead: see beginLoginSession.)
+ * newContext() options for the shared and the login context, seeded from a
+ * captureSession() snapshot, never from a raw read of session.json: only an
+ * authenticated (so unrevoked) snapshot seeds, with its sanitized
+ * dndbeyond.com cookies and no origins. After a logout whose file deletion
+ * failed the snapshot is anonymous ("revoked"), so the revoked cookies can't
+ * come back through a browser context.
  */
-function buildContextOptions(): Parameters<Browser["newContext"]>[0] {
-  return existsSync(SESSION_PATH)
-    ? { ...CONTEXT_OPTIONS, storageState: SESSION_PATH }
+function buildContextOptions(snapshot: SessionSnapshot): Parameters<Browser["newContext"]>[0] {
+  return snapshot.state.kind === "authenticated"
+    ? { ...CONTEXT_OPTIONS, storageState: { cookies: snapshot.state.cookies.map(seedCookie), origins: [] } }
     : CONTEXT_OPTIONS;
 }
 
@@ -192,7 +196,7 @@ export async function getContext(browser: Browser): Promise<BrowserContext> {
   }
 
   ensureSessionDir();
-  const created = await browser.newContext(buildContextOptions());
+  const created = await browser.newContext(buildContextOptions(snapshot));
 
   // Bind the pending creation to its opening generation: if the account changed
   // while newContext() was in flight, abandon this context rather than install
@@ -219,8 +223,7 @@ export class LoginInProgressError extends Error {
 /** Neither the user's Chrome nor the bundled Chromium could be started for sign-in. */
 export class LoginLaunchError extends Error {
   constructor(cause: unknown) {
-    const detail = cause instanceof Error ? cause.message : String(cause);
-    super(`Couldn't start Chrome or Chromium for the sign-in window: ${detail}`, { cause });
+    super(`Couldn't start Chrome or Chromium for the sign-in window: ${safeErrorLine(cause)}`, { cause });
     this.name = "LoginLaunchError";
   }
 }
@@ -250,11 +253,7 @@ export async function beginLoginSession(): Promise<BrowserContext> {
     } catch (e) {
       throw new LoginLaunchError(e);
     }
-    loginContext = await loginBrowser.newContext(
-      snapshot.state.kind === "authenticated"
-        ? { ...CONTEXT_OPTIONS, storageState: { cookies: snapshot.state.cookies.map(seedCookie), origins: [] } }
-        : CONTEXT_OPTIONS
-    );
+    loginContext = await loginBrowser.newContext(buildContextOptions(snapshot));
     return loginContext;
   } catch (e) {
     await endLoginSession().catch(() => { /* best-effort rollback */ });
@@ -368,7 +367,7 @@ export async function saveVerifiedSession(
   // generation since THIS login began, the login is stale — refuse to recreate
   // the just-deleted session. A login begun AFTER the revoke captured the
   // post-revoke generation, so it matches here and is allowed to save.
-  assertLoginGenerationCurrent();
+  assertActiveLogin(context);
 
   ensureSessionDir();
   // Playwright's storageState is the whole browser profile: a Wizards ID login
@@ -379,8 +378,9 @@ export async function saveVerifiedSession(
   // receives dndbeyond.com cookies, so the sanitized set is the one verified.
   const { storage } = sanitizeSessionStorage(await context.storageState());
   signal?.throwIfAborted();
-  // storageState() is async: re-check that no logout landed meanwhile.
-  assertLoginGenerationCurrent();
+  // storageState() is async: re-check that no logout (or end of the login)
+  // landed meanwhile.
+  assertActiveLogin(context);
   writeSessionFile(JSON.stringify(storage));
   // Publish the new session as ONE lifecycle transition: advance the generation
   // and notify every consumer hook so old-account caches/browsers are retired.
@@ -388,14 +388,18 @@ export async function saveVerifiedSession(
   invalidateSessionCache();
 }
 
-function assertLoginGenerationCurrent(): void {
-  if (activeLoginGeneration !== null) {
-    const current = captureSession().generation;
-    if (current !== activeLoginGeneration) {
-      throw new SessionChangedError(
-        "Login raced a session change (logout/replacement); not recreating the session."
-      );
-    }
+/**
+ * Fail closed: a save needs a running login, `context` must be that login's
+ * context, and the generation must still be the one the login began under.
+ */
+function assertActiveLogin(context: BrowserContext): void {
+  if (!loginInProgress || loginContext === null || context !== loginContext || activeLoginGeneration === null) {
+    throw new Error("Refusing to save a session outside the active login.");
+  }
+  if (captureSession().generation !== activeLoginGeneration) {
+    throw new SessionChangedError(
+      "Login raced a session change (logout/replacement); not recreating the session."
+    );
   }
 }
 

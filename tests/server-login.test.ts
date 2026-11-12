@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
-  FakeBrowser, makeJwt, apiResponse, ANONYMOUS_COBALT, type LoginFakeState,
+  FakeBrowser, makeJwt, apiResponse, ANONYMOUS_COBALT, callLogError, type LoginFakeState,
 } from "./fixtures/login-fakes.js";
 
 /**
@@ -72,6 +72,7 @@ beforeEach(async () => {
   signedIn = false;
   state.cobalt = () => apiResponse(signedIn ? { token: makeJwt("4242") } : ANONYMOUS_COBALT);
   state.domLoggedIn = false;
+  state.gotoError = undefined;
   fsMock.existsSync.mockImplementation((p: string) => {
     const s = String(p);
     if (s.endsWith(".tmp") || s.endsWith("session.json")) return false;
@@ -206,5 +207,80 @@ describe("ddb_login error replies", () => {
     expect(result.isError).toBe(true);
     expect(textOf(result)).toMatch(/^Login failed: Sign-in wasn't finished within 3 minutes/);
     expect(browsers[0].close).toHaveBeenCalled();
+  });
+});
+
+describe("fix round 1: progress pings start before the browser launch", () => {
+  it("pings while the browser is still launching (a first-run Chromium install), then through sign-in", async () => {
+    pw.launch.mockImplementation(() => new Promise((resolve) => setTimeout(() => {
+      const b = new FakeBrowser(state);
+      browsers.push(b);
+      resolve(b);
+    }, 25_000)));
+    const progress: number[] = [];
+    const call = track(callLogin({ onprogress: (p: { progress: number }) => progress.push(p.progress), resetTimeoutOnProgress: true }));
+
+    await vi.advanceTimersByTimeAsync(21_000);
+    expect(browsers).toHaveLength(0); // still launching
+    expect(progress.length).toBeGreaterThanOrEqual(2);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    signedIn = true;
+    await vi.advanceTimersByTimeAsync(2_500);
+    expect(call.result?.ok).toBe(true);
+  });
+
+  it("stops pinging when the launch fails", async () => {
+    pw.launch.mockImplementation(() => new Promise((_resolve, reject) => setTimeout(
+      () => reject(new Error("browserType.launch: Executable doesn't exist at /fake/chromium")), 15_000,
+    )));
+    const progress: number[] = [];
+    const call = track(callLogin({ onprogress: (p: { progress: number }) => progress.push(p.progress) }));
+    // Two launch attempts (system Chrome, then the bundled Chromium), 15 s each.
+    await vi.advanceTimersByTimeAsync(31_000);
+    expect(call.result?.ok).toBe(true);
+    expect(textOf((call.result as { value: CallToolResult }).value)).toMatch(/^Login failed: Couldn't start Chrome or Chromium/);
+    const count = progress.length;
+    expect(count).toBeGreaterThanOrEqual(2);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(progress.length).toBe(count);
+  });
+});
+
+describe("fix round 1: the client and stderr get only an error's safe first line", () => {
+  it("replies with the first line of an unexpected error, no call log, no ANSI", async () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      state.gotoError = new Error(
+        "page.goto: \u001b[31mnet::ERR_NAME_NOT_RESOLVED at https://www.dndbeyond.com/login\u001b[39m\n" +
+        "Call log:\n  - navigating to \"https://www.dndbeyond.com/login\"\n    - cookie: CobaltSession=LEAKED_COOKIE_SECRET\n",
+      );
+      const result = await callLogin();
+      expect(result.isError).toBe(true);
+      expect(textOf(result)).toBe("Login failed: net::ERR_NAME_NOT_RESOLVED at https://www.dndbeyond.com/login");
+      const logged = stderr.mock.calls.map(c => String(c[0])).join("");
+      expect(logged).not.toContain("LEAKED_COOKIE_SECRET");
+      expect(logged).not.toContain("Call log");
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it("keeps the session cookie out of the reply and stderr when every check fails until the deadline", async () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      state.cobalt = () => { throw callLogError("connect ECONNREFUSED 127.0.0.1:9", "LEAKED_COOKIE_SECRET"); };
+      const call = track(callLogin());
+      await vi.advanceTimersByTimeAsync(181_000);
+      const reply = textOf((call.result as { value: CallToolResult }).value);
+      expect(reply).toBe(
+        "Login failed: Sign-in wasn't finished within 3 minutes. Last check failed: connect ECONNREFUSED 127.0.0.1:9. Run ddb_login to try again.",
+      );
+      const logged = stderr.mock.calls.map(c => String(c[0])).join("");
+      expect(logged).not.toContain("LEAKED_COOKIE_SECRET");
+      expect(logged).not.toContain("Call log");
+    } finally {
+      stderr.mockRestore();
+    }
   });
 });

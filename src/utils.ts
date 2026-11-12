@@ -133,3 +133,30 @@ export async function mapWithConcurrency<T, R>(items: readonly T[], limit: numbe
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
   return results;
 }
+
+const ESC = String.fromCharCode(27);
+/** ANSI CSI sequences (colours, cursor moves), e.g. ESC[31m. */
+const ANSI_CSI = new RegExp(`${ESC}\\[[0-9;?]*[ -/]*[@-~]`, "g");
+
+/**
+ * An error reduced to a first line that is safe to log or show: no ANSI codes,
+ * no other control characters, nothing after the first newline, no Playwright
+ * "Call log:" (Playwright 1.64 appends one to APIRequestContext errors, and it
+ * lists the request headers, the session cookie included), and no Playwright
+ * `object.method: ` prefix. Never empty: falls back to the error's name.
+ */
+export function safeErrorLine(e: unknown): string {
+  let msg = e instanceof Error ? e.message : String(e);
+  msg = msg.replace(ANSI_CSI, "");
+  const callLog = msg.indexOf("Call log:");
+  if (callLog >= 0) msg = msg.slice(0, callLog);
+  msg = msg.split(/\r?\n|\r/, 1)[0];
+  let clean = "";
+  for (const ch of msg) {
+    const code = ch.charCodeAt(0);
+    if (ch === "\t") clean += " ";
+    else if (code >= 0x20 && code !== 0x7f) clean += ch;
+  }
+  clean = clean.replace(/^[a-z][A-Za-z]*\.[a-z][A-Za-z]*: /, "").trim();
+  return clean || (e instanceof Error ? e.name : String(e)) || "unknown error";
+}

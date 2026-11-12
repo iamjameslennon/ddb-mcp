@@ -1,6 +1,7 @@
 import type { BrowserContext, Page } from "playwright";
 import { getPage, verifyLoginContext, saveVerifiedSession, type VerifiedSignIn } from "./browser.js";
 import { SessionChangedError } from "./session-fetch.js";
+import { safeErrorLine } from "./utils.js";
 
 /** How long ddb_login waits for the user to finish signing in (owner ruling 2026-11-11). */
 export const LOGIN_TIMEOUT_MS = 180_000;
@@ -13,10 +14,16 @@ const VERIFY_REQUEST_TIMEOUT_MS = 10_000;
 /** 301s to /sign-in?returnUrl=, so the sign-in returns to the main site. */
 const SIGN_IN_URL = "https://www.dndbeyond.com/login";
 
-/** The user didn't finish signing in before LOGIN_TIMEOUT_MS. */
+/**
+ * The user didn't finish signing in before LOGIN_TIMEOUT_MS. When the last
+ * sign-in check itself failed (e.g. auth-service unreachable), its safe first
+ * line is named, since then the user may not be the reason (owner ruling
+ * 2026-11-12).
+ */
 export class LoginTimeoutError extends Error {
-  constructor() {
-    super(`Sign-in wasn't finished within ${LOGIN_TIMEOUT_MS / 60_000} minutes. Run ddb_login to try again.`);
+  constructor(lastCheckFailure?: string | null) {
+    const failure = lastCheckFailure ? ` Last check failed: ${lastCheckFailure.replace(/[.\s]+$/, "")}.` : "";
+    super(`Sign-in wasn't finished within ${LOGIN_TIMEOUT_MS / 60_000} minutes.${failure} Run ddb_login to try again.`);
     this.name = "LoginTimeoutError";
   }
 }
@@ -147,18 +154,24 @@ export async function login(context: BrowserContext, options: LoginOptions = {})
   const { signal } = options;
   const watch = new LoginWatch(context, signal);
   const deadline = Date.now() + LOGIN_TIMEOUT_MS;
-  let lastCheckError: string | null = null;
+  // The safe first line of the most recent check's error; null once a check
+  // gets an answer. Never the raw message: Playwright's call log in it lists
+  // the request's cookie header.
+  let lastCheckFailure: string | null = null;
+  let lastLogged: string | null = null;
 
   /** One sign-in check. A failed request is logged (once per distinct error) and read as "not yet". */
   const checkSignIn = async (): Promise<VerifiedSignIn | null> => {
     try {
-      return await verifyLoginContext(context, Math.min(VERIFY_REQUEST_TIMEOUT_MS, deadline - Date.now()));
+      const verified = await verifyLoginContext(context, Math.min(VERIFY_REQUEST_TIMEOUT_MS, deadline - Date.now()));
+      lastCheckFailure = null;
+      return verified;
     } catch (e) {
       if (isClosedError(e)) throw e;
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg !== lastCheckError) {
-        lastCheckError = msg;
-        process.stderr.write(`[ddb-mcp] ddb_login: sign-in check failed, retrying: ${msg}\n`);
+      lastCheckFailure = safeErrorLine(e);
+      if (lastCheckFailure !== lastLogged) {
+        lastLogged = lastCheckFailure;
+        process.stderr.write(`[ddb-mcp] ddb_login: sign-in check failed, retrying: ${lastCheckFailure}\n`);
       }
       return null;
     }
@@ -184,9 +197,9 @@ export async function login(context: BrowserContext, options: LoginOptions = {})
     // the window ends on, D&D Beyond's token answer is the only signal.
     for (;;) {
       const remaining = deadline - Date.now();
-      if (remaining <= 0) throw new LoginTimeoutError();
+      if (remaining <= 0) throw new LoginTimeoutError(lastCheckFailure);
       await watch.sleep(Math.min(LOGIN_POLL_INTERVAL_MS, remaining));
-      if (Date.now() >= deadline) throw new LoginTimeoutError();
+      if (Date.now() >= deadline) throw new LoginTimeoutError(lastCheckFailure);
       const verified = await watch.race(checkSignIn());
       if (verified) {
         await saveVerifiedSession(context, verified, signal);

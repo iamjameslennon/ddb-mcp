@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { getBrowser, getContext, closeBrowser, beginLoginSession, endLoginSession } from "./browser.js";
 import { login, LOGIN_TIMEOUT_MS, LOGIN_PROGRESS_INTERVAL_MS } from "./auth.js";
+import { safeErrorLine } from "./utils.js";
 import { revokeSession } from "./session-state.js";
 import { getCharacterRaw, downloadCharacter, listCharacters, parseCharacter, findCharacterByName, characterNameError, getDefinition, clearCharacterCache } from "./tools/character.js";
 import { getCampaign, listMyCampaigns, invalidateCampaignCache } from "./tools/campaign.js";
@@ -64,9 +65,10 @@ server.tool(
     let context: Awaited<ReturnType<typeof beginLoginSession>> | undefined;
     let progressTimer: ReturnType<typeof setInterval> | undefined;
     try {
-      context = await beginLoginSession();
       // Sign-in can take minutes; clients that pass a progressToken (and reset
-      // their request timeout on progress) are kept alive by these pings.
+      // their request timeout on progress) are kept alive by these pings. They
+      // start before the launch, which can include a first-run Chromium
+      // download, and are cleared in the finally on every path.
       const progressToken = extra._meta?.progressToken;
       if (progressToken !== undefined) {
         const started = Date.now();
@@ -81,10 +83,13 @@ server.tool(
           }).catch(() => { /* a lost ping is harmless */ });
         }, LOGIN_PROGRESS_INTERVAL_MS);
       }
+      context = await beginLoginSession();
       const result = await login(context, { signal: extra.signal });
       return { content: [{ type: "text", text: `${result}\nBrowser closed. Session saved to disk — no browser needed for future requests.` }] };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      // Only the error's safe first line: a Playwright error's call log can
+      // list request headers, the session cookie included.
+      const msg = safeErrorLine(err);
       process.stderr.write(`[ddb-mcp] ddb_login error: ${msg}\n`);
       return { content: [{ type: "text", text: `Login failed: ${msg}` }], isError: true };
     } finally {

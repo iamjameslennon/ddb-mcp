@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
-  FakeBrowser, FakeContext, apiResponse, makeJwt, ANONYMOUS_COBALT, COBALT_URL,
+  FakeBrowser, FakeContext, apiResponse, makeJwt, ANONYMOUS_COBALT, COBALT_URL, callLogError,
   type LoginFakeState,
 } from "./fixtures/login-fakes.js";
 
@@ -81,6 +81,7 @@ beforeEach(async () => {
   vi.useFakeTimers();
   state.cobalt = () => apiResponse(ANONYMOUS_COBALT);
   state.domLoggedIn = false;
+  state.gotoError = undefined;
   sessionFileExists = false;
   sessionFileContent = "";
   fsMock.existsSync.mockImplementation((p: string) => {
@@ -354,5 +355,57 @@ describe("never save without a verified token", () => {
 
   it("the save path no longer exports an unverified saveSession", () => {
     expect((browser as Record<string, unknown>).saveSession).toBeUndefined();
+  });
+});
+
+describe("fix round 1: errors never carry the call log (cookies) to stderr or the reply", () => {
+  it("logs and reports only the first line of a failed check, and names the last failure at the deadline", async () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      state.cobalt = () => { throw callLogError("connect ECONNREFUSED 127.0.0.1:9", "LEAKED_COOKIE_SECRET"); };
+      const { outcome } = await startLogin();
+      await vi.advanceTimersByTimeAsync(181_000);
+
+      const error = (outcome.result as { error: Error }).error;
+      expect(error).toBeInstanceOf(auth.LoginTimeoutError);
+      expect(error.message).toBe(
+        "Sign-in wasn't finished within 3 minutes. Last check failed: connect ECONNREFUSED 127.0.0.1:9. Run ddb_login to try again.",
+      );
+      const logged = stderr.mock.calls.map(c => String(c[0])).join("");
+      expect(logged).toContain("connect ECONNREFUSED 127.0.0.1:9");
+      expect(logged).not.toContain("LEAKED_COOKIE_SECRET");
+      expect(logged).not.toContain("Call log");
+      expect(logged).not.toContain("\u001b");
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it("names no failure at the deadline when the last check answered (even if earlier ones failed)", async () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      let call = 0;
+      state.cobalt = () => {
+        if (call++ < 5) throw callLogError("connect ECONNREFUSED 127.0.0.1:9", "LEAKED_COOKIE_SECRET");
+        return apiResponse(ANONYMOUS_COBALT);
+      };
+      const { outcome } = await startLogin();
+      await vi.advanceTimersByTimeAsync(181_000);
+      expect((outcome.result as { error: Error }).error.message)
+        .toBe("Sign-in wasn't finished within 3 minutes. Run ddb_login to try again.");
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it("caps each check's request timeout at 10 s and at the time left", async () => {
+    const { ctx, outcome } = await startLogin();
+    await vi.advanceTimersByTimeAsync(181_000);
+    expect(outcome.result?.ok).toBe(false);
+    const timeouts = ctx.request.post.mock.calls.map(c => (c[1] as { timeout: number }).timeout);
+    expect(timeouts[0]).toBe(10_000);
+    expect(Math.max(...timeouts)).toBeLessThanOrEqual(10_000);
+    expect(timeouts.at(-1)).toBeLessThanOrEqual(2_000); // the check at 178 s has 2 s left
+    expect(Math.min(...timeouts)).toBeGreaterThan(0);
   });
 });
