@@ -211,6 +211,30 @@ export function hiddenOptionIds(char: CharData, visibleIds: ReadonlySet<number>)
   return hidden;
 }
 
+/** Chosen class options (a Fighting Style, an Eldritch Invocation) keyed by their parent class feature's definition id. */
+export type ChosenOptions = Map<number, Array<{ name: string; definition: Record<string, unknown>; homebrew: boolean }>>;
+
+/**
+ * The options the character chose under class features it has (`options.class`
+ * only). An option whose parent feature is not visible (above the class level,
+ * see hiddenOptionIds) is left out, as it is for its bonuses and actions.
+ */
+export function chosenClassOptions(char: CharData, classes: readonly ClassEntry[]): ChosenOptions {
+  const hidden = hiddenOptionIds(char, visibleClassFeatureIds(char, classes));
+  const out: ChosenOptions = new Map();
+  for (const o of records(obj(char.options).class)) {
+    if (num(o.componentTypeId) !== CLASS_FEATURE_TYPE) continue;
+    const definition = obj(o.definition);
+    const name = str(definition.name);
+    if (!name || hidden.has(num(definition.id))) continue;
+    const parent = num(o.componentId);
+    const list = out.get(parent) ?? [];
+    list.push({ name, definition, homebrew: isHomebrewEntry(o) });
+    out.set(parent, list);
+  }
+  return out;
+}
+
 /**
  * Whether an action is shown (spec §4). Only the class bucket is filtered: an
  * action of a class feature the character lacks, or of an option under one, is

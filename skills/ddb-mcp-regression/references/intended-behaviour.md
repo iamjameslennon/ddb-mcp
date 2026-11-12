@@ -125,7 +125,7 @@ Looks like: a name that exactly matches one creature is counted even when other 
 Source: the `ddb_rate_encounter` and `ddb_roll_treasure` descriptions ("exact, then partial").
 
 ### Chosen class options print on their parent feature line
-Looks like: `• Fighting Style (Fighter 1): Archery`; `ddb_character_lookup` resolves the option by name, and its Rules line uses the option's own source (Eldritch Smite reads Xanathar's Guide to Everything), falling back to the owning subclass or class.
+Looks like: `• Fighting Style (Fighter 1): Archery`; `ddb_character_lookup` resolves the option by name (`[Class Option]`, first line `Agonizing Blast (Eldritch Invocations, Warlock)`), the parent feature's hit ends with `Chosen: <names>`, and the option's Rules line uses the option's own source (Eldritch Smite reads Xanathar's Guide to Everything), falling back to the owning subclass or class.
 Source: history.md, Regression remediation 2026-11-11 (owner rulings R1 and R6, 2026-11-11).
 
 ### EQUIPPED lists armour and magic or attunable gear

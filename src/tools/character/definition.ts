@@ -12,13 +12,14 @@
  */
 
 import { stripHtml as stripHtmlFull, wrapIfHomebrew } from "../../utils.js";
-import { classifyEdition, CUSTOM_ITEM_RULES_LINE, editionTag, rulesLine, type EditionInfo, type EditionMarkers, type SourceIndex } from "../../edition.js";
+import { classifyEdition, CUSTOM_ITEM_RULES_LINE, editionTag, entrySourceIds, rulesLine, type EditionInfo, type EditionMarkers, type SourceIndex } from "../../edition.js";
 import { getSourceIndex, LOGGED_OUT_CHARACTER_INDEX_WAIT_MS } from "../../game-config.js";
 import { fetchCharacter, withNotice } from "../character.js";
 import { computeCharacterEditions, type CharacterEditions } from "./editions.js";
 import { featureDefinition, isHomebrewClassFeature, isHomebrewEntry, levenshteinDistance, records } from "./helpers.js";
 import { resolveBackground } from "./features.js";
-import type { CharData } from "./types.js";
+import { chosenClassOptions } from "./actions.js";
+import type { CharData, ClassEntry } from "./types.js";
 import { castingTimeText } from "../casting-time.js";
 import { withoutMasteryParagraph } from "../weapon-mastery.js";
 
@@ -173,7 +174,13 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
 
   // ── Class & Subclass Features ─────────────────────────────────────────────
   const seen = new Set<string>();
-  for (const cls of arr<Record<string, unknown>>(char.classes)) {
+  const classEntries = arr<Record<string, unknown>>(char.classes);
+  const chosen = chosenClassOptions(char as CharData, classEntries as unknown as ClassEntry[]);
+  const chosenSuffix = (id: unknown): string => {
+    const list = chosen.get(num(id)) ?? [];
+    return list.length ? `\n\nChosen: ${list.map(o => o.name).join(", ")}` : "";
+  };
+  for (const cls of classEntries) {
     const charLevel = num(cls.level);
     const classDef = obj(cls.definition);
     const className = str(classDef.name);
@@ -188,8 +195,8 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
           type: "Class Feature",
           name,
           info: classifyEdition(classDef as EditionMarkers, index),
-          text: formatClassFeatureResult(cf, className, requiredLevel),
-          untrusted: isHomebrewClassFeature(cf, cls),
+          text: formatClassFeatureResult(cf, className, requiredLevel) + chosenSuffix(d.id),
+          untrusted: isHomebrewClassFeature(cf, cls) || (chosen.get(num(d.id)) ?? []).some(o => o.homebrew),
         });
       }
     }
@@ -208,10 +215,43 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
           type: "Subclass Feature",
           name,
           info: editions.info(subDef),
-          text: formatClassFeatureResult(cf, label, requiredLevel),
-          untrusted: isHomebrewClassFeature(cf, cls),
+          text: formatClassFeatureResult(cf, label, requiredLevel) + chosenSuffix(d.id),
+          untrusted: isHomebrewClassFeature(cf, cls) || (chosen.get(num(d.id)) ?? []).some(o => o.homebrew),
         });
       }
+    }
+  }
+
+  // ── Chosen Class Options (owner rulings R1, R6) ───────────────────────────
+  // Found by name even when the parent feature is not printed on the sheet
+  // (an optional class feature). The ruleset is the option's own source, else
+  // the owning subclass's or class's.
+  for (const [parentId, options] of chosen) {
+    let owner: { cls: Record<string, unknown>; parentName: string; viaSubclass: boolean } | null = null;
+    for (const cls of classEntries) {
+      const inClass = records(cls.classFeatures).map(featureDefinition).find(d => num(d.id) === parentId);
+      const subDef = obj(cls.subclassDefinition);
+      const inSub = arr<unknown>(subDef.classFeatures).map(featureDefinition).find(d => num(d.id) === parentId);
+      if (inClass || inSub) { owner = { cls, parentName: str((inClass ?? inSub)?.name), viaSubclass: !inClass }; break; }
+    }
+    if (!owner) {
+      const optional = records(char.optionalClassFeatures).find(o => num(o.classFeatureId) === parentId);
+      const first = classEntries[0] ?? {};
+      owner = { cls: first, parentName: str(obj(obj(optional).definition).name) || str(obj(optional).name), viaSubclass: false };
+    }
+    const classDef = obj(owner.cls.definition);
+    const className = str(classDef.name);
+    const fallback = owner.viaSubclass ? editions.info(obj(owner.cls.subclassDefinition)) : classifyEdition(classDef as EditionMarkers, index);
+    for (const o of options) {
+      if (!matchesDefinitionQuery(o.name, query)) continue;
+      const head = owner.parentName ? `${o.name} (${owner.parentName}, ${className})` : `${o.name} (${className})`;
+      results.push({
+        type: "Class Option",
+        name: o.name,
+        info: entrySourceIds(o.definition as EditionMarkers).length > 0 ? editions.info(o.definition) : fallback,
+        text: `${head}\n\n${stripHtmlFull(str(o.definition.description || o.definition.snippet))}`,
+        untrusted: o.homebrew,
+      });
     }
   }
 

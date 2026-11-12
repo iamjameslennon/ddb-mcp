@@ -23,7 +23,7 @@ import { computeAc } from "./ac.js";
 import { computeStats, formatStatsBlock } from "./stats.js";
 import { computeDefenses, formatDefensesBlock } from "./defenses.js";
 import { computeFeatures, formatFeaturesBlock } from "./features.js";
-import { computeActions, formatCombatBlock } from "./actions.js";
+import { chosenClassOptions, computeActions, formatCombatBlock } from "./actions.js";
 import { computeSpells, formatSpellsBlock, formatConcentrationBlock } from "./spells.js";
 import { computeInventory, formatInventoryBlock } from "./inventory.js";
 import { computeNotes, formatNotesBlock } from "./notes.js";
@@ -49,7 +49,7 @@ export function parseCharacterData(
   const ac        = computeAc(core);
   const stats     = computeStats(core);
   const defenses  = computeDefenses(core);
-  const features  = computeFeatures(core);
+  const features  = computeFeatures(core, chosenClassOptions(char, core.classes));
   const actions   = computeActions(core);
   const spells    = computeSpells(core);
   const inv       = computeInventory(core);

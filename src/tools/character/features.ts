@@ -13,6 +13,7 @@ import { records, hasTag, isHomebrewClassFeature, isHomebrewEntry, num, obj, str
 import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
 import type { TemplateResolver } from "./templates.js";
 import type { CharacterEditions } from "./editions.js";
+import type { ChosenOptions } from "./actions.js";
 
 export interface BackgroundFeature {
   name: string;        // empty string when there's no background feature to show
@@ -57,7 +58,7 @@ function buildFeatLines(char: CharData, resolveTemplates: TemplateResolver, edit
 }
 
 // ── Class features ───────────────────────────────────────────────────────────
-function buildClassFeatureLines(classes: readonly ClassEntry[]): string[] {
+function buildClassFeatureLines(classes: readonly ClassEntry[], options: ChosenOptions): string[] {
   const lines: string[] = [];
   const seen = new Set<string>();
   for (const c of classes) {
@@ -65,10 +66,13 @@ function buildClassFeatureLines(classes: readonly ClassEntry[]): string[] {
     const classDef = obj(c.definition);
     for (const cf of records(c.classFeatures)) {
       const def = obj(cf.definition);
-      const line = `• ${str(def.name)} (${str(classDef.name)} ${num(def.requiredLevel || 1)})`;
-      if (num(def.requiredLevel || 0) <= charLevel && !seen.has(line)) {
-        seen.add(line);
-        lines.push(wrapIfHomebrew(line, isHomebrewClassFeature(cf, c)));
+      const base = `• ${str(def.name)} (${str(classDef.name)} ${num(def.requiredLevel || 1)})`;
+      if (num(def.requiredLevel || 0) <= charLevel && !seen.has(base)) {
+        seen.add(base);
+        // Chosen options print on their parent's line (owner ruling R1).
+        const chosen = options.get(num(def.id)) ?? [];
+        const line = chosen.length ? `${base}: ${chosen.map(o => o.name).join(", ")}` : base;
+        lines.push(wrapIfHomebrew(line, isHomebrewClassFeature(cf, c) || chosen.some(o => o.homebrew)));
       }
     }
   }
@@ -140,14 +144,14 @@ function buildBackgroundFeature(char: CharData, resolveTemplates: TemplateResolv
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
-export function computeFeatures(core: CoreStats): Features {
+export function computeFeatures(core: CoreStats, options: ChosenOptions): Features {
   const { char, classes, totalLevel, resolveTemplates, editions } = core;
   const { featLines, disguisedFeatLines, realFeatCount } = buildFeatLines(char, resolveTemplates, editions);
   return {
     featLines,
     disguisedFeatLines,
     realFeatCount,
-    classFeatureLines: buildClassFeatureLines(classes),
+    classFeatureLines: buildClassFeatureLines(classes, options),
     racialTraitLines: buildRacialTraitLines(char, totalLevel),
     background: buildBackgroundFeature(char, resolveTemplates),
   };
