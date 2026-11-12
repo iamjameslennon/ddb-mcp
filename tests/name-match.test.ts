@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nameFold, matchesAtWordStart } from "../src/name-match.js";
+import { nameFold, matchesAtWordStart, matchesLooseName, levenshteinDistance } from "../src/name-match.js";
 
 describe("nameFold", () => {
   it("folds hyphens, apostrophes and case the way Open5e does", () => {
@@ -28,5 +28,27 @@ describe("matchesAtWordStart", () => {
     ["GOBLIN  BOSS", "goblin boss", true],
   ])("%s / %s -> %s", (name, query, expected) => {
     expect(matchesAtWordStart(name, query)).toBe(expected);
+  });
+});
+
+describe("matchesLooseName", () => {
+  it.each([
+    ["Eldritch Blast", "eldrich blast", true],
+    ["Dark One’s Blessing", "Dark One's Blessing", true],
+    ["Blessing of the Trickster", "trickster blessing", true],
+    ["Stone’s Endurance", "stones endurance", true],
+    ["Shield", "sheild", true],
+    ["Eldritch Blast", "fire bolt", false],
+    ["Bless", "blessing of the trickster", false],
+    ["Anything", "  ", false],
+    ["Backpack", "ki", false],
+    ["Ki Points", "ki", true],
+    ["Eldritch Blast", "of the", false],
+  ])("%s / %s -> %s", (name, query, expected) => {
+    expect(matchesLooseName(name, query)).toBe(expected);
+  });
+
+  it("levenshteinDistance is exported from here", () => {
+    expect(levenshteinDistance("kitten", "sitting")).toBe(3);
   });
 });

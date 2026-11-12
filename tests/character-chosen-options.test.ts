@@ -114,3 +114,37 @@ describe("chosen class options in lookup (R1, R6)", () => {
     expect(lines[2]).not.toBe(rulesLine(classifyEdition({ sourceId: 1, sources: [{ sourceId: 1 }] }, INDEX)));
   });
 });
+
+describe("subclass features and options in classes[].classFeatures (F9, ruling 2026-11-12)", () => {
+  const ranger = (extra: Record<string, unknown> = {}) => fighter({
+    level: 5,
+    definition: { ...(FIGHTER.definition as Record<string, unknown>), name: "Ranger", sourceId: 1, sources: [{ sourceId: 1 }] },
+    subclassDefinition: { id: 108, name: "Gloom Stalker", sourceId: 27, sources: [{ sourceId: 27 }], classFeatures: [] },
+    classFeatures: [feature(900, "Dread Ambusher", { classId: 108, requiredLevel: 3 })],
+    ...extra,
+  });
+  const xgte = () => rulesLine(classifyEdition({ sourceId: 27, sources: [{ sourceId: 27 }] }, INDEX));
+
+  it("a classId-matching feature is a subclass feature with the subclass's book", () => {
+    const lines = lookup({ classes: [ranger()], options: { class: [] } }, "Dread Ambusher").split("\n");
+    expect(lines[0]).toBe("[Subclass Feature]");
+    expect(lines[1]).toBe("Dread Ambusher (Ranger / Gloom Stalker, Level 3)");
+    expect(lines[2]).toBe(xgte());
+    expect(lines[2]).toBe("Rules: 2014 · Xanathar's Guide to Everything");
+  });
+
+  it("a sourceless option under such a feature takes the subclass's book and label", () => {
+    const o = { classes: [ranger()], options: { class: [opt(900, 77, "Umbral Sight")] } };
+    const lines = lookup(o, "Umbral Sight").split("\n");
+    expect(lines[0]).toBe("[Class Option]");
+    expect(lines[1]).toBe("Umbral Sight (Dread Ambusher, Ranger / Gloom Stalker)");
+    expect(lines[2]).toBe(xgte());
+  });
+
+  it("a feature of the class itself keeps the class's book", () => {
+    const cls = ranger({ classFeatures: [feature(901, "Favored Enemy", { classId: 5, requiredLevel: 1 })] });
+    const lines = lookup({ classes: [cls], options: { class: [] } }, "Favored Enemy").split("\n");
+    expect(lines[0]).toBe("[Class Feature]");
+    expect(lines[2]).toBe(rulesLine(classifyEdition({ sourceId: 1, sources: [{ sourceId: 1 }] }, INDEX)));
+  });
+});

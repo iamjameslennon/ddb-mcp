@@ -14,20 +14,24 @@
 import { stripHtml as stripHtmlFull, wrapIfHomebrew } from "../../utils.js";
 import { classifyEdition, CUSTOM_ITEM_RULES_LINE, editionTag, entrySourceIds, rulesLine, type EditionInfo, type EditionMarkers, type SourceIndex } from "../../edition.js";
 import { getSourceIndex, LOGGED_OUT_CHARACTER_INDEX_WAIT_MS } from "../../game-config.js";
+import { matchesLooseName } from "../../name-match.js";
 import { fetchCharacter, withNotice } from "../character.js";
 import { computeCharacterEditions, type CharacterEditions } from "./editions.js";
-import { featureDefinition, isHomebrewClassFeature, isHomebrewEntry, levenshteinDistance, records } from "./helpers.js";
+import { featureDefinition, isHomebrewClassFeature, isHomebrewEntry, records } from "./helpers.js";
 import { resolveBackground } from "./features.js";
 import { chosenClassOptions } from "./actions.js";
 import type { CharData, ClassEntry } from "./types.js";
 import { castingTimeText } from "../casting-time.js";
 import { withoutMasteryParagraph } from "../weapon-mastery.js";
 
-function matchesDefinitionQuery(name: string, query: string): boolean {
-  const n = name.toLowerCase();
-  const q = query.toLowerCase();
-  if (n.includes(q)) return true;
-  return name.split(/\s+/).some(w => levenshteinDistance(q, w.toLowerCase()) <= 2);
+const matchesDefinitionQuery = matchesLooseName;
+
+/**
+ * A feature listed in classes[].classFeatures whose definition.classId is the subclass's own
+ * id is a subclass feature (F9; owner ruling 2026-11-12). It takes the subclass's book.
+ */
+function isSubclassFeature(def: Record<string, unknown>, subDef: Record<string, unknown>): boolean {
+  return typeof subDef.id === "number" && def.classId === subDef.id;
 }
 
 function formatSpellResult(spell: Record<string, unknown>): string {
@@ -185,37 +189,39 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
     const classDef = obj(cls.definition);
     const className = str(classDef.name);
 
+    const subDef = obj(cls.subclassDefinition);
+    const subName = str(subDef.name);
+    const subLabel = subName ? `${className} / ${subName}` : className;
+
     for (const cf of records(cls.classFeatures)) {
       const d = obj(cf.definition);
       const name = str(d.name);
       const requiredLevel = num(d.requiredLevel || 1);
       if (requiredLevel <= charLevel && name && matchesDefinitionQuery(name, query) && !seen.has(name)) {
         seen.add(name);
+        const sub = isSubclassFeature(d, subDef);
         results.push({
-          type: "Class Feature",
+          type: sub ? "Subclass Feature" : "Class Feature",
           name,
-          info: classifyEdition(classDef as EditionMarkers, index),
-          text: formatClassFeatureResult(cf, className, requiredLevel) + chosenSuffix(d.id),
+          info: sub ? editions.info(subDef) : classifyEdition(classDef as EditionMarkers, index),
+          text: formatClassFeatureResult(cf, sub ? subLabel : className, requiredLevel) + chosenSuffix(d.id),
           untrusted: isHomebrewClassFeature(cf, cls) || (chosen.get(num(d.id)) ?? []).some(o => o.homebrew),
         });
       }
     }
 
-    const subDef = obj(cls.subclassDefinition);
-    const subName = str(subDef.name);
     // Plain definitions here, unlike classes[].classFeatures (featureDefinition reads both shapes).
     for (const cf of arr<Record<string, unknown>>(subDef.classFeatures)) {
       const d = featureDefinition(cf);
       const name = str(d.name);
       const requiredLevel = num(d.requiredLevel || 1);
-      const label = subName ? `${className} / ${subName}` : className;
       if (requiredLevel <= charLevel && name && matchesDefinitionQuery(name, query) && !seen.has(name)) {
         seen.add(name);
         results.push({
           type: "Subclass Feature",
           name,
           info: editions.info(subDef),
-          text: formatClassFeatureResult(cf, label, requiredLevel) + chosenSuffix(d.id),
+          text: formatClassFeatureResult(cf, subLabel, requiredLevel) + chosenSuffix(d.id),
           untrusted: isHomebrewClassFeature(cf, cls) || (chosen.get(num(d.id)) ?? []).some(o => o.homebrew),
         });
       }
@@ -233,7 +239,10 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
       const inClass = records(cls.classFeatures).map(featureDefinition).find(d => num(d.id) === parentId);
       const subDef = obj(cls.subclassDefinition);
       const inSub = arr<unknown>(subDef.classFeatures).map(featureDefinition).find(d => num(d.id) === parentId);
-      if (inClass || inSub) { owner = { cls, parentName: str((inClass ?? inSub)?.name), viaSubclass: !inClass }; break; }
+      if (inClass || inSub) {
+        owner = { cls, parentName: str((inClass ?? inSub)?.name), viaSubclass: !inClass || isSubclassFeature(inClass, subDef) };
+        break;
+      }
     }
     if (!owner) {
       const optional = records(char.optionalClassFeatures).find(o => num(o.classFeatureId) === parentId);
@@ -245,7 +254,8 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
       owner = { cls: first, parentName: str(obj(obj(optional).definition).name) || str(obj(optional).name), viaSubclass: false };
     }
     const classDef = obj(owner.cls.definition);
-    const className = str(classDef.name);
+    const subName = str(obj(owner.cls.subclassDefinition).name);
+    const className = owner.viaSubclass && subName ? `${str(classDef.name)} / ${subName}` : str(classDef.name);
     const fallback = owner.viaSubclass ? editions.info(obj(owner.cls.subclassDefinition)) : classifyEdition(classDef as EditionMarkers, index);
     for (const o of options) {
       if (!matchesDefinitionQuery(o.name, query)) continue;
