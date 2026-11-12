@@ -111,7 +111,7 @@ describe("a nameless homebrew entry keeps its plain empty slot", () => {
 
   it("in INVENTORY, including the ×N case merged with an official nameless item", () => {
     const out = sheet({ inventory: [gear(1, "Backpack"), gear(2, "", hb, 3), gear(3, "", {}, 2)] }, "inventory");
-    expect(block(out, "INVENTORY")).toBe(["INVENTORY", "  Backpack,  ×5"].join("\n"));
+    expect(block(out, "INVENTORY")).toBe(["INVENTORY", "  Backpack;  ×5"].join("\n"));
     expect(out).not.toContain(OPEN);
     expect(out).not.toContain("INVENTORY (homebrew)");
   });

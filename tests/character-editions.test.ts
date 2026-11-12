@@ -262,7 +262,7 @@ describe("inline tags", () => {
     });
     const out = sheet(c);
     expect(out).toContain("  Studded Leather [2014] (AC 12)");
-    expect(out).toContain("  Bedroll [2014], Platinum Ring [edition not stated]");
+    expect(out).toContain("  Bedroll [2014]; Platinum Ring [edition not stated]");
   });
 
   it("weapon line pads the tag with the name", () => {
@@ -293,7 +293,7 @@ describe("inline tags", () => {
         item(3, "Bedroll", "Other Gear", { sources: S(145) }),
       ];
     });
-    expect(sheet(c)).toContain("Bedroll [2014] ×2, Bedroll");
+    expect(sheet(c)).toContain("Bedroll [2014] ×2; Bedroll");
   });
 
   it("dual-edition weapon on a 2014 character is untagged", () => {

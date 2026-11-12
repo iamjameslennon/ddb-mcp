@@ -196,11 +196,11 @@ describe("INVENTORY list", () => {
     ] }, "inventory");
     expect(out).toContain([
       "INVENTORY",
-      "  Backpack, Torch ×3",
+      "  Backpack; Torch ×3",
       "INVENTORY (homebrew)",
-      wrapUntrusted("  Tea Weird [homebrew], Hex Orb [homebrew] ×3"),
+      wrapUntrusted("  Tea Weird [homebrew]; Hex Orb [homebrew] ×3"),
       "",
-      "ATTUNEMENT: 0/3 slots used",
+      "ATTUNEMENT (0/3): none",
     ].join("\n"));
   });
 
@@ -217,7 +217,7 @@ describe("INVENTORY list", () => {
 
   it("an inventory without homebrew is unchanged", () => {
     const out = sheet({ inventory: [gear(1, "Backpack"), gear(3, "Torch", {}, { quantity: 3 })] }, "inventory");
-    expect(out).toContain(["INVENTORY", "  Backpack, Torch ×3", "", "ATTUNEMENT: 0/3 slots used"].join("\n"));
+    expect(out).toContain(["INVENTORY", "  Backpack; Torch ×3", "", "ATTUNEMENT (0/3): none"].join("\n"));
   });
 });
 
@@ -292,7 +292,7 @@ describe("custom items are placed as homebrew", () => {
 
   it("trims item names: custom 'X ' and 'X' merge, homebrew 'Q ' and 'Q' merge with one space before the tag", () => {
     const out = sheet({ inventory: [gear(1, "X ", custom), gear(2, "X", custom), gear(3, "Q ", { isHomebrew: true }), gear(4, "Q", { isHomebrew: true })] }, "inventory");
-    expect(out).toContain(wrapUntrusted("  X ×2, Q [homebrew] ×2"));
+    expect(out).toContain(wrapUntrusted("  X ×2; Q [homebrew] ×2"));
   });
 
   it("trims an equipped item's name and keeps a trailing-space weapon's column alignment", () => {

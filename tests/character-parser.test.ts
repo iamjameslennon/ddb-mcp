@@ -2799,3 +2799,55 @@ describe("proficiency routing", () => {
     expect(weapons).not.toContain("Darts");
   });
 });
+
+describe("parseCharacterData — inventory separator, EQUIPPED magic items, named attunement (F1, F10; R2)", () => {
+  const entry = (id: number, name: string, filterType: string, def: Record<string, unknown> = {}, rec: Record<string, unknown> = {}) => ({
+    equipped: false, quantity: 1, isAttuned: false, ...rec,
+    definition: { id, name, filterType, isHomebrew: false, sources: [{ sourceId: 145 }], ...def },
+  });
+  const inv = (inventory: unknown[]): string =>
+    parseCharacterData({ data: { ...(FIGHTER_5.data as Record<string, unknown>), inventory } }, "inventory", INDEX);
+
+  it("joins carried items with '; ' so names containing commas stay unambiguous", () => {
+    const out = inv([
+      entry(1, "Backpack", "Other Gear"),
+      entry(2, "Clothes, Common", "Other Gear"),
+      entry(3, "Rope, Hempen (50 feet)", "Other Gear", {}, { quantity: 2 }),
+    ]);
+    expect(out).toContain("INVENTORY\n  Backpack; Clothes, Common; Rope, Hempen (50 feet) ×2");
+  });
+
+  const mixed = () => inv([
+    entry(1, "Staff of the Woodlands", "Other", { magic: true, canAttune: true }, { equipped: true, isAttuned: true }),
+    entry(2, "Chain Shirt", "Armor", { armorClass: 13 }, { equipped: true }),
+    entry(3, "Backpack", "Other Gear", { magic: false, canAttune: false }, { equipped: true }),
+    entry(4, "Longsword, +1", "Weapon", { magic: true, canAttune: true, attackType: 1, damage: { diceCount: 1, diceValue: 8, diceString: "1d8" }, damageType: "slashing", properties: [], grantedModifiers: [] }, { equipped: true, isAttuned: true }),
+  ]);
+
+  it("EQUIPPED lists armour and equipped magic or attunable items, not mundane gear or weapons", () => {
+    const out = mixed();
+    const equipped = out.split("EQUIPPED\n")[1].split("\n\n")[0];
+    expect(equipped).toBe("  Staff of the Woodlands\n  Chain Shirt (AC 13)");
+    expect(out.split("INVENTORY\n")[1].split("\n")[0]).toBe("  Backpack");
+  });
+
+  it("the attunement line names every attuned item, weapons included, and the weapon keeps its ACTIONS row", () => {
+    expect(mixed()).toContain("ATTUNEMENT (2/3): Staff of the Woodlands; Longsword, +1");
+    const combat = parseCharacterData({ data: { ...(FIGHTER_5.data as Record<string, unknown>), inventory: [
+      entry(4, "Longsword, +1", "Weapon", { magic: true, canAttune: true, attackType: 1, damage: { diceCount: 1, diceValue: 8, diceString: "1d8" }, damageType: "slashing", properties: [], grantedModifiers: [] }, { equipped: true, isAttuned: true }),
+    ] } }, "combat", INDEX);
+    expect(combat).toContain("Longsword, +1");
+  });
+
+  it("nothing attuned prints 'none'", () => {
+    expect(inv([entry(1, "Backpack", "Other Gear")])).toContain("ATTUNEMENT (0/3): none");
+  });
+
+  it("wraps the whole ATTUNEMENT line for a homebrew attuned item, and leaves official ones plain", () => {
+    const hb = inv([entry(1, "Odd Ring", "Ring", { isHomebrew: true, canAttune: true }, { equipped: true, isAttuned: true })]);
+    expect(hb).toContain(wrapUntrusted("ATTUNEMENT (1/3): Odd Ring [homebrew]"));
+    const off = inv([entry(1, "Ring of Protection", "Ring", { canAttune: true }, { equipped: true, isAttuned: true })]);
+    expect(off).toContain("\nATTUNEMENT (1/3): Ring of Protection");
+    expect(off).not.toContain(wrapUntrusted("ATTUNEMENT (1/3): Ring of Protection"));
+  });
+});
