@@ -23,8 +23,9 @@ vi.mock("../src/session-fetch.js", () => {
   class SessionChangedError extends Error {}
   class CobaltTokenError extends Error {}
   class MalformedCobaltTokenError extends Error {}
+  class SessionNotSignedInError extends MalformedCobaltTokenError {}
   return {
-    SessionChangedError, CobaltTokenError, MalformedCobaltTokenError,
+    SessionChangedError, CobaltTokenError, MalformedCobaltTokenError, SessionNotSignedInError,
     hasValidSession: () => sessionMock.loggedIn,
     captureSession: () => ({ state: { kind: sessionMock.loggedIn ? "authenticated" : "anonymous" }, generation: 1 }),
     assertSessionCurrent: () => {},

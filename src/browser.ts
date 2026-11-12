@@ -6,8 +6,9 @@ import { dirname, join } from "path";
 import {
   invalidateSessionCache, tightenSessionPermissions, SESSION_DIR, SESSION_PATH,
   onSessionInvalidated, captureSession, assertSessionCurrent, SessionChangedError,
+  decodeCobaltToken, MalformedCobaltTokenError,
 } from "./session-fetch.js";
-import { sanitizeSessionStorage, writeSessionFile } from "./session-state.js";
+import { sanitizeSessionStorage, writeSessionFile, type PlaywrightCookie } from "./session-state.js";
 
 export { SESSION_DIR, SESSION_PATH };
 
@@ -46,7 +47,11 @@ const CONTEXT_OPTIONS = {
   viewport: { width: 1280, height: 800 },
 };
 
-/** Build newContext() options, loading the saved storageState when present. */
+/**
+ * Build the SHARED context's newContext() options, loading the saved
+ * storageState when present. (The login context is seeded from a
+ * captureSession() snapshot instead: see beginLoginSession.)
+ */
 function buildContextOptions(): Parameters<Browser["newContext"]>[0] {
   return existsSync(SESSION_PATH)
     ? { ...CONTEXT_OPTIONS, storageState: SESSION_PATH }
@@ -203,25 +208,53 @@ export async function getContext(browser: Browser): Promise<BrowserContext> {
   return created;
 }
 
+/** A second ddb_login while one is running. */
+export class LoginInProgressError extends Error {
+  constructor() {
+    super("A login is already in progress. Wait for it to finish before starting another.");
+    this.name = "LoginInProgressError";
+  }
+}
+
+/** Neither the user's Chrome nor the bundled Chromium could be started for sign-in. */
+export class LoginLaunchError extends Error {
+  constructor(cause: unknown) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    super(`Couldn't start Chrome or Chromium for the sign-in window: ${detail}`, { cause });
+    this.name = "LoginLaunchError";
+  }
+}
+
 /**
  * Begin a login: open a fresh, deliberately-owned browser + context (visible
  * window for the OAuth flow). Never reuses the shared — possibly revoked —
  * authenticated context. Serialized: rejects if a login is already running.
- * Captures the generation the login begins under; saveSession() re-checks it so
- * a login started before an observed revocation can't recreate the deleted
- * session.
+ * Captures the generation the login begins under; saveVerifiedSession()
+ * re-checks it so a login started before an observed revocation can't recreate
+ * the deleted session.
+ *
+ * The context is seeded from the same captureSession() snapshot, never from a
+ * raw read of session.json: only an authenticated, unrevoked snapshot seeds
+ * it, and only with its sanitized (dndbeyond.com) cookies. After a logout whose
+ * file deletion failed, the snapshot is anonymous ("revoked"), so the revoked
+ * cookies can't come back through the login window.
  */
 export async function beginLoginSession(): Promise<BrowserContext> {
-  if (loginInProgress) {
-    throw new Error(
-      "A login is already in progress. Wait for it to finish before starting another."
-    );
-  }
+  if (loginInProgress) throw new LoginInProgressError();
   loginInProgress = true;
   try {
-    activeLoginGeneration = captureSession().generation;
-    loginBrowser = await launchBrowser(false);
-    loginContext = await loginBrowser.newContext(buildContextOptions());
+    const snapshot = captureSession();
+    activeLoginGeneration = snapshot.generation;
+    try {
+      loginBrowser = await launchBrowser(false);
+    } catch (e) {
+      throw new LoginLaunchError(e);
+    }
+    loginContext = await loginBrowser.newContext(
+      snapshot.state.kind === "authenticated"
+        ? { ...CONTEXT_OPTIONS, storageState: { cookies: snapshot.state.cookies.map(seedCookie), origins: [] } }
+        : CONTEXT_OPTIONS
+    );
     return loginContext;
   } catch (e) {
     await endLoginSession().catch(() => { /* best-effort rollback */ });
@@ -229,23 +262,133 @@ export async function beginLoginSession(): Promise<BrowserContext> {
   }
 }
 
-/** Tear down the login's owned browser/context and release the login lock. */
-export async function endLoginSession(): Promise<void> {
+type SeedCookie = Exclude<NonNullable<Parameters<Browser["newContext"]>[0]>["storageState"], string | undefined>["cookies"][number];
+
+/** A snapshot cookie as newContext() takes it (Playwright requires sameSite). */
+function seedCookie(cookie: PlaywrightCookie): SeedCookie {
+  const sameSite = (cookie as { sameSite?: unknown }).sameSite;
+  return {
+    name: cookie.name, value: cookie.value, domain: cookie.domain, path: cookie.path,
+    expires: cookie.expires, httpOnly: cookie.httpOnly, secure: cookie.secure,
+    sameSite: sameSite === "Strict" || sameSite === "None" ? sameSite : "Lax",
+  };
+}
+
+/**
+ * Tear down the login's owned browser/context and release the login lock.
+ * With `context`, does nothing unless that is the current login's context, so
+ * a caller can only end the login it began. The browser is closed even when
+ * closing the context throws; the first error is rethrown afterwards.
+ */
+export async function endLoginSession(context?: BrowserContext): Promise<void> {
+  if (context !== undefined && context !== loginContext) return;
   const ctx = loginContext;
   const br = loginBrowser;
   loginContext = null;
   loginBrowser = null;
   activeLoginGeneration = null;
   loginInProgress = false;
-  if (ctx) await ctx.close();
-  if (br) await br.close();
+  let failure: unknown;
+  try {
+    if (ctx) await ctx.close();
+  } catch (e) {
+    failure = e;
+  }
+  try {
+    if (br) await br.close();
+  } catch (e) {
+    failure ??= e;
+  }
+  if (failure !== undefined) throw failure;
 }
 
-export async function saveSession(context: BrowserContext): Promise<void> {
+const COBALT_TOKEN_URL = "https://auth-service.dndbeyond.com/v1/cobalt-token";
+
+/**
+ * Proof that D&D Beyond handed a login context a usable cobalt token. Only
+ * verifyLoginContext() makes one, and each is bound to the context it checked,
+ * so saveVerifiedSession() can't be handed a forged or borrowed proof.
+ */
+export interface VerifiedSignIn {
+  readonly userId: string;
+}
+const verifiedContexts = new WeakMap<VerifiedSignIn, BrowserContext>();
+
+/**
+ * Ask D&D Beyond whether this login context is signed in: POST the cobalt-token
+ * exchange through the context's own request API (it shares the context's
+ * cookie jar, so the browser's sign-in is exactly what is checked). Returns a
+ * proof when the answer decodes as `mintCobaltToken` decodes it, and null for
+ * anything else: `{"token":null}` (anonymous), a non-OK status, or an unusable
+ * token. Network and closed-context errors propagate to the caller.
+ */
+export async function verifyLoginContext(
+  context: BrowserContext,
+  timeoutMs = 10_000,
+): Promise<VerifiedSignIn | null> {
+  const resp = await context.request.post(COBALT_TOKEN_URL, {
+    timeout: Math.max(1, timeoutMs),
+    failOnStatusCode: false,
+    headers: { Accept: "application/json" },
+  });
+  if (!resp.ok()) return null;
+  let body: unknown;
+  try {
+    body = await resp.json();
+  } catch {
+    return null;
+  }
+  let userId: string;
+  try {
+    ({ userId } = decodeCobaltToken(body));
+  } catch (e) {
+    if (e instanceof MalformedCobaltTokenError) return null;
+    throw e;
+  }
+  const proof: VerifiedSignIn = Object.freeze({ userId });
+  verifiedContexts.set(proof, context);
+  return proof;
+}
+
+/**
+ * Save a login context's session — only with a proof from verifyLoginContext()
+ * for this same context, so an anonymous cookie set is never written.
+ * `signal` is checked after the async storage read and before the write, so a
+ * cancelled ddb_login writes nothing.
+ */
+export async function saveVerifiedSession(
+  context: BrowserContext,
+  verified: VerifiedSignIn,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (verifiedContexts.get(verified) !== context) {
+    throw new Error("Refusing to save a session that D&D Beyond hasn't verified as signed in.");
+  }
   // Login-race guard: if a revocation (or a competing login) advanced the
   // generation since THIS login began, the login is stale — refuse to recreate
   // the just-deleted session. A login begun AFTER the revoke captured the
   // post-revoke generation, so it matches here and is allowed to save.
+  assertLoginGenerationCurrent();
+
+  ensureSessionDir();
+  // Playwright's storageState is the whole browser profile: a Wizards ID login
+  // via Google or Apple leaves that provider's session cookies and localStorage
+  // in here. Persist only dndbeyond.com cookies and origin storage. The write
+  // itself is atomic (temp file, 0600, rename) — see writeSessionFile. The
+  // verification POST went to auth-service.dndbeyond.com, which only ever
+  // receives dndbeyond.com cookies, so the sanitized set is the one verified.
+  const { storage } = sanitizeSessionStorage(await context.storageState());
+  signal?.throwIfAborted();
+  // storageState() is async: re-check that no logout landed meanwhile.
+  assertLoginGenerationCurrent();
+  writeSessionFile(JSON.stringify(storage));
+  // Publish the new session as ONE lifecycle transition: advance the generation
+  // and notify every consumer hook so old-account caches/browsers are retired.
+  // The login's own context (loginContext) is separate and unaffected.
+  invalidateSessionCache();
+}
+
+function assertLoginGenerationCurrent(): void {
   if (activeLoginGeneration !== null) {
     const current = captureSession().generation;
     if (current !== activeLoginGeneration) {
@@ -254,18 +397,6 @@ export async function saveSession(context: BrowserContext): Promise<void> {
       );
     }
   }
-
-  ensureSessionDir();
-  // Playwright's storageState is the whole browser profile: a Wizards ID login
-  // via Google or Apple leaves that provider's session cookies and localStorage
-  // in here. Persist only dndbeyond.com cookies and origin storage. The write
-  // itself is atomic (temp file, 0600, rename) — see writeSessionFile.
-  const { storage } = sanitizeSessionStorage(await context.storageState());
-  writeSessionFile(JSON.stringify(storage));
-  // Publish the new session as ONE lifecycle transition: advance the generation
-  // and notify every consumer hook so old-account caches/browsers are retired.
-  // The login's own context (loginContext) is separate and unaffected.
-  invalidateSessionCache();
 }
 
 export async function getPage(context: BrowserContext): Promise<Page> {

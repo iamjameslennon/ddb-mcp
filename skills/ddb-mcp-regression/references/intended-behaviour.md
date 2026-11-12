@@ -147,3 +147,7 @@ Source: history.md, Regression remediation 2026-11-11 (owner ruling R5, 2026-11-
 ### A character name that matches several characters lists them
 Looks like: `character_name: "Skamos"` with two Skamos characters returns an error listing each as `  • Name (ID n)` and ending `Pass character_id to pick one.`; it never silently picks one. A name matching none still says "No character found matching ...". If the character list cannot be loaded, the reply is a failure ("Could not load your character list: <status>"), not "No character found".
 Source: `matchCharacterName` / `characterNameError` in `src/tools/character.ts` (F14).
+
+### `ddb_login` waits up to 3 minutes and asks D&D Beyond whether you're signed in
+Looks like: the sign-in window stays open for up to 3 minutes, whatever the page shows; only a sign-in D&D Beyond confirms (a usable cobalt token) is saved. "Already logged in" appears only when the saved session is really signed in. Closing the window by hand ends it at once with `Login failed: The sign-in window was closed before sign-in finished.`; running out of time says `Login failed: Sign-in wasn't finished within 3 minutes. Run ddb_login to try again.`; a second `ddb_login` while one is open says a login is already in progress and leaves the first window alone. A saved session that D&D Beyond doesn't count as signed in makes other tools say `Your saved session isn't signed in to D&D Beyond; run ddb_login.`
+Source: tool-notes.md, `ddb_login` (Task 10b, F30/F29; owner rulings 2026-11-11/12).

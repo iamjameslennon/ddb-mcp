@@ -57,8 +57,9 @@ This is an [MCP](https://modelcontextprotocol.io) server exposing D&D Beyond (DD
   - `anonymousFetch()` is the credential-free path for public endpoints while logged out (monster-service, the game config). It sends no Cookie or Authorization header, never reads the session, and has a 20 s overall deadline.
 - **Browser** (`src/browser.ts`, Playwright): only `ddb_login` (visible window), `ddb_navigate`, `ddb_interact` and `ddb_get_page`.
   - The shared context is closed by an `onSessionInvalidated` hook on every session transition.
-  - Login uses its own separate browser and context (`beginLoginSession()`/`endLoginSession()`).
-  - `saveSession()` keeps only `dndbeyond.com` cookies and origins, and re-checks the generation it began under.
+  - Login uses its own separate browser and context (`beginLoginSession()`/`endLoginSession()`), seeded from a `captureSession()` snapshot (only when authenticated and not revoked), never from a raw read of `session.json`. Only the call whose `beginLoginSession()` succeeded ends it.
+  - Signed in is decided by D&D Beyond: `ddb_login` polls the cobalt-token exchange through the login context's own request API (`verifyLoginContext()`, the same `decodeCobaltToken()` as `mintCobaltToken`) for up to 180 s (`LOGIN_TIMEOUT_MS`). No DOM or URL heuristic.
+  - `saveVerifiedSession()` writes only with that proof, keeps only `dndbeyond.com` cookies and origins, and re-checks the generation it began under.
   - navigate/interact/get_page carry a navigation allowlist guard (`ensureNavigationGuard` in `navigate.ts`). The login context deliberately bypasses it.
   - The sandbox is on by default. `DDB_NO_SANDBOX=1` turns it off for containers.
 
@@ -159,4 +160,14 @@ Last updated 2026-11-11. Releases and pushes go straight to `main`. The rules-ed
    Task 4 (delete `characterSpellBuffer`) is also unblocked.
 2. **Open carry-overs that need a book-owning or homebrew account**: (b) owner-only subclass renames; (aa) slug joins for paid books; (ah) a feature-level homebrew flag on optional features; (ay) item- and background-granted action entries (wrapping is covered by synthetic tests only).
 3. **Regression handover (I5)**: I5 needs new test characters on D&D Beyond, see docs/superpowers/specs/2026-11-06-regression-report.md. I4 closed 2026-11-11 (`scripts/regress-all-characters.mts`; first run vs 2.10.2 found no regressions, history.md "Whole-corpus regression script 2026-11-11"). The rest of the 2026-11-06 run is done (history.md "Regression run 2026-11-06"); B11 (monster search quality) and B12 (Critical Role books) closed 2026-11-10 (history.md "Monster search quality and Critical Role books 2026-11-10"; carry-overs (bp), (bq) are listed there; the four questions the final reviews raised were decided by the owner, recorded there as owner rulings 2026-11-10); I1–I3 closed 2026-11-09, and their carry-overs (ba)–(bo) are listed ((bg) closed, (bh) closed for save advantages) under history.md "Combat section completeness 2026-11-09".
-4. **Open by design** (no change planned): (q) either Open5e document failing fails the call; (y) the sheet keeps empty slots for nameless entries; (ab) "dual-edition" means only 2024 + 2014 books.
+4. **`ddb_login` live checks (Task 10b, F30/F29)**: the fix (verified sign-in, a real 180 s deadline, real errors, cancel and progress pings; tool-notes.md `ddb_login`) is unit-tested only.
+   - **macOS**: pending, run by the controller after review; record the result here.
+   - **Windows: pending.** The owner runs it later on a Windows machine:
+     1. `npm ci && npm run build`, and point Claude Desktop's `dndbeyond` server at the local build (`node <repo>/dist/index.js`); restart Claude Desktop.
+     2. Run `ddb_logout`, then `ddb_login`, and sign in with **Google** (the popup). Expect `Successfully logged in to D&D Beyond…`.
+     3. `ddb_logout` again, then `ddb_login` signing in with **Wizards ID** (email and password). Expect the same.
+     4. `ddb_logout`, `ddb_login`, and leave the window idle for more than 60 s: it must stay open (the 3-minute deadline; the client must not cut the call off at 60 s), and at 3 minutes reply `Login failed: Sign-in wasn't finished within 3 minutes…`.
+     5. `ddb_login` again and close the window by hand: expect `Login failed: The sign-in window was closed before sign-in finished.` at once.
+     6. After a successful sign-in, `ddb_list_characters` must list the characters.
+     7. If the Google hand-back stalls on a white popup, decide whether to remove `--enable-automation` for the login launch (owner ruling 2026-11-12: decided after the live test).
+5. **Open by design** (no change planned): (q) either Open5e document failing fails the call; (y) the sheet keeps empty slots for nameless entries; (ab) "dual-edition" means only 2024 + 2014 books.

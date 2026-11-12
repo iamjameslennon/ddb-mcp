@@ -378,7 +378,7 @@ describe("revokeSession() — the ddb_logout guarantee", () => {
 
     // Merely having the file "reappear" with the SAME old content must not
     // restore access — only an explicit login path (invalidateSessionCache,
-    // as browser.ts's saveSession() calls after writing a fresh file) lifts
+    // as browser.ts's saveVerifiedSession() calls after writing a fresh file) lifts
     // the revoke block.
     setSessionFile(sessionJson("SECRET_A"));
     expect(sf.hasValidSession()).toBe(false);

@@ -378,6 +378,28 @@ describe("character fetch authenticates with a snapshot-bound Bearer token", () 
     expect(err.message).not.toMatch(/is private/);
   });
 
+  it("says the saved session isn't signed in when auth-service answers {token:null} (F29)", async () => {
+    setSessionFile(sessionJson("SECRET_A"));
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === COBALT_URL) return jsonResponse({ token: null, ttl: 1800 });
+      if (url === charUrl) return jsonResponse({}, 403);
+      return jsonResponse({});
+    });
+
+    const err = await rejection(character.getCharacter("77"));
+    expect(err.message).toMatch(/Your saved session isn't signed in to D&D Beyond\. Run ddb_login\./);
+    expect(err.message).not.toMatch(/has no token|unusable sign-in token|Try again in a moment/);
+  });
+
+  it("ddb_list_characters' error says the saved session isn't signed in on {token:null} (F29's symptom)", async () => {
+    setSessionFile(sessionJson("SECRET_A"));
+    fetchMock.mockImplementation(async (url: string) =>
+      url === COBALT_URL ? jsonResponse({ token: null, ttl: 1800 }) : jsonResponse({}));
+
+    const err = await rejection(character.listCharacters());
+    expect(err.message).toBe("Your saved session isn't signed in to D&D Beyond; run ddb_login.");
+  });
+
   it("says to retry, not re-login, when auth-service is unreachable (network error)", async () => {
     setSessionFile(sessionJson("SECRET_A"));
     fetchMock.mockImplementation(async (url: string) => {

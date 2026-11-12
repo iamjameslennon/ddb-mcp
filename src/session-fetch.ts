@@ -98,6 +98,59 @@ export class MalformedCobaltTokenError extends Error {
   }
 }
 
+/**
+ * The cobalt-token exchange answered 200 with `{"token":null}`: the
+ * cookies are D&D Beyond's anonymous ones, so the saved session isn't signed in.
+ * A MalformedCobaltTokenError subclass, so existing outage handling still holds.
+ */
+export class SessionNotSignedInError extends MalformedCobaltTokenError {
+  constructor() {
+    super("Your saved session isn't signed in to D&D Beyond; run ddb_login.");
+    this.name = "SessionNotSignedInError";
+  }
+}
+
+/** A cobalt token and the claims this server reads from it. */
+export interface DecodedCobaltToken {
+  token: string;
+  userId: string;
+  /** The `exp` claim (seconds), or one hour from `now` when absent. */
+  expiresAt: number;
+}
+
+/**
+ * Decode a cobalt-token response body. Pure: shared by the exchange below and
+ * by ddb_login's sign-in check, so "signed in" means the same thing to both.
+ * Throws SessionNotSignedInError for `{"token":null}` and
+ * MalformedCobaltTokenError for any other unusable one.
+ *
+ * The JWT signature is deliberately not verified: the token came from
+ * auth-service.dndbeyond.com over HTTPS (the only trust anchor this server
+ * has), and it is only ever passed straight back to D&D Beyond, which verifies
+ * it. The payload is read only for our own userId.
+ */
+export function decodeCobaltToken(body: unknown, now = Date.now() / 1000): DecodedCobaltToken {
+  const token = body && typeof body === "object" ? (body as { token?: unknown }).token : undefined;
+  // Exactly null is D&D Beyond's anonymous answer; a missing field is some
+  // other shape and stays "malformed".
+  if (token === null) throw new SessionNotSignedInError();
+  if (typeof token !== "string") throw new MalformedCobaltTokenError("cobalt-token response has no token");
+  const parts = token.split(".");
+  if (parts.length < 3) throw new MalformedCobaltTokenError("cobalt-token response is not a valid JWT");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let payload: any;
+  try {
+    payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+  } catch (e) {
+    throw new MalformedCobaltTokenError("Failed to decode cobalt token payload: " + (e instanceof Error ? e.message : String(e)));
+  }
+  const userId: string =
+    payload?.["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"] ?? "";
+  if (!userId) throw new MalformedCobaltTokenError("Could not extract userId from cobalt token");
+  const expiresAt: number = payload.exp ?? (now + 3600);
+  return { token, userId, expiresAt };
+}
+
 /** An anonymous request did not finish within ANONYMOUS_FETCH_TIMEOUT_MS (the abort reason of its deadline). */
 export class AnonymousFetchTimeoutError extends Error {
   constructor(readonly timeoutMs: number) {
@@ -153,7 +206,7 @@ onSessionInvalidated(() => {
 });
 
 /**
- * Invalidate all in-memory caches. Called on login (saveSession in browser.ts)
+ * Invalidate all in-memory caches. Called on login (saveVerifiedSession in browser.ts)
  * whenever a new session file is written. Delegates to the lifecycle owner so
  * every consumer's invalidation hook fires and the generation advances.
  */
@@ -442,28 +495,7 @@ async function mintCobaltToken(
   // never written into the (new) generation's cache.
   assertSessionCurrent(snapshot);
 
-  const token = body?.token;
-  if (typeof token !== "string") throw new MalformedCobaltTokenError("cobalt-token response has no token");
-
-  // JWT payload is base64url-encoded — decode it to extract the userId claim.
-  // We deliberately don't verify the JWT signature: the token came from
-  // auth-service.dndbeyond.com over HTTPS (the only trust anchor we have for
-  // this server), and we only consume it by passing it straight back to DDB
-  // APIs — DDB verifies the signature server-side. We're using the payload
-  // purely to read our own userId for subsequent API calls.
-  const parts = token.split(".");
-  if (parts.length < 3) throw new MalformedCobaltTokenError("cobalt-token response is not a valid JWT");
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let payload: any;
-  try {
-    payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
-  } catch (e) {
-    throw new MalformedCobaltTokenError("Failed to decode cobalt token payload: " + (e instanceof Error ? e.message : String(e)));
-  }
-  const userId: string =
-    payload?.["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"] ?? "";
-  if (!userId) throw new MalformedCobaltTokenError("Could not extract userId from cobalt token");
-  const expiresAt: number = payload.exp ?? (now + 3600);
+  const { token, userId, expiresAt } = decodeCobaltToken(body, now);
 
   // Re-check once more immediately before the cache write (the decode above is
   // synchronous, but keep the invariant explicit and cheap).

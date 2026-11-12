@@ -357,7 +357,7 @@ Run `ddb_login` once to authenticate:
 ddb_login
 ```
 
-A browser window will open and navigate to the D&D Beyond login page. Complete the login using your Wizards ID account. Once redirected back to D&D Beyond, your session is automatically saved to a per-user config directory (`~/.config/ddb-mcp/session.json` on macOS/Linux, `%APPDATA%\ddb-mcp\session.json` on Windows) and reused on all future calls — no browser needed again until the session expires.
+A browser window will open and navigate to the D&D Beyond login page. Complete the login using your Wizards ID account (or Google or Apple); you have up to 3 minutes. Once D&D Beyond confirms you're signed in, the window closes and your session is automatically saved to a per-user config directory (`~/.config/ddb-mcp/session.json` on macOS/Linux, `%APPDATA%\ddb-mcp\session.json` on Windows) and reused on all future calls — no browser needed again until the session expires.
 
 ---
 

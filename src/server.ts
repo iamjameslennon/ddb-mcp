@@ -3,7 +3,7 @@ import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 import { getBrowser, getContext, closeBrowser, beginLoginSession, endLoginSession } from "./browser.js";
-import { login } from "./auth.js";
+import { login, LOGIN_TIMEOUT_MS, LOGIN_PROGRESS_INTERVAL_MS } from "./auth.js";
 import { revokeSession } from "./session-state.js";
 import { getCharacterRaw, downloadCharacter, listCharacters, parseCharacter, findCharacterByName, characterNameError, getDefinition, clearCharacterCache } from "./tools/character.js";
 import { getCampaign, listMyCampaigns, invalidateCampaignCache } from "./tools/campaign.js";
@@ -52,26 +52,47 @@ async function getSharedContext() {
 // ─── ddb_login ────────────────────────────────────────────────────────────────
 server.tool(
   "ddb_login",
-  "Launch a browser and log into D&D Beyond. A Chrome window will open for you to complete login — it closes automatically once your session is saved. After that, character tools work without any browser.",
+  "Launch a browser and log into D&D Beyond. A Chrome window will open for you to complete login (you have up to 3 minutes) — it closes automatically once your session is saved. After that, character tools work without any browser.",
   {},
   // Writes session cookies to disk; re-running just refreshes the same session.
   { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-  async () => {
+  async (_args, extra) => {
+    // Login gets its own deliberately-owned context (never the shared, possibly
+    // revoked, authenticated one). Only the call whose beginLoginSession()
+    // succeeded owns it and tears it down below: a second, concurrent call is
+    // refused with "already in progress" and must not close the first's window.
+    let context: Awaited<ReturnType<typeof beginLoginSession>> | undefined;
+    let progressTimer: ReturnType<typeof setInterval> | undefined;
     try {
-      // Login gets its own deliberately-owned context (never the shared,
-      // possibly revoked, authenticated one). endLoginSession() closes it in the
-      // finally below — the session cookies are saved to disk, so no browser is
-      // needed for future API-based tool calls.
-      const context = await beginLoginSession();
-      const result = await login(context);
+      context = await beginLoginSession();
+      // Sign-in can take minutes; clients that pass a progressToken (and reset
+      // their request timeout on progress) are kept alive by these pings.
+      const progressToken = extra._meta?.progressToken;
+      if (progressToken !== undefined) {
+        const started = Date.now();
+        progressTimer = setInterval(() => {
+          extra.sendNotification({
+            method: "notifications/progress",
+            params: {
+              progressToken,
+              progress: Math.round((Date.now() - started) / 1000),
+              total: LOGIN_TIMEOUT_MS / 1000,
+            },
+          }).catch(() => { /* a lost ping is harmless */ });
+        }, LOGIN_PROGRESS_INTERVAL_MS);
+      }
+      const result = await login(context, { signal: extra.signal });
       return { content: [{ type: "text", text: `${result}\nBrowser closed. Session saved to disk — no browser needed for future requests.` }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       process.stderr.write(`[ddb-mcp] ddb_login error: ${msg}\n`);
       return { content: [{ type: "text", text: `Login failed: ${msg}` }], isError: true };
     } finally {
-      // Always tear down the login browser and release the login lock.
-      await endLoginSession().catch(() => {});
+      clearInterval(progressTimer);
+      // The session cookies are saved to disk, so no browser is needed for
+      // future API-based tool calls: close this login's window and release the
+      // login lock (also on a cancel, a closed window or the deadline).
+      if (context) await endLoginSession(context).catch(() => {});
     }
   }
 );

@@ -73,6 +73,21 @@ function observeTransition(): void {
   sf.hasValidSession();
 }
 
+function makeJwt(userId: string): string {
+  const payload = Buffer.from(JSON.stringify({
+    "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier": userId,
+    exp: Math.floor(Date.now() / 1000) + 3600,
+  })).toString("base64url");
+  return `e30.${payload}.sig`;
+}
+
+/** Verify `ctx` (as ddb_login does) and save it: the only save path there is. */
+async function verifyAndSave(ctx: unknown): Promise<void> {
+  const proof = await browser.verifyLoginContext(ctx as never);
+  if (!proof) throw new Error("fake context did not verify");
+  await browser.saveVerifiedSession(ctx as never, proof);
+}
+
 // ── Fake Playwright doubles ───────────────────────────────────────────────────
 interface FakeContext {
   _closed: boolean;
@@ -81,6 +96,7 @@ interface FakeContext {
   pages: () => unknown[];
   newPage: ReturnType<typeof vi.fn>;
   route: ReturnType<typeof vi.fn>;
+  request: { post: ReturnType<typeof vi.fn> };
 }
 interface FakeBrowser {
   _closed: boolean;
@@ -97,6 +113,10 @@ function makeContext(): FakeContext {
     pages: () => [],
     newPage: vi.fn(async () => ({})),
     route: vi.fn(async () => {}),
+    // auth-service hands this context a valid cobalt token (a signed-in jar).
+    request: {
+      post: vi.fn(async () => ({ ok: () => true, status: () => 200, json: async () => ({ token: makeJwt("4242") }) })),
+    },
   };
   return ctx;
 }
@@ -217,20 +237,20 @@ describe("login cannot recreate a session revoked while it was in flight", () =>
     await state.revokeSession();
 
     // The stale login must NOT recreate the deleted session.
-    await expect(browser.saveSession(staleCtx)).rejects.toThrow(sf.SessionChangedError);
+    await expect(verifyAndSave(staleCtx)).rejects.toThrow(sf.SessionChangedError);
     expect(fsMock.renameSync).not.toHaveBeenCalled();
 
     await browser.endLoginSession();
 
     // A login explicitly started AFTER the revoke may save a new session.
     const freshCtx = await browser.beginLoginSession();
-    await browser.saveSession(freshCtx);
+    await verifyAndSave(freshCtx);
     expect(fsMock.renameSync).toHaveBeenCalledTimes(1);
     await browser.endLoginSession();
   });
 });
 
-describe("saveSession keeps only D&D Beyond cookies and storage", () => {
+describe("saveVerifiedSession keeps only D&D Beyond cookies and storage", () => {
   it("drops Google, Apple and lookalike cookies and origins before writing", async () => {
     const ctx = await browser.beginLoginSession() as unknown as FakeContext;
     ctx.storageState.mockResolvedValue({
@@ -255,7 +275,7 @@ describe("saveSession keeps only D&D Beyond cookies and storage", () => {
       ],
     });
 
-    await browser.saveSession(ctx as never);
+    await verifyAndSave(ctx);
 
     const written = fsMock.writeFileSync.mock.calls.map(c => c[1]).find(v => typeof v === "string") as string;
     const saved = JSON.parse(written) as {
@@ -284,6 +304,72 @@ describe("concurrent logins are serialized", () => {
 
     const ctxB = await browser.beginLoginSession();
     expect(ctxB).not.toBe(ctxA); // no old handle reused
+    await browser.endLoginSession();
+  });
+});
+
+describe("endLoginSession", () => {
+  it("still closes the login browser when closing its context throws, and frees the lock", async () => {
+    const ctx = await browser.beginLoginSession() as unknown as FakeContext;
+    const loginBrowser = await pw.launch.mock.results[0].value as FakeBrowser;
+    ctx.close.mockRejectedValue(new Error("context refused to close"));
+
+    await expect(browser.endLoginSession()).rejects.toThrow(/context refused to close/);
+    expect(loginBrowser.close).toHaveBeenCalledTimes(1);
+
+    const next = await browser.beginLoginSession();
+    expect(next).not.toBe(ctx);
+    await browser.endLoginSession();
+  });
+
+  it("with a context argument, closes only that login's handles", async () => {
+    const ctx = await browser.beginLoginSession() as unknown as FakeContext;
+    const stranger = makeContext();
+    await browser.endLoginSession(stranger as never);
+    expect(ctx.close).not.toHaveBeenCalled();
+    await expect(browser.beginLoginSession()).rejects.toThrow(/already in progress/);
+
+    await browser.endLoginSession(ctx as never);
+    expect(ctx.close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the login context is seeded from a captureSession() snapshot (Future design rule)", () => {
+  it("seeds nothing after a revoke whose file deletion failed (the file is still there)", async () => {
+    setSessionFile(sessionJson("REVOKED_SECRET"));
+    observeTransition();
+    fsMock.rmSync.mockImplementation(() => { throw new Error("EPERM: operation not permitted"); });
+    await expect(state.revokeSession()).rejects.toThrow(/EPERM/);
+    expect(sessionFileExists).toBe(true);
+
+    await browser.beginLoginSession();
+    const loginBrowser = await pw.launch.mock.results[0].value as FakeBrowser;
+    const options = loginBrowser.newContext.mock.calls[0][0] as Record<string, unknown>;
+    expect(options).not.toHaveProperty("storageState");
+    expect(JSON.stringify(options)).not.toContain("REVOKED_SECRET");
+    await browser.endLoginSession();
+  });
+
+  it("seeds no storage state when there is no session", async () => {
+    await browser.beginLoginSession();
+    const loginBrowser = await pw.launch.mock.results[0].value as FakeBrowser;
+    expect(loginBrowser.newContext.mock.calls[0][0]).not.toHaveProperty("storageState");
+    await browser.endLoginSession();
+  });
+
+  it("seeds exactly the snapshot's sanitized cookies, never a path to the file", async () => {
+    setSessionFile(JSON.stringify({
+      cookies: [
+        JSON.parse(sessionJson("SAVED_SECRET")).cookies[0],
+        { name: "SID", value: "GOOGLE", domain: ".google.com", path: "/", expires: -1, httpOnly: true, secure: true },
+      ],
+    }));
+    await browser.beginLoginSession();
+    const loginBrowser = await pw.launch.mock.results[0].value as FakeBrowser;
+    const options = loginBrowser.newContext.mock.calls[0][0] as { storageState?: unknown };
+    expect(typeof options.storageState).toBe("object");
+    const seeded = options.storageState as { cookies: Array<{ value: string; domain: string }> };
+    expect(seeded.cookies.map(c => [c.domain, c.value])).toEqual([[".dndbeyond.com", "SAVED_SECRET"]]);
     await browser.endLoginSession();
   });
 });

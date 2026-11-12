@@ -22,7 +22,7 @@ Scenario meanings:
 Scenarios: normal
 Not applicable: invalid, not-found, ambiguous, locked, edition, source, homebrew, pagination, gate, logged-out
 
-- normal: (only when no session exists) "Log me in to D&D Beyond" → opens a sign-in window, says what to do, and confirms the account once signed in.
+- normal: (only when no session exists) "Log me in to D&D Beyond" → opens a sign-in window, says what to do, and confirms the account once signed in. The window waits up to 3 minutes; closing it by hand replies that the window was closed before sign-in finished, not "timed out".
 
 ## `ddb_logout`
 

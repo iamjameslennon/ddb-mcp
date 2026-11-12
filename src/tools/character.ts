@@ -9,7 +9,7 @@
  */
 
 import {
-  hasValidSession, beginAuthenticatedSession, SessionChangedError, CobaltTokenError, MalformedCobaltTokenError,
+  hasValidSession, beginAuthenticatedSession, SessionChangedError, CobaltTokenError, MalformedCobaltTokenError, SessionNotSignedInError,
   captureSession, assertSessionCurrent, onSessionInvalidated,
 } from "../session-fetch.js";
 import type { AuthenticatedSession } from "../session-fetch.js";
@@ -159,6 +159,13 @@ function describeTokenFailure(e: unknown): { cause: string; advice: string } {
     return {
       cause: `D&D Beyond rejected the saved session (${detail})`,
       advice: "Your session may have expired — run ddb_login again.",
+    };
+  }
+  // {"token":null}: the saved cookies are D&D Beyond's anonymous ones (F29).
+  if (e instanceof SessionNotSignedInError) {
+    return {
+      cause: "Your saved session isn't signed in to D&D Beyond",
+      advice: "Run ddb_login.",
     };
   }
   if (e instanceof MalformedCobaltTokenError) {

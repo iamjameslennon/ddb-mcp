@@ -617,3 +617,39 @@ describe("retry backoff is abort-aware for every snapshot-bound fetch", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
+
+// ── F29 / Task 10b: the one JWT decoder, shared with ddb_login's sign-in check ──
+describe("decodeCobaltToken (shared by the exchange and ddb_login)", () => {
+  it("decodes a token's userId and exp", () => {
+    const exp = Math.floor(Date.now() / 1000) + 1800;
+    expect(sf.decodeCobaltToken({ token: makeJwt("4242", exp) })).toMatchObject({ userId: "4242", expiresAt: exp });
+  });
+
+  it("calls {token:null} (D&D Beyond's anonymous answer) 'not signed in', a MalformedCobaltTokenError subclass", () => {
+    for (const body of [{ token: null, ttl: 1800 }, { token: null }]) {
+      let err: unknown;
+      try { sf.decodeCobaltToken(body); } catch (e) { err = e; }
+      expect(err).toBeInstanceOf(sf.SessionNotSignedInError);
+      expect(err).toBeInstanceOf(sf.MalformedCobaltTokenError);
+      expect((err as Error).message).toBe("Your saved session isn't signed in to D&D Beyond; run ddb_login.");
+    }
+  });
+
+  it("keeps the malformed errors for a token that is there but unusable", () => {
+    for (const body of [{}, null, { token: 123 }, { token: "not-a-jwt" }, { token: "a.%%%.c" }, { token: `a.${Buffer.from("{}").toString("base64url")}.c` }]) {
+      let err: unknown;
+      try { sf.decodeCobaltToken(body); } catch (e) { err = e; }
+      expect(err, JSON.stringify(body)).toBeInstanceOf(sf.MalformedCobaltTokenError);
+      expect(err, JSON.stringify(body)).not.toBeInstanceOf(sf.SessionNotSignedInError);
+    }
+  });
+
+  it("the exchange reports {token:null} for a saved session as not signed in, not 'has no token'", async () => {
+    setSessionFile(sessionJson("ANON_COOKIES_ONLY"));
+    fetchMock.mockImplementation(async () => jsonResponse({ token: null, ttl: 1800 }));
+    const err = await sf.getCobaltToken().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(sf.SessionNotSignedInError);
+    expect((err as Error).message).toMatch(/saved session isn't signed in to D&D Beyond; run ddb_login/);
+    expect((err as Error).message).not.toMatch(/has no token/);
+  });
+});
