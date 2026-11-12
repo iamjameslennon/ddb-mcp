@@ -1,4 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+import { o5FixtureFetch } from "./fixtures/open5e-v2.js";
 import { searchHeader, sourceNote } from "../src/edition.js";
 
 /**
@@ -26,18 +27,22 @@ import { COBALT_URL, GAME_DATA, jsonResponse, makeJwt } from "./fixtures/spell-s
 import { o5Response } from "./fixtures/open5e-v2.js";
 
 type ReferenceModule = typeof import("../src/tools/reference.js");
+const realFs = await vi.importActual<typeof import("fs")>("fs");
 let reference: ReferenceModule;
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(async () => {
   vi.clearAllMocks();
   fsMock.existsSync.mockReset().mockReturnValue(true);
-  fsMock.readFileSync.mockReset().mockReturnValue(JSON.stringify({
+  const session = JSON.stringify({
     cookies: [{
       name: "CobaltSession", value: "SECRET_A", domain: ".dndbeyond.com", path: "/",
       expires: Date.now() / 1000 + 3600, httpOnly: true, secure: true,
     }],
-  }));
+  });
+  // The recorded Open5e documents are read from disk through the real fs.
+  fsMock.readFileSync.mockReset().mockImplementation((path: unknown, ...rest: unknown[]) =>
+    String(path).includes("/fixtures/open5e-v2/") ? realFs.readFileSync(path as URL, ...(rest as [BufferEncoding])) : session);
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
   vi.resetModules();
@@ -371,5 +376,30 @@ describe("species with one entityRaceId and different entityRaceTypeId", () => {
     expect(entryLines(forward)).toEqual(entryLines(backward));
     expect(forward).toBe(backward);
     expect(forward).toContain("TYPE ONE");
+  });
+});
+
+describe("br-2024 redirect and honest no-match wording (R4, F18, F19, F22)", () => {
+  it.each([
+    ["races", () => reference.searchRaces({ source: "br-2024" })],
+    ["classes", () => reference.searchClasses({ source: "br-2024" })],
+    ["backgrounds", () => reference.searchBackgrounds({ source: "br-2024" })],
+    ["feats", () => reference.searchFeats({ source: "br-2024" })],
+  ])("%s with source br-2024 redirects to phb-2024", async (plural, call) => {
+    install();
+    expect(await call()).toBe(`D&D Beyond files the Basic Rules (2024) ${plural} under the Player's Handbook (2024), so source "br-2024" matches none. Use source: "phb-2024" — on an account that doesn't own the Player's Handbook, that lists just the free (Basic Rules) ${plural}.`);
+  });
+
+  it.each([
+    ["races", () => reference.searchRaces({ name: "zzz" })],
+    ["classes", () => reference.searchClasses({ name: "zzz" })],
+    ["backgrounds", () => reference.searchBackgrounds({ name: "zzz" })],
+    ["feats", () => reference.searchFeats({ name: "zzz" })],
+  ])("a %s search nobody matches says D&D Beyond and the SRD were both searched", async (plural, call) => {
+    install();
+    const base = fetchMock.getMockImplementation() as (url: string) => Promise<Response>;
+    const o5 = o5FixtureFetch();
+    fetchMock.mockImplementation(async (url: string) => (url.includes("open5e") ? o5(url) : base(url)));
+    expect(await call()).toBe(`No ${plural} found on D&D Beyond or in the SRD.`);
   });
 });

@@ -427,3 +427,20 @@ describe("ddb_get_equipment weapon mastery by shown edition", () => {
     expect([...MASTERY_NAMES].sort()).toEqual(["Cleave", "Graze", "Nick", "Push", "Sap", "Slow", "Topple", "Vex"]);
   });
 });
+
+describe("honest not-found wording and the br-2024 exception (R4, F18, F19)", () => {
+  it("a missing item names both places searched", async () => {
+    installItems();
+    const base = fetchMock.getMockImplementation() as (url: string) => Promise<Response>;
+    const o5 = o5FixtureFetch();
+    fetchMock.mockImplementation(async (url: string) => (url.includes("open5e") ? o5(url) : base(url)));
+    expect(await reference.getItem("Zzzz")).toBe(
+      `Item "Zzzz" not found on D&D Beyond or in the SRD. It may be misspelled, or in a book this account doesn't own (D&D Beyond shows only free content and owned books). Try ddb_search_equipment with a partial name.`);
+    expect(await reference.searchItems({ name: "zzzz" })).toBe("No items found matching the criteria on D&D Beyond or in the SRD.");
+  });
+
+  it("items never redirect br-2024: they carry source 148", async () => {
+    installItems();
+    expect(await reference.searchItems({ source: "br-2024" })).not.toContain("D&D Beyond files the Basic Rules");
+  });
+});

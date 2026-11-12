@@ -309,3 +309,21 @@ describe("a selection bug is not a load failure", () => {
     expect(text).toContain("**Spell Search** — offset 30 is past the end (1 found)");
   });
 });
+
+describe("br-2024 redirect and honest not-found wording (R4, F18, F19, F22)", () => {
+  const REDIRECT = `D&D Beyond files the Basic Rules (2024) spells under the Player's Handbook (2024), so source "br-2024" matches none. Use source: "phb-2024" — on an account that doesn't own the Player's Handbook, that lists just the free (Basic Rules) spells.`;
+
+  it("search and get with source br-2024 redirect to phb-2024", async () => {
+    installBasics();
+    expect(await reference.searchSpells({ source: "br-2024" })).toBe(REDIRECT);
+    expect(await reference.getSpell("Shield", "2024", "br-2024")).toBe(REDIRECT);
+  });
+
+  it("a missing spell is not claimed to be locked or absent", async () => {
+    installBasics();
+    const base = fetchMock.getMockImplementation() as (url: string) => Promise<Response>;
+    fetchMock.mockImplementation(async (url: string) => (url.includes("open5e") ? o5(url) : base(url)));
+    expect(await reference.getSpell("Synaptic Static")).toBe(
+      `Spell "Synaptic Static" not found on D&D Beyond or in the SRD. It may be misspelled, or in a book this account doesn't own (D&D Beyond shows only free content and owned books). Try ddb_search_spells with a partial name.`);
+  });
+});

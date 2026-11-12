@@ -538,6 +538,15 @@ function o5Label(edition: RulesEdition, origin: Open5eOrigin, extra: { reason?: 
 }
 
 /**
+ * The no-match text: `base` plus what was searched. After D&D Beyond came back
+ * empty too (`"not-found"`) both were searched; with D&D Beyond unreachable
+ * (`"unavailable"`) only the SRD was.
+ */
+function o5NoMatch(base: string, origin: "unavailable" | "not-found"): string {
+  return origin === "not-found" ? `${base} on D&D Beyond or in the SRD.` : `${base} (SRD only).`;
+}
+
+/**
  * A search reply in parts: the Open5e header, the heading and the lines as the
  * body, and the footer. Hidden twins alone keep the header and footer around
  * `noMatch`; with neither, `noMatch` is the whole (headerless) reply.
@@ -670,7 +679,7 @@ export async function o5SearchSpellsSection(params: O5SpellSearchParams, origin:
       && (params.ritual === undefined || s.ritual === params.ritual),
   });
 
-  const noMatch = "No spells found matching the criteria (SRD only).";
+  const noMatch = o5NoMatch("No spells found matching the criteria", origin);
   // An offset past the end lists nothing: the shared past-the-end line under the Open5e header.
   if (selected.length && offset >= selected.length) {
     return o5Section(open5eSearchHeader(requested, origin), paginateResults("Spell", selected, () => "", limit, offset), searchFooter(requested, hidden), hidden);
@@ -1086,7 +1095,7 @@ export async function o5SearchItemsSection(params: O5ItemSearchParams, origin: "
   return o5SearchReply(
     requested, origin,
     `Found ${selected.length} item(s) (showing ${Math.min(selected.length, SEARCH_CAP)}, SRD only):`,
-    capped(lines), hidden, "No items found matching the criteria (SRD only).",
+    capped(lines), hidden, o5NoMatch("No items found matching the criteria", origin),
   );
 }
 
@@ -1153,7 +1162,7 @@ async function o5OptionReply<T extends O5Record>(
   const end = opts.offset + page.length;
   if (total > end) lines.push(`\n*Use offset: ${end} to see more.*`);
   const heading = total > page.length ? `${found}, showing ${opts.offset + 1}–${end}:` : `${found}:`;
-  return o5SearchReply(requested, origin, heading, lines, hidden, opts.noMatch);
+  return o5SearchReply(requested, origin, heading, lines, hidden, o5NoMatch(opts.noMatch, origin));
 }
 
 type O5OptionSearchParams = { name?: string; rulesEdition?: RulesEdition; limit?: number; offset?: number };
@@ -1232,7 +1241,7 @@ export async function o5SearchRacesSection(params: O5OptionSearchParams, origin:
     name: params.name,
     endpoint: "species",
     counted: "race(s)",
-    noMatch: "No races found (SRD only).",
+    noMatch: "No races found",
     limit: params.limit ?? O5_OPTION_LIMIT,
     offset: params.offset ?? 0,
     detail: hit => formatO5Species(hit, origin),
@@ -1293,7 +1302,7 @@ export async function o5SearchClassesSection(params: O5OptionSearchParams, origi
     name: params.name,
     endpoint: "classes",
     counted: "class(es)",
-    noMatch: "No classes found (SRD only).",
+    noMatch: "No classes found",
     limit: params.limit ?? O5_OPTION_LIMIT,
     offset: params.offset ?? 0,
     detail: hit => formatO5Class(hit, origin),
@@ -1335,7 +1344,7 @@ export async function o5SearchBackgroundsSection(params: O5OptionSearchParams, o
     name: params.name,
     endpoint: "backgrounds",
     counted: "background(s)",
-    noMatch: "No backgrounds found (SRD only).",
+    noMatch: "No backgrounds found",
     limit: params.limit ?? O5_OPTION_LIMIT,
     offset: params.offset ?? 0,
     detail: async hit => formatO5Background(hit, origin),
@@ -1385,7 +1394,7 @@ export async function o5SearchFeatsSection(params: O5FeatSearchParams, origin: "
     name: params.name,
     endpoint: "feats",
     counted: "feat(s)",
-    noMatch: "No feats found (SRD only).",
+    noMatch: "No feats found",
     limit: params.limit ?? O5_OPTION_LIMIT,
     offset: params.offset ?? 0,
     detail: async hit => formatO5Feat(hit, origin),

@@ -84,6 +84,23 @@ export function resolveSource(index: SourceIndex, query: string): ResolvedSource
   return { query, ids, book: index.sources.get(Math.min(...ids))!.book };
 }
 
+/**
+ * The reply for `source: "br-2024"` on a kind D&D Beyond files under the
+ * Player's Handbook (2024): spells, feats, species, classes, backgrounds, class
+ * features and racial traits (owner ruling R4, 2026-11-11). Non-null when every
+ * id in `source.ids` has slug `br-2024`. Never decides by kind: each call site
+ * chooses to call it. Do NOT call it for items (they carry source 148) or monsters.
+ */
+export function basicRules2024Reply(source: ResolvedSource, index: SourceIndex, plural: string): string | null {
+  if (!source.ids.length) return null;
+  const all = source.ids.every(id => {
+    const s = index.sources.get(id);
+    return s !== undefined && sourceSlug(s) === "br-2024";
+  });
+  if (!all) return null;
+  return `D&D Beyond files the Basic Rules (2024) ${plural} under the Player's Handbook (2024), so source "br-2024" matches none. Use source: "phb-2024" — on an account that doesn't own the Player's Handbook, that lists just the free (Basic Rules) ${plural}.`;
+}
+
 /** Whether any of the entry's sources is one of `ids` (a reprint counts). */
 export function inSources(entry: EditionMarkers, ids: readonly number[]): boolean {
   return entrySourceIds(entry).some(id => ids.includes(id));

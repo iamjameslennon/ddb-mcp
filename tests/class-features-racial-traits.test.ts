@@ -781,3 +781,13 @@ describe("searchRacialTraits — rules_edition and source", () => {
     expect(entryLines(out)).toEqual(["- **Fury of the Small** [2014] *(Goblin)* — Fury of the Small snippet"]);
   });
 });
+
+describe("br-2024 redirect for class features and racial traits (R4)", () => {
+  it.each([
+    ["class features", () => reference.searchClassFeatures({ source: "br-2024" })],
+    ["racial traits", () => reference.searchRacialTraits({ source: "br-2024" })],
+  ])("%s with source br-2024 redirects to phb-2024", async (plural, call) => {
+    fetchMock.mockImplementation(serviceMock());
+    expect(await call()).toBe(`D&D Beyond files the Basic Rules (2024) ${plural} under the Player's Handbook (2024), so source "br-2024" matches none. Use source: "phb-2024" — on an account that doesn't own the Player's Handbook, that lists just the free (Basic Rules) ${plural}.`);
+  });
+});

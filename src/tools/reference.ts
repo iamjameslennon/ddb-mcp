@@ -26,7 +26,7 @@ import {
 } from "../edition.js";
 import { MASTERY_NAMES, withoutMasteryParagraph } from "./weapon-mastery.js";
 import { peekSourceIndex, getSourceIndex } from "../game-config.js";
-import { resolveSource, unknownSourceError, withSourceCaveat, isHomebrewSource, GENERIC_SOURCE_HINT, type ResolvedSource } from "../source-filter.js";
+import { resolveSource, basicRules2024Reply, unknownSourceError, withSourceCaveat, isHomebrewSource, GENERIC_SOURCE_HINT, type ResolvedSource } from "../source-filter.js";
 import {
   paginateResults, renderSection, plainSection, noMatchSection, withSourceCaveatSection, selectCatalog, lookupCatalog, lookupCatalogAdapter,
   type CatalogAdapter, type CatalogHit, type LookupAdapter, type SearchSection,
@@ -106,6 +106,12 @@ async function resolveSourceParam(source: string | undefined, kind: HomebrewKind
   if (isHomebrewSource(source)) return hasValidSession() ? "homebrew" : { reply: homebrewLoginRequired(kind.kind) };
   const index = await getSourceIndex();
   return resolveSource(index, source) ?? { reply: unknownSourceError(index, source, GENERIC_SOURCE_HINT) };
+}
+
+/** The R4 redirect for a resolved `br-2024` source, or undefined. For non-item kinds only. */
+async function basicRulesRedirect(source: ResolvedSource | "homebrew" | SourceReply | undefined, plural: string): Promise<string | undefined> {
+  if (!source || source === "homebrew" || isSourceReply(source)) return undefined;
+  return basicRules2024Reply(source, await getSourceIndex(), plural) ?? undefined;
 }
 
 /** A source index started alongside a catalog load; `withdraw()` when the load fails and the index will never be read. */
@@ -472,6 +478,8 @@ export async function searchSpells(params: SpellSearchParams): Promise<string> {
 export async function searchSpellsSection(params: SpellSearchParams): Promise<SearchSection> {
   const source = await resolveSourceParam(params.source, SPELL_KIND);
   if (isSourceReply(source)) return plainSection(source.reply);
+  const redirect = await basicRulesRedirect(source, "spells");
+  if (redirect) return plainSection(redirect);
   const requested = params.rulesEdition ?? "2024";
   // Started with the load, not after it (getSourceIndex never rejects).
   const startedIndex = startIndex(source);
@@ -541,6 +549,8 @@ export async function searchSpellsSection(params: SpellSearchParams): Promise<Se
 export async function getSpell(spellName: string, rulesEdition: RulesEdition = "2024", source?: string): Promise<string> {
   const resolved = await resolveSourceParam(source, SPELL_KIND);
   if (isSourceReply(resolved)) return resolved.reply;
+  const redirect = await basicRulesRedirect(resolved, "spells");
+  if (redirect) return redirect;
   const startedIndex = startIndex(resolved);
   let store;
   try {
@@ -565,7 +575,7 @@ export async function getSpell(spellName: string, rulesEdition: RulesEdition = "
     if (resolved) return `Spell "${spellName}" not found in ${resolved.book}.`;
     const o5Result = await o5GetSpell(spellName, rulesEdition, "not-found").catch(() => null);
     if (o5Result) return o5Result;
-    return `Spell "${spellName}" not found in the compendium. Try ddb_search_spells with a partial name.`;
+    return `Spell "${spellName}" not found on D&D Beyond or in the SRD. It may be misspelled, or in a book this account doesn't own (D&D Beyond shows only free content and owned books). Try ddb_search_spells with a partial name.`;
   }
 
   return formatSpell(found.entry, found.rulesLines);
@@ -786,7 +796,7 @@ export async function getItem(itemName: string, rulesEdition: RulesEdition = "20
     if (resolved) return `Item "${itemName}" not found in ${resolved.book}.`;
     const result = await o5GetEquipment(itemName, rulesEdition, "not-found").catch(() => null);
     if (result) return result;
-    return `Item "${itemName}" not found. Try ddb_search_equipment with a partial name.`;
+    return `Item "${itemName}" not found on D&D Beyond or in the SRD. It may be misspelled, or in a book this account doesn't own (D&D Beyond shows only free content and owned books). Try ddb_search_equipment with a partial name.`;
   }
 
   return formatItem(found.entry, found.rulesLines, found.info.ruleset);
@@ -834,6 +844,9 @@ async function searchCatalogList<T>(
 ): Promise<SearchSection> {
   const source = await resolveSourceParam(params.source, spec.homebrew);
   if (isSourceReply(source)) return plainSection(source.reply);
+  // Items carry source 148, so equipment never redirects (R4).
+  const redirect = spec.plural === "items" ? undefined : await basicRulesRedirect(source, spec.plural);
+  if (redirect) return plainSection(redirect);
   const requested = params.rulesEdition ?? "2024";
 
   const startedIndex = startIndex(source);
@@ -1293,6 +1306,8 @@ async function searchOwnedEntries<T>(
 ): Promise<SearchSection> {
   const source = await resolveSourceParam(params.source, spec.homebrew);
   if (isSourceReply(source)) return plainSection(source.reply);
+  const redirect = await basicRulesRedirect(source, spec.homebrew.plural);
+  if (redirect) return plainSection(redirect);
   const requested = params.rulesEdition ?? "2024";
 
   // Homebrew mode never uses the index: don't let a config fetch decide its reply.
