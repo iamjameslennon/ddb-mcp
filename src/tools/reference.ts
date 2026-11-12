@@ -17,6 +17,7 @@ import {
   captureSession, assertSessionCurrent, onSessionInvalidated, SessionChangedError,
 } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
+import { describeTemplates } from "./character/templates.js";
 import { stripHtml, wrapIfHomebrew } from "../utils.js";
 import {
   twinNames, classOwnerTwinKey, classifyEdition, selectByEdition, definitionTiebreak, isEdition,
@@ -1129,7 +1130,7 @@ export async function searchFeatsSection(params: FeatSearchParams = {}): Promise
     passes: prereqQuery ? f => !!f.prerequisite?.toLowerCase().includes(prereqQuery) : undefined,
     format: ({ entry: feat, label }) => {
       const prereq = feat.prerequisite ? ` *(Requires: ${feat.prerequisite})*` : "";
-      const desc = clip(feat.snippet || feat.description, 100);
+      const desc = clip(describeTemplates(feat.snippet || feat.description || ""), 100);
       return `- **${feat.name}** ${label}${prereq}${desc ? ` — ${desc}` : ""}`;
     },
     notFound: "No feats found matching the search criteria.",

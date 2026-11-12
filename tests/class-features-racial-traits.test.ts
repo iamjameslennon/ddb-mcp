@@ -145,6 +145,7 @@ describe("homebrew compendium text is untrusted", () => {
       feats: [
         { id: 1, name: "Alert", description: "<p>Official feat</p>", snippet: "Official feat", prerequisite: null, ...official },
         { id: 2, name: "Hex Touched", description: "<p>Homebrew feat</p>", snippet: "Homebrew feat", prerequisite: null, ...homebrew },
+        { id: 3, name: "Keen Mind", description: "<p>x</p>", snippet: "add {{proficiency#signed}} to the roll", prerequisite: null, ...official },
       ],
       items: [
         {
@@ -174,6 +175,8 @@ describe("homebrew compendium text is untrusted", () => {
 
     const feats = await reference.searchFeats({});
     expect(feats).toContain("- **Alert** [2024] — Official feat");
+    expect(feats).toContain("- **Keen Mind** [2024] — add your Proficiency Bonus to the roll");
+    expect(feats).not.toContain("{{");
     expect(feats).toContain(wrapUntrusted("- **Hex Touched** [homebrew] — Homebrew feat"));
 
     // ddb_search_site builds its sections from the same catalog lines.

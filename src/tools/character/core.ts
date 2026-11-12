@@ -145,7 +145,7 @@ export function computeCoreStats(char: CharData, index: SourceIndex): CoreStats 
   const statMods = statTotals.map(modOf);
 
   const inventory = records<InventoryItem>(char.inventory);
-  const resolveTemplates = makeResolveTemplates(profBonus, totalLevel);
+  const resolveTemplates = makeResolveTemplates({ profBonus, totalLevel, statMods, statTotals });
 
   return {
     char,
