@@ -87,6 +87,27 @@ describe("action features", () => {
     expect(block(out, "LIMITED USE")).toContain("• Channel Divinity   0 used / 2 max   (Short Rest)");
   });
 
+  describe("limited use from an ability modifier (F8)", () => {
+    const stats = (cha: number) => [10, 10, 10, 10, 10, cha].map((value, i) => ({ id: i + 1, value }));
+    const line = (name: string, lu: Record<string, unknown>, cha: number) =>
+      block(sheet([action(name, 1, CLASS_FEATURE, ACTION, { limitedUse: { numberUsed: 1, resetType: 2, ...lu } })], "class", { stats: stats(cha), bonusStats: [], overrideStats: [] }), "LIMITED USE");
+
+    it("uses the modifier as the maximum, at least once", () => {
+      expect(line("Bardic Inspiration", { maxUses: 0, statModifierUsesId: 6, operator: 1 }, 16))
+        .toContain("• Bardic Inspiration   1 used / 3 max   (Long Rest)");
+      expect(line("Bardic Inspiration", { maxUses: 0, statModifierUsesId: 6, operator: 1 }, 8))
+        .toContain("/ 1 max");
+    });
+
+    it("adds the modifier to a positive base", () => {
+      expect(line("Divine Sense", { maxUses: 1, statModifierUsesId: 6, operator: 1 }, 16)).toContain("/ 4 max");
+    });
+
+    it("prints ? for an unknown operator", () => {
+      expect(line("Odd", { maxUses: 1, statModifierUsesId: 6, operator: 2 }, 16)).toContain("/ ? max");
+    });
+  });
+
   it("wraps an action whose granting feature exists only on subclassDefinition.classFeatures (plain shape)", () => {
     const plain = (id: number, name: string, isHomebrew: boolean) => ({ id, entityTypeId: CLASS_FEATURE, name, requiredLevel: 1, isHomebrew });
     const out = combat({

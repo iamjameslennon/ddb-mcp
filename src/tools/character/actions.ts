@@ -18,7 +18,7 @@
  */
 
 import { wrapIfHomebrew } from "../../utils.js";
-import { arr, featureDefinition, isHomebrewClassFeature, isHomebrewEntry, num, obj, records, shownHomebrew, signed, str } from "./helpers.js";
+import { arr, featureDefinition, isHomebrewClassFeature, isHomebrewEntry, num, obj, records, shownHomebrew, str } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, InventoryItem, Mod } from "./types.js";
 import { resolveBackground } from "./features.js";
 import type { CharacterEditions } from "./editions.js";
@@ -300,10 +300,15 @@ function buildLimitedUseLines(
       const lu = obj(a.limitedUse);
       const resetLabels: Record<number, string> = { 1: "Short Rest", 2: "Long Rest" };
       const reset = resetLabels[num(lu.resetType)] ?? "Rest";
-      let maxStr = num(lu.maxUses) > 0
-        ? String(num(lu.maxUses))
-        : lu.statModifierUsesId != null
-          ? `${signed(statMods[num(lu.statModifierUsesId) - 1])} (stat)`
+      // A stat-based maximum is checked first: maxUses is its base, not the whole maximum.
+      // Operator 1 (or absent) adds the modifier, at least once. No other operator is known.
+      const statId = lu.statModifierUsesId != null ? num(lu.statModifierUsesId) : null;
+      const maxStr = statId != null
+        ? (lu.operator == null || lu.operator === 1) && statId >= 1 && statId <= 6 && statMods[statId - 1] !== undefined
+          ? String(Math.max(1, num(lu.maxUses) + statMods[statId - 1]))
+          : "?"
+        : num(lu.maxUses) > 0
+          ? String(num(lu.maxUses))
           : "?";
       const used = num(lu.numberUsed);
       return wrapIfHomebrew(`• ${str(a.name)}   ${used} used / ${maxStr} max   (${reset})`, homebrew);
