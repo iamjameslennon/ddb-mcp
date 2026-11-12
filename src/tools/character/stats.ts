@@ -339,6 +339,13 @@ function friendlyName(m: Mod, sub: string): string {
   return typeof name === "string" && slugOf(name) === sub ? name.trim() : "";
 }
 
+// entityTypeId on a proficiency modifier says what the subType names (live ids):
+// 1782728300 and 660121713 are weapon types (Weighted Chain, Bola, Firearms ...),
+// 2103445194 is a tool or gaming set (Thieves' Tools, Darts ...). Any other id,
+// or none, falls back to the isWeaponSlug name guess.
+const WEAPON_ENTITY_TYPES: ReadonlySet<number> = new Set([1782728300, 660121713]);
+const TOOL_ENTITY_TYPE = 2103445194;
+
 function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficiencies {
   const armorProfMap: Record<string, string> = {
     "light-armor": "Light Armor", "medium-armor": "Medium Armor",
@@ -378,7 +385,10 @@ function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficie
         const known = PROFICIENCY_SLUGS.has(sub);
         const friendly = known ? friendlyName(m, sub) : "";
         const name = friendly || capitalize(sub.replace(/-/g, " "));
-        if (isWeaponSlug(sub)) {
+        const entityType = num(m.entityTypeId);
+        const isWeapon = WEAPON_ENTITY_TYPES.has(entityType) ? true
+          : entityType === TOOL_ENTITY_TYPE ? false : isWeaponSlug(sub);
+        if (isWeapon) {
           // "Crossbow, Light" prints as the item's name, "Light Crossbow" (owner ruling 2026-11-06).
           (known ? weapons : customWeapons).push(friendly ? weaponWordOrder(friendly) : name);
         } else {

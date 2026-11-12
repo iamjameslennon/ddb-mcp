@@ -2774,3 +2774,28 @@ describe("parseCharacterData — weapon rows", () => {
     expect(out[0].indexOf(" to hit")).toBe(out[1].indexOf(" to hit"));
   });
 });
+
+describe("proficiency routing", () => {
+  it("routes weapon and tool proficiencies by entityTypeId", () => {
+    const fighter = (FIGHTER_5.data) as Record<string, unknown>;
+    const mods = fighter.modifiers as Record<string, unknown>;
+    const prof = (subType: string, friendlySubtypeName: string, entityTypeId?: number) => ({
+      type: "proficiency", subType, friendlySubtypeName, ...(entityTypeId === undefined ? {} : { entityTypeId }),
+    });
+    const out = parseCharacterData({ data: { ...fighter, modifiers: { ...mods, class: [
+      ...(mods.class as unknown[]),
+      prof("weighted-chain", "Weighted Chain", 1782728300),
+      prof("bola", "Bola", 1782728300),
+      prof("firearms", "Firearms", 660121713),
+      prof("thieves-tools", "Thieves' Tools", 2103445194),
+      prof("darts", "Darts", 2103445194),
+      prof("dagger", "Dagger"),
+    ] } } }, "summary");
+    const line = (label: string) => out.split("\n").find(l => l.includes(label + ":")) ?? "";
+    const weapons = line("Weapons");
+    const tools = line("Tools");
+    for (const w of ["Weighted Chain", "Bola", "Firearms", "Dagger"]) expect(weapons).toContain(w);
+    for (const t of ["Thieves' Tools", "Darts"]) expect(tools).toContain(t);
+    expect(weapons).not.toContain("Darts");
+  });
+});
