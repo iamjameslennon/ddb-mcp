@@ -141,6 +141,13 @@ describe("subclass features and options in classes[].classFeatures (F9, ruling 2
     expect(lines[2]).toBe(xgte());
   });
 
+  it("a classId arriving as a numeric string still marks a subclass feature", () => {
+    const cls = ranger({ classFeatures: [feature(900, "Dread Ambusher", { classId: "108", requiredLevel: 3 })] });
+    const lines = lookup({ classes: [cls], options: { class: [] } }, "Dread Ambusher").split("\n");
+    expect(lines[0]).toBe("[Subclass Feature]");
+    expect(lines[2]).toBe(xgte());
+  });
+
   it("a feature of the class itself keeps the class's book", () => {
     const cls = ranger({ classFeatures: [feature(901, "Favored Enemy", { classId: 5, requiredLevel: 1 })] });
     const lines = lookup({ classes: [cls], options: { class: [] } }, "Favored Enemy").split("\n");

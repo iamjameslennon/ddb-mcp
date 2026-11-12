@@ -31,7 +31,8 @@ const matchesDefinitionQuery = matchesLooseName;
  * id is a subclass feature (F9; owner ruling 2026-11-12). It takes the subclass's book.
  */
 function isSubclassFeature(def: Record<string, unknown>, subDef: Record<string, unknown>): boolean {
-  return typeof subDef.id === "number" && def.classId === subDef.id;
+  const subId = Number(subDef.id);
+  return Number.isFinite(subId) && subId !== 0 && Number(def.classId) === subId;
 }
 
 function formatSpellResult(spell: Record<string, unknown>): string {

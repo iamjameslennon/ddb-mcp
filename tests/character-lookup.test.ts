@@ -34,6 +34,19 @@ describe("formatCharacterLookup", () => {
     expect(out).toContain("4. [Spell] Wall of Fire [edition not stated] (Level 4 Evocation)");
   });
 
+  it("a query that matched four entries still prints the Found 4 matches list, loose matches included", () => {
+    const sp = (id: number, name: string) => ({ definition: { id, name, level: 0, school: "Evocation", sources: S(2) } });
+    const char = variant(FIGHTER_5, d => { d.spells = { race: [
+      sp(1, "Eldritch Blast"), sp(2, "Eldritch Blast Focus"), sp(3, "Eldritch Blasts"), sp(4, "Blast Eldritch"),
+      sp(5, "Eldritch Knight"), sp(6, "Fire Bolt"),
+    ] }; }).data as Record<string, unknown>;
+    const out = formatCharacterLookup(char, "eldritch blast", INDEX);
+    expect(out.startsWith('Found 4 matches for "eldritch blast". Be more specific, or here are the matches:\n\n')).toBe(true);
+    for (const n of ["Eldritch Blast [2014]", "Eldritch Blast Focus", "Eldritch Blasts", "Blast Eldritch"]) expect(out).toContain(n);
+    expect(out).not.toContain("Eldritch Knight");
+    expect(out).not.toContain("Fire Bolt");
+  });
+
   it("a minute-long spell prints its casting time in minutes", () => {
     const char = variant(FIGHTER_5, d => { d.spells = { race: [
       { definition: { id: 5, name: "Identify", level: 1, school: "Divination", sources: S(145),
