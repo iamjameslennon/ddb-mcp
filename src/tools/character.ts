@@ -54,17 +54,59 @@ onSessionInvalidated(() => {
   characterCache.clear();
 });
 
+export type CharacterNameMatch =
+  | { kind: "found"; id: string; name: string }
+  | { kind: "ambiguous"; candidates: Array<{ id: string; name: string }> }
+  | { kind: "none" };
+
 /**
- * Resolve a character name to a numeric ID using the character list API.
- * Resolution order: exact match → substring match → Levenshtein ≤3 on full
- * name and individual words (e.g. "Throin" matches "Thorin Ironforge").
- * Returns null if no match or multiple ambiguous fuzzy matches are found.
+ * Match a name against a character list. Resolution order: exact match →
+ * substring match → Levenshtein ≤3 on full name and individual words (e.g.
+ * "Throin" matches "Thorin Ironforge"). One hit at a step is found; several
+ * are ambiguous (never silently picked); no hit at any step is none.
  */
-export async function findCharacterByName(name: string): Promise<{ id: string; name: string } | null> {
-  // Throw rather than return null when there's no session — otherwise callers
-  // surface a misleading "No character found matching '<name>'" message that
-  // looks like the character doesn't exist, when really the user just hasn't
-  // logged in yet.
+export function matchCharacterName(
+  chars: ReadonlyArray<{ id: string; name: string }>,
+  name: string,
+): CharacterNameMatch {
+  const lower = name.toLowerCase();
+  const pick = (hits: Array<{ id: string; name: string }>): CharacterNameMatch | null =>
+    hits.length === 1 ? { kind: "found", id: hits[0].id, name: hits[0].name }
+      : hits.length > 1 ? { kind: "ambiguous", candidates: hits.map(c => ({ id: c.id, name: c.name })) }
+      : null;
+
+  const exact = chars.find(c => c.name.toLowerCase() === lower);
+  if (exact) return { kind: "found", id: exact.id, name: exact.name };
+
+  const sub = pick(chars.filter(c => c.name.toLowerCase().includes(lower)));
+  if (sub) return sub;
+
+  const fuzzy = pick(chars.filter(c => {
+    if (levenshteinDistance(lower, c.name.toLowerCase()) <= 3) return true;
+    return c.name.split(/\s+/).some(w => levenshteinDistance(lower, w.toLowerCase()) <= 3);
+  }));
+  return fuzzy ?? { kind: "none" };
+}
+
+/** Error text for a name that did not resolve to one character. Names are user-authored, so wrapped whole. */
+export function characterNameError(name: string, m: Exclude<CharacterNameMatch, { kind: "found" }>): string {
+  if (m.kind === "none") {
+    return `No character found matching "${name}". Try ddb_list_characters to see your characters.`;
+  }
+  return [
+    wrapUntrusted(`Several of your characters match "${name}":`),
+    ...m.candidates.map(c => wrapUntrusted(`  \u2022 ${c.name} (ID ${c.id})`)),
+    "Pass character_id to pick one.",
+  ].join("\n");
+}
+
+/**
+ * Resolve a character name using the character list API. A failed list fetch
+ * throws, so an outage never reads as "No character found".
+ */
+export async function findCharacterByName(name: string): Promise<CharacterNameMatch> {
+  // Throw rather than return none when there's no session — otherwise callers
+  // surface a misleading "No character found matching '<name>'" message.
   if (!hasValidSession()) {
     throw new Error("No session found. Please run ddb_login first to authenticate.");
   }
@@ -73,29 +115,12 @@ export async function findCharacterByName(name: string): Promise<{ id: string; n
   const resp = await session.fetch(
     `https://character-service.dndbeyond.com/character/v5/characters/list?userId=${session.userId}`
   );
-  if (!resp.ok) return null;
+  if (!resp.ok) throw new Error(`Could not load your character list: ${resp.status}`);
   const result = await resp.json() as {
     data?: { characters?: Array<{ id: number; name: string }> };
   };
   const chars = (result.data?.characters ?? []).map(c => ({ id: String(c.id), name: c.name }));
-  const lower = name.toLowerCase();
-
-  // 1. Exact match
-  const exact = chars.find(c => c.name.toLowerCase() === lower);
-  if (exact) return exact;
-
-  // 2. Substring match (only if unambiguous)
-  const sub = chars.filter(c => c.name.toLowerCase().includes(lower));
-  if (sub.length === 1) return sub[0];
-
-  // 3. Levenshtein fuzzy match on full name and individual words
-  const fuzzy = chars.filter(c => {
-    if (levenshteinDistance(lower, c.name.toLowerCase()) <= 3) return true;
-    return c.name.split(/\s+/).some(w => levenshteinDistance(lower, w.toLowerCase()) <= 3);
-  });
-  if (fuzzy.length === 1) return fuzzy[0];
-
-  return null;
+  return matchCharacterName(chars, name);
 }
 
 export async function parseCharacter(

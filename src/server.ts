@@ -5,7 +5,7 @@ import { z } from "zod";
 import { getBrowser, getContext, closeBrowser, beginLoginSession, endLoginSession } from "./browser.js";
 import { login } from "./auth.js";
 import { revokeSession } from "./session-state.js";
-import { getCharacterRaw, downloadCharacter, listCharacters, parseCharacter, findCharacterByName, getDefinition, clearCharacterCache } from "./tools/character.js";
+import { getCharacterRaw, downloadCharacter, listCharacters, parseCharacter, findCharacterByName, characterNameError, getDefinition, clearCharacterCache } from "./tools/character.js";
 import { getCampaign, listMyCampaigns, invalidateCampaignCache } from "./tools/campaign.js";
 import { getParty } from "./tools/party.js";
 import { navigate, interact, getCurrentPageContent } from "./tools/navigate.js";
@@ -212,8 +212,8 @@ server.tool(
           return { content: [{ type: "text", text: "Either character_id or character_name must be provided." }], isError: true };
         }
         const found = await findCharacterByName(character_name);
-        if (!found) {
-          return { content: [{ type: "text", text: `No character found matching "${character_name}". Try ddb_list_characters to see your characters.` }], isError: true };
+        if (found.kind !== "found") {
+          return { content: [{ type: "text", text: characterNameError(character_name, found) }], isError: true };
         }
         resolvedId = found.id;
       }
@@ -279,8 +279,8 @@ server.tool(
           return { content: [{ type: "text", text: "Either character_id or character_name must be provided." }], isError: true };
         }
         const found = await findCharacterByName(character_name);
-        if (!found) {
-          return { content: [{ type: "text", text: `No character found matching "${character_name}". Try ddb_list_characters to see your characters.` }], isError: true };
+        if (found.kind !== "found") {
+          return { content: [{ type: "text", text: characterNameError(character_name, found) }], isError: true };
         }
         resolvedId = found.id;
       }
@@ -312,8 +312,8 @@ server.tool(
           return { content: [{ type: "text", text: "Either character_id or character_name must be provided." }], isError: true };
         }
         const found = await findCharacterByName(character_name);
-        if (!found) {
-          return { content: [{ type: "text", text: `No character found matching "${character_name}". Try ddb_list_characters to see your characters.` }], isError: true };
+        if (found.kind !== "found") {
+          return { content: [{ type: "text", text: characterNameError(character_name, found) }], isError: true };
         }
         resolvedId = found.id;
       }

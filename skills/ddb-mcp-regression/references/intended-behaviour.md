@@ -143,3 +143,7 @@ Source: history.md, Regression remediation 2026-11-11 (owner ruling R4, 2026-11-
 ### Dueling follows dndbeyond.com
 Looks like: +2 on every one-handed melee row, so two unflagged one-handed weapons both show it. A sheet that flags an off-hand weapon (`characterValues` typeId 18) gives no row Dueling.
 Source: history.md, Regression remediation 2026-11-11 (owner ruling R5, 2026-11-11).
+
+### A character name that matches several characters lists them
+Looks like: `character_name: "Skamos"` with two Skamos characters returns an error listing each as `  • Name (ID n)` and ending `Pass character_id to pick one.`; it never silently picks one. A name matching none still says "No character found matching ...". If the character list cannot be loaded, the reply is a failure ("Could not load your character list: <status>"), not "No character found".
+Source: `matchCharacterName` / `characterNameError` in `src/tools/character.ts` (F14).
