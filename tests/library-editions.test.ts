@@ -361,10 +361,16 @@ describe("unownedSourceNote (F17)", () => {
     expect(isFreeBookSlug("basic-rules-2014")).toBe(true);
     expect(isFreeBookSlug("sources/dnd/br-2024")).toBe(true);
     expect(isFreeBookSlug("dnd/phb-2024")).toBe(false);
+    expect(isFreeBookSlug("ee")).toBe(true);
   });
   it("an unowned book gets the note", async () => {
     route([PHB]);
     expect(await note("xgte")).toBe(NOTE("Xanathar's Guide to Everything"));
+  });
+  it("EEPC (no sourceURL, free live 2026-11-12) gets none, without fetching the library", async () => {
+    route([PHB]);
+    expect(await note("ee")).toBeNull();
+    expect(libCalls()).toHaveLength(0);
   });
   it("an owned book gets none", async () => {
     route([PHB]);

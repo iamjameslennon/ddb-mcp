@@ -341,12 +341,13 @@ describe("ddb_search_spells unowned-book note (F17)", () => {
   it("the note leads the body and the source-wins note still follows it", async () => {
     installBasics();
     unowned.note = NOTE;
-    const out = await reference.searchSpells({ source: "xgte" });
-    const lines = out.split("\n");
+    // xgte is a 2014 book, so the default 2024 request prints the source-wins line.
+    const lines = (await reference.searchSpells({ source: "xgte" })).split("\n");
     const at = lines.indexOf(NOTE);
+    const wins = lines.findIndex(l => l.includes('is a 2014 book'));
+    expect(wins).toBeGreaterThanOrEqual(0);
     expect(at).toBeGreaterThan(0);
-    const wins = lines.findIndex(l => /rules_edition/.test(l));
-    if (wins >= 0) expect(wins).toBeGreaterThan(at);
+    expect(wins).toBeGreaterThan(at);
   });
   it("a source search that finds nothing still carries the note", async () => {
     installBasics();
@@ -354,10 +355,16 @@ describe("ddb_search_spells unowned-book note (F17)", () => {
     const out = await reference.searchSpells({ source: "xgte", name: "zzzzqq" });
     expect(out).toContain(NOTE);
   });
-  it("no note without a source, and none for homebrew", async () => {
+  it("no note without a source", async () => {
     installBasics();
     unowned.note = NOTE;
     expect(await reference.searchSpells({ name: "Sleep" })).not.toContain(NOTE);
+  });
+  it("no note for source homebrew", async () => {
+    installBasics();
+    unowned.note = NOTE;
+    const out = await reference.searchSpells({ source: "homebrew" });
+    expect(out).not.toContain(NOTE);
   });
   it("no note when the helper returns null", async () => {
     installBasics();

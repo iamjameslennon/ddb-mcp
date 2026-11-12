@@ -274,8 +274,11 @@ async function fetchLibraryBooksUncached(): Promise<LibraryBook[]> {
   return parseSourcesFromLibraryHtml(await resp.text());
 }
 
-/** The free books D&D Beyond lists to every account (matched on the slug's last segment). */
-const FREE_BOOK_SLUGS = new Set(["basic-rules-2014", "br-2024"]);
+/** The free books D&D Beyond lists to every account (matched on the slug's last segment, or the name when a source has no URL). */
+// "ee" (Elemental Evil Player's Companion, id 4, sourceURL "": matched by its
+// lowercased name): live 2026-11-12 on a free account, not in the library list,
+// yet all 43 of its spells are visible.
+const FREE_BOOK_SLUGS = new Set(["basic-rules-2014", "br-2024", "ee"]);
 export function isFreeBookSlug(slug: string): boolean {
   const last = slug.split("/").filter(Boolean).pop();
   return last !== undefined && FREE_BOOK_SLUGS.has(last.toLowerCase());
@@ -292,7 +295,7 @@ export async function unownedSourceNote(source: ResolvedSource, index: SourceInd
   if (!hasValidSession()) return null;
   if (source.ids.some(id => {
     const s = index.sources.get(id);
-    return s !== undefined && isFreeBookSlug(sourceSlug(s));
+    return s !== undefined && isFreeBookSlug(sourceSlug(s) || s.name);
   })) return null;
   let books: readonly LibraryBook[];
   try {
