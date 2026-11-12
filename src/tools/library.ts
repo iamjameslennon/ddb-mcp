@@ -4,6 +4,7 @@ import { sessionFetch, hasValidSession, captureSession, assertSessionCurrent, on
 import { TtlCache } from "../cache.js";
 import { wrapUntrusted, stripHtml } from "../utils.js";
 import { getSourceIndex } from "../game-config.js";
+import { sourceSlug, type ResolvedSource } from "../source-filter.js";
 import { classifyEdition, normalizeName, rulesLine, editionTag, type EditionInfo, type SourceIndex } from "../edition.js";
 
 const LIBRARY_URL =
@@ -271,6 +272,43 @@ async function fetchLibraryBooksUncached(): Promise<LibraryBook[]> {
     throw new Error(`Library fetch failed: ${resp.status} ${resp.statusText}`);
   }
   return parseSourcesFromLibraryHtml(await resp.text());
+}
+
+/** The free books D&D Beyond lists to every account (matched on the slug's last segment). */
+const FREE_BOOK_SLUGS = new Set(["basic-rules-2014", "br-2024"]);
+export function isFreeBookSlug(slug: string): boolean {
+  const last = slug.split("/").filter(Boolean).pop();
+  return last !== undefined && FREE_BOOK_SLUGS.has(last.toLowerCase());
+}
+
+/**
+ * F17: the note for a `source` search of a book the account doesn't own, whose
+ * catalog lists only its free entries. Null (no note) when logged out, when the
+ * library can't be read (an outage never blocks or misleads; only
+ * SessionChangedError propagates), for a free book, and when the library lists
+ * the book. Reuses the cached library list.
+ */
+export async function unownedSourceNote(source: ResolvedSource, index: SourceIndex): Promise<string | null> {
+  if (!hasValidSession()) return null;
+  if (source.ids.some(id => {
+    const s = index.sources.get(id);
+    return s !== undefined && isFreeBookSlug(sourceSlug(s));
+  })) return null;
+  let books: readonly LibraryBook[];
+  try {
+    books = await fetchLibraryBooks();
+  } catch (err) {
+    if (err instanceof SessionChangedError) throw err;
+    return null;
+  }
+  // An empty parse (interstitial, truncated page) proves nothing about ownership.
+  if (books.length === 0) return null;
+  const ids = new Set(source.ids);
+  for (const b of books) {
+    const id = librarySourceId(b, index);
+    if (id !== null && ids.has(id)) return null;
+  }
+  return `> Note: this account doesn't own ${source.book}, so D&D Beyond shows only its free entries — this list is not the whole book.`;
 }
 
 export async function listLibrary(): Promise<string> {

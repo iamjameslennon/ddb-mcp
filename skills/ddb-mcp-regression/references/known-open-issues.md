@@ -68,6 +68,3 @@ Shows up as: an action granted by an item or background printed plain when its s
 
 ### (B14) read_book blank lines
 Shows up as: `ddb_read_book` output with long runs of blank lines that use up `max_chars`.
-
-### (B14) search_spells unowned-book wording
-Shows up as: `ddb_search_spells` with `source` set to a book the account doesn't own says "No spells found" instead of saying the book isn't owned.

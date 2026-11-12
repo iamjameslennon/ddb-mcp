@@ -16,6 +16,10 @@ Source: CLAUDE.md, Invariants, "Rules edition"; spec 2026-11-11 criterion 4.
 Looks like: with `source` set, entries of both editions from that book are listed, each tagged, plus a note when the book's edition contradicts `rules_edition`. Nothing is hidden as a "twin".
 Source: CLAUDE.md, Invariants, "`source` wins over `rules_edition`".
 
+### A `source` search of a book the account doesn't own says so
+Looks like: every `source` search (not `homebrew`) of a book the logged-in account's library doesn't list starts with `> Note: this account doesn't own <book>, so D&D Beyond shows only its free entries — this list is not the whole book.`, even when nothing matched. The free Basic Rules books (`basic-rules-2014`, `br-2024`) never get it. Logged out, or when the library can't be read, there is no note (it never blocks or misleads).
+Source: tool-notes.md, "Unowned-book note (F17)" (2026-11-11 remediation).
+
 ### `source: "homebrew"` is reserved
 Looks like: `source: "homebrew"` lists only homebrew entries, each tagged `[homebrew]`, and needs login.
 Source: CLAUDE.md, Invariants; tool-notes C1 (owner ruling 2026-11-10).

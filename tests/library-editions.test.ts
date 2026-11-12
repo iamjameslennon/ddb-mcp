@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { buildSourceIndex } from "../src/edition.js";
 import { SNAPSHOT_CATEGORIES, SNAPSHOT_SOURCES } from "../src/source-snapshot.js";
+import { resolveSource } from "../src/source-filter.js";
 import { INDEX } from "./fixtures/character-edition-helpers.js";
 import { buildFixture } from "./fixtures/library-rsc.js";
 
@@ -26,7 +27,7 @@ vi.mock("../src/session-fetch.js", () => ({
 }));
 vi.mock("../src/game-config.js", () => ({ getSourceIndex: mocks.getSourceIndex }));
 
-import { librarySourceId, libraryBookInfo, tagLibraryBooks, listLibrary, readBook, clearLibraryCache } from "../src/tools/library.js";
+import { isFreeBookSlug, unownedSourceNote, librarySourceId, libraryBookInfo, tagLibraryBooks, listLibrary, readBook, clearLibraryCache } from "../src/tools/library.js";
 
 describe("librarySourceId", () => {
   it("joins by the slug's last segment", () => {
@@ -342,5 +343,55 @@ describe("libraryBookInfo: Critical Role books (B12)", () => {
   it("Frozen Sick is 2014, TCSR stays third-party", () => {
     expect(libraryBookInfo({ slug: "sources/dnd/wa", title: "Frozen Sick" }, idx).ruleset).toBe("2014");
     expect(libraryBookInfo({ slug: "sources/dnd/tcsr", title: "Tal'Dorei Campaign Setting Reborn" }, idx).ruleset).toBe("third-party");
+  });
+});
+
+describe("unownedSourceNote (F17)", () => {
+  const NOTE = (book: string) => `> Note: this account doesn't own ${book}, so D&D Beyond shows only its free entries — this list is not the whole book.`;
+  const note = (q: string) => unownedSourceNote(resolveSource(INDEX, q)!, INDEX);
+
+  beforeEach(() => {
+    mocks.sessionFetch.mockReset();
+    mocks.hasValidSession.mockReturnValue(true);
+    mocks.getSourceIndex.mockReset().mockImplementation(async () => INDEX);
+    mocks.hooks.forEach(h => h());
+  });
+
+  it("isFreeBookSlug matches the last slug segment", () => {
+    expect(isFreeBookSlug("basic-rules-2014")).toBe(true);
+    expect(isFreeBookSlug("sources/dnd/br-2024")).toBe(true);
+    expect(isFreeBookSlug("dnd/phb-2024")).toBe(false);
+  });
+  it("an unowned book gets the note", async () => {
+    route([PHB]);
+    expect(await note("xgte")).toBe(NOTE("Xanathar's Guide to Everything"));
+  });
+  it("an owned book gets none", async () => {
+    route([PHB]);
+    expect(await note("phb-2024")).toBeNull();
+  });
+  it("a free book gets none, without fetching the library", async () => {
+    route([PHB]);
+    expect(await note("br-2024")).toBeNull();
+    expect(await note("basic-rules-2014")).toBeNull();
+    expect(libCalls()).toHaveLength(0);
+  });
+  it("a failed library fetch gives none", async () => {
+    route([], 500);
+    expect(await note("xgte")).toBeNull();
+  });
+  it("an empty library parse gives none", async () => {
+    route([]);
+    expect(await note("xgte")).toBeNull();
+  });
+  it("logged out gives none, without fetching", async () => {
+    mocks.hasValidSession.mockReturnValue(false);
+    route([PHB]);
+    expect(await note("xgte")).toBeNull();
+    expect(libCalls()).toHaveLength(0);
+  });
+  it("a session change propagates", async () => {
+    mocks.sessionFetch.mockImplementation(async () => { mocks.generation.n++; return new Response(buildFixture([PHB]), { status: 200 }); });
+    await expect(note("xgte")).rejects.toThrow("Session changed");
   });
 });

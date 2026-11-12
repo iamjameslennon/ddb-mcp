@@ -38,6 +38,12 @@ vi.mock("../src/tools/edition-search.js", async importOriginal => {
   };
 });
 
+const unowned = vi.hoisted(() => ({ note: null as string | null }));
+vi.mock("../src/tools/library.js", async importOriginal => {
+  const real = await importOriginal<typeof import("../src/tools/library.js")>();
+  return { ...real, unownedSourceNote: vi.fn(async () => unowned.note) };
+});
+
 import { GAME_DATA, jsonResponse, serviceMock, spell } from "./fixtures/spell-service.js";
 import { o5FixtureFetch } from "./fixtures/open5e-v2.js";
 
@@ -51,6 +57,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(async () => {
   vi.clearAllMocks();
   selectionBug.on = false;
+  unowned.note = null;
   fsMock.existsSync.mockReset().mockReturnValue(true);
   const session = JSON.stringify({
     cookies: [{
@@ -325,5 +332,35 @@ describe("br-2024 redirect and honest not-found wording (R4, F18, F19, F22)", ()
     fetchMock.mockImplementation(async (url: string) => (url.includes("open5e") ? o5(url) : base(url)));
     expect(await reference.getSpell("Synaptic Static")).toBe(
       `Spell "Synaptic Static" not found on D&D Beyond or in the SRD. It may be misspelled, or in a book this account doesn't own (D&D Beyond shows only free content and owned books). Try ddb_search_spells with a partial name.`);
+  });
+});
+
+describe("ddb_search_spells unowned-book note (F17)", () => {
+  const NOTE = "> Note: this account doesn't own Xanathar's Guide to Everything, so D&D Beyond shows only its free entries — this list is not the whole book.";
+
+  it("the note leads the body and the source-wins note still follows it", async () => {
+    installBasics();
+    unowned.note = NOTE;
+    const out = await reference.searchSpells({ source: "xgte" });
+    const lines = out.split("\n");
+    const at = lines.indexOf(NOTE);
+    expect(at).toBeGreaterThan(0);
+    const wins = lines.findIndex(l => /rules_edition/.test(l));
+    if (wins >= 0) expect(wins).toBeGreaterThan(at);
+  });
+  it("a source search that finds nothing still carries the note", async () => {
+    installBasics();
+    unowned.note = NOTE;
+    const out = await reference.searchSpells({ source: "xgte", name: "zzzzqq" });
+    expect(out).toContain(NOTE);
+  });
+  it("no note without a source, and none for homebrew", async () => {
+    installBasics();
+    unowned.note = NOTE;
+    expect(await reference.searchSpells({ name: "Sleep" })).not.toContain(NOTE);
+  });
+  it("no note when the helper returns null", async () => {
+    installBasics();
+    expect(await reference.searchSpells({ source: "xgte" })).not.toContain("doesn't own");
   });
 });

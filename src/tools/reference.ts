@@ -26,6 +26,7 @@ import {
 } from "../edition.js";
 import { MASTERY_NAMES, withoutMasteryParagraph } from "./weapon-mastery.js";
 import { peekSourceIndex, getSourceIndex } from "../game-config.js";
+import { unownedSourceNote } from "./library.js";
 import { resolveSource, basicRules2024Reply, unknownSourceError, withSourceCaveat, isHomebrewSource, GENERIC_SOURCE_HINT, type ResolvedSource } from "../source-filter.js";
 import {
   paginateResults, renderSection, plainSection, noMatchSection, withSourceCaveatSection, selectCatalog, lookupCatalog, lookupCatalogAdapter,
@@ -106,6 +107,21 @@ async function resolveSourceParam(source: string | undefined, kind: HomebrewKind
   if (isHomebrewSource(source)) return hasValidSession() ? "homebrew" : { reply: homebrewLoginRequired(kind.kind) };
   const index = await getSourceIndex();
   return resolveSource(index, source) ?? { reply: unknownSourceError(index, source, GENERIC_SOURCE_HINT) };
+}
+
+/**
+ * F17: puts the "account doesn't own this book" note first in a `source`
+ * search's body, whether or not it found anything. No `source`, homebrew, an
+ * unknown source and the br-2024 redirect (a free book) get none. Called with
+ * the user's raw `source`, so it never affects the no-source path.
+ */
+async function withUnownedNote(section: SearchSection, source: string | undefined): Promise<SearchSection> {
+  if (!source || isHomebrewSource(source)) return section;
+  const index = await getSourceIndex();
+  const resolved = resolveSource(index, source);
+  if (!resolved) return section;
+  const note = await unownedSourceNote(resolved, index);
+  return note ? { ...section, body: `${note}\n${section.body}` } : section;
 }
 
 /** The R4 redirect for a resolved `br-2024` source, or undefined. For non-item kinds only. */
@@ -476,6 +492,10 @@ export async function searchSpells(params: SpellSearchParams): Promise<string> {
 }
 
 export async function searchSpellsSection(params: SpellSearchParams): Promise<SearchSection> {
+  return withUnownedNote(await searchSpellsCore(params), params.source);
+}
+
+async function searchSpellsCore(params: SpellSearchParams): Promise<SearchSection> {
   const source = await resolveSourceParam(params.source, SPELL_KIND);
   if (isSourceReply(source)) return plainSection(source.reply);
   const redirect = await basicRulesRedirect(source, "spells");
@@ -829,6 +849,13 @@ interface OptionSearchParams {
  * messages; `notFound` is the no-match text when Open5e fails.
  */
 async function searchCatalogList<T>(
+  params: Parameters<typeof searchCatalogListCore<T>>[0],
+  spec: Parameters<typeof searchCatalogListCore<T>>[1],
+): Promise<SearchSection> {
+  return withUnownedNote(await searchCatalogListCore<T>(params, spec), params.source);
+}
+
+async function searchCatalogListCore<T>(
   params: { source?: string; rulesEdition?: RulesEdition; bookNotes?: boolean },
   spec: {
     load: () => Promise<T[]>;
@@ -1295,6 +1322,13 @@ interface OwnedSearchParams {
  * note is the first line under the header; a no-match reply is plain text.
  */
 async function searchOwnedEntries<T>(
+  params: Parameters<typeof searchOwnedEntriesCore<T>>[0],
+  spec: Parameters<typeof searchOwnedEntriesCore<T>>[1],
+): Promise<SearchSection> {
+  return withUnownedNote(await searchOwnedEntriesCore<T>(params, spec), params.source);
+}
+
+async function searchOwnedEntriesCore<T>(
   params: OwnedSearchParams,
   spec: {
     load: () => Promise<CachedBuild<T>>;
