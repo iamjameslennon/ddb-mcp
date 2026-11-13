@@ -167,7 +167,7 @@ Not applicable: invalid, pagination, gate
 
 - normal: "What does Shield do?" → full text, correct casting time (Reaction, with trigger), `Rules:` line.
 - not-found: a made-up spell → "not found", near matches.
-- ambiguous: a partial name ("Cure") → choices or a stated pick.
+- ambiguous: a partial name ("Cure") → a stated pick, with an `Also matches: …. Ask for one by name.` line right after the Rules lines naming the other spells (wrapped as untrusted when any is homebrew).
 - locked: a spell from an unowned book → says it's locked.
 - edition: "Sleep, 2014 version" → 2014 text; default gives 2024 (which is concentration).
 - source: a spell from a named book → that book's version, note if editions differ.
@@ -243,7 +243,7 @@ Not applicable: invalid, ambiguous, locked, gate
 Scenarios: normal, not-found, edition, source, homebrew, pagination, logged-out
 Not applicable: invalid, ambiguous, locked, gate
 
-- normal: "Feats that need Strength 13" (`prerequisite`) → filtered list, tagged.
+- normal: "Feats that need Strength 13" (`prerequisite`) → filtered list, tagged ("Str or Dex 13+" counts; identical rows such as five Ability Score Improvements merge to one ending ` ×5`).
 - not-found: a nonsense feat → "none found".
 - edition: "Great Weapon Master, 2014" → 2014 feat.
 - source: feats from one book.

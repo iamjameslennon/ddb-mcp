@@ -30,8 +30,9 @@
 import {
   classifyEdition, classifyForEdition, editionSourceId, editionSourceIdFor, editionTag, isDualEdition, isEdition, groupAndSelect, lookupByName, definitionTiebreak,
   rulesLine, renameLine, sourceNote, lookupSourceNote, searchHeader, bookChoiceNote, alsoInLine, HOMEBREW_INFO, HOMEBREW_SEARCH_HEADER,
-  type EditionInfo, type EditionMarkers, type RulesEdition, type Ruleset, type SourceIndex, type TiebreakFields, type TwinNamer,
+  type EditionInfo, type EditionMarkers, type LookupResult, type RulesEdition, type Ruleset, type SourceIndex, type TiebreakFields, type TwinNamer,
 } from "../edition.js";
+import { wrapUntrusted } from "../utils.js";
 import { inSources, sourceLabel, withSourceCaveat, type ResolvedSource } from "../source-filter.js";
 
 /** A count as printed in search totals: "1,601". */
@@ -537,6 +538,18 @@ function selectNested<T>(
 // ── Lookup ────────────────────────────────────────────────────────────────────
 
 /**
+ * The "Also matches" line a partial-name get prints after its Rules lines, or null when the
+ * name matched nothing else. Wrapped whole when any listed name is homebrew.
+ */
+export function alsoMatchesLine(found: { alsoMatches?: LookupResult<unknown>["alsoMatches"]; alsoMatchesMore?: number }): string | null {
+  const list = found.alsoMatches;
+  if (!list?.length) return null;
+  const more = found.alsoMatchesMore ? `, and ${found.alsoMatchesMore} more` : "";
+  const line = `Also matches: ${list.map(m => m.name).join(", ")}${more}. Ask for one by name.`;
+  return list.some(m => m.homebrew) ? wrapUntrusted(line) : line;
+}
+
+/**
  * A single lookup (get_*): lookupByName over the catalog, or over the book's
  * entries when `source` is given. `rulesLines` go directly under the title, one
  * line per element: the rules line (and, without `source`, its reason), a
@@ -550,13 +563,13 @@ export function lookupCatalog<T>(
   adapter: LookupAdapter<T>,
   index: SourceIndex,
   source?: ResolvedSource | "homebrew",
-): { entry: T; info: EditionInfo; rulesLines: string[] } | null {
+): { entry: T; info: EditionInfo; rulesLines: string[]; alsoMatches?: LookupResult<T>["alsoMatches"]; alsoMatchesMore?: number } | null {
   if (source === "homebrew") {
     // Homebrew entries only; same-named ones resolve by the adapter's tiebreak.
     const pool = all.filter(t => adapter.markers(t).isHomebrew === true);
     const found = lookupByName(pool, query, requested, { name: adapter.name, info: () => HOMEBREW_INFO, tiebreak: adapter.tiebreak, twinName: adapter.twinName });
     if (!found) return null;
-    return { entry: found.entry, info: HOMEBREW_INFO, rulesLines: rulesLine(HOMEBREW_INFO).split("\n") };
+    return { entry: found.entry, info: HOMEBREW_INFO, rulesLines: rulesLine(HOMEBREW_INFO).split("\n"), alsoMatches: found.alsoMatches, alsoMatchesMore: found.alsoMatchesMore };
   }
   const classify = classifier(all, lookupCatalogAdapter(adapter), index, requested, source);
   const info = classify.info;
@@ -574,5 +587,5 @@ export function lookupCatalog<T>(
     const choice = bookChoice(found.entry, found.alternatives, classify.sourceId, index);
     if (choice) rulesLines.push(alsoInLine(choice.others));
   }
-  return { entry: found.entry, info: shown, rulesLines };
+  return { entry: found.entry, info: shown, rulesLines, alsoMatches: found.alsoMatches, alsoMatchesMore: found.alsoMatchesMore };
 }

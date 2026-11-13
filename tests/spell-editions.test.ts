@@ -100,6 +100,35 @@ function installBasics(extra: unknown[] = []) {
   }));
 }
 
+describe("ddb_get_spell partial name names the other matches (F24)", () => {
+  const cure = () => [spell("Cure Wounds", 1, { id: 501, ...NEW }), spell("Mass Cure Wounds", 5, { id: 502, ...NEW })];
+
+  it("lists the other matching spells right after the Rules lines", async () => {
+    installBasics(cure());
+    const lines = (await reference.getSpell("Cure")).split("\n");
+    expect(lines[1]).toBe("Rules: 2024 · Player's Handbook (2024)");
+    expect(lines[2]).toBe("Also matches: Mass Cure Wounds. Ask for one by name.");
+  });
+
+  it("an exact name prints no such line", async () => {
+    installBasics(cure());
+    expect(await reference.getSpell("Cure Wounds")).not.toContain("Also matches");
+  });
+
+  it("wraps the whole line when a listed spell is homebrew; official names stay plain", async () => {
+    installBasics([spell("Cure Wounds", 1, { id: 501, ...NEW }), spell("Cure Hex", 1, { id: 503, isHomebrew: true })]);
+    const out = await reference.getSpell("Cure Wounds".slice(0, 4));
+    expect(out).toContain("<untrusted_dndbeyond_content>\nAlso matches: Cure Hex. Ask for one by name.\n</untrusted_dndbeyond_content>");
+  });
+
+  it("official names stay plain", async () => {
+    installBasics(cure());
+    const plain = await reference.getSpell("Cure");
+    expect(plain).toContain("\nAlso matches: Mass Cure Wounds. Ask for one by name.\n");
+    expect(plain).not.toContain("untrusted_dndbeyond_content");
+  });
+});
+
 describe("ddb_get_spell rules_edition", () => {
   it("Sleep: 2024 by default, 2014 on request, each with its rules line", async () => {
     installBasics();

@@ -11,6 +11,7 @@
 
 import { stripHtml } from "./utils.js";
 import { EDITION_RENAMES, type RenameKind } from "./edition-renames.js";
+import { matchesAtWordStart } from "./name-match.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -424,6 +425,13 @@ export interface LookupOptions<T> {
 export interface LookupResult<T> extends Selection<T> {
   /** Set when the matched name differs from the returned one within the twin group: print renameLine(). */
   renamed?: { name2014: string; name2024: string };
+  /**
+   * Set only when the partial-match path ran: up to 5 other twin groups whose name matches the
+   * query at a word start, one entry per group (its tiebreak-first entry), A–Z.
+   */
+  alsoMatches?: Array<{ name: string; homebrew: boolean }>;
+  /** How many matching groups the 5 listed in `alsoMatches` leave out. */
+  alsoMatchesMore?: number;
 }
 
 /**
@@ -444,6 +452,7 @@ export function lookupByName<T>(
 
   let key: string;
   let matched: T | undefined;
+  let also: Pick<LookupResult<T>, "alsoMatches" | "alsoMatchesMore"> = {};
   if (all.some(c => namer(opts.name(c)) === queryKey)) {
     key = queryKey;
     matched = all.find(c => normalizeName(opts.name(c)) === normalizedQuery);
@@ -453,11 +462,13 @@ export function lookupByName<T>(
       : all.find(c => normalizeName(opts.name(c)).includes(normalizedQuery));
     if (!matched) return null;
     key = namer(opts.name(matched));
+    also = otherMatches(all, query, key, opts);
   }
 
   const group = all.filter(c => namer(opts.name(c)) === key);
-  const picked = selectByEdition(group, requested, opts.info, opts.tiebreak, opts.available);
-  if (!picked) return null;
+  const found = selectByEdition(group, requested, opts.info, opts.tiebreak, opts.available);
+  if (!found) return null;
+  const picked: LookupResult<T> = { ...found, ...also };
 
   // No entry carries the typed name: use the table's spelling, else the query cleaned up but not lowercased.
   const typedName = namer.spell?.(normalizedQuery) ?? query.replace(/[‘’]/g, "'").replace(/\s+/g, " ").trim();
@@ -477,6 +488,26 @@ export function lookupByName<T>(
   const returnedIs2024 = byEdition ? returnedEdition === "2024" : returnedSide !== undefined ? returnedSide === "2024" : normalizeName(returnedName) === key;
   const [name2024, name2014] = returnedIs2024 ? [returnedName, matchedName] : [matchedName, returnedName];
   return { ...picked, renamed: { name2014, name2024 } };
+}
+
+/** The other twin groups a partial query matches at a word start; see LookupResult.alsoMatches. */
+function otherMatches<T>(all: readonly T[], query: string, chosenKey: string, opts: LookupOptions<T>): Pick<LookupResult<T>, "alsoMatches" | "alsoMatchesMore"> {
+  const groups = new Map<string, T[]>();
+  for (const c of all) {
+    const k = opts.twinName(opts.name(c));
+    if (k === chosenKey) continue;
+    const g = groups.get(k);
+    if (g) g.push(c); else groups.set(k, [c]);
+  }
+  const names: Array<{ name: string; homebrew: boolean }> = [];
+  for (const g of groups.values()) {
+    if (!g.some(c => matchesAtWordStart(opts.name(c), query))) continue;
+    const first = [...g].sort(opts.tiebreak)[0];
+    names.push({ name: opts.name(first), homebrew: opts.info(first).ruleset === "homebrew" });
+  }
+  if (!names.length) return {};
+  names.sort((a, b) => a.name.localeCompare(b.name));
+  return { alsoMatches: names.slice(0, 5), ...(names.length > 5 ? { alsoMatchesMore: names.length - 5 } : {}) };
 }
 
 export interface SearchOptions<T> {

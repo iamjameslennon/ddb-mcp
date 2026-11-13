@@ -24,6 +24,7 @@ import {
 import { paginateResults, renderSection, narrowingHint, MONSTER_SEARCH_LIMIT, formatCount, type SearchSection } from "./tools/edition-search.js";
 import { EDITION_RENAMES, OPEN5E_ARMOUR_RENAMES, OPEN5E_EQUIPMENT_RENAMES, type RenameKind } from "./edition-renames.js";
 import { nameFold, matchesAtWordStart } from "./name-match.js";
+import { prerequisiteMatches } from "./tools/prerequisite.js";
 
 // 1-hour cache — Open5e data doesn't change often
 const open5eCache = new TtlCache<unknown>(60 * 60_000, 100);
@@ -1386,9 +1387,9 @@ export async function o5SearchFeats(params: O5FeatSearchParams, origin: "unavail
 
 export async function o5SearchFeatsSection(params: O5FeatSearchParams, origin: "unavailable" | "not-found"): Promise<SearchSection> {
   const requested = params.rulesEdition ?? "2024";
-  const wanted = params.prerequisite?.toLowerCase();
+  const wanted = params.prerequisite?.trim();
   // A feat without a prerequisite never matches a prerequisite query.
-  const passes = wanted ? (e: O5Entry<O5Feat>): boolean => prerequisite(e.record).toLowerCase().includes(wanted) : undefined;
+  const passes = wanted ? (e: O5Entry<O5Feat>): boolean => prerequisiteMatches(prerequisite(e.record), wanted) : undefined;
   return o5OptionReply(requested, origin, await o5Select<O5Feat>(["feats"], requested, { name: params.name, passes }), {
     single: true,
     name: params.name,

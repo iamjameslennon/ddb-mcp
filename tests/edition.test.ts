@@ -465,6 +465,30 @@ describe("selectByEdition (spec: selection table)", () => {
 
 // ── Single lookups (spec: gather algorithm) ───────────────────────────────────
 
+describe("lookupByName alsoMatches", () => {
+  const twin = createTwinNamer([]);
+  const opts = { name: (c: E) => c.name, info: infoOf, tiebreak: definitionTiebreak, twinName: twin };
+  const L = [e(1, "Cure Wounds", "2024"), e(2, "Mass Cure Wounds", "2024"), e(3, "Mass Cure Wounds", "2014"), e(4, "Secure Door", "2024"),
+    e(5, "Cure Hex", "homebrew", { isHomebrew: true })];
+
+  it("names the other word-start matches, A-Z, one per twin group, with the homebrew flag", () => {
+    const hit = lookupByName(L, "cure", "2024", opts);
+    expect(hit?.entry.name).toBe("Cure Wounds");
+    expect(hit?.alsoMatches).toEqual([{ name: "Cure Hex", homebrew: true }, { name: "Mass Cure Wounds", homebrew: false }]);
+  });
+
+  it("an exact name sets none", () => {
+    expect(lookupByName(L, "Cure Wounds", "2024", opts)?.alsoMatches).toBeUndefined();
+  });
+
+  it("caps at 5 and counts the rest", () => {
+    const many = ["A", "B", "C", "D", "E", "F", "G"].map((n, i) => e(10 + i, `Zap ${n}`, "2024"));
+    const hit = lookupByName(many, "zap", "2024", opts);
+    expect(hit?.alsoMatches).toHaveLength(5);
+    expect(hit?.alsoMatchesMore).toBe(1);
+  });
+});
+
 describe("lookupByName", () => {
   const twin = createTwinNamer([["Acid Arrow", "Melf's Acid Arrow"]]);
   const SPELLS = [

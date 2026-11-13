@@ -29,9 +29,10 @@ import { peekSourceIndex, getSourceIndex } from "../game-config.js";
 import { unownedSourceNote } from "./library.js";
 import { resolveSource, basicRules2024Reply, unknownSourceError, withSourceCaveat, isHomebrewSource, GENERIC_SOURCE_HINT, type ResolvedSource } from "../source-filter.js";
 import {
-  paginateResults, renderSection, plainSection, noMatchSection, withSourceCaveatSection, selectCatalog, lookupCatalog, lookupCatalogAdapter,
+  paginateResults, renderSection, plainSection, noMatchSection, withSourceCaveatSection, selectCatalog, lookupCatalog, alsoMatchesLine, lookupCatalogAdapter,
   type CatalogAdapter, type CatalogHit, type LookupAdapter, type SearchSection,
 } from "./edition-search.js";
+import { prerequisiteMatches } from "./prerequisite.js";
 import { createSpellStore, addSpells, spellList, type DdbSpell, type SpellStore } from "./spell-store.js";
 import { castingTimeText } from "./casting-time.js";
 import {
@@ -598,7 +599,8 @@ export async function getSpell(spellName: string, rulesEdition: RulesEdition = "
     return `Spell "${spellName}" not found on D&D Beyond or in the SRD. It may be misspelled, or in a book this account doesn't own (D&D Beyond shows only free content and owned books). Try ddb_search_spells with a partial name.`;
   }
 
-  return formatSpell(found.entry, found.rulesLines);
+  const also = alsoMatchesLine(found);
+  return formatSpell(found.entry, also ? [...found.rulesLines, also] : found.rulesLines);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -820,7 +822,8 @@ export async function getItem(itemName: string, rulesEdition: RulesEdition = "20
     return `Item "${itemName}" not found on D&D Beyond or in the SRD. It may be misspelled, or in a book this account doesn't own (D&D Beyond shows only free content and owned books). Try ddb_search_equipment with a partial name.`;
   }
 
-  return formatItem(found.entry, found.rulesLines, found.info.ruleset);
+  const also = alsoMatchesLine(found);
+  return formatItem(found.entry, also ? [...found.rulesLines, also] : found.rulesLines, found.info.ruleset);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -931,6 +934,8 @@ async function searchOptionList<T>(
     usable?: (t: T) => boolean;
     passes?: (t: T) => boolean;
     format: (hit: { entry: T; label: string }) => string;
+    /** Hits with an equal key (and homebrew flag) list once with " ×N". Omit for no collapsing. */
+    rowKey?: (hit: { entry: T; label: string }) => string;
     /** The text for "no match" (Open5e fallback first). */
     notFound: string;
     fallback: (kind: "not-found" | "unavailable") => Promise<SearchSection>;
@@ -946,17 +951,35 @@ async function searchOptionList<T>(
     homebrew: spec.homebrew,
     adapter: { ...spec.adapter, passes: spec.passes },
     // Homebrew lines (tag and book note included) can be another player's text.
-    render: hits => paginateResults(
-      spec.heading,
-      hits,
-      hit => wrapIfHomebrew(spec.format(hit), spec.adapter.markers(hit.entry).isHomebrew),
-      params.limit ?? spec.defaultLimit,
-      params.offset ?? 0,
-    ),
+    render: hits => {
+      const rows = collapseRows(hits, spec.rowKey, hit => spec.adapter.markers(hit.entry).isHomebrew === true);
+      return paginateResults(
+        spec.heading,
+        rows,
+        ({ hit, count }) => wrapIfHomebrew(`${spec.format(hit)}${count > 1 ? ` ×${count}` : ""}`, spec.adapter.markers(hit.entry).isHomebrew),
+        params.limit ?? spec.defaultLimit,
+        params.offset ?? 0,
+      );
+    },
     notFound: spec.notFound,
     fallback: spec.fallback,
     unavailable: `${spec.plural[0].toUpperCase()}${spec.plural.slice(1)} unavailable — D&D Beyond and Open5e both failed.`,
   });
+}
+
+/** Merge hits whose key (and homebrew flag) are identical into one row with a count; no key, no merging. */
+function collapseRows<H>(hits: H[], key: ((h: H) => string) | undefined, homebrew: (h: H) => boolean): Array<{ hit: H; count: number }> {
+  const rows: Array<{ hit: H; count: number }> = [];
+  const seen = new Map<string, { hit: H; count: number }>();
+  for (const hit of hits) {
+    const k = key ? `${homebrew(hit)}\u0000${key(hit)}` : undefined;
+    const row = k === undefined ? undefined : seen.get(k);
+    if (row) { row.count++; continue; }
+    const fresh = { hit, count: 1 };
+    rows.push(fresh);
+    if (k !== undefined) seen.set(k, fresh);
+  }
+  return rows;
 }
 
 /** `nameMatches` for an adapter: the display name contains the query; none without a query. */
@@ -966,7 +989,9 @@ function nameFilter<T>(name: string | undefined, displayName: (t: T) => string):
 }
 
 function clip(text: string | null | undefined, max: number): string {
-  const desc = stripHtml(text || "").slice(0, max);
+  // Block ends and <br> separate words; stripping tags alone glues "Traits</h4><p>Darkvision" together.
+  const spaced = (text || "").replace(/<\/(p|h[1-6]|li|div|td|th|tr)>|<br\s*\/?>/gi, " ");
+  const desc = stripHtml(spaced).replace(/\s+/g, " ").trim().slice(0, max);
   return desc ? `${desc}${desc.length >= max ? "..." : ""}` : "";
 }
 
@@ -1161,7 +1186,7 @@ export async function searchFeats(params: FeatSearchParams = {}): Promise<string
 }
 
 export async function searchFeatsSection(params: FeatSearchParams = {}): Promise<SearchSection> {
-  const prereqQuery = params.prerequisite?.toLowerCase();
+  const prereqQuery = params.prerequisite?.trim();
   return searchOptionList<DdbFeat>(params, {
     cacheKey: "game-data:feats",
     path: "feats",
@@ -1170,7 +1195,8 @@ export async function searchFeatsSection(params: FeatSearchParams = {}): Promise
     heading: "Feat",
     defaultLimit: 30,
     adapter: { ...FEAT_ADAPTER, nameMatches: nameFilter(params.name, f => f.name) },
-    passes: prereqQuery ? f => !!f.prerequisite?.toLowerCase().includes(prereqQuery) : undefined,
+    passes: prereqQuery ? f => prerequisiteMatches(f.prerequisite, prereqQuery) : undefined,
+    rowKey: ({ entry, label }) => `${entry.name}\u0000${label}`,
     format: ({ entry: feat, label }) => {
       const prereq = feat.prerequisite ? ` *(Requires: ${feat.prerequisite})*` : "";
       const desc = clip(describeTemplates(feat.snippet || feat.description || ""), 100);

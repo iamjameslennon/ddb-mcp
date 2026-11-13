@@ -220,26 +220,56 @@ describe("a filter only the other edition's twin passes (Grappler)", () => {
   const HEAVY = named(12, "Heavy Armor Master", [145], { prerequisite: "Level 4+; Strength 13+", snippet: "" });
   const open5eCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).includes("open5e"));
 
-  it("alone: header, a no-match body and the footer counting it, with no Open5e request", async () => {
+  it("alone: the 2024 Grappler is listed (Strength or Dexterity 13+), and its 2014 twin still counts as hidden", async () => {
     install({ feats: [GRAPPLER_2014, GRAPPLER_2024] });
-    expect(await reference.searchFeats({ prerequisite: "strength 13" })).toBe(
-      `${searchHeader({ requested: "2024" })}\nNo feats found matching the criteria.\n${HIDDEN_2014(1)}`,
-    );
+    const text = await reference.searchFeats({ prerequisite: "strength 13" });
+    expect(entryLines(text)).toEqual(["- **Grappler** [2024] *(Requires: Level 4+; Strength or Dexterity 13+)* — Grappler description"]);
+    expect(text.split("\n").at(-1)).toBe(HIDDEN_2014(1));
     expect(open5eCalls()).toHaveLength(0);
   });
 
-  it("beside another match: that feat listed, the Grappler counted", async () => {
+  it("beside another match: both listed, the 2014 Grappler counted", async () => {
     install({ feats: [GRAPPLER_2014, GRAPPLER_2024, HEAVY] });
     const text = await reference.searchFeats({ prerequisite: "strength 13" });
-    expect(entryLines(text)).toEqual(["- **Heavy Armor Master** [2024] *(Requires: Level 4+; Strength 13+)* — Heavy Armor Master description"]);
+    expect(entryLines(text)).toEqual([
+      "- **Grappler** [2024] *(Requires: Level 4+; Strength or Dexterity 13+)* — Grappler description",
+      "- **Heavy Armor Master** [2024] *(Requires: Level 4+; Strength 13+)* — Heavy Armor Master description",
+    ]);
     expect(text.split("\n").at(-1)).toBe(HIDDEN_2014(1));
   });
 
-  it("rules_edition 2014 lists the 2014 Grappler, no footer", async () => {
+  it("abbreviated prerequisites match a full-name query", async () => {
+    install({ feats: [named(30, "Quick", [145], { prerequisite: "Str or Dex 13+", snippet: "" })] });
+    expect(entryLines(await reference.searchFeats({ prerequisite: "Strength 13" }))).toHaveLength(1);
+  });
+
+  it("five identical rows list once with a count, and different names stay apart", async () => {
+    const asi = [1, 2, 3, 4, 5].map(i => named(40 + i, "Ability Score Improvement", [145], { prerequisite: null, snippet: "" }));
+    install({ feats: [...asi, named(60, "Magic Initiate (Cleric)", [145], { snippet: "" }), named(61, "Magic Initiate (Wizard)", [145], { snippet: "" })] });
+    const text = await reference.searchFeats({ source: "phb-2024" });
+    const lines = entryLines(text);
+    expect(lines.filter(l => l.includes("Ability Score Improvement"))).toEqual(["- **Ability Score Improvement** [2024] — Ability Score Improvement description ×5"]);
+    expect(lines.filter(l => l.includes("Magic Initiate"))).toHaveLength(2);
+    expect(text).toContain("(3 found)");
+  });
+
+  it("clip separates block ends: headings, paragraphs and breaks", async () => {
+    install({ backgrounds: [
+      named(70, "Soldier", [145], { description: "<p>Ability Scores: Intelligence, Wisdom, Charisma</p><p>Feat: Magic Initiate (Cleric)</p>" }),
+      named(71, "Sage", [145], { description: "<h4>Dwarf Traits</h4><p>Darkvision</p>" }),
+      named(72, "Monk", [145], { description: "Hit Die: d10<br>Primary Ability" }),
+    ] });
+    const text = await reference.searchBackgrounds({ source: "phb-2024" });
+    expect(text).toContain("— Ability Scores: Intelligence, Wisdom, Charisma Feat: Magic Initiate (Cleric)");
+    expect(text).toContain("— Dwarf Traits Darkvision");
+    expect(text).toContain("— Hit Die: d10 Primary Ability");
+  });
+
+  it("rules_edition 2014 lists the 2014 Grappler; the 2024 twin now passes too, so it is counted", async () => {
     install({ feats: [GRAPPLER_2014, GRAPPLER_2024] });
     const text = await reference.searchFeats({ prerequisite: "strength 13", rulesEdition: "2014" });
     expect(entryLines(text)).toEqual(["- **Grappler** [2014] *(Requires: Strength 13 or higher)* — Grappler description"]);
-    expect(text.split("\n").some(l => l.includes("hidden"))).toBe(false);
+    expect(text.split("\n").at(-1)).toBe("1 2024 version hidden — omit rules_edition to show it.");
   });
 });
 
@@ -328,6 +358,10 @@ describe("source and failures", () => {
     const text = await reference.searchFeats({ prerequisite: "strength" });
     expect(text).toContain("Grappler");
     expect(text).not.toContain("Alert");
+    // F21: the same word-based matcher as the D&D Beyond path.
+    const f21 = await reference.searchFeats({ prerequisite: "strength 13" });
+    expect(f21).toContain("Grappler");
+    expect(f21).not.toContain("Alert");
     expect(await reference.searchFeats({ limit: 1 })).toContain("showing 1–1");
     expect(await reference.searchFeats({ offset: 999 })).toContain("offset 999 is past the end");
   });
