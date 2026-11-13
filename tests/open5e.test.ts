@@ -141,8 +141,12 @@ describe("Open5e labels", () => {
     expect(out).not.toContain("HalfCover");
   });
   it("search matches the cleaned text a get lands on (F15, F16)", async () => {
-    expect(await o5SearchRules("flame strike", "2014")).toContain("Found ");
-    expect(await o5SearchRules("flame strike", "2014")).not.toContain("no matching");
+    // Only the srd:flame-strike links (cleaned to "flame strike") match: three sections of one chapter.
+    // Damage Types' "_flame strike_" has underscores, so it is not a whole-word hit.
+    const f = (await o5SearchRules("flame strike", "2014")).split("\n");
+    expect(f[0]).toBe("Rules: sections from SRD 5.1 (2014).");
+    expect(f[1]).toBe('Found 1 rules chapter(s) matching "flame strike" (SRD only):');
+    expect(f[2]).toBe("• **Damage and Healing** [2014] (slug: `damage-and-healing`) — Hit Points, Damage Rolls, Critical Hits");
     const g = (await o5GetRule("Damage and Healing", "2014", 30000, "flame strike"))!;
     expect(g).not.toContain("not found in");
   });
