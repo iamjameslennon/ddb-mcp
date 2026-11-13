@@ -14,10 +14,10 @@
 import { stripHtml as stripHtmlFull, wrapIfHomebrew } from "../../utils.js";
 import { classifyEdition, CUSTOM_ITEM_RULES_LINE, editionTag, entrySourceIds, rulesLine, type EditionInfo, type EditionMarkers, type SourceIndex } from "../../edition.js";
 import { getSourceIndex, LOGGED_OUT_CHARACTER_INDEX_WAIT_MS } from "../../game-config.js";
-import { matchesLooseName } from "../../name-match.js";
+import { matchesLooseName, nameFold } from "../../name-match.js";
 import { fetchCharacter, withNotice } from "../character.js";
 import { computeCharacterEditions, type CharacterEditions } from "./editions.js";
-import { featureDefinition, isHomebrewClassFeature, isHomebrewEntry, records } from "./helpers.js";
+import { featureDefinition, isHomebrewClassFeature, isHomebrewEntry, isSubclassFeature, records } from "./helpers.js";
 import { resolveBackground } from "./features.js";
 import { chosenClassOptions } from "./actions.js";
 import type { CharData, ClassEntry } from "./types.js";
@@ -25,15 +25,6 @@ import { castingTimeText } from "../casting-time.js";
 import { withoutMasteryParagraph } from "../weapon-mastery.js";
 
 const matchesDefinitionQuery = matchesLooseName;
-
-/**
- * A feature listed in classes[].classFeatures whose definition.classId is the subclass's own
- * id is a subclass feature (F9; owner ruling 2026-11-12). It takes the subclass's book.
- */
-function isSubclassFeature(def: Record<string, unknown>, subDef: Record<string, unknown>): boolean {
-  const subId = Number(subDef.id);
-  return Number.isFinite(subId) && subId !== 0 && Number(def.classId) === subId;
-}
 
 function formatSpellResult(spell: Record<string, unknown>): string {
   const d = (spell.definition ?? spell) as Record<string, unknown>;
@@ -200,7 +191,8 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
       const requiredLevel = num(d.requiredLevel || 1);
       if (requiredLevel <= charLevel && name && matchesDefinitionQuery(name, query) && !seen.has(name)) {
         seen.add(name);
-        const sub = isSubclassFeature(d, subDef);
+        // A subclass feature (helpers.ts isSubclassFeature, F9) takes the subclass's book.
+        const sub = isSubclassFeature(cf, subDef);
         results.push({
           type: sub ? "Subclass Feature" : "Class Feature",
           name,
@@ -235,13 +227,23 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
   // The ruleset is the option's own source, else
   // the owning subclass's or class's.
   for (const [parentId, options] of chosen) {
-    let owner: { cls: Record<string, unknown>; parentName: string; viaSubclass: boolean } | null = null;
+    // `homebrew`: the parent feature, its class or (a subclass feature) its subclass is
+    // homebrew, as for the parent's own hit and the sheet line (I-1): feature-level flags
+    // don't appear live, so the owner carries the signal (carry-over (ah)).
+    let owner: { cls: Record<string, unknown>; parentName: string; viaSubclass: boolean; homebrew: boolean } | null = null;
+    const isParent = (f: unknown) => num(featureDefinition(f).id) === parentId;
     for (const cls of classEntries) {
-      const inClass = records(cls.classFeatures).map(featureDefinition).find(d => num(d.id) === parentId);
+      const inClass = records(cls.classFeatures).find(isParent);
       const subDef = obj(cls.subclassDefinition);
-      const inSub = arr<unknown>(subDef.classFeatures).map(featureDefinition).find(d => num(d.id) === parentId);
-      if (inClass || inSub) {
-        owner = { cls, parentName: str((inClass ?? inSub)?.name), viaSubclass: !inClass || isSubclassFeature(inClass, subDef) };
+      const inSub = arr<unknown>(subDef.classFeatures).find(isParent);
+      const parent = inClass ?? inSub;
+      if (parent) {
+        owner = {
+          cls,
+          parentName: str(featureDefinition(parent).name),
+          viaSubclass: !inClass || isSubclassFeature(inClass, subDef),
+          homebrew: isHomebrewClassFeature(parent, cls),
+        };
         break;
       }
     }
@@ -252,7 +254,12 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
       // multiclass sheet the class name may be wrong; the Rules line is unaffected, as it
       // comes from the option's own source (owner ruling 2026-11-12).
       const first = classEntries[0] ?? {};
-      owner = { cls: first, parentName: str(obj(obj(optional).definition).name) || str(obj(optional).name), viaSubclass: false };
+      owner = {
+        cls: first,
+        parentName: str(obj(obj(optional).definition).name) || str(obj(optional).name),
+        viaSubclass: false,
+        homebrew: isHomebrewEntry(optional, first),
+      };
     }
     const classDef = obj(owner.cls.definition);
     const subName = str(obj(owner.cls.subclassDefinition).name);
@@ -266,7 +273,7 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
         name: o.name,
         info: entrySourceIds(o.definition as EditionMarkers).length > 0 ? editions.info(o.definition) : fallback,
         text: `${head}\n\n${stripHtmlFull(str(o.definition.description || o.definition.snippet))}`,
-        untrusted: o.homebrew,
+        untrusted: o.homebrew || owner.homebrew,
       });
     }
   }
@@ -346,7 +353,19 @@ export function formatCharacterLookup(char: Record<string, unknown>, query: stri
   return formatDefinitionHits(searchDefinitions(char, query, editions, index), query);
 }
 
-function formatDefinitionHits(hits: DefinitionHit[], query: string): string {
+/**
+ * Hits whose folded name equals the folded query first ("bless" lists Bless before
+ * Eldritch Blast, which the loose rule also matches: carry-over (bv)); the rest, and the
+ * exact ones among themselves, keep their order.
+ */
+function exactFirst(hits: DefinitionHit[], query: string): DefinitionHit[] {
+  const q = nameFold(query);
+  const exact = (h: DefinitionHit) => q !== "" && nameFold(h.name) === q;
+  return [...hits.filter(exact), ...hits.filter(h => !exact(h))];
+}
+
+function formatDefinitionHits(found: DefinitionHit[], query: string): string {
+  const hits = exactFirst(found, query);
   if (hits.length === 0) {
     return `No definition found matching "${query}" on this character. Try a partial name like "hunter" for Hunter's Mark.`;
   }

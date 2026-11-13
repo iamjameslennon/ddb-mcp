@@ -47,6 +47,22 @@ describe("formatCharacterLookup", () => {
     expect(out).not.toContain("Fire Bolt");
   });
 
+  it("an exact name match comes first; the rest keep their order (exact-first, carry-over (bv))", () => {
+    const sp = (id: number, name: string) => ({ definition: { id, name, level: 1, school: "Evocation", sources: S(2) } });
+    const two = variant(FIGHTER_5, d => { d.spells = { race: [sp(1, "Eldritch Blast"), sp(2, "Bless")] }; }).data as Record<string, unknown>;
+    const out = formatCharacterLookup(two, "bless", INDEX);
+    expect(out.startsWith("[Spell]\nBless (Level 1 Evocation)\n")).toBe(true);
+    expect(out.indexOf("Eldritch Blast")).toBeGreaterThan(out.indexOf("Bless ("));
+    const five = variant(FIGHTER_5, d => { d.spells = { race: [
+      sp(1, "Eldritch Blast"), sp(2, "Blessed Strikes"), sp(3, "BLESS"), sp(4, "Blast Bless"), sp(5, "Bless’"),
+    ] }; }).data as Record<string, unknown>;
+    const list = formatCharacterLookup(five, "Bless", INDEX);
+    expect(list.startsWith('Found 5 matches for "Bless". Be more specific, or here are the matches:\n\n')).toBe(true);
+    expect(list.split("\n").slice(2).map(l => l.replace(/ \[2014\].*$/, ""))).toEqual([
+      "1. [Spell] BLESS", "2. [Spell] Bless’", "3. [Spell] Eldritch Blast", "4. [Spell] Blessed Strikes", "5. [Spell] Blast Bless",
+    ]);
+  });
+
   it("a minute-long spell prints its casting time in minutes", () => {
     const char = variant(FIGHTER_5, d => { d.spells = { race: [
       { definition: { id: 5, name: "Identify", level: 1, school: "Divination", sources: S(145),

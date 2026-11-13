@@ -63,12 +63,14 @@ export type CharacterNameMatch =
  * Match a name against a character list. Resolution order: exact match →
  * substring match → Levenshtein ≤3 on full name and individual words (e.g.
  * "Throin" matches "Thorin Ironforge"). One hit at a step is found; several
- * are ambiguous (never silently picked); no hit at any step is none.
+ * are ambiguous (never silently picked); no hit at any step is none. A name
+ * that is empty after trimming is none: it would be a substring of every name.
  */
 export function matchCharacterName(
   chars: ReadonlyArray<{ id: string; name: string }>,
   name: string,
 ): CharacterNameMatch {
+  if (name.trim() === "") return { kind: "none" };
   const lower = name.toLowerCase();
   const pick = (hits: Array<{ id: string; name: string }>): CharacterNameMatch | null =>
     hits.length === 1 ? { kind: "found", id: hits[0].id, name: hits[0].name }

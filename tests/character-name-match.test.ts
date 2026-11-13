@@ -34,6 +34,13 @@ describe("matchCharacterName", () => {
   it("returns none for no match", () => {
     expect(matchCharacterName(chars, "zzz")).toEqual({ kind: "none" });
   });
+  it("returns none for a name that is empty after trimming, not every multi-word name", () => {
+    for (const blank of [" ", "   ", "\t\n"]) expect(matchCharacterName(chars, blank)).toEqual({ kind: "none" });
+    expect(matchCharacterName([{ id: "1", name: "" }, { id: "2", name: " " }], " ")).toEqual({ kind: "none" });
+    expect(characterNameError(" ", { kind: "none" })).toBe(
+      `No character found matching " ". Try ddb_list_characters to see your characters.`
+    );
+  });
   it("reports several fuzzy matches as ambiguous", () => {
     const m = matchCharacterName([{ id: "1", name: "Bork" }, { id: "2", name: "Burk" }], "Berk");
     expect(m.kind).toBe("ambiguous");

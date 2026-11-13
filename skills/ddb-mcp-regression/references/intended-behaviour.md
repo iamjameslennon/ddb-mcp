@@ -133,7 +133,7 @@ Looks like: a name that exactly matches one creature is counted even when other 
 Source: the `ddb_rate_encounter` and `ddb_roll_treasure` descriptions ("exact, then partial").
 
 ### Chosen class options print on their parent feature line
-Looks like: `• Fighting Style (Fighter 1): Archery`; `ddb_character_lookup` resolves the option by name (`[Class Option]`, first line `Agonizing Blast (Eldritch Invocations, Warlock)`), the parent feature's hit ends with `Chosen: <names>`, and the option's Rules line uses the option's own source (Eldritch Smite reads Xanathar's Guide to Everything), falling back to the owning subclass or class.
+Looks like: `• Fighting Style (Fighter 1): Archery`; `ddb_character_lookup` resolves the option by name (`[Class Option]`, first line `Agonizing Blast (Eldritch Invocations, Warlock)`), the parent feature's hit ends with `Chosen: <names>`, and the option's Rules line uses the option's own source (Eldritch Smite reads Xanathar's Guide to Everything), falling back to the owning subclass or class. An option hit under a homebrew class, subclass or parent feature is wrapped, even when the option carries no homebrew flag; under official content it stays plain. A lookup whose query is an entry's exact name lists that entry first ("bless": Bless before Eldritch Blast).
 Source: history.md, Regression remediation 2026-11-11 (owner rulings R1 and R6, 2026-11-11).
 
 ### EQUIPPED lists armour and magic or attunable gear
@@ -153,7 +153,7 @@ Looks like: +2 on every one-handed melee row, so two unflagged one-handed weapon
 Source: history.md, Regression remediation 2026-11-11 (owner ruling R5, 2026-11-11).
 
 ### A character name that matches several characters lists them
-Looks like: `character_name: "Skamos"` with two Skamos characters returns an error listing each as `  • Name (ID n)` and ending `Pass character_id to pick one.`; it never silently picks one. A name matching none still says "No character found matching ...". If the character list cannot be loaded, the reply is a failure ("Could not load your character list: <status>"), not "No character found".
+Looks like: `character_name: "Skamos"` with two Skamos characters returns an error listing each as `  • Name (ID n)` and ending `Pass character_id to pick one.`; a partial or fuzzy name that matches several characters is never silently resolved to one (an exact name, even one two characters share, resolves to the first with that name). A name matching none, or one that is only whitespace, says "No character found matching ...". If the character list cannot be loaded, the reply is a failure ("Could not load your character list: <status>"), not "No character found".
 Source: `matchCharacterName` / `characterNameError` in `src/tools/character.ts` (F14).
 
 ### `ddb_login` waits up to 3 minutes and asks D&D Beyond whether you're signed in

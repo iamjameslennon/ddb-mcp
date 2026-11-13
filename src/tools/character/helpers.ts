@@ -51,16 +51,24 @@ export const featureDefinition = (feature: unknown): Record<string, unknown> => 
   return f.definition != null ? obj(f.definition) : f;
 };
 
+/** A numeric id, read from a number or a numeric string (Task 8's coercion); 0 when absent or not a finite number. */
+const coercedId = (v: unknown): number => {
+  const n = typeof v === "number" || (typeof v === "string" && v.trim() !== "") ? Number(v) : NaN;
+  return Number.isFinite(n) ? n : 0;
+};
+
 /**
  * Whether a class feature entry is one of its class's subclass features: its
- * definition's `classId` is the subclass's id, or it has the same definition id
- * as one in `subclassDefinition.classFeatures`, or (an entry without ids) the
- * same name.
+ * definition's `classId` is the subclass's id (F9; owner ruling 2026-11-12;
+ * either may be a numeric string), or it has the same definition id as one in
+ * `subclassDefinition.classFeatures`, or (an entry without ids) the same name.
+ * The one rule for the lookup's label and Rules line and for homebrew wrapping
+ * (`isHomebrewClassFeature`), so they always agree.
  */
-function isSubclassFeature(feature: unknown, subclass: Record<string, unknown>): boolean {
+export function isSubclassFeature(feature: unknown, subclass: Record<string, unknown>): boolean {
   const def = featureDefinition(feature);
-  const subclassId = num(subclass.id);
-  if (subclassId && num(def.classId) === subclassId) return true;
+  const subclassId = coercedId(subclass.id);
+  if (subclassId && coercedId(def.classId) === subclassId) return true;
   const id = num(def.id);
   const name = str(def.name);
   return arr<unknown>(subclass.classFeatures).some(sf => {
