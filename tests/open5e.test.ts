@@ -118,6 +118,7 @@ describe("Open5e labels", () => {
     expect(cleanO5Markdown("|Size|Space|\n|---|---|")).toBe("|Size|Space|\n|---|---|");
     expect(cleanO5Markdown("text\n\n---\n\nmore")).toBe("text\n\n---\n\nmore");
     expect(cleanO5Markdown("to **more** **than one target** at")).toBe("to **more than one target** at");
+    expect(cleanO5Markdown("a---b---c")).toBe("a—b—c");
     expect(cleanO5Markdown("**a** **b** **c**")).toBe("**a b c**");
     expect(cleanO5Markdown("a creature that gives HalfCover and")).toBe("a creature that gives Half Cover and");
   });
@@ -133,6 +134,29 @@ describe("Open5e labels", () => {
     const out = (await o5GetRule("Damage and Healing", "2014", 30000))!;
     expect(out).not.toMatch(/srd:|[a-z]---[a-z]/);
     expect(out).toContain("fireball");
+  });
+  it("HalfCover is fixed end to end in the 2024 text (F15)", async () => {
+    const out = (await o5GetRule("Combat", "2024", 100000))!;
+    expect(out).toContain("Half Cover");
+    expect(out).not.toContain("HalfCover");
+  });
+  it("search matches the cleaned text a get lands on (F15, F16)", async () => {
+    expect(await o5SearchRules("flame strike", "2014")).toContain("Found ");
+    expect(await o5SearchRules("flame strike", "2014")).not.toContain("no matching");
+    const g = (await o5GetRule("Damage and Healing", "2014", 30000, "flame strike"))!;
+    expect(g).not.toContain("not found in");
+  });
+  it("the query landing starts at the query despite leading and interior whitespace (F16)", async () => {
+    const lead = "  ".concat("x ".repeat(150), "\n\n\n   ".repeat(20), "the bell tolls here ", "y ".repeat(300));
+    const rs = o5Fixture<{ rules: Array<{ name: string; desc: string }> }>("srd-2024", "rulesets" as never);
+    const patched = rs.map((r, i) => i === 0 ? { ...r, rules: r.rules.map((s, j) => j === 0 ? { ...s, desc: lead } : s) } : r);
+    stubFetch(o5FixtureFetch({ "srd-2024/rulesets": patched }));
+    const sectionName = rs[0].rules[0].name;
+    const out = (await o5GetRule(sectionName, "2024", 30000, "bell tolls"))!;
+    const body = out.slice(out.indexOf("…"));
+    expect(body.startsWith("…\n\n")).toBe(true);
+    expect(body.slice(3, 250)).toContain("bell tolls");
+    expect(body.slice(3).search(/bell tolls/)).toBe(200);
   });
   it("a search matches whole words: 'cover' drops Madness's 'discovered' (F16)", async () => {
     // Under the old substring rule this listed Attacking, Cover and Madness (Madness only through "discovered").

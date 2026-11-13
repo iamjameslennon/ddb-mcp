@@ -1460,7 +1460,7 @@ function findRule(rulesets: O5Ruleset[], query: string): RuleMatch | null {
 export function cleanO5Markdown(text: string): string {
   let out = text
     .replace(/\bsrd:([a-z0-9-]+)/g, (_m, slug: string) => slug.replace(/-/g, " "))
-    .replace(/([^\s|-])---([^\s|-])/g, "$1—$2")
+    .replace(/(?<=[^\s|-])---(?=[^\s|-])/g, "—")
     // Upstream Open5e typo in the srd-2024 rulesets (the only one found): "HalfCover".
     .replace(/\bHalfCover\b/g, "Half Cover");
   for (let prev = ""; prev !== out;) {
@@ -1476,15 +1476,19 @@ export function cleanO5Markdown(text: string): string {
  * fighting" does not match "fighting with two weapons".
  */
 export function wordPhraseIndex(text: string, query: string): number {
-  const q = normalizeName(query);
-  if (!q) return -1;
-  const phrase = q.split(" ").map(w => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+");
-  return normalizeName(text).search(new RegExp(`\\b${phrase}(s|es)?\\b`));
+  return foldedPhraseIndex(normalizeName(text), normalizeName(query));
+}
+
+/** wordPhraseIndex on text and query that are already normalized: the index is into `folded` itself. */
+function foldedPhraseIndex(folded: string, normalizedQuery: string): number {
+  if (!normalizedQuery) return -1;
+  const phrase = normalizedQuery.split(" ").map(w => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+");
+  return folded.search(new RegExp(`\\b${phrase}(s|es)?\\b`));
 }
 
 export async function o5SearchRules(query: string | undefined, rulesEdition: RulesEdition): Promise<string> {
   const q = query ? normalizeName(query) : "";
-  const has = (text: string): boolean => wordPhraseIndex(text, q) >= 0;
+  const has = (text: string): boolean => wordPhraseIndex(cleanO5Markdown(text), q) >= 0;
   const search = async (edition: RulesEdition): Promise<string[]> => {
     const lines: string[] = [];
     for (const r of await rulesetsOf(edition)) {
@@ -1535,7 +1539,7 @@ function foldedIndexOf(text: string, normalizedQuery: string): number {
       origin.push(i);
     }
   }
-  const at = wordPhraseIndex(folded, normalizedQuery);
+  const at = foldedPhraseIndex(folded, normalizedQuery);
   return at === -1 ? -1 : origin[at];
 }
 
