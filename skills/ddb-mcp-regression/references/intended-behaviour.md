@@ -145,7 +145,7 @@ Looks like: a close top hit is used and says so on its own line (`No monster is 
 Source: history.md, Regression remediation 2026-11-11 (owner ruling R3, 2026-11-11).
 
 ### `br-2024` redirects to `phb-2024` outside equipment
-Looks like: `source: "br-2024"` for spells, feats, species, classes, backgrounds, class features and racial traits replies with a redirect to `phb-2024`, because D&D Beyond tags none of those entries with source 148 (2024 class features carry only 145). Equipment is unchanged (items do carry 148), and so are monsters. A search or get that matches nothing on D&D Beyond or in the SRD says "… on D&D Beyond or in the SRD." ("(SRD only)." only when D&D Beyond was unreachable), and a missing spell or item says it may be misspelled or in a book the account doesn't own, never which.
+Looks like: `source: "br-2024"` for spells, feats, species, classes, backgrounds, class features and racial traits replies with a redirect to `phb-2024`, because D&D Beyond tags none of those entries with source 148 (2024 class features carry only 145). Equipment is unchanged (items do carry 148), and so are monsters. A search or get that matches nothing on D&D Beyond or in the SRD says "… on D&D Beyond or in the SRD." ("(SRD only)." only when D&D Beyond was unreachable; `ddb_search_monsters` too), and a missing spell or item says it may be misspelled or in a book the account doesn't own, never which.
 Source: history.md, Regression remediation 2026-11-11 (owner ruling R4, 2026-11-11).
 
 ### Dueling follows dndbeyond.com

@@ -21,6 +21,15 @@ describe("makeResolveTemplates", () => {
     expect(r("{{modifier:cha}}")).toBe("-1");
     expect(r("{{1+}}")).toBe("?");
   });
+
+  it("gives ? for nesting past the depth cap, never throwing or overflowing (M-3)", () => {
+    for (const n of [3000, 20000]) {
+      expect(r(`a {{${"(".repeat(n)}1${")".repeat(n)}}} b`)).toBe("a ? b");
+      expect(r(`{{${"(".repeat(n)}}}`)).toBe("?");
+    }
+    // Ordinary nesting still evaluates.
+    expect(r(`{{${"(".repeat(10)}classlevel/2${")".repeat(10)}@roundup}}`, 5)).toBe("3");
+  });
 });
 
 describe("describeTemplates", () => {

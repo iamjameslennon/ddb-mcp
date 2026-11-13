@@ -15,7 +15,10 @@
  * ability forms modifier:<abbr>, savedc:<abbr> (8 + proficiency + modifier),
  * spellattack:<abbr> (proficiency + modifier), abilityscore:<abbr>, where
  * <abbr> is str, dex, con, int, wis or cha. Division is exact. The final value
- * is floored, then formatted. Anything unparseable or unknown gives "?".
+ * is floored, then formatted. Anything unparseable or unknown gives "?", and so
+ * does nesting deeper than MAX_TEMPLATE_DEPTH parentheses: the evaluator is
+ * recursive and a homebrew description is another player's text, so a few
+ * thousand "(" must not overflow the stack (final review M-3).
  */
 
 export type TemplateResolver = (text: string, classLevel?: number) => string;
@@ -32,6 +35,9 @@ const ABILITIES = ["str", "dex", "con", "int", "wis", "cha"] as const;
 const ABILITY_NAMES = ["Strength", "Dexterity", "Constitution", "Intelligence", "Wisdom", "Charisma"] as const;
 
 class TemplateError extends Error {}
+
+/** Deepest parenthesis nesting evaluated; D&D Beyond's templates use one or two levels. */
+export const MAX_TEMPLATE_DEPTH = 32;
 
 function lookupVar(name: string, ctx: TemplateContext, classLevel: number): number {
   switch (name) {
@@ -58,6 +64,7 @@ function lookupVar(name: string, ctx: TemplateContext, classLevel: number): numb
 function evaluate(src: string, ctx: TemplateContext, classLevel: number): number {
   const s = src.replace(/\s+/g, "");
   let pos = 0;
+  let depth = 0;
   const peek = () => s[pos];
 
   function number(): number {
@@ -71,10 +78,12 @@ function evaluate(src: string, ctx: TemplateContext, classLevel: number): number
     let v: number;
     const c = peek();
     if (c === "(") {
+      if (++depth > MAX_TEMPLATE_DEPTH) throw new TemplateError("depth");
       pos++;
       v = expr();
       if (peek() !== ")") throw new TemplateError(")");
       pos++;
+      depth--;
     } else if (c !== undefined && /\d/.test(c)) {
       v = number();
     } else {

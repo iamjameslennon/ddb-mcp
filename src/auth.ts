@@ -160,7 +160,7 @@ export async function login(context: BrowserContext, options: LoginOptions = {})
   let lastCheckFailure: string | null = null;
   let lastLogged: string | null = null;
 
-  /** One sign-in check. A failed request is logged (once per distinct error) and read as "not yet". */
+  /** One sign-in check. A failed request or a non-OK answer is logged (once per distinct error) and read as "not yet". */
   const checkSignIn = async (): Promise<VerifiedSignIn | null> => {
     try {
       const verified = await verifyLoginContext(context, Math.min(VERIFY_REQUEST_TIMEOUT_MS, deadline - Date.now()));

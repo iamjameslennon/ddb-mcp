@@ -363,6 +363,9 @@ describe("Open5e v2 spells and monsters", () => {
 
   it("the size filter alone excludes a creature", async () => {
     expect(await o5SearchMonsters({ cr: 0.25, type: "beast", size: "large", rulesEdition: "2014" }, "unavailable")).toBe("No monsters found (SRD only).");
+    // After D&D Beyond answered empty, the reply says both were searched (M-1, as F19 for the catalogs).
+    expect(await o5SearchMonsters({ cr: 0.25, type: "beast", size: "large", rulesEdition: "2014" }, "not-found")).toBe("No monsters found on D&D Beyond or in the SRD.");
+    expect(await o5SearchMonsters({ name: "zzzz", rulesEdition: "2024" }, "not-found")).toBe("No monsters found on D&D Beyond or in the SRD.");
     const large = await o5SearchMonsters({ size: "Large", rulesEdition: "2024" }, "unavailable");
     expect(large).toContain("• Aboleth [2024] (CR 10, Large Aberration)");
     expect(large).toContain("• Allosaurus [2024] (CR 2, Large Beast)");

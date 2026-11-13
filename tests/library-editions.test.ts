@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { buildSourceIndex } from "../src/edition.js";
 import { SNAPSHOT_CATEGORIES, SNAPSHOT_SOURCES } from "../src/source-snapshot.js";
 import { resolveSource } from "../src/source-filter.js";
@@ -27,7 +27,7 @@ vi.mock("../src/session-fetch.js", () => ({
 }));
 vi.mock("../src/game-config.js", () => ({ getSourceIndex: mocks.getSourceIndex }));
 
-import { isFreeBookSlug, unownedSourceNote, librarySourceId, libraryBookInfo, tagLibraryBooks, listLibrary, readBook, clearLibraryCache, notOwnedMessage } from "../src/tools/library.js";
+import { LIBRARY_NOTE_WAIT_MS, isFreeBookSlug, unownedSourceNote, librarySourceId, libraryBookInfo, tagLibraryBooks, listLibrary, readBook, clearLibraryCache, notOwnedMessage } from "../src/tools/library.js";
 
 describe("librarySourceId", () => {
   it("joins by the slug's last segment", () => {
@@ -404,6 +404,62 @@ describe("unownedSourceNote (F17)", () => {
   it("a session change propagates", async () => {
     mocks.sessionFetch.mockImplementation(async () => { mocks.generation.n++; return new Response(buildFixture([PHB]), { status: 200 }); });
     await expect(note("xgte")).rejects.toThrow("Session changed");
+  });
+
+  describe("deadline (M-4)", () => {
+    afterEach(() => { vi.useRealTimers(); });
+    /** A library page that answers only after `ms`. */
+    const slowLibrary = (ms: number, status = 200) => mocks.sessionFetch.mockImplementation((url: unknown) => {
+      if (!LIBRARY_RE.test(String(url))) throw new Error(`unexpected ${String(url)}`);
+      return new Promise<Response>(resolve => setTimeout(() => resolve(status === 200
+        ? new Response(buildFixture([PHB]), { status })
+        : new Response("err", { status, statusText: "Server Error" })), ms));
+    });
+
+    it("gives none at the deadline when the library is slow, and the search goes on", async () => {
+      vi.useFakeTimers();
+      slowLibrary(60_000);
+      let settled: string | null | undefined;
+      const p = note("xgte").then(v => { settled = v; });
+      await vi.advanceTimersByTimeAsync(LIBRARY_NOTE_WAIT_MS - 1);
+      expect(settled).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      await p;
+      expect(settled).toBeNull();
+    });
+
+    it("leaves the shared fetch running: once it lands, the next search gets the note from the cache", async () => {
+      vi.useFakeTimers();
+      slowLibrary(LIBRARY_NOTE_WAIT_MS + 1_000);
+      const first = note("xgte");
+      await vi.advanceTimersByTimeAsync(LIBRARY_NOTE_WAIT_MS);
+      expect(await first).toBeNull();
+      // A second search while the page is still in flight joins it rather than fetching again.
+      const second = note("xgte");
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(await second).toBe(NOTE("Xanathar's Guide to Everything"));
+      expect(await note("xgte")).toBe(NOTE("Xanathar's Guide to Everything"));
+      expect(libCalls()).toHaveLength(1);
+    });
+
+    it("an answer inside the deadline still gives the note, and a failure after it gives none and caches nothing", async () => {
+      vi.useFakeTimers();
+      slowLibrary(LIBRARY_NOTE_WAIT_MS - 1);
+      const ok = note("xgte");
+      await vi.advanceTimersByTimeAsync(LIBRARY_NOTE_WAIT_MS - 1);
+      expect(await ok).toBe(NOTE("Xanathar's Guide to Everything"));
+
+      mocks.hooks.forEach(h => h());
+      slowLibrary(LIBRARY_NOTE_WAIT_MS + 1_000, 500);
+      const late = note("xgte");
+      await vi.advanceTimersByTimeAsync(LIBRARY_NOTE_WAIT_MS + 1_000);
+      expect(await late).toBeNull();
+      slowLibrary(0);
+      const again = note("xgte");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(await again).toBe(NOTE("Xanathar's Guide to Everything"));
+      expect(libCalls()).toHaveLength(3);
+    });
   });
 });
 

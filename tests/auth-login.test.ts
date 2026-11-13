@@ -381,6 +381,38 @@ describe("fix round 1: errors never carry the call log (cookies) to stderr or th
     }
   });
 
+  it("counts a non-OK cobalt-token answer as a failed check, named by its status at the deadline (M-2)", async () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      state.cobalt = () => apiResponse({ token: "LEAKED_TOKEN_SECRET", detail: "LEAKED_COOKIE_SECRET" }, 503);
+      const { outcome } = await startLogin();
+      await vi.advanceTimersByTimeAsync(181_000);
+
+      const error = (outcome.result as { error: Error }).error;
+      expect(error).toBeInstanceOf(auth.LoginTimeoutError);
+      expect(error.message).toBe(
+        "Sign-in wasn't finished within 3 minutes. Last check failed: D&D Beyond's sign-in check answered HTTP 503. Run ddb_login to try again.",
+      );
+      const logged = stderr.mock.calls.map(c => String(c[0])).join("");
+      expect(logged).toContain("sign-in check failed, retrying: D&D Beyond's sign-in check answered HTTP 503");
+      for (const text of [error.message, logged]) {
+        expect(text).not.toContain("LEAKED_TOKEN_SECRET");
+        expect(text).not.toContain("LEAKED_COOKIE_SECRET");
+      }
+      expect(fsMock.renameSync).not.toHaveBeenCalled();
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it("still reads {token:null} as not signed in yet, with no failure named (M-2)", async () => {
+    state.cobalt = () => apiResponse(ANONYMOUS_COBALT);
+    const { outcome } = await startLogin();
+    await vi.advanceTimersByTimeAsync(181_000);
+    const error = (outcome.result as { error: Error }).error;
+    expect(error.message).toBe("Sign-in wasn't finished within 3 minutes. Run ddb_login to try again.");
+  });
+
   it("names no failure at the deadline when the last check answered (even if earlier ones failed)", async () => {
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     try {

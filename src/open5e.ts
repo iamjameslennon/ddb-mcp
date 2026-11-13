@@ -902,7 +902,7 @@ export async function o5SearchMonstersSection(params: O5MonsterSearchParams, ori
   return o5SearchReply(
     requested, origin,
     `Found ${formatCount(selected.length)} monster(s) (showing ${formatCount(shown.length)}, SRD only):`,
-    lines, hidden, "No monsters found (SRD only).",
+    lines, hidden, o5NoMatch("No monsters found", origin),
   );
 }
 

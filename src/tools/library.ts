@@ -286,11 +286,37 @@ export function isFreeBookSlug(slug: string): boolean {
 }
 
 /**
+ * How long a `source` search waits for the library list behind its advisory
+ * unowned-book note (final review M-4). Past it the search answers without the
+ * note. Only the wait is cut: the shared in-flight fetch keeps running, so a
+ * list that lands later fills the cache for the next search (as a logged-out
+ * character call's LOGGED_OUT_CHARACTER_INDEX_WAIT_MS withdrawal does).
+ */
+export const LIBRARY_NOTE_WAIT_MS = 5_000;
+
+/** The library list, or null when it is not in within LIBRARY_NOTE_WAIT_MS. A rejection inside the wait propagates. */
+async function libraryBooksWithin(ms: number): Promise<readonly LibraryBook[] | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<null>(resolve => {
+    timer = setTimeout(() => resolve(null), ms);
+    timer.unref?.();
+  });
+  try {
+    // A rejection after the deadline is still handled (race subscribes to it),
+    // and fetchLibraryBooks' own settle handler releases its pending slot.
+    return await Promise.race([fetchLibraryBooks(), deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * F17: the note for a `source` search of a book the account doesn't own, whose
  * catalog lists only its free entries. Null (no note) when logged out, when the
  * library can't be read (an outage never blocks or misleads; only
- * SessionChangedError propagates), for a free book, and when the library lists
- * the book. Reuses the cached library list.
+ * SessionChangedError propagates), when it isn't read within
+ * LIBRARY_NOTE_WAIT_MS, for a free book, and when the library lists the book.
+ * Reuses the cached library list.
  */
 export async function unownedSourceNote(source: ResolvedSource, index: SourceIndex): Promise<string | null> {
   if (!hasValidSession()) return null;
@@ -298,13 +324,14 @@ export async function unownedSourceNote(source: ResolvedSource, index: SourceInd
     const s = index.sources.get(id);
     return s !== undefined && isFreeBookSlug(sourceSlug(s) || s.name);
   })) return null;
-  let books: readonly LibraryBook[];
+  let books: readonly LibraryBook[] | null;
   try {
-    books = await fetchLibraryBooks();
+    books = await libraryBooksWithin(LIBRARY_NOTE_WAIT_MS);
   } catch (err) {
     if (err instanceof SessionChangedError) throw err;
     return null;
   }
+  if (books === null) return null;
   // An empty parse (interstitial, truncated page) proves nothing about ownership.
   if (books.length === 0) return null;
   const ids = new Set(source.ids);

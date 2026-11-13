@@ -314,12 +314,25 @@ export interface VerifiedSignIn {
 const verifiedContexts = new WeakMap<VerifiedSignIn, BrowserContext>();
 
 /**
+ * A non-OK answer to the sign-in check: the check failed, which is not "not
+ * signed in yet". The message names only the status (never the body, headers
+ * or cookies), so ddb_login can name it as the last check's failure.
+ */
+export class SignInCheckHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`D&D Beyond's sign-in check answered HTTP ${status}`);
+    this.name = "SignInCheckHttpError";
+  }
+}
+
+/**
  * Ask D&D Beyond whether this login context is signed in: POST the cobalt-token
  * exchange through the context's own request API (it shares the context's
  * cookie jar, so the browser's sign-in is exactly what is checked). Returns a
  * proof when the answer decodes as `mintCobaltToken` decodes it, and null for
- * anything else: `{"token":null}` (anonymous), a non-OK status, or an unusable
- * token. Network and closed-context errors propagate to the caller.
+ * an OK answer that doesn't: `{"token":null}` (anonymous), or an unusable
+ * token. A non-OK status throws `SignInCheckHttpError` (a failed check, final
+ * review M-2); network and closed-context errors propagate to the caller too.
  */
 export async function verifyLoginContext(
   context: BrowserContext,
@@ -330,7 +343,7 @@ export async function verifyLoginContext(
     failOnStatusCode: false,
     headers: { Accept: "application/json" },
   });
-  if (!resp.ok()) return null;
+  if (!resp.ok()) throw new SignInCheckHttpError(resp.status());
   let body: unknown;
   try {
     body = await resp.json();
