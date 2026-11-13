@@ -11,6 +11,7 @@ Shows up as: an item the player renamed (for example "Drake's Tooth Dagger") pri
 
 ### (bb) Subclass always-prepared spells are missing
 Shows up as: Calderax (14814039, Grave Domain) has no Vampiric Touch anywhere on the sheet. D&D Beyond leaves these spells out of the character data.
+The 2026-11-11 run found it on all 8 subclass casters checked, and Bless missing from `concentration`. Flagged for re-prioritising.
 
 ### (bc) The global save bonus ignores whether the item is equipped
 Shows up as: a save bonus from an item that isn't equipped or attuned still counts (Ethelrede's unequipped Battleaxe +1, Aerin's unequipped Slippers).
@@ -23,6 +24,9 @@ Shows up as: Deflect Missiles (Flemin 112315775, Petit Nuage 40193614), Arms of 
 
 ### (bf) A null AC override entry would throw
 Shows up as: an error on a character whose data has a null `characterValues` entry. No live character has one, so a crash here is this issue.
+
+### (br) Pact and hex weapons using CHA are unverified
+Shows up as: a Warlock weapon row (2024 Pact of the Blade, 2014 Hex Warrior) that should use CHA but uses STR or DEX. No test character has one, so no data shape is verified.
 
 ### (bi) Warlock multiclass spell rows use the class's own slot row
 Shows up as: on a Warlock multiclass, the slot level in spell rows may differ from the shared multiclass table. No test character is one.

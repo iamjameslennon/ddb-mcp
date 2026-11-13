@@ -141,7 +141,7 @@ describe("regression skill: judgement references and templates", () => {
   it("lists exactly the open carry-overs, none of them closed in history.md", () => {
     const history = read("docs/claude/history.md");
     const codes = [...read("skills/ddb-mcp-regression/references/known-open-issues.md").matchAll(/^### \(([A-Za-z0-9]+)\)/gm)].map(m => m[1]);
-    const expected = ["ba", "bb", "bc", "bd", "be", "bf", "bi", "bj", "bk", "bl", "bn", "bo", "bp", "bq", "b", "aa", "ah", "ay", "B14"];
+    const expected = ["ba", "bb", "bc", "bd", "be", "bf", "bi", "bj", "bk", "bl", "bn", "bo", "bp", "bq", "br", "b", "aa", "ah", "ay", "B14"];
     expect([...codes].sort()).toEqual([...expected].sort());
     // history.md closes a carry-over as `**(bg)** ~~…~~` or "(bg) closed".
     for (const code of codes.filter(c => c !== "B14")) {

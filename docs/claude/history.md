@@ -81,7 +81,7 @@ Pilot (2026-11-11, in Claude Code against the fresh build, narrowed scope: batch
 
 ### Regression remediation 2026-11-11
 
-The 2026-11-11 regression report is `docs/superpowers/specs/2026-11-11-regression-report.md`; the remediation plan is `docs/superpowers/plans/2026-11-11-regression-remediation.md`. Findings F29/F30 (`ddb_login` after `ddb_logout`) are not in the plan's original scope; the owner added them as an extra task (design to be chosen with the owner). The F1–F28 list and the commits are added when the plan closes.
+The 2026-11-11 regression report is `docs/superpowers/specs/2026-11-11-regression-report.md`; the remediation plan is `docs/superpowers/plans/2026-11-11-regression-remediation.md`. Findings F29/F30 (`ddb_login` after `ddb_logout`) are not in the plan's original scope; the owner added them as an extra task (design to be chosen with the owner). The plan is done (Tasks 1–17); the findings, commits, corrections and rulings follow. Task 17 ran the live snapshot, the whole-corpus regression and live MCP samples before this docs commit.
 
 Owner rulings, all 2026-11-11:
 
@@ -91,6 +91,66 @@ Owner rulings, all 2026-11-11:
 - **R4 (F22, owner ruling 2026-11-11):** `source: "br-2024"` for spells, feats, species, classes and backgrounds replies with a redirect to `phb-2024`. D&D Beyond tags none of those entries with source 148. Verified on all 57 fetched test characters: 2024 spells, feats, species (18), backgrounds (19) and classes (21) carry only 145. Items do carry 148 (437 inventory entries), so equipment is unchanged.
 - **R5 (F28, owner ruling 2026-11-11):** Dueling follows dndbeyond.com: +2 on every one-handed melee row (Ethelrede, with two unflagged battleaxes, shows it on both). The exception is a sheet that flags an off-hand weapon (`characterValues` typeId 18). Then no row gets Dueling, because the rule requires no other weapon.
 - **R6 (F4 lookup, owner ruling 2026-11-11):** a chosen option's Rules line uses the option's own source (`editions.info(option.definition)`, so Eldritch Smite reads Xanathar's Guide to Everything). It falls back to the owning subclass or class when the option has no `sourceId`. Class features keep their existing ruling (the owning class's or subclass's book).
+
+Owner rulings, 2026-11-12/13 (all labelled "owner ruling 2026-11-12"):
+
+- **Task 7 owner fallback (F4):** keep the `classes[0]` fallback for the owner of an unprinted optional-feature parent; add a comment, a single-class test and a tool-notes limitation note. No behaviour change (corpus: only single-class Rangers, parent 3035679, and the multiclass shape is unverified).
+- **Task 7 visibility (F4):** the 2026-11-07 visibility ruling wins. Options under features the character lacks (Ehsu's Canny, Roving, Tireless; his `optionalClassFeatures` is empty) are hidden on the sheet and in lookup. The plan sentence that they are "still found by lookup" (plan line 366) is superseded. The first-class fallback applies only to a chosen `optionalClassFeatures` parent.
+- **Task 8 option-owner rule (F9):** the F9 subclass rule (`classId` equals the subclass id) also applies to the option-owner fallback (`viaSubclass`), with a test.
+- **Login (F30, F29):** option (a), fix the bugs and keep the fresh profile; not (b) or (c). Plus a client cancel (`extra.signal`) and progress pings about every 10 s. A real 180 s deadline. No change to `--enable-automation`.
+- **Login reviewers and fix round:** the reviewers' findings were put to the owner. Decided: never log cookies (mandatory); the timeout reply adds the last check error's safe first line; the three message wordings approved; pings start before the launch; first-line errors go to the client; the save is fail-closed (`context === loginContext`); the loss of saved origins is noted; and the shared browser context is seeded from `captureSession()` in this task, not by path (`fe58f51`).
+
+Controller ruling (not an owner ruling; for owner review): in Task 13 the rules search matches phrases with letter and digit lookarounds instead of `\b`, so a match cannot start or end inside a word. The cost if wrong: slightly broader matches at `_` and punctuation boundaries.
+
+**Findings and commits** (report `docs/superpowers/specs/2026-11-11-regression-report.md`; hashes are the final ones on `main`, after fix rounds were amended in place):
+
+| Finding | Commit(s) |
+|---------|-----------|
+| F3, F28, F11, F12 (weapon rows: Archery, Dueling, pact weapon, Firearms) | `69e69f3` |
+| F6, F13 (mastery on "X, Y" weapon types; no-damage weapons) | `701630f` |
+| F7 (weapon proficiencies routed by entityTypeId) | `3a96381` |
+| F8 (numeric limited-use maximum from an ability modifier) | `8621430` |
+| F5 (description templates resolved on sheets, described in catalog text) | `803f7fd` |
+| F1, F10 (inventory separator, equipped magic items, named attunement) | `571d9ea` |
+| F4 (chosen class options under their feature, resolved in lookup) | `a9271a4`, `78a1b3c`, `2e3acb9` |
+| F2, F9 (lookup tolerant of typos, word order, apostrophes; subclass features take the subclass's book) | `081cb67`, `011fee8` |
+| F14 (candidates listed when a character name matches several) | `7b1b8de` |
+| F18, F19, F22 (honest not-found and no-match wording; `br-2024` redirect) | `a9768c5`, `1c35220` |
+| F30, F29 (login: 180 s deadline, token-verified sign-in, real errors, cancel, progress; fix round) | `a8d021d`, `fe58f51` |
+| F17 (unowned-book note on source searches; EEPC free) | `854106b`, `9c86030` |
+| F20, F21, F23, F24 (other partial matches, tolerant prerequisite filter, deduped feat rows, readable snippets) | `5d0b5ef` |
+| F15, F16 (Open5e markup cleaned, whole-phrase rules search, HalfCover end to end) | `6b6c64b`, `e104a58`, `847c932`, `a5895f4` |
+| F25 (monster closest hit only when close) | `4d28970` |
+| F26 (invalid CR refused in encounter and treasure) | `c2817cb` |
+| F27 (library: plain not-owned message; 2024 preferred only within one book) | `880ba27`, `b474d85` |
+
+F29/F30 were added by the owner as "Task 10b" and are not in the plan's F1–F28 list.
+
+**Plan investigation corrections** (adversarial review, 2026-11-11): Dueling has a modifier (it follows dndbeyond.com, R5); F19 is wording; F21's hidden count is by design (`countFilteredPicks`); HalfCover is an upstream typo, now repaired; the report's `**more** **than on` was a truncated quote, the data is well-formed.
+
+**Corrections and outcomes found during this run:**
+
+- The plan's sentence about Ehsu's options was superseded by the owner on 2026-11-12 (above).
+- The real library label for the 2024 Player's Handbook is "Player's Handbook (2024)"; the Task 16 brief's label was wrong and the implementer was right.
+- EEPC (`ee`, not in the library) shows all 43 spells to the free account, so it is treated as free (`isFreeBookSlug`), with the live evidence from 2026-11-12. `hftt`, `sais` and `dosi` get the unowned note (they have no spells; no evidence either way).
+- The HalfCover fixture is present: the implementer's claim that the `srd-2024` fixture lacked it was false (`rulesets.json` contains "gives HalfCover and a tree trunk").
+- The known issue "(B14) search_spells unowned-book wording" (the `search_spells source: xgte` nit) is closed by F17. The other B14 item (blank lines in `ddb_read_book`) stays open.
+- Reviewer claims that proved false on checking (router): `weaponWordOrder` not imported, lookup bypassing the gate, feat-detail block not wired, division inexact for 1/3*3 and 10/3*3, a vacuous delimiter test, and "not-found now intercepts all-locked exact lookups" (the baseline also replied "not found"). Real but deferred: a subclass parent through `!inClass` (corpus impact 0); the closest-hit judge over all candidates, which can omit a disclosure line when the containing or twin candidate is locked; weak tests in Tasks 2, 5, 11 and 15; the Task 11 ordering test was fixed in the review loop.
+
+**Review setup.** Each task had a Claude reviewer and a router review (`auto:reviewers`, text only). Codex reviewed the high-risk tasks (7 and 14 are recorded). Zen DeepSeek was exhausted on Task 1 and not retried. Every reviewer claim was checked against the code before use.
+
+**Verification (2026-11-13, Task 17).**
+
+- **Live snapshot,** baseline against HEAD: 150 changed lines, all intended (weapon rows 7, proficiency 2, limited use 6, class-option suffix 12, inventory, EQUIPPED and ATTUNEMENT including magic items; homebrew equipped or attuned entries wrapped, official ones plain).
+- **Whole corpus,** HEAD `b474d85` against baseline `574e8b3`: exit 0; 56 of 56, 0 crashes, 0 inconsistencies, 0 new anomalies; 56 characters differ (385 lines; the separator change touches all). Checked values: F3, F28, F11, F12, F13, F6, F8, F7, F5 (Tough resolved), F4 (Fighting Style Great Weapon Fighting, Pact of the Blade, Weslocke's five invocations), F10 (Staff of the Woodlands attunement), F1 (`Clothes, Common;`).
+- **Live MCP samples:** `eldrich blast` finds Eldritch Blast; Dark One's Blessing is a Subclass Feature; Glorbulon is not found with near matches; Owlbare shows the closest line; feats with prerequisite Strength 13 list Grappler; `cr: 2.5` gives the exact error.
+- **Login, macOS, 2026-11-12:** Google sign-in passed on the fresh build (`fe58f51`) and `ddb_list_characters` returned 4 characters. Not exercised: the window-close message, the more-than-60 s client timeout and Wizards ID. The Windows check is still the owner's (CLAUDE.md "Open work").
+
+**Carry-overs found by this run** (continuing the lettered list; none blocks anything):
+
+- **(br)** pact or hex weapons using CHA (2024 Pact of the Blade, 2014 Hex Warrior) are not applied to weapon rows. No test character has one, so no data shape is verified.
+- **(bb) wider evidence:** the 2026-11-11 run found always-prepared subclass spells missing on all 8 subclass casters checked, and Bless missing from `concentration`. Flagged for re-prioritising; a fix needs its own plan.
+- Found in the Task 10b fix round: after `ddb_logout`, `ddb_navigate`, `ddb_interact` and `ddb_get_page` refuse with "Session changed" until the next `ddb_login` (pre-existing; a candidate, not given a letter).
 
 ### Combat section completeness 2026-11-09 (regression items I1–I3)
 
