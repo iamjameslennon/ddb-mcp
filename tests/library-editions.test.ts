@@ -462,6 +462,15 @@ describe("readBook of an unowned book (F27)", () => {
     await expect(readBook("dnd/phb-2024")).rejects.toThrow(/session changed/i);
     mocks.generation.n -= 1;
   });
+  it("a vague title hitting several different books is no match, not a not-owned message", async () => {
+    await expect(readBook("Monster")).rejects.toThrow(/No book found/);
+    expect(pageCalls()).toHaveLength(0);
+  });
+  it("library outage, by a vague title: still the fetch error, no guess", async () => {
+    mocks.sessionFetch.mockImplementation(async (url: unknown) =>
+      LIBRARY_RE.test(String(url)) ? new Response("err", { status: 500, statusText: "x" }) : new Response("<html></html>", { status: 200 }));
+    await expect(readBook("Monster")).rejects.toThrow(/Library fetch failed/);
+  });
   it("a title in neither the library nor the index keeps today's error", async () => {
     await expect(readBook("spelljammer zzz")).rejects.toThrow(/No book found/);
   });

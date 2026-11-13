@@ -393,8 +393,13 @@ function findBookByTitle(index: SourceIndex, input: string): number | null {
     const ids = hits.map(([id]) => id).sort((a, b) => a - b);
     return ids.find(id => classifyEdition({ sourceId: id }, index).ruleset === "2024") ?? ids[0];
   };
-  return pick(books.filter(([, s]) => nameFold(s.book) === needle))
-    ?? pick(books.filter(([, s]) => nameFold(s.book).includes(needle)));
+  const exact = pick(books.filter(([, s]) => nameFold(s.book) === needle));
+  if (exact !== null) return exact;
+  // Substring hits resolve only between editions of ONE book (same title once
+  // an edition suffix is dropped); a vague title spanning several books is no match.
+  const subs = books.filter(([, s]) => nameFold(s.book).includes(needle));
+  const titles = new Set(subs.map(([, s]) => nameFold(s.book.replace(/\s*\((?:2014|2024)\)\s*$/, ""))));
+  return titles.size === 1 ? pick(subs) : null;
 }
 
 /**
