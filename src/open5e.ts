@@ -1451,9 +1451,40 @@ function findRule(rulesets: O5Ruleset[], query: string): RuleMatch | null {
   return sections(r => normalizeName(r.name).includes(q));
 }
 
+/**
+ * Tidies Open5e rules markup for output (never for matching): `srd:slug` links become the
+ * slug's words, `---` between words becomes an em dash (table separator rows and
+ * horizontal rules are left alone), adjacent `**a** **b**` runs merge, and the one upstream
+ * typo found is fixed.
+ */
+export function cleanO5Markdown(text: string): string {
+  let out = text
+    .replace(/\bsrd:([a-z0-9-]+)/g, (_m, slug: string) => slug.replace(/-/g, " "))
+    .replace(/([^\s|-])---([^\s|-])/g, "$1—$2")
+    // Upstream Open5e typo in the srd-2024 rulesets (the only one found): "HalfCover".
+    .replace(/\bHalfCover\b/g, "Half Cover");
+  for (let prev = ""; prev !== out;) {
+    prev = out;
+    out = out.replace(/\*\*([^*\n]+)\*\* \*\*([^*\n]+)\*\*/g, "**$1 $2**");
+  }
+  return out;
+}
+
+/**
+ * Index of the normalized query as a whole-word phrase (an optional plural "s"/"es" allowed)
+ * in the normalized text, else -1. "cover" does not match "discovered"; "two weapon
+ * fighting" does not match "fighting with two weapons".
+ */
+export function wordPhraseIndex(text: string, query: string): number {
+  const q = normalizeName(query);
+  if (!q) return -1;
+  const phrase = q.split(" ").map(w => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+");
+  return normalizeName(text).search(new RegExp(`\\b${phrase}(s|es)?\\b`));
+}
+
 export async function o5SearchRules(query: string | undefined, rulesEdition: RulesEdition): Promise<string> {
   const q = query ? normalizeName(query) : "";
-  const has = (text: string): boolean => normalizeName(text).includes(q);
+  const has = (text: string): boolean => wordPhraseIndex(text, q) >= 0;
   const search = async (edition: RulesEdition): Promise<string[]> => {
     const lines: string[] = [];
     for (const r of await rulesetsOf(edition)) {
@@ -1504,7 +1535,7 @@ function foldedIndexOf(text: string, normalizedQuery: string): number {
       origin.push(i);
     }
   }
-  const at = folded.indexOf(normalizedQuery);
+  const at = wordPhraseIndex(folded, normalizedQuery);
   return at === -1 ? -1 : origin[at];
 }
 
@@ -1523,9 +1554,9 @@ export async function o5GetRule(
   if (!match) return null;
 
   const { ruleset, section } = match;
-  let text = section
+  let text = cleanO5Markdown(section
     ? section.desc
-    : [ruleset.desc, ...ruleset.rules.map(s => `### ${s.name}\n${s.desc}`)].filter(Boolean).join("\n\n");
+    : [ruleset.desc, ...ruleset.rules.map(s => `### ${s.name}\n${s.desc}`)].filter(Boolean).join("\n\n"));
 
   // If query provided, start near the first occurrence, matched as the search matches
   const q = query ? normalizeName(query) : "";

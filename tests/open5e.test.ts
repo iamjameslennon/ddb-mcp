@@ -15,7 +15,7 @@ import {
   o5GetSpell, o5GetMonster, o5GetEquipment, o5MonsterInEdition,
   o5SearchSpells, o5SearchMonsters, o5SearchItems,
   o5SearchRaces, o5SearchClasses, o5SearchBackgrounds, o5SearchFeats, o5SearchFeatsSection, o5SearchRacesSection,
-  o5SearchRules, o5GetRule, o5GetMonsterStats, crText, castingTime, humanize, o5TwinNameFor, o5EquipmentKey, o5EquipmentGroupKey,
+  o5SearchRules, o5GetRule, cleanO5Markdown, wordPhraseIndex, o5GetMonsterStats, crText, castingTime, humanize, o5TwinNameFor, o5EquipmentKey, o5EquipmentGroupKey,
   type O5Record,
 } from "../src/open5e.js";
 import { getMonsterStats } from "../src/tools/monster.js";
@@ -110,6 +110,37 @@ describe("Open5e labels", () => {
     expect(out.split("\n")[0]).toBe("Rules: sections from SRD 5.1 (2014).");
     expect(out.split("\n")[1]).toMatch(/^Found \d+ rules chapter\(s\)/);
     expect(out).toContain("• **Cover** [2014] (slug: `cover`)");
+  });
+  it("cleanO5Markdown tidies Open5e markup and leaves tables and rules alone (F15)", () => {
+    expect(cleanO5Markdown("a blast of flame from a srd:fireball spell")).toBe("a blast of flame from a fireball spell");
+    expect(cleanO5Markdown("casts srd:flame-strike, the")).toBe("casts flame strike, the");
+    expect(cleanO5Markdown("modifier---the same")).toBe("modifier—the same");
+    expect(cleanO5Markdown("|Size|Space|\n|---|---|")).toBe("|Size|Space|\n|---|---|");
+    expect(cleanO5Markdown("text\n\n---\n\nmore")).toBe("text\n\n---\n\nmore");
+    expect(cleanO5Markdown("to **more** **than one target** at")).toBe("to **more than one target** at");
+    expect(cleanO5Markdown("**a** **b** **c**")).toBe("**a b c**");
+    expect(cleanO5Markdown("a creature that gives HalfCover and")).toBe("a creature that gives Half Cover and");
+  });
+  it("wordPhraseIndex matches whole-word phrases (F16)", () => {
+    expect(wordPhraseIndex("olive-covered hillsides", "cover")).toBe(-1);
+    expect(wordPhraseIndex("I've discovered that", "cover")).toBe(-1);
+    expect(wordPhraseIndex("you have half cover", "cover")).toBeGreaterThan(-1);
+    expect(wordPhraseIndex("three covers here", "cover")).toBeGreaterThan(-1);
+    expect(wordPhraseIndex("fighting with two weapons", "two weapon fighting")).toBe(-1);
+    expect(wordPhraseIndex("uses Two-Weapon Fighting", "two-weapon fighting")).toBeGreaterThan(-1);
+  });
+  it("a get cleans the markup it prints (F15)", async () => {
+    const out = (await o5GetRule("Damage and Healing", "2014", 30000))!;
+    expect(out).not.toMatch(/srd:|[a-z]---[a-z]/);
+    expect(out).toContain("fireball");
+  });
+  it("a search matches whole words: 'cover' drops Madness's 'discovered' (F16)", async () => {
+    // Under the old substring rule this listed Attacking, Cover and Madness (Madness only through "discovered").
+    const out = await o5SearchRules("cover", "2014");
+    expect(out).toContain('Found 2 rules chapter(s) matching "cover"');
+    expect(out).toContain("• **Attacking** [2014]");
+    expect(out).toContain("• **Cover** [2014]");
+    expect(out).not.toContain("Madness");
   });
   it("a search that misses lists the other document with the search reason", async () => {
     const g = await o5SearchRules("grapple", "2024");
