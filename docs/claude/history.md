@@ -137,7 +137,7 @@ F29/F30 were added by the owner as "Task 10b" and are not in the plan's F1–F28
 - The known issue "(B14) search_spells unowned-book wording" (the `search_spells source: xgte` nit) is closed by F17. The other B14 item (blank lines in `ddb_read_book`) stays open.
 - Reviewer claims that proved false on checking (router): `weaponWordOrder` not imported, lookup bypassing the gate, feat-detail block not wired, division inexact for 1/3*3 and 10/3*3, a vacuous delimiter test, and "not-found now intercepts all-locked exact lookups" (the baseline also replied "not found"). Real but deferred: a subclass parent through `!inClass` (corpus impact 0); the closest-hit judge over all candidates, which can omit a disclosure line when the containing or twin candidate is locked; weak tests in Tasks 2, 5, 11 and 15; the Task 11 ordering test was fixed in the review loop.
 
-**Review setup.** Each task had a Claude reviewer and a router review (`auto:reviewers`, text only). Codex reviewed the high-risk tasks (7 and 14 are recorded). Zen DeepSeek was exhausted on Task 1 and not retried. Every reviewer claim was checked against the code before use.
+**Review setup.** Each task had a Claude reviewer, and the router (`auto:reviewers`, text only) reviewed every task. Codex reviewed Tasks 1, 7, 8, 10, the login task (10b), 14 and 16, plus the final review. Zen DeepSeek was exhausted (on Task 1) and not retried. Every reviewer claim was checked against the code before use.
 
 **Verification (2026-11-13, Task 17).**
 
@@ -150,7 +150,12 @@ F29/F30 were added by the owner as "Task 10b" and are not in the plan's F1–F28
 
 - **(br)** pact or hex weapons using CHA (2024 Pact of the Blade, 2014 Hex Warrior) are not applied to weapon rows. No test character has one, so no data shape is verified.
 - **(bb) wider evidence:** the 2026-11-11 run found always-prepared subclass spells missing on all 8 subclass casters checked, and Bless missing from `concentration`. Flagged for re-prioritising; a fix needs its own plan.
-- Found in the Task 10b fix round: after `ddb_logout`, `ddb_navigate`, `ddb_interact` and `ddb_get_page` refuse with "Session changed" until the next `ddb_login` (pre-existing; a candidate, not given a letter).
+- **(bs)** after `ddb_logout`, `ddb_navigate`, `ddb_interact` and `ddb_get_page` refuse with "Session changed" until the next `ddb_login` (pre-existing, found in the Task 10b fix round; the shared browser is now seeded from the `captureSession()` snapshot).
+- **(bt)** an equipped magic item stack loses its `×N` in EQUIPPED, and no test checks that a homebrew item in EQUIPPED is wrapped (the corpus has 0 equipped magic stacks with quantity above 1).
+- **(bu)** the monster "closest match" line can be left out when the matching twin is locked and another entry is shown (the closest flag is judged over all candidates), and short names count as close under the plan's R3 formula (Lich/Lion, Ogre/Ooze).
+- **(bv)** `ddb_character_lookup`'s loose rule still matches some short words loosely ("bless" → Eldritch Blast, "rage" → Mage Armor, "cure" → Hexblade's Curse). Mitigated, not removed, by the exact-first ordering of the final fix wave.
+
+**Final fix wave (2026-11-13).** The whole-branch review (`.superpowers/sdd/2026-11-11-regression-remediation/final-review.md`) found one Important issue and eight Minor ones; the owner chose the fixes on 2026-11-13. Fixed: I-1 (a `[Class Option]` lookup hit is wrapped when its parent feature or owning class or subclass is homebrew, not only when the option is); M-8 (one `isSubclassFeature` in `helpers.ts` for the lookup's label and the homebrew wrapping); M-1 (`ddb_search_monsters` no-match wording follows `o5NoMatch`); M-2 (a non-OK cobalt-token answer during `ddb_login` is a failed check, named by its status at the deadline); M-3 (template nesting capped at 32, giving `?`); M-4 (the unowned-book note waits at most 5 s for the library list); M-5/M-6 docs; exact-first ordering in `ddb_character_lookup`; a blank `character_name` is "No character found". Carry-overs (bs)–(bv) above were opened. Not fixed: M-7 (the baseline worktree registration), not in the owner's list.
 
 ### Combat section completeness 2026-11-09 (regression items I1–I3)
 

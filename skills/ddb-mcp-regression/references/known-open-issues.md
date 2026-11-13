@@ -46,6 +46,14 @@ Shows up as: a sheet whose item spell bonus is listed once per copy would double
 ### (bo) Homebrew and official save advantages with the same wording merge
 Shows up as: one save-advantage line, wrapped as untrusted, that combines an official and a homebrew source.
 
+### (bt) An equipped magic stack loses its ×N in EQUIPPED
+Shows up as: an equipped magic or attunable item with quantity above 1 listed in EQUIPPED without its `×N`. No test character has one, and no test checks that a homebrew item in EQUIPPED is wrapped, so an unwrapped homebrew EQUIPPED line belongs here too.
+
+## Character lookup
+
+### (bv) Some short words still match loosely
+Shows up as: `ddb_character_lookup` listing an unrelated entry next to the right one ("bless" → Eldritch Blast, "rage" → Mage Armor, "cure" → Hexblade's Curse). An exact name match is listed first, so this is noise, not a wrong answer; a wrong entry listed *first* is a new finding.
+
 ## Monsters
 
 ### (bp) `ddb_get_monster` can miss a monster in a crowded name
@@ -53,6 +61,14 @@ Shows up as: `ddb_get_monster` says not found, or picks a different creature, fo
 
 ### (bq) A session change mid-search reads as "Open5e unavailable"
 Shows up as: `ddb_search_monsters` answers that the SRD fallback is unavailable when the real cause was a login change during the call. Check the session (SKILL.md, "If the session drops") before filing.
+
+### (bu) The closest-match line can be skipped, and short names count as close
+Shows up as: `ddb_get_monster` showing a different entry without its `showing the closest match` line when the matching twin is locked; or a short name taken as a close match for another (Lich/Lion, Ogre/Ooze).
+
+## Browser tools
+
+### (bs) Browser tools refuse after `ddb_logout` until the next login
+Shows up as: `ddb_navigate`, `ddb_interact` or `ddb_get_page` answering "Session changed" after a `ddb_logout`, until `ddb_login` runs again.
 
 ## Only visible with an account that owns books or homebrew
 

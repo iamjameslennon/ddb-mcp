@@ -500,9 +500,10 @@ SPELLS
   From Feat: Dancing Lights, Mending, Tasha's Hideous Laughter (L1)
 
 INVENTORY
-  Potion of Healing ×2, Spellbook [2014], Parchment ×18, Backpack, Calligrapher's Supplies, Robe, ...
+  Potion of Healing ×2; Spellbook [2014]; Parchment ×18; Backpack; Calligrapher's Supplies; Robe; ...
 
-ATTUNEMENT: 0/3 slots used
+ATTUNEMENT (0/3): none
+
 CURRENCY: 34gp, 7sp
 ```
 
