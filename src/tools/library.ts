@@ -5,7 +5,8 @@ import { TtlCache } from "../cache.js";
 import { wrapUntrusted, stripHtml } from "../utils.js";
 import { getSourceIndex } from "../game-config.js";
 import { sourceSlug, type ResolvedSource } from "../source-filter.js";
-import { classifyEdition, normalizeName, rulesLine, editionTag, type EditionInfo, type SourceIndex } from "../edition.js";
+import { nameFold } from "../name-match.js";
+import { classifyEdition, normalizeName, rulesLine, editionTag, type EditionInfo, type IndexedSource, type SourceIndex } from "../edition.js";
 
 const LIBRARY_URL =
   "https://www.dndbeyond.com/en/library?type=sourcebooks&ownership=owned-shared";
@@ -370,6 +371,99 @@ export function extractArticleMarkdown(html: string): string {
   return processNode(root as AnyNode).trim();
 }
 
+// ── Reading a book the account doesn't own (F27) ─────────────────────────────
+
+/** The reply for a book the index knows, the account doesn't own and isn't free. */
+export function notOwnedMessage(title: string, owned: ReadonlyArray<{ title: string; slug: string }>): string {
+  const list = owned.map(b => `  • ${b.title} (${b.slug})`).join("\n");
+  return `You don't own ${title} on D&D Beyond, so its text can't be read here. Books you can read:\n${list}`;
+}
+
+/**
+ * Find a book with a slug by its title in the source index: an exact folded
+ * match of the book label first, then a folded substring. Several hits take the
+ * 2024 book (the edition default), else the lowest id.
+ */
+function findBookByTitle(index: SourceIndex, input: string): number | null {
+  const needle = nameFold(input);
+  if (needle === "") return null;
+  const books = [...index.sources].filter(([, s]) => sourceSlug(s) !== "" && nameFold(s.book) !== "");
+  const pick = (hits: Array<[number, IndexedSource]>): number | null => {
+    if (hits.length === 0) return null;
+    const ids = hits.map(([id]) => id).sort((a, b) => a - b);
+    return ids.find(id => classifyEdition({ sourceId: id }, index).ruleset === "2024") ?? ids[0];
+  };
+  return pick(books.filter(([, s]) => nameFold(s.book) === needle))
+    ?? pick(books.filter(([, s]) => nameFold(s.book).includes(needle)));
+}
+
+/**
+ * A positive "not in your library" answer, else null: the library loaded and
+ * is non-empty, the slug's book is in the index, isn't free, and no library
+ * entry covers it. An unknown slug or a failed/empty list never blocks.
+ */
+function notOwnedReply(slug: string, books: readonly LibraryBook[], index: SourceIndex): string | null {
+  if (books.length === 0) return null;
+  const id = librarySourceId({ slug, title: null }, index);
+  const src = id === null ? undefined : index.sources.get(id);
+  if (id === null || src === undefined) return null;
+  if (isFreeBookSlug(sourceSlug(src) || src.name)) return null;
+  const covered = books.some(b =>
+    (b.slug !== "" && (slug === b.slug || slug.startsWith(b.slug + "/"))) || librarySourceId(b, index) === id);
+  return covered ? null : notOwnedMessage(src.book, books);
+}
+
+/** The slug path a source is read under ("sources/dnd/phb-2024" → "dnd/phb-2024"). */
+const sourcePath = (s: IndexedSource): string => (s.sourceURL ?? "").replace(/^\/?sources\//, "").replace(/\/+$/, "");
+
+/** Null (no library to judge by) on any failure but a session change, which propagates. */
+async function libraryOrNull(): Promise<readonly LibraryBook[] | null> {
+  try {
+    return await fetchLibraryBooks();
+  } catch (err) {
+    if (err instanceof SessionChangedError) throw err;
+    return null;
+  }
+}
+
+async function resolveForRead(
+  input: string,
+  index: SourceIndex,
+): Promise<{ resolved: { slug: string; title: string | null }; message?: undefined } | { message: string; resolved?: undefined }> {
+  if (input.includes("/")) {
+    // Fetch the library only for a book the index knows and that isn't free.
+    const id = librarySourceId({ slug: input, title: null }, index);
+    const src = id === null ? undefined : index.sources.get(id);
+    if (src === undefined || isFreeBookSlug(sourceSlug(src) || src.name)) return { resolved: { slug: input, title: null } };
+    const books = await libraryOrNull();
+    const message = books ? notOwnedReply(input, books, index) : null;
+    return message !== null ? { message } : { resolved: { slug: input, title: null } };
+  }
+  const books = await libraryOrNull();
+  const fromIndex = (): { slug: string; src: IndexedSource } | null => {
+    const id = findBookByTitle(index, input);
+    const src = id === null ? undefined : index.sources.get(id);
+    return src === undefined ? null : { slug: sourcePath(src), src };
+  };
+  if (books === null) {
+    // The library list is unavailable: resolve the title through the source index.
+    const hit = fromIndex();
+    if (hit === null) return { resolved: await resolveBookSlug(input) }; // rethrows the fetch error
+    return { resolved: { slug: hit.slug, title: null } };
+  }
+  try {
+    const slug = matchBookSlug(books, input);
+    return { resolved: { slug, title: books.find(b => b.slug === slug)?.title ?? null } };
+  } catch (err) {
+    if (!(err instanceof Error) || !err.message.startsWith("No book found")) throw err;
+    const hit = fromIndex();
+    // An empty parse (interstitial, truncated page) proves nothing about ownership.
+    if (hit === null || books.length === 0) throw err;
+    if (isFreeBookSlug(sourceSlug(hit.src) || hit.src.name)) return { resolved: { slug: hit.slug, title: null } };
+    return { message: notOwnedMessage(hit.src.book, books) };
+  }
+}
+
 export async function readBook(
   bookSlug: string,
   chapterSlug?: string,
@@ -381,12 +475,14 @@ export async function readBook(
   }
 
   // Resolve plain title → slug (passthrough if input already contains "/")
-  const resolved = await resolveBookSlug(bookSlug);
+  const index = await getSourceIndex();
+  const pre = await resolveForRead(bookSlug, index);
+  if (pre.message !== undefined) return pre.message;
+  const resolved = pre.resolved;
   const resolvedSlug = resolved.slug;
 
   // Edition: join by slug; when that fails and no title is known yet, look the
   // slug up in the library once. A failed lookup just leaves the book unlabelled.
-  const index = await getSourceIndex();
   let bookRef = resolved;
   if (bookRef.title === null && librarySourceId(bookRef, index) === null) {
     try {

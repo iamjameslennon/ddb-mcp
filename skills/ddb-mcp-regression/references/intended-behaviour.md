@@ -20,6 +20,10 @@ Source: CLAUDE.md, Invariants, "`source` wins over `rules_edition`".
 Looks like: every `source` search (not `homebrew`) of a book the logged-in account's library doesn't list starts with `> Note: this account doesn't own <book>, so D&D Beyond shows only its free entries — this list is not the whole book.`, even when nothing matched. The free Basic Rules books (`basic-rules-2014`, `br-2024`) never get it. Logged out, or when the library can't be read, there is no note (it never blocks or misleads).
 Source: tool-notes.md, "Unowned-book note (F17)" (2026-11-11 remediation).
 
+### `ddb_read_book` of a book the account doesn't own says so
+Looks like: `You don't own <book> on D&D Beyond, so its text can't be read here. Books you can read:` followed by the owned books as `  • <title> (<slug>)` lines, instead of the store page. It applies only when the library list loaded and the book is known to the source index and not free; the free Basic Rules books (and `ee`) still read. A title that is in neither the library nor the index keeps the "No book found" error. When the library can't be fetched, reads work as before (a title resolves through the source index).
+Source: tool-notes.md, "Unowned-book read (F27)" (2026-11-11 remediation).
+
 ### `source: "homebrew"` is reserved
 Looks like: `source: "homebrew"` lists only homebrew entries, each tagged `[homebrew]`, and needs login.
 Source: CLAUDE.md, Invariants; tool-notes C1 (owner ruling 2026-11-10).

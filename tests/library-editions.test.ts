@@ -27,7 +27,7 @@ vi.mock("../src/session-fetch.js", () => ({
 }));
 vi.mock("../src/game-config.js", () => ({ getSourceIndex: mocks.getSourceIndex }));
 
-import { isFreeBookSlug, unownedSourceNote, librarySourceId, libraryBookInfo, tagLibraryBooks, listLibrary, readBook, clearLibraryCache } from "../src/tools/library.js";
+import { isFreeBookSlug, unownedSourceNote, librarySourceId, libraryBookInfo, tagLibraryBooks, listLibrary, readBook, clearLibraryCache, notOwnedMessage } from "../src/tools/library.js";
 
 describe("librarySourceId", () => {
   it("joins by the slug's last segment", () => {
@@ -321,9 +321,14 @@ describe("library tools", () => {
     const out = await readBook("dnd/nope/ch-1");
     expect(out.split("\n")[1]).toBe("Rules: edition not stated");
   });
-  it("readBook by slug skips the library when the slug joins", async () => {
+  it("readBook by slug of an owned book fetches the library once to confirm ownership (F27)", async () => {
     route([PHB]);
     await readBook("dnd/phb-2024");
+    expect(libCalls()).toHaveLength(1);
+  });
+  it("readBook by slug of a free book never needs the library", async () => {
+    route([PHB]);
+    await readBook("dnd/br-2024");
     expect(libCalls()).toHaveLength(0);
   });
   it("readBook by slug survives a failed library fetch", async () => {
@@ -399,5 +404,65 @@ describe("unownedSourceNote (F17)", () => {
   it("a session change propagates", async () => {
     mocks.sessionFetch.mockImplementation(async () => { mocks.generation.n++; return new Response(buildFixture([PHB]), { status: 200 }); });
     await expect(note("xgte")).rejects.toThrow("Session changed");
+  });
+});
+
+// ── F27: reading a book the account doesn't own ─────────────────────────────
+describe("readBook of an unowned book (F27)", () => {
+  const XGTE = { name: "Xanathar's Guide to Everything", relativePath: "/sources/dnd/xgte", isOwned: true };
+  const OWNED = [{ title: "Xanathar's Guide to Everything", slug: "dnd/xgte" }];
+  const pageCalls = () => mocks.sessionFetch.mock.calls.filter(c => String(c[0]).includes("/sources/"));
+  beforeEach(() => {
+    mocks.sessionFetch.mockReset();
+    mocks.hasValidSession.mockReturnValue(true);
+    mocks.getSourceIndex.mockReset().mockImplementation(async () => INDEX);
+    mocks.hooks.forEach(h => h());
+    route([XGTE]);
+  });
+  const expected = (title: string) => notOwnedMessage(title, OWNED);
+
+  it("the message format", () => {
+    expect(expected("Player's Handbook (2024)")).toBe(
+      "You don't own Player's Handbook (2024) on D&D Beyond, so its text can't be read here. Books you can read:\n  • Xanathar's Guide to Everything (dnd/xgte)");
+  });
+  it("by slug: says so and fetches no page", async () => {
+    const out = await readBook("dnd/phb-2024", "playing-the-game");
+    expect(out).toBe(expected("Player's Handbook (2024)"));
+    expect(pageCalls()).toHaveLength(0);
+  });
+  it("by title with a straight apostrophe: the 2024 book", async () => {
+    expect(await readBook("Player's Handbook")).toBe(expected("Player's Handbook (2024)"));
+    expect(pageCalls()).toHaveLength(0);
+  });
+  it("a free book is fetched although the library lacks it", async () => {
+    const out = await readBook("dnd/br-2024");
+    expect(out).toContain("URL: https://www.dndbeyond.com/sources/dnd/br-2024");
+  });
+  it("a slug unknown to the index is fetched as today", async () => {
+    expect(await readBook("dnd/no-such-book")).toContain("sources/dnd/no-such-book");
+  });
+  it("an owned book is fetched", async () => {
+    expect(await readBook("dnd/xgte")).toContain("sources/dnd/xgte");
+  });
+  it("library outage, by slug: fetched", async () => {
+    mocks.sessionFetch.mockImplementation(async (url: unknown) =>
+      LIBRARY_RE.test(String(url)) ? Promise.reject(new Error("boom")) : new Response("<html><article><p>Text</p></article></html>", { status: 200 }));
+    expect(await readBook("dnd/phb-2024")).toContain("sources/dnd/phb-2024");
+  });
+  it("library outage, by title: resolved through the source index and fetched", async () => {
+    mocks.sessionFetch.mockImplementation(async (url: unknown) =>
+      LIBRARY_RE.test(String(url)) ? new Response("err", { status: 500, statusText: "x" }) : new Response("<html><article><p>Text</p></article></html>", { status: 200 }));
+    expect(await readBook("Player's Handbook")).toContain("sources/dnd/phb-2024");
+  });
+  it("a session change still propagates", async () => {
+    mocks.sessionFetch.mockImplementation(async (url: unknown) => {
+      if (LIBRARY_RE.test(String(url))) { mocks.generation.n += 1; return new Response(buildFixture([XGTE]), { status: 200 }); }
+      return new Response("", { status: 404 });
+    });
+    await expect(readBook("dnd/phb-2024")).rejects.toThrow(/session changed/i);
+    mocks.generation.n -= 1;
+  });
+  it("a title in neither the library nor the index keeps today's error", async () => {
+    await expect(readBook("spelljammer zzz")).rejects.toThrow(/No book found/);
   });
 });
