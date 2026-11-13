@@ -1483,7 +1483,7 @@ export function wordPhraseIndex(text: string, query: string): number {
 function foldedPhraseIndex(folded: string, normalizedQuery: string): number {
   if (!normalizedQuery) return -1;
   const phrase = normalizedQuery.split(" ").map(w => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+");
-  return folded.search(new RegExp(`\\b${phrase}(s|es)?\\b`));
+  return folded.search(new RegExp(`(?<![\\p{L}\\p{N}])${phrase}(s|es)?(?![\\p{L}\\p{N}])`, "u"));
 }
 
 export async function o5SearchRules(query: string | undefined, rulesEdition: RulesEdition): Promise<string> {

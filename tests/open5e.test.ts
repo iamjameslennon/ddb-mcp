@@ -126,6 +126,8 @@ describe("Open5e labels", () => {
     expect(wordPhraseIndex("olive-covered hillsides", "cover")).toBe(-1);
     expect(wordPhraseIndex("I've discovered that", "cover")).toBe(-1);
     expect(wordPhraseIndex("you have half cover", "cover")).toBeGreaterThan(-1);
+    // Markdown italics (_..._) are not word characters here: the old substring rule found these.
+    expect(wordPhraseIndex("a _remove curse_ spell", "remove curse")).toBeGreaterThan(-1);
     expect(wordPhraseIndex("three covers here", "cover")).toBeGreaterThan(-1);
     expect(wordPhraseIndex("fighting with two weapons", "two weapon fighting")).toBe(-1);
     expect(wordPhraseIndex("uses Two-Weapon Fighting", "two-weapon fighting")).toBeGreaterThan(-1);
@@ -141,12 +143,12 @@ describe("Open5e labels", () => {
     expect(out).not.toContain("HalfCover");
   });
   it("search matches the cleaned text a get lands on (F15, F16)", async () => {
-    // Only the srd:flame-strike links (cleaned to "flame strike") match: three sections of one chapter.
-    // Damage Types' "_flame strike_" has underscores, so it is not a whole-word hit.
+    // The srd:flame-strike links (cleaned to "flame strike") match three sections, and Damage Types'
+    // italic "_flame strike_" a fourth: one chapter.
     const f = (await o5SearchRules("flame strike", "2014")).split("\n");
     expect(f[0]).toBe("Rules: sections from SRD 5.1 (2014).");
     expect(f[1]).toBe('Found 1 rules chapter(s) matching "flame strike" (SRD only):');
-    expect(f[2]).toBe("• **Damage and Healing** [2014] (slug: `damage-and-healing`) — Hit Points, Damage Rolls, Critical Hits");
+    expect(f[2]).toBe("• **Damage and Healing** [2014] (slug: `damage-and-healing`) — Hit Points, Damage Rolls, Critical Hits, Damage Types");
     const g = (await o5GetRule("Damage and Healing", "2014", 30000, "flame strike"))!;
     expect(g).not.toContain("not found in");
   });
