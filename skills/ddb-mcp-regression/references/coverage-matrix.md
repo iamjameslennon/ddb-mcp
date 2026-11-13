@@ -140,7 +140,7 @@ Not applicable: invalid, pagination, gate
 
 - normal: "Stat block for a Wraith" → full stat block, `Rules:` line.
 - not-found: a made-up monster → "not found", near matches.
-- ambiguous: "Stat block for a red dragon" → by design it picks a match (exact, then partial, then D&D Beyond's closest hit) rather than asking; suitable when the reply names which creature it shows, so the user can tell if it's the wrong one.
+- ambiguous: "Stat block for a red dragon" → by design it picks a match (exact, then partial, then D&D Beyond's closest hit, only when that hit is close to the name) rather than asking; suitable when the reply names which creature it shows, so the user can tell if it's the wrong one. A close pick says so on its own line ("No monster is named …; showing the closest match, …"). A made-up name gives "not found" with near matches, never a stat block.
 - locked: a monster from an unowned book → says it's locked; never `Armor Class 0` or `HP 0`.
 - edition: "the 2014 Owlbear" → 2014 block and label; default gives 2024.
 - source: a monster from a named book → that book's version, with a note if its edition contradicts `rules_edition`.

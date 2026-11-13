@@ -17,7 +17,7 @@ import {
 import { getSourceIndex, type GameConfig } from "../game-config.js";
 import {
   classifyEdition, selectByEdition, lookupByName, monsterTiebreak,
-  normalizeName, isEdition, rulesLine, renameLine,
+  normalizeName, isEdition, rulesLine, renameLine, NEAR_MATCH_RULES_LINE,
   isLockedReason, availableElsewhereHint,
   loggedOutReason, LOGGED_OUT_RESTRICTED_NOTE, NOT_LOGGED_IN_SUFFIX,
   HOMEBREW_INFO,
@@ -37,10 +37,11 @@ import {
   type DdbMonster, type MonsterSingleResponse, type Asker,
 } from "./monster-service.js";
 import {
-  searchMonsters, searchMonstersSection, HOMEBREW_LOGIN_REQUIRED, HOMEBREW_UNREACHABLE,
+  searchMonsters, searchMonstersSection, nearMatchLines, HOMEBREW_LOGIN_REQUIRED, HOMEBREW_UNREACHABLE,
   type MonsterSearchParams,
 } from "./monster-search.js";
 import { sourceNoteFor } from "./edition-search.js";
+import { isCloseName } from "../name-match.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -341,6 +342,7 @@ export async function getMonster(
       : await fetchCandidates(monsterName, 20, sourceIds, asker);
 
     let detail: MonsterSingleResponse;
+    let closest = false;
     let extras: StatBlockExtras;
     if (homebrew) {
       // Homebrew only (fail closed: anything not explicitly official): exact
@@ -394,9 +396,11 @@ export async function getMonster(
         tiebreak,
         twinName: monsterTwin,
         // No name contains the query (typos, word order: "Beholdr", "red dragon
-        // adult"), but the service ranks its fuzzy hits best-first: take the top
-        // hit, whose whole twin group is then the target.
-        partialMatch: (all, q) => all.filter(m => normalizeName(m.name).includes(q)).sort(tiebreak)[0] ?? all[0],
+        // adult"), but the service ranks its fuzzy hits best-first: take the first
+        // hit that is close to the query (R3), whose whole twin group is then the
+        // target. A distant top hit is no match: the reply is "not found" with near matches.
+        partialMatch: (all, q) => all.filter(m => normalizeName(m.name).includes(q)).sort(tiebreak)[0]
+          ?? all.find(m => isCloseName(m.name, q)),
         available,
       });
       // The list map picks an available entry (the requested edition's first,
@@ -407,6 +411,12 @@ export async function getMonster(
       if (!found) {
         const o5Result = await o5GetMonster(monsterName, requested, "not-found").catch(() => null);
         if (o5Result) return o5Result;
+        // D&D Beyond's own closest hits, first 5, in its order, as the search lists near matches (R3).
+        if (candidates.length) {
+          const { lockedNote, lines } = await nearMatchLines(candidates.slice(0, 5), { config, index, access, asker, info: m => classifyEdition(m, index) });
+          return [`Monster "${monsterName}" not found. Closest matches from D&D Beyond:`, NEAR_MATCH_RULES_LINE,
+            ...(lockedNote ? [lockedNote] : []), ...lines, "Try ddb_search_monsters with a partial name."].join("\n");
+        }
         return `Monster "${monsterName}" not found. Try ddb_search_monsters with a partial name.`;
       }
       // Logged out, a locked requested edition with SRD text shows that text
@@ -418,6 +428,11 @@ export async function getMonster(
           if (srd) return srd.text("needs-login");
         }
       }
+      // R3: the pick came from D&D Beyond's fuzzy ranking when no candidate is an exact (twin)
+      // match or contains the query; that pick is announced on its own line.
+      const typed = normalizeName(monsterName);
+      const key = monsterTwin(monsterName);
+      closest = !candidates.some(m => monsterTwin(m.name) === key || normalizeName(m.name).includes(typed));
       detail = await fetchMonsterDetail(found.entry.id, asker);
       // The detail check is the fallback when the map lacked the id or called a
       // restricted pick available: try the next candidate in the same order,
@@ -453,6 +468,11 @@ export async function getMonster(
     }
 
     const statBlock = formatStatBlock(detail.data, detail.accessType, config, index, extras);
+    if (closest) {
+      // The line names the shown creature, whose name is user-authored when homebrew: wrap it with the block.
+      const line = `No monster is named "${monsterName}"; showing the closest match, ${detail.data.name}.`;
+      return detail.data.isHomebrew === false ? `${line}\n\n${statBlock}` : wrapUntrusted(`${line}\n\n${statBlock}`);
+    }
     // Homebrew stat blocks are user-authored free text (trait/action
     // descriptions) — delimit as untrusted. Official WotC content is not.
     // Fail closed: only an explicitly official entry is left plain.

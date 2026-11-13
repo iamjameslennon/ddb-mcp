@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nameFold, matchesAtWordStart, matchesLooseName, levenshteinDistance } from "../src/name-match.js";
+import { nameFold, matchesAtWordStart, matchesLooseName, levenshteinDistance, isCloseName } from "../src/name-match.js";
 
 describe("nameFold", () => {
   it("folds hyphens, apostrophes and case the way Open5e does", () => {
@@ -50,5 +50,17 @@ describe("matchesLooseName", () => {
 
   it("levenshteinDistance is exported from here", () => {
     expect(levenshteinDistance("kitten", "sitting")).toBe(3);
+  });
+});
+
+describe("isCloseName", () => {
+  it.each([
+    ["Owlbear", "Owlbare", true],
+    ["Beholder", "Beholdr", true],
+    ["Adult Red Dragon", "red dragon adult", true],
+    ["Living Unseen Servant", "Glorbulon the Unseen Squid-King", false],
+    ["Unseen Servant", "Glorbulon the Unseen Squid-King", false],
+  ])("isCloseName(%j, %j) is %s", (name, query, expected) => {
+    expect(isCloseName(name, query)).toBe(expected);
   });
 });

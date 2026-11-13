@@ -69,3 +69,15 @@ export function matchesLooseName(name: string, query: string): boolean {
     return nWords.some(nw => levenshteinDistance(w, nw) <= max);
   });
 }
+
+/**
+ * Whether a name is close enough to a query to take D&D Beyond's fuzzy top hit for it
+ * (ddb_get_monster, owner ruling R3): within a few edits (at least 2, a third of the query's
+ * length), or a typo/word-order match by matchesLooseName.
+ */
+export function isCloseName(name: string, query: string): boolean {
+  const q = nameFold(query);
+  if (q === "") return false;
+  return levenshteinDistance(nameFold(name), q) <= Math.max(2, Math.floor(q.length / 3))
+    || matchesLooseName(name, query);
+}

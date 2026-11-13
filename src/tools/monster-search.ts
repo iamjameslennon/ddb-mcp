@@ -107,6 +107,30 @@ export const nearMatchLabel = (searchTerm: string): string =>
   `No monster names match "${searchTerm}". Closest matches from D&D Beyond:`;
 
 /**
+ * Near-match result lines, one per hit in the given order, as the search prints them: each
+ * through formatRow (its own edition tag, wrapped unless explicitly official), plus the
+ * locked-entries note when any is locked (C6). ddb_get_monster's not-found reply reuses it.
+ */
+export async function nearMatchLines(
+  hits: readonly MonsterListEntry[],
+  o: {
+    config: RowContext["config"]; index: SourceIndex; sourceIds?: number[]; access: ReadonlyMap<number, number>;
+    asker: Asker; info: (m: MonsterListEntry) => EditionInfo;
+  },
+): Promise<{ lockedNote: string | null; lines: string[] }> {
+  const ctx: RowContext = {
+    crMap: new Map(o.config?.challengeRatings.map(cr => [cr.id, cr]) ?? []),
+    typeMap: new Map(o.config?.monsterTypes.map(t => [t.id, t.name]) ?? []),
+    config: o.config, index: o.index, sourceIds: o.sourceIds ?? [], anonymous: o.asker.anonymous,
+  };
+  const rows = await withListStats(hits.map(m => ({ m, info: o.info(m) })), o.access);
+  return {
+    lockedNote: lockedEntriesNote(rows.filter(r => isLockedIn(o.access, r.m.id)).length, o.asker.anonymous),
+    lines: rows.map(r => formatRow(r, ctx)),
+  };
+}
+
+/**
  * R2: a name whose spellings each have at most this many hits is paged in full
  * by name; with more in any spelling, the name rules run over the full list.
  */
@@ -511,7 +535,7 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
     // spelling's own first page (never an alias's) is then listed as D&D Beyond's closest.
     const nearHits = searchTerm && !fetched.some(nameOk) ? nearMatchHits(candidates.typedFirstPage) : [];
     if (nearHits.length) {
-      const shownNear = await withListStats(nearHits.map(m => ({ m, info: homebrew ? HOMEBREW_INFO : info(m) })), access);
+      const { lockedNote, lines: nearLines } = await nearMatchLines(nearHits, { config, index, sourceIds, access, asker, info: homebrew ? () => HOMEBREW_INFO : info });
       // The edition-neutral header replaces the path's edition claim (and the book header's
       // "every entry"); the book's own source note is kept. Homebrew lines are all
       // [homebrew], so they get the homebrew form (C1).
@@ -527,10 +551,9 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
       if (bookNote) body.push(bookNote);
       // C6: a locked near match gets the note a normal locked row gets (its AC and
       // HP may print as dashes); still no swap, suffix, summary or hidden count (R10).
-      const lockedNote = lockedEntriesNote(shownNear.filter(r => isLockedIn(access, r.m.id)).length, asker.anonymous);
       if (lockedNote) body.push(lockedNote);
       body.push(nearMatchLabel(searchTerm));
-      for (const row of shownNear) body.push(formatRow(row, rowCtx));
+      body.push(...nearLines);
       // A near match judged over an incomplete scan may have missed a real match: say so.
       if (noCountNote) body.push(noCountNote);
       // No noMatch: ddb_search_site's "all" must keep this section, with its own

@@ -796,8 +796,12 @@ describe("getMonsterStats never guesses a different creature", () => {
     expect(result).toContain("1 × Wolf [2024] (CR 1/4");
   });
 
-  it("getMonster keeps the fuzzy fallback, since its output names the monster it shows", async () => {
-    expect(await getMonster("Wolf Lord")).toContain("# Wolf");
+  it("getMonster answers a distant fuzzy hit with near matches, not a stat block (R3)", async () => {
+    vi.mocked(o5GetMonster).mockResolvedValue(null as never);
+    const out = await getMonster("Wolf Lord");
+    expect(out).toContain('Monster "Wolf Lord" not found. Closest matches from D&D Beyond:');
+    expect(out).toContain("- **Wolf** [2024]");
+    expect(out).not.toContain("# Wolf");
   });
 });
 
@@ -3947,5 +3951,84 @@ describe("50 shown, narrowing hint, list_all (B11)", () => {
       await searchMonsters({ name: "Twinling" });
       expect(maxInFlight).toBe(8);
     });
+  });
+});
+
+// ── getMonster: D&D Beyond's closest hit only when close (F25, owner ruling R3) ──
+
+describe("getMonster closest hit (R3)", () => {
+  const OWLBEAR = monster({ id: 8_300_001, name: "Owlbear", sourceId: 147, sources: sources(147), actionsDescription: "<p>OWLBEAR BLOCK</p>" });
+  const LIVING_UNSEEN = monster({ id: 8_300_002, name: "Living Unseen Servant", sourceId: 147, sources: sources(147) });
+  const UNSEEN = monster({ id: 8_300_003, name: "Unseen Servant", sourceId: 147, sources: sources(147) });
+  const HB_NEAR = monster({ id: 8_300_004, name: "Evil <b>Squid</b> Homebrew", isHomebrew: true, sourceId: 147, sources: sources(147) });
+  const ADULT_RED = monster({ id: 8_300_005, name: "Adult Red Dragon", sourceId: 147, sources: sources(147), actionsDescription: "<p>ADULT RED BLOCK</p>" });
+  const DRAGON_3P = monster({ id: 8_300_006, name: "Dragon", challengeRatingId: 8, sourceId: 123, sources: sources(123), actionsDescription: "<p>THIRD PARTY DRAGON</p>" });
+  const QUERY = "Glorbulon the Unseen Squid-King";
+  const withFuzzy = async (entries: Record<string, unknown[]>, run: () => Promise<void>) => {
+    const saved = Object.fromEntries(Object.keys(entries).map(k => [k, FUZZY[k]]));
+    Object.assign(FUZZY, entries);
+    try { await run(); } finally { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete FUZZY[k]; else FUZZY[k] = v; } }
+  };
+  beforeEach(() => { vi.mocked(o5GetMonster).mockResolvedValue(null as never); });
+
+  it("a distant fuzzy hit is not found, with the service's near matches and no stat block", () => withFuzzy(
+    { [QUERY.toLowerCase()]: [LIVING_UNSEEN, UNSEEN, VAMPIRE_SPAWN_COS] }, async () => {
+      const out = await getMonster(QUERY);
+      expect(out.startsWith(`Monster "${QUERY}" not found. Closest matches from D&D Beyond:\n${NEAR_MATCH_RULES_LINE}`)).toBe(true);
+      const lines = out.split("\n").filter(l => l.startsWith("- **"));
+      expect(lines[0]).toContain("- **Living Unseen Servant** [2024]");
+      expect(lines[1]).toContain("- **Unseen Servant** [2024]");
+      expect(lines[2]).toContain("- **Vampire Spawn**");
+      expect(out).toContain(lockedEntriesNote(1, false));
+      expect(out).not.toContain("# Living Unseen Servant");
+      expect(out).not.toContain("**Armor Class**");
+    }));
+
+  it("wraps a homebrew near match and leaves an official one plain", () => withFuzzy(
+    { [QUERY.toLowerCase()]: [LIVING_UNSEEN, HB_NEAR] }, async () => {
+      const lines = (await getMonster(QUERY)).split("\n");
+      const official = lines.findIndex(l => l.includes("Living Unseen Servant"));
+      const hb = lines.findIndex(l => l.includes("Evil"));
+      expect(lines[official - 1]).not.toContain("untrusted_dndbeyond_content");
+      expect(lines[hb - 1]).toBe("<untrusted_dndbeyond_content>");
+      expect(lines[hb + 1]).toBe("</untrusted_dndbeyond_content>");
+    }));
+
+  it("a close typo takes the top hit and says so on its own line", () => withFuzzy(
+    { owlbare: [OWLBEAR, WOLF_2024] }, async () => {
+      extraMonsters = [OWLBEAR];
+      const out = await getMonster("Owlbare");
+      expect(out).toContain('No monster is named "Owlbare"; showing the closest match, Owlbear.');
+      expect(out).toContain("OWLBEAR BLOCK");
+      expect(out).not.toContain("untrusted_dndbeyond_content");
+    }));
+
+  it("a homebrew closest match wraps its line", () => withFuzzy(
+    { owlbare: [monster({ id: 8_300_007, name: "Owlbear <i>HB</i>", isHomebrew: true, sourceId: 147, sources: sources(147) })] }, async () => {
+      extraMonsters = [monster({ id: 8_300_007, name: "Owlbear <i>HB</i>", isHomebrew: true, sourceId: 147, sources: sources(147) })];
+      const out = await getMonster("Owlbare");
+      expect(out.startsWith("<untrusted_dndbeyond_content>")).toBe(true);
+      expect(out).toContain("showing the closest match, Owlbear");
+    }));
+
+  it("a substring match is unchanged: no closest line", async () => {
+    extraMonsters = [ADULT_RED];
+    const out = await getMonster("red dragon");
+    expect(out).toContain("ADULT RED BLOCK");
+    expect(out).not.toContain("closest match");
+  });
+
+  it("a word-order query is close: the pick says so", () => withFuzzy(
+    { "red dragon adult": [ADULT_RED] }, async () => {
+      extraMonsters = [ADULT_RED];
+      const out = await getMonster("red dragon adult");
+      expect(out).toContain('No monster is named "red dragon adult"; showing the closest match, Adult Red Dragon.');
+    }));
+
+  it("an exact third-party name is still found, with no closest line", async () => {
+    extraMonsters = [DRAGON_3P, ADULT_RED];
+    const out = await getMonster("Dragon");
+    expect(out).toContain("THIRD PARTY DRAGON");
+    expect(out).not.toContain("closest match");
   });
 });
