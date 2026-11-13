@@ -378,3 +378,19 @@ describe("rules line", () => {
     expect(out).toContain("  1 × Homebrew Thing (CR 1, 200 XP)");
   });
 });
+
+describe("rateEncounter — invalid CR (F26)", () => {
+  const MSG = (cr: number) => `Unknown CR "${cr}". Valid CRs: 0, 0.125, 0.25, 0.5, 1–30.`;
+
+  it("refuses a CR that no monster has", async () => {
+    expect(await rateEncounter(PARTY_4_L5, [{ cr: 2.5 }])).toBe(MSG(2.5));
+  });
+
+  it("names the bad CR when another entry is valid", async () => {
+    expect(await rateEncounter(PARTY_4_L5, [{ cr: 2 }, { cr: 7.5 }], "2014")).toBe(MSG(7.5));
+  });
+
+  it("still accepts a valid CR", async () => {
+    expect(await rateEncounter(PARTY_4_L5, [{ cr: 2 }])).not.toContain("Unknown CR");
+  });
+});

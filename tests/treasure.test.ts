@@ -725,3 +725,18 @@ describe("unavailable monster names", () => {
     expect(result).toContain("TOTAL VALUE");
   });
 });
+
+describe("invalid CR (F26)", () => {
+  const MSG = (cr: number) => `Unknown CR "${cr}". Valid CRs: 0, 0.125, 0.25, 0.5, 1–30.`;
+
+  it("refuses a CR that no monster has, before any roll", async () => {
+    const rnd = vi.spyOn(Math, "random");
+    expect(await generateTreasure({ cr: 2.5, treasureType: "individual" })).toBe(MSG(2.5));
+    expect(await generateTreasure({ cr: 29.5, treasureType: "hoard" })).toBe(MSG(29.5));
+    expect(rnd).not.toHaveBeenCalled();
+  });
+
+  it("still accepts a valid CR", async () => {
+    expect(await generateTreasure({ cr: 2, treasureType: "individual" })).toContain("INDIVIDUAL TREASURE");
+  });
+});

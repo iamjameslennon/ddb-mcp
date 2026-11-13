@@ -1,4 +1,5 @@
 import { getMonsterStats, type MonsterStatsResult } from "./monster.js";
+import { unknownCrError } from "./monster-search.js";
 import { peekSourceIndex } from "../game-config.js";
 import { mapWithConcurrency, MONSTER_LOOKUP_CONCURRENCY } from "../utils.js";
 import { classifyEdition, rulesLine, editionTag, ambiguityMessage, unknownCrMessage, DMG_SOURCE_ID, type RulesEdition } from "../edition.js";
@@ -476,6 +477,10 @@ export async function generateTreasure(
   if (cr !== undefined && monsters && monsters.length > 0) {
     return "Error: provide either cr or monsters, not both.";
   }
+
+  // A CR no monster has is refused before any lookup or roll.
+  const crError = cr === undefined ? null : unknownCrError(cr);
+  if (crError) return crError;
 
   // Work-budget check — must run before any monster lookup or dice roll.
   // Runtime validation is mandatory here (not just in the MCP Zod schema in

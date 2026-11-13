@@ -7,6 +7,7 @@
  */
 
 import { getMonsterStats } from "./monster.js";
+import { unknownCrError } from "./monster-search.js";
 import { peekSourceIndex } from "../game-config.js";
 import { mapWithConcurrency, MONSTER_LOOKUP_CONCURRENCY } from "../utils.js";
 import { classifyEdition, rulesLine, editionTag, ambiguityMessage, unknownCrMessage, DMG_SOURCE_ID, type RulesEdition } from "../edition.js";
@@ -255,6 +256,12 @@ export async function rateEncounter(
       const label = group.count === 1 ? `1 × Level ${group.level}` : `${group.count} × Level ${group.level}`;
       partyLines.push(`  ${label} (Easy ${(e * group.count).toLocaleString()} | Medium ${(m * group.count).toLocaleString()} | Hard ${(h * group.count).toLocaleString()} | Deadly ${(d * group.count).toLocaleString()})`);
     }
+  }
+
+  // A CR no monster has is refused before any lookup (the same rule the monster search applies).
+  for (const m of monsters) {
+    const crError = m.cr === undefined ? null : unknownCrError(m.cr);
+    if (crError) return crError;
   }
 
   // 2. Resolve monsters — 2014 rules prefer the 2014 stat block when a name exists in both editions
