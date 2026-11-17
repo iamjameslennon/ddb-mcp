@@ -31,6 +31,9 @@ export interface GameConfig {
   sourceCategories?: Array<{ id: number; name: string }>;
   creatureSizes?: Array<{ id: number; name: string }>;
   languages?: Array<{ id: number; name: string }>;
+  /** type 1 = resistance, 2 = immunity, 3 = vulnerability; isMulti marks a combined entry ("…from Nonmagical Attacks"). */
+  damageAdjustments?: Array<{ id: number; name: string; type: number; isMulti?: boolean }>;
+  conditions?: Array<{ definition: { id: number; name: string } }>;
 }
 
 export interface GameSource {

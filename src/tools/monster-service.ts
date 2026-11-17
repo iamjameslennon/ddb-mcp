@@ -128,6 +128,9 @@ export interface DdbMonster {
   languageDescription: string | null;
   languageNote: string | null;
   skillsHtml: string;
+  damageAdjustments?: number[];
+  conditionImmunities?: number[];
+  conditionImmunitiesHtml?: string | null;
   specialTraitsDescription: string;
   actionsDescription: string;
   reactionsDescription: string;

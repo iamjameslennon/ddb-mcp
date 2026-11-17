@@ -44,7 +44,7 @@ vi.mock("../src/tools/reference.js", () => ({
   searchFeatsSection: refSections.feats,
 }));
 
-import { getMonster, searchMonsters, searchMonstersSection, getMonsterStats, clearMonsterCache, statBlockText } from "../src/tools/monster.js";
+import { getMonster, defenseLines, DAMAGE_ADJUSTMENTS_UNAVAILABLE_LINE, searchMonsters, searchMonstersSection, getMonsterStats, clearMonsterCache, statBlockText } from "../src/tools/monster.js";
 import { rateEncounter } from "../src/tools/encounter.js";
 import { generateTreasure } from "../src/tools/treasure.js";
 import { sessionFetch, hasValidSession, onSessionInvalidated, beginAuthenticatedSession, captureSession, assertSessionCurrent, AnonymousFetchTimeoutError, NoSessionError, CobaltTokenError, CobaltTokenTimeoutError, MalformedCobaltTokenError } from "../src/session-fetch.js";
@@ -96,6 +96,20 @@ const CONFIG = {
     ],
     languages: [
       { id: 1, name: "Common" }, { id: 12, name: "Deep Speech" }, { id: 18, name: "Telepathy" }, { id: 46, name: "Thieves' Cant" },
+    ],
+    damageAdjustments: [
+      { id: 1, name: "Bludgeoning", type: 1 }, { id: 2, name: "Piercing", type: 1 }, { id: 3, name: "Slashing", type: 1 },
+      { id: 4, name: "Lightning", type: 1 }, { id: 5, name: "Thunder", type: 1 }, { id: 7, name: "Cold", type: 1 },
+      { id: 9, name: "Fire", type: 1 }, { id: 11, name: "Acid", type: 1 },
+      { id: 14, name: "Bludgeoning, Piercing, and Slashing from Nonmagical Attacks that aren't Silvered", type: 1, isMulti: true },
+      { id: 22, name: "Poison", type: 2 }, { id: 25, name: "Fire", type: 2 }, { id: 26, name: "Necrotic", type: 2 },
+      { id: 33, name: "Bludgeoning", type: 3 },
+    ],
+    conditions: [
+      { definition: { id: 2, name: "Charmed" } }, { definition: { id: 4, name: "Exhaustion" } },
+      { definition: { id: 6, name: "Grappled" } }, { definition: { id: 9, name: "Paralyzed" } },
+      { definition: { id: 10, name: "Petrified" } }, { definition: { id: 11, name: "Poisoned" } },
+      { definition: { id: 12, name: "Prone" } }, { definition: { id: 13, name: "Restrained" } },
     ],
     sourceCategories: [
       { id: 1, name: "5e Expanded Rules" },
@@ -160,11 +174,13 @@ const sources = (...ids: number[]) => ids.map((sourceId, i) => ({ sourceId, page
 const ZOMBIE_2014 = monster({
   id: 17077, isLegacy: true, sourceId: 1, sources: sources(1),
   averageHitPoints: 22, hitPointDice: { diceString: "3d8 + 9" },
+  damageAdjustments: [22], conditionImmunities: [11],
   actionsDescription: "<p><em><strong>Slam.</strong> Melee Weapon Attack:</em> +3 to hit. <em>Hit:</em> 4 (1d6 + 1) bludgeoning damage.</p>",
 });
 const ZOMBIE_2024 = monster({
   id: 4775851, isLegacy: false, sourceId: 147, sources: sources(147, 148, 145),
   averageHitPoints: 15, hitPointDice: { diceString: "2d8 + 6" },
+  damageAdjustments: [22], conditionImmunities: [4, 11],
   actionsDescription: "<p><em><strong>Slam.</strong> Melee Attack Roll:</em> +3. <em>Hit:</em> 5 (1d8 + 1) Bludgeoning damage.</p>",
 });
 // A homebrew "Zombie" with the lowest ID — must never outrank official entries.
@@ -4030,5 +4046,75 @@ describe("getMonster closest hit (R3)", () => {
     const out = await getMonster("Dragon");
     expect(out).toContain("THIRD PARTY DRAGON");
     expect(out).not.toContain("closest match");
+  });
+});
+
+describe("damage adjustments and condition immunities (F7)", () => {
+  const stats = (extra: Record<string, unknown>) => monster({
+    id: 8_400_001, name: "Warded Thing", sourceId: 1, sources: sources(1), isLegacy: true, ...extra,
+  });
+  const show = async (extra: Record<string, unknown>) => {
+    extraMonsters = [stats(extra)];
+    return getMonster("Warded Thing");
+  };
+
+  it("prints 2014 wording between Skills and Senses, singles before multi entries", async () => {
+    const out = await show({
+      skillsHtml: "Stealth +4", senses: [{ senseId: 2, notes: "60 ft." }],
+      damageAdjustments: [4, 5, 7, 9, 11, 14, 22, 26], conditionImmunities: [2, 4, 6, 9, 10, 11, 12, 13],
+    });
+    const block = [
+      "**Skills** Stealth +4",
+      "**Damage Resistances** Acid, Cold, Fire, Lightning, Thunder; Bludgeoning, Piercing, and Slashing from Nonmagical Attacks that aren't Silvered",
+      "**Damage Immunities** Necrotic, Poison",
+      "**Condition Immunities** Charmed, Exhaustion, Grappled, Paralyzed, Petrified, Poisoned, Prone, Restrained",
+      "**Senses** Darkvision 60 ft., passive Perception 8",
+    ].join("\n");
+    expect(out).toContain(block);
+  });
+
+  it("prints 2024 wording, with condition immunities after the damage immunities", async () => {
+    const out = await getMonster("Zombie");
+    expect(out).toContain("**Immunities** Poison; Exhaustion, Poisoned");
+    expect(out).not.toContain("Damage Immunities");
+    expect(out).not.toContain("Condition Immunities");
+  });
+
+  it("prints vulnerabilities first, as Damage Vulnerabilities (2014) / Vulnerabilities (2024)", async () => {
+    const out = await show({ damageAdjustments: [22, 33] });
+    expect(out.indexOf("**Damage Vulnerabilities** Bludgeoning")).toBeGreaterThan(-1);
+    expect(out.indexOf("**Damage Vulnerabilities**")).toBeLessThan(out.indexOf("**Damage Immunities**"));
+    const m = stats({ sourceId: 147, sources: sources(147), isLegacy: false, damageAdjustments: [22, 33] }) as never;
+    expect(defenseLines(m, CONFIG.data as never, "2024")).toEqual(["**Vulnerabilities** Bludgeoning", "**Immunities** Poison"]);
+  });
+
+  it("prints no defense lines when the lists are empty or absent", async () => {
+    const out = await show({ damageAdjustments: [], conditionImmunities: [] });
+    expect(out).not.toMatch(/Damage (Vulnerabilities|Resistances|Immunities|Adjustments)|Condition Immunities/);
+    expect(defenseLines(stats({}) as never, CONFIG.data as never, "2014")).toEqual([]);
+    expect(defenseLines(stats({}) as never, null, "2014")).toEqual([]);
+  });
+
+  it("labels an id missing from the config instead of dropping it", async () => {
+    const out = await show({ damageAdjustments: [999, 22], conditionImmunities: [11] });
+    expect(out).toContain("**Damage Immunities** Poison\n**Condition Immunities** Poisoned\n**Damage Adjustments** damage adjustment 999");
+    const m = stats({ damageAdjustments: [999, 22], conditionImmunities: [4, 77] }) as never;
+    expect(defenseLines(m, CONFIG.data as never, "2024")).toEqual([
+      "**Immunities** Poison; condition 77, Exhaustion", "**Damage Adjustments** damage adjustment 999",
+    ]);
+  });
+
+  it("falls back to conditionImmunitiesHtml when the config has no conditions", () => {
+    const cfg = { ...CONFIG.data, conditions: undefined } as never;
+    const m = stats({ conditionImmunities: [2, 11], conditionImmunitiesHtml: "Charmed, Poisoned" }) as never;
+    expect(defenseLines(m, cfg, "2014")).toEqual(["**Condition Immunities** Charmed, Poisoned"]);
+  });
+
+  it("with no game config, says the damage adjustments could not be loaded and prints no ids", () => {
+    const m = stats({ damageAdjustments: [22, 33], conditionImmunities: [11], conditionImmunitiesHtml: "Poisoned" }) as never;
+    const lines = defenseLines(m, null, "2014");
+    expect(lines).toEqual(["**Condition Immunities** Poisoned", DAMAGE_ADJUSTMENTS_UNAVAILABLE_LINE]);
+    expect(lines.join("\n")).not.toMatch(/\b(22|33)\b/);
+    expect(defenseLines(stats({ conditionImmunitiesHtml: "Poisoned" }) as never, null, "2024")).toEqual(["**Immunities** Poisoned"]);
   });
 });

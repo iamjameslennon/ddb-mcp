@@ -177,6 +177,73 @@ interface StatBlockExtras {
   loggedOut?: boolean;
 }
 
+/** Printed when the monster has damage adjustments but the game config's table is unavailable (A4: never raw ids). */
+export const DAMAGE_ADJUSTMENTS_UNAVAILABLE_LINE =
+  "**Damage Adjustments** couldn't be loaded from D&D Beyond (the game configuration is unavailable), so this stat block may be missing resistances, immunities or vulnerabilities.";
+
+const byName = (a: string, b: string) => a.localeCompare(b, "en");
+
+/**
+ * Damage vulnerability / resistance / immunity and condition immunity lines.
+ * Singles sort by name, then combined (isMulti) entries; the two groups are
+ * joined with "; ". An id missing from the config goes on its own
+ * "Damage Adjustments" line, last (its type is unknown).
+ */
+export function defenseLines(m: DdbMonster, config: GameConfig | null, ruleset: "2014" | "2024"): string[] {
+  const ids = m.damageAdjustments ?? [];
+  const table = config?.damageAdjustments;
+  const known = new Map((table ?? []).map(d => [d.id, d]));
+  const unknown: string[] = [];
+  const seen = new Set<number>();
+  const single = new Map<number, string[]>();
+  const multi = new Map<number, string[]>();
+  for (const id of ids) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const entry = known.get(id);
+    if (!entry) { unknown.push(`damage adjustment ${id}`); continue; }
+    const bucket = entry.isMulti === true ? multi : single;
+    const list = bucket.get(entry.type) ?? [];
+    list.push(stripHtmlRich(entry.name));
+    bucket.set(entry.type, list);
+  }
+  const join = (type: number): string => {
+    const singles = (single.get(type) ?? []).sort(byName).join(", ");
+    const multis = (multi.get(type) ?? []).sort(byName);
+    return [singles, ...multis].filter(Boolean).join("; ");
+  };
+  const vulnerable = join(3);
+  const resistant = join(1);
+  const immune = join(2);
+
+  let conditions = "";
+  if (m.conditionImmunities?.length) {
+    if (config?.conditions) {
+      const names = new Map(config.conditions.map(c => [c.definition.id, c.definition.name]));
+      conditions = [...new Set(m.conditionImmunities)]
+        .map(id => stripHtmlRich(names.get(id)) || `condition ${id}`)
+        .sort(byName).join(", ");
+    }
+  }
+  if (!conditions) conditions = stripHtmlRich(m.conditionImmunitiesHtml);
+
+  const lines: string[] = [];
+  if (ruleset === "2024") {
+    if (vulnerable) lines.push(`**Vulnerabilities** ${vulnerable}`);
+    if (resistant) lines.push(`**Resistances** ${resistant}`);
+    const both = [immune, conditions].filter(Boolean).join("; ");
+    if (both) lines.push(`**Immunities** ${both}`);
+  } else {
+    if (vulnerable) lines.push(`**Damage Vulnerabilities** ${vulnerable}`);
+    if (resistant) lines.push(`**Damage Resistances** ${resistant}`);
+    if (immune) lines.push(`**Damage Immunities** ${immune}`);
+    if (conditions) lines.push(`**Condition Immunities** ${conditions}`);
+  }
+  if (ids.length && !table) lines.push(DAMAGE_ADJUSTMENTS_UNAVAILABLE_LINE);
+  else if (unknown.length) lines.push(`**Damage Adjustments** ${unknown.join(", ")}`);
+  return lines;
+}
+
 function formatStatBlock(
   m: DdbMonster, accessType: number, config: GameConfig | null, index: SourceIndex, extras: StatBlockExtras = {},
 ): string {
@@ -245,6 +312,8 @@ function formatStatBlock(
   if (m.skillsHtml) {
     lines.push(`**Skills** ${stripHtmlRich(m.skillsHtml)}`);
   }
+
+  lines.push(...defenseLines(m, config, (extras.info ?? classifyEdition(m, index)).ruleset === "2024" ? "2024" : "2014"));
 
   if (m.senses?.length) {
     const senseStrs = m.senses.map(s => {
