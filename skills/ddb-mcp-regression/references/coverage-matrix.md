@@ -70,8 +70,8 @@ Not applicable: locked, edition, source, homebrew, pagination, gate
 Scenarios: normal, not-found, logged-out
 Not applicable: invalid, ambiguous, locked, edition, source, homebrew, pagination, gate
 
-- normal: "What does Sneak Attack do for Ezra?" (127373542) → the entry's text, tagged with its edition.
-- not-found: something the character doesn't have → plain "not found on this character", near matches if any.
+- normal: "What does Sneak Attack do for Ezra?" (127373542) → the `[Class Feature]` entry's text (not a subclass feature), tagged with its edition. "What does Battle Medic do for Niko?" (133057712) → the feat Healer, with a line saying it was found through the action Battle Medic.
+- not-found: something the character doesn't have → plain "not found on this character", near matches if any. The name of an action on the character's sheet is not "something it doesn't have": it finds the feat, trait or feature that grants it.
 - logged-out: a public test character by ID → works.
 
 ## `ddb_get_character_raw`

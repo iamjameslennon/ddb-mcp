@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { formatCharacterLookup } from "../src/tools/character/definition.js";
+import { actionParents } from "../src/tools/character/actions.js";
+import type { CharData, ClassEntry } from "../src/tools/character/types.js";
 import { wrapUntrusted } from "../src/utils.js";
 import { FIGHTER_5, MONK_3_HANDAXE } from "./fixtures/character-fixtures.js";
 import { INDEX, S, variant } from "./fixtures/character-edition-helpers.js";
@@ -193,5 +195,147 @@ describe("formatCharacterLookup", () => {
       d.inventory = [1, 2, 3, 4].map(n => ({ ...filigreed, definition: { ...filigreed.definition, id: 9010 + n, name: `Filigreed ${n}` } }));
     }).data as Record<string, unknown>;
     expect(formatCharacterLookup(char, "filigreed", INDEX)).toContain(wrapUntrusted("1. [Item] Filigreed 1 (Longsword, Common)"));
+  });
+  // ── Class vs subclass features (F2, owner ruling R4) ──────────────────────
+  // ARCANE_TRICKSTER_9-shaped (Ezra 127373542): D&D Beyond's subclass list also lists the
+  // base class features, plain and without classId; classes[].classFeatures carries classId.
+  const trickster = (feature355: Record<string, unknown> = { classId: 46 }) => variant(FIGHTER_5, d => {
+    d.classes[0] = {
+      id: 1, level: 9, hitDiceUsed: 0,
+      definition: { id: 12, name: "Rogue", hitDice: 8, sources: S(2) },
+      subclassDefinition: { id: 46, name: "Arcane Trickster", sources: S(2), classFeatures: [
+        { id: 343, name: "Sneak Attack", requiredLevel: 1 }, { id: 355, name: "Mage Hand Legerdemain", requiredLevel: 3 },
+      ] },
+      classFeatures: [
+        { definition: { id: 343, name: "Sneak Attack", classId: 12, requiredLevel: 1, description: "Extra damage." } },
+        { definition: { id: 355, name: "Mage Hand Legerdemain", requiredLevel: 3, description: "Invisible hand.", ...feature355 } },
+      ],
+    };
+  }).data as Record<string, unknown>;
+
+  it("a base class feature on a subclassed character is a Class Feature (F2)", () => {
+    expect(formatCharacterLookup(trickster(), "Sneak Attack", INDEX)).toBe(
+      "[Class Feature]\nSneak Attack (Rogue, Level 1)\nRules: 2014 · Player's Handbook (2014)\n\nExtra damage.");
+    expect(formatCharacterLookup(trickster(), "Mage Hand Legerdemain", INDEX)).toBe(
+      "[Subclass Feature]\nMage Hand Legerdemain (Rogue / Arcane Trickster, Level 3)\nRules: 2014 · Player's Handbook (2014)\n\nInvisible hand.");
+  });
+
+  it("a feature with no classId still uses subclass-list membership", () => {
+    expect(formatCharacterLookup(trickster({}), "Mage Hand Legerdemain", INDEX).split("\n").slice(0, 2)).toEqual(
+      ["[Subclass Feature]", "Mage Hand Legerdemain (Rogue / Arcane Trickster, Level 3)"]);
+    // A classId of 0 counts as absent.
+    expect(formatCharacterLookup(trickster({ classId: 0 }), "Mage Hand Legerdemain", INDEX).split("\n")[0]).toBe("[Subclass Feature]");
+  });
+
+  // ── Actions found through the entry that grants them (F1) ─────────────────
+  const FEAT_TYPE = 1088085227;
+  const TRAIT_TYPE = 1960452172;
+  const RACE_OPTION_TYPE = 306912077;
+  const CLASS_OPTION_TYPE = 258900837;
+  const CLASS_FEATURE_TYPE = 12168134;
+  const act = (name: string, componentId: number, componentTypeId: number, activationType = 1, extra: Record<string, unknown> = {}) =>
+    ({ name, componentId, componentTypeId, activation: { activationType }, ...extra });
+  const healer = { definition: { id: 1789152, entityTypeId: FEAT_TYPE, name: "Healer", description: "You can heal.", sources: S(145), categories: [] } };
+  const parents = (char: Record<string, unknown>) =>
+    actionParents(char as unknown as CharData, (char.classes ?? []) as unknown as ClassEntry[]);
+
+  it("an action name finds its feat (F1)", () => {
+    const char = variant(FIGHTER_5, d => {
+      d.feats = [healer];
+      d.actions = { feat: [act("Battle Medic", 1789152, FEAT_TYPE)] };
+    }).data as Record<string, unknown>;
+    expect(formatCharacterLookup(char, "battle medic", INDEX)).toBe(
+      "[Feat]\nHealer\nRules: 2024 · Player's Handbook (2024)\nFound through the action \"Battle Medic\", which this entry grants.\n\nYou can heal.");
+  });
+
+  it("an action granted through a race option finds the racial trait", () => {
+    const char = variant(FIGHTER_5, d => {
+      d.race.racialTraits = [{ definition: { id: 13856126, entityTypeId: TRAIT_TYPE, name: "Giant Ancestry", description: "Giant blood." } }];
+      d.options = { race: [{ componentId: 13856126, componentTypeId: TRAIT_TYPE,
+        definition: { id: 3727539, entityTypeId: RACE_OPTION_TYPE, name: "Stone’s Endurance (Stone Giant)" } }] };
+      d.actions = { race: [act("Stone’s Endurance (Stone Giant)", 3727539, RACE_OPTION_TYPE, 4)] };
+    }).data as Record<string, unknown>;
+    expect(formatCharacterLookup(char, "stones endurance", INDEX)).toBe(
+      "[Racial Trait]\nGiant Ancestry (Mountain Dwarf)\nRules: 2024 · Player's Handbook (2024)\n"
+      + "Found through the action \"Stone’s Endurance (Stone Giant)\", which this entry grants.\n\nGiant blood.");
+  });
+
+  it("an action granted through a chain of options finds the entry at its root", () => {
+    const char = variant(FIGHTER_5, d => {
+      d.feats = [healer];
+      d.options = { feat: [
+        { componentId: 1789152, componentTypeId: FEAT_TYPE, definition: { id: 61, entityTypeId: CLASS_OPTION_TYPE, name: "Outer" } },
+      ], class: [
+        { componentId: 61, componentTypeId: CLASS_OPTION_TYPE, definition: { id: 62, entityTypeId: CLASS_OPTION_TYPE, name: "Inner" } },
+      ] };
+      d.actions = { feat: [act("Mending Touch", 62, CLASS_OPTION_TYPE, 3)] };
+    }).data as Record<string, unknown>;
+    expect(parents(char)).toEqual([{ action: "Mending Touch", parent: "Healer", homebrew: false }]);
+    expect(formatCharacterLookup(char, "mending touch", INDEX).split("\n").slice(0, 4)).toEqual(
+      ["[Feat]", "Healer", "Rules: 2024 · Player's Handbook (2024)", "Found through the action \"Mending Touch\", which this entry grants."]);
+  });
+
+  it("a hidden action is not found", () => {
+    // A class action of a feature above the class level (the sheet hides it).
+    const hidden = variant(FIGHTER_5, d => {
+      d.feats = [healer];
+      d.classes[0].classFeatures = [{ definition: { id: 500, entityTypeId: CLASS_FEATURE_TYPE, name: "Indomitable", requiredLevel: 9 } }];
+      d.actions = { class: [act("Unyielding", 500, CLASS_FEATURE_TYPE)] };
+    }).data as Record<string, unknown>;
+    expect(parents(hidden)).toEqual([]);
+    expect(formatCharacterLookup(hidden, "unyielding", INDEX)).toMatch(/^No definition found matching "unyielding"/);
+    // The sheet's own rule (owner decision A6): activation types 1/3/4/8, no weapon-mastery action.
+    const unshown = variant(FIGHTER_5, d => {
+      d.feats = [healer];
+      d.actions = { feat: [act("Long Rite", 1789152, FEAT_TYPE, 6), act("Vex (Rapier)", 1789152, FEAT_TYPE, 1)] };
+    }).data as Record<string, unknown>;
+    expect(parents(unshown)).toEqual([]);
+    expect(formatCharacterLookup(unshown, "long rite", INDEX)).toMatch(/^No definition found/);
+    expect(formatCharacterLookup(unshown, "vex", INDEX)).toMatch(/^No definition found/);
+    // Bonus actions, reactions and Special (OTHER) actions are shown, so they are found.
+    const shown = variant(FIGHTER_5, d => {
+      d.feats = [healer];
+      d.actions = { feat: [act("Quick Aid", 1789152, FEAT_TYPE, 3), act("Ward Aid", 1789152, FEAT_TYPE, 4), act("Odd Aid", 1789152, FEAT_TYPE, 8)] };
+    }).data as Record<string, unknown>;
+    expect(parents(shown).map(p => p.action)).toEqual(["Quick Aid", "Ward Aid", "Odd Aid"]);
+  });
+
+  it("an option cycle ends without a hit and without hanging", () => {
+    const char = variant(FIGHTER_5, d => {
+      d.feats = [healer];
+      d.options = { feat: [
+        { componentId: 72, componentTypeId: CLASS_OPTION_TYPE, definition: { id: 71, entityTypeId: CLASS_OPTION_TYPE, name: "Loop A" } },
+        { componentId: 71, componentTypeId: CLASS_OPTION_TYPE, definition: { id: 72, entityTypeId: CLASS_OPTION_TYPE, name: "Loop B" } },
+      ] };
+      d.actions = { feat: [act("Loop Strike", 71, CLASS_OPTION_TYPE)] };
+    }).data as Record<string, unknown>;
+    expect(parents(char)).toEqual([]);
+    expect(formatCharacterLookup(char, "loop strike", INDEX)).toMatch(/^No definition found matching "loop strike"/);
+  });
+
+  it("an action named like its own parent, or whose parent is already a hit, adds nothing", () => {
+    const char = trickster();
+    (char as { actions?: unknown }).actions = { class: [act("Sneak Attack", 343, CLASS_FEATURE_TYPE, 8)] };
+    expect(parents(char)).toEqual([]);
+    expect(formatCharacterLookup(char, "sneak attack", INDEX)).not.toContain("Found through");
+    const both = variant(FIGHTER_5, d => {
+      d.feats = [healer];
+      d.actions = { feat: [act("Healer's Touch", 1789152, FEAT_TYPE)] };
+    }).data as Record<string, unknown>;
+    // "heal" finds the feat by its own name; the action adds no second copy.
+    expect(formatCharacterLookup(both, "heal", INDEX)).toBe(
+      "[Feat]\nHealer\nRules: 2024 · Player's Handbook (2024)\n\nYou can heal.");
+  });
+
+  it("a through-action hit in a list of more than three names its action (owner decision A5)", () => {
+    const char = variant(FIGHTER_5, d => {
+      d.feats = [healer];
+      d.actions = { feat: [act("Medic Aid", 1789152, FEAT_TYPE)] };
+      d.spells = { race: [1, 2, 3].map(n => ({ definition: { id: n, name: `Medic Spell ${n}`, level: 1, school: "Evocation", sources: S(145) } })) };
+    }).data as Record<string, unknown>;
+    const out = formatCharacterLookup(char, "medic", INDEX);
+    expect(out.startsWith('Found 4 matches for "medic".')).toBe(true);
+    expect(out).toContain('\n4. [Feat] Healer [2024] (through "Medic Aid")');
+    expect(out).not.toContain("untrusted_dndbeyond_content");
   });
 });

@@ -216,8 +216,20 @@ describe("one isSubclassFeature rule for label and wrapping (M-8)", () => {
   });
 
   it("a class feature listed by id in the subclass's classFeatures is labelled a subclass feature, as it is wrapped", () => {
-    const cls = { ...ranger(5), subclassDefinition: { id: 108, name: "Gloom Stalker", isHomebrew: true, classFeatures: [{ id: 900, name: "Dread Ambusher" }] } };
+    // Without a classId, subclass-list membership decides (R4).
+    const cls = { ...ranger(undefined), subclassDefinition: { id: 108, name: "Gloom Stalker", isHomebrew: true, classFeatures: [{ id: 900, name: "Dread Ambusher" }] } };
     const out = lookup({ classes: [cls], options: { class: [] } }, "Dread Ambusher");
     expect(out.startsWith("[Subclass Feature]\n<untrusted_dndbeyond_content>\nDread Ambusher (Ranger / Gloom Stalker, Level 3)\n")).toBe(true);
+    expect(sheet({ classes: [cls], options: { class: [] } })).toContain(wrapUntrusted("• Dread Ambusher (Ranger 3)"));
+  });
+
+  it("a feature whose classId is the class's is a plain class feature even when the subclass lists it (R4)", () => {
+    const cls = { ...ranger(5), subclassDefinition: { id: 108, name: "Gloom Stalker", isHomebrew: true, classFeatures: [{ id: 900, name: "Dread Ambusher" }] } };
+    const out = lookup({ classes: [cls], options: { class: [] } }, "Dread Ambusher");
+    expect(out.startsWith("[Class Feature]\nDread Ambusher (Ranger, Level 3)\n")).toBe(true);
+    expect(out).not.toContain("untrusted_dndbeyond_content");
+    const s = sheet({ classes: [cls], options: { class: [] } });
+    expect(s).toContain("• Dread Ambusher (Ranger 3)");
+    expect(s).not.toContain(wrapUntrusted("• Dread Ambusher (Ranger 3)"));
   });
 });

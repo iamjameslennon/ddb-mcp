@@ -179,3 +179,12 @@ Source: tool-notes.md, `ddb_login` (Task 10b, F30/F29; owner rulings 2026-11-11/
 ### An unfinished character gets a not-ready line, not numbers
 Looks like: a character with no species, no class, or a base ability score (1–6) of zero and no override prints its header, then `⚠️ This character isn't finished on D&D Beyond (missing <a species / a class / ability scores>), so its numbers can't be worked out yet. D&D Beyond shows "Character Not Ready!" for it.` in place of the vitals, stats, defences, combat, spells and concentration. Features, inventory and notes still print. A finished 2024 character (race null, lineage in options) never gets it.
 Source: tool-notes.md, `ddb_get_character` (F12; owner decision B3 2026-11-17).
+
+### A base class feature is a Class Feature, even on a subclassed character
+Looks like: `ddb_character_lookup` "Sneak Attack" on Ezra 127373542 (Arcane Trickster) gives `[Class Feature]` with first line `Sneak Attack (Rogue, Level 1)` and the class's book; "Mage Hand Legerdemain" gives `[Subclass Feature]` with `Mage Hand Legerdemain (Rogue / Arcane Trickster, Level 3)` and the subclass's book. A feature belongs to the class or subclass its `classId` names; only a feature without one counts as the subclass's because the subclass lists it. Under a homebrew subclass of an official class, the subclass's own features are wrapped as untrusted and the base class features stay plain; under a homebrew class every feature is wrapped.
+Source: history.md, Regression remediation 2026-11-13 (owner ruling R4, 2026-11-13, confirmed 2026-11-17).
+
+### An action's name finds the entry that grants it
+Looks like: `ddb_character_lookup` "battle medic" on Niko 133057712 gives `[Feat]` Healer, and "stones endurance" on Goliath Barbarian 152579009 gives `[Racial Trait]` Giant Ancestry (through its Stone Giant option); the hit carries its usual Rules line, then `Found through the action "<action>", which this entry grants.` In a list of more than three matches the line ends ` (through "<action>")`. Only actions the combat block shows count (actions, bonus actions, reactions and Special, not weapon-mastery actions); an entry already found by its own name is not listed twice, and an action named like its own feature (Sneak Attack) adds nothing. A hit is wrapped as untrusted when the entry or the action is homebrew.
+Source: tool-notes.md, `ddb_character_lookup` "Entries found through an action" (F1; owner decisions A5 and A6, 2026-11-17).
+

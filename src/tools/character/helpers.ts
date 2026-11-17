@@ -58,17 +58,22 @@ const coercedId = (v: unknown): number => {
 };
 
 /**
- * Whether a class feature entry is one of its class's subclass features: its
- * definition's `classId` is the subclass's id (F9; owner ruling 2026-11-12;
- * either may be a numeric string), or it has the same definition id as one in
+ * Whether a class feature entry is one of its class's subclass features. A
+ * definition with a non-zero `classId` belongs to that class: it is a subclass
+ * feature exactly when the `classId` is the subclass's id (F9, owner ruling
+ * 2026-11-12; either may be a numeric string). Only without a `classId` does
+ * membership decide: the same definition id as one in
  * `subclassDefinition.classFeatures`, or (an entry without ids) the same name.
+ * D&D Beyond's subclass list also lists the base class features (plain, no
+ * `classId`), so membership alone would make Sneak Attack an Arcane Trickster
+ * feature (F2, owner ruling R4, 2026-11-13, confirmed 2026-11-17).
  * The one rule for the lookup's label and Rules line and for homebrew wrapping
- * (`isHomebrewClassFeature`), so they always agree.
+ * (`isHomebrewClassFeature`), so they always agree (M-8).
  */
 export function isSubclassFeature(feature: unknown, subclass: Record<string, unknown>): boolean {
   const def = featureDefinition(feature);
-  const subclassId = coercedId(subclass.id);
-  if (subclassId && coercedId(def.classId) === subclassId) return true;
+  const classId = coercedId(def.classId);
+  if (classId) return classId === coercedId(subclass.id);
   const id = num(def.id);
   const name = str(def.name);
   return arr<unknown>(subclass.classFeatures).some(sf => {

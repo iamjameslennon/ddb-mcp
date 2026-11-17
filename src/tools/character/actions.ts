@@ -29,6 +29,7 @@ import { spellCastLabel } from "./slots.js";
 import { computeSpellAttackRows } from "./spell-attacks.js";
 import { computeUnarmedStrike, computeWeaponAttacks } from "./weapons.js";
 import { MASTERY_NAMES } from "../weapon-mastery.js";
+import { nameFold } from "../../name-match.js";
 
 export interface Actions {
   weaponAttacks: string[];        // ["• Longsword        +5 to hit   1d8+3 slashing (1d10+3 two-handed)   reach 5 ft.   Versatile", …]
@@ -99,18 +100,30 @@ function walkBaseEntities(char: CharData, classes: readonly ClassEntry[], add: (
  * entityKey (options included). Where several share a key the first named wins.
  */
 export function grantingEntityNames(char: CharData, classes: readonly ClassEntry[]): Map<string, string> {
-  const names = new Map<string, string>();
-  const add = (def: unknown) => {
-    const d = obj(def);
-    const name = str(d.name).trim();
-    if (!num(d.id) || !num(d.entityTypeId) || !name) return;
-    const key = entityKey(d.id, d.entityTypeId);
-    if (!names.has(key)) names.set(key, name);
-  };
-  walkBaseEntities(char, classes, add);
-  for (const o of Object.values(obj(char.options)).flatMap(v => arr<unknown>(v)).filter(isRecord)) add(o.definition);
+  const names = baseEntityNames(char, classes);
+  for (const o of allOptions(char)) addName(names, o.definition);
   return names;
 }
+
+/** Records a definition's trimmed name under its entityKey; the first named wins. */
+function addName(names: Map<string, string>, def: unknown): void {
+  const d = obj(def);
+  const name = str(d.name).trim();
+  if (!num(d.id) || !num(d.entityTypeId) || !name) return;
+  const key = entityKey(d.id, d.entityTypeId);
+  if (!names.has(key)) names.set(key, name);
+}
+
+/** grantingEntityNames without the options: the names walkBaseEntities sees. */
+function baseEntityNames(char: CharData, classes: readonly ClassEntry[]): Map<string, string> {
+  const names = new Map<string, string>();
+  walkBaseEntities(char, classes, def => addName(names, def));
+  return names;
+}
+
+/** Every option the character chose, in every bucket (null or non-object entries skipped). */
+const allOptions = (char: CharData): Record<string, unknown>[] =>
+  Object.values(obj(char.options)).flatMap(v => arr<unknown>(v)).filter(isRecord);
 
 /**
  * Adds the options (a choice made under a class feature, racial trait, feat or
@@ -122,7 +135,7 @@ export function grantingEntityNames(char: CharData, classes: readonly ClassEntry
  * found is added only when it is itself homebrew.
  */
 function withOptions(char: CharData, base: Map<string, boolean[]>): Map<string, boolean[]> {
-  const options = Object.values(obj(char.options)).flatMap(v => arr<unknown>(v)).filter(isRecord);
+  const options = allOptions(char);
   const known = (flags: readonly (boolean | undefined)[]) => {
     const entities = new Map(base);
     options.forEach((o, i) => { if (flags[i] !== undefined) addEntity(entities, o.definition, flags[i]); });
@@ -275,6 +288,50 @@ function getAllActions(char: CharData, classes: readonly ClassEntry[]): CharActi
 
 const activationType = (a: Record<string, unknown>): number =>
   num(obj(a.activation).activationType);
+
+/**
+ * Whether the combat block prints a visible action as a row: an action (1)
+ * that is not a weapon-mastery action (the weapon rows show mastery), a bonus
+ * action (3), a reaction (4) or a Special action (8, under OTHER). The one
+ * rule for computeActions and actionParents (owner decision A6, 2026-11-17).
+ */
+function isShownAction(a: Record<string, unknown>): boolean {
+  const type = activationType(a);
+  return type === 1 ? !isMasteryAction(a) : type === 3 || type === 4 || type === 8;
+}
+
+/**
+ * The entry that grants each action the combat block shows (isShownAction,
+ * among getAllActions' visible ones) with a name, for ddb_character_lookup (F1).
+ * The action's componentId / componentTypeId key names its granting
+ * definition. While that key is an option's (any bucket, matched by the
+ * option definition's entityKey), it moves to that option's own owner, at most
+ * options + 1 steps, so a cycle ends unresolved. The final key's name comes
+ * from the base entities (walkBaseEntities). An unresolved action, or one whose
+ * parent's name folds to its own (Sneak Attack), is left out. `homebrew` is the
+ * action line's own flag.
+ */
+export function actionParents(char: CharData, classes: readonly ClassEntry[]): Array<{ action: string; parent: string; homebrew: boolean }> {
+  const options = allOptions(char);
+  const ownerOf = new Map<string, string>();
+  for (const o of options) {
+    const d = obj(o.definition);
+    if (!num(d.id) || !num(d.entityTypeId)) continue;
+    const key = entityKey(d.id, d.entityTypeId);
+    if (!ownerOf.has(key)) ownerOf.set(key, entityKey(o.componentId, o.componentTypeId));
+  }
+  const names = baseEntityNames(char, classes);
+  return getAllActions(char, classes).flatMap(({ action, homebrew }) => {
+    const name = str(action.name).trim();
+    if (name === "" || !isShownAction(action)) return [];
+    let key = entityKey(action.componentId, action.componentTypeId);
+    for (let step = 0; step <= options.length && ownerOf.has(key); step++) key = ownerOf.get(key) ?? key;
+    if (ownerOf.has(key)) return [];
+    const parent = names.get(key);
+    if (parent === undefined || nameFold(parent) === nameFold(name)) return [];
+    return [{ action: name, parent, homebrew }];
+  });
+}
 
 // ── Bonus-action and reaction spells ─────────────────────────────────────────
 // activationType 3=bonus action, 4=reaction; the spells are gathered by
@@ -492,18 +549,17 @@ export function computeActions(core: CoreStats): Actions {
   // activationType 3 = bonus action in class actions, 4 = reaction
   // activationType 1 = action (weapon-mastery actions are skipped: the weapon rows show mastery)
   // activationType 8 = special, listed under OTHER
-  const actionFeatures = allActions
-    .filter(a => activationType(a.action) === 1 && !isMasteryAction(a.action))
-    .map(line);
-  const otherFeatures = allActions.filter(a => activationType(a.action) === 8).map(line);
+  const shown = allActions.filter(a => isShownAction(a.action));
+  const actionFeatures = shown.filter(a => activationType(a.action) === 1).map(line);
+  const otherFeatures = shown.filter(a => activationType(a.action) === 8).map(line);
   const bonusActions = [
-    ...allActions.filter(a => activationType(a.action) === 3).map(line),
+    ...shown.filter(a => activationType(a.action) === 3).map(line),
     ...bonusActionSpells,
   ];
   // Reactions: Opportunity Attack is universal, then class reactions, then reaction spells
   const reactions: string[] = [
     "• Opportunity Attack",
-    ...allActions.filter(a => activationType(a.action) === 4).map(line),
+    ...shown.filter(a => activationType(a.action) === 4).map(line),
     ...reactionSpells,
   ];
   const limitedUseFeatures = [

@@ -19,7 +19,7 @@ import { loadCharacterForParse, withNotice } from "../character.js";
 import { computeCharacterEditions, type CharacterEditions } from "./editions.js";
 import { featureDefinition, isHomebrewClassFeature, isHomebrewEntry, isSubclassFeature, records } from "./helpers.js";
 import { resolveBackground } from "./features.js";
-import { chosenClassOptions } from "./actions.js";
+import { actionParents, chosenClassOptions } from "./actions.js";
 import type { CharData, ClassEntry } from "./types.js";
 import { castingTimeText } from "../casting-time.js";
 import { withoutMasteryParagraph } from "../weapon-mastery.js";
@@ -123,9 +123,27 @@ interface DefinitionHit {
   untrusted: boolean;
   /** A player-made item: its rules line is CUSTOM_ITEM_RULES_LINE, not its ruleset's. */
   customItem?: boolean;
+  /**
+   * Found through an action this entry grants (F1): the action's name, and
+   * whether its sheet line is homebrew (the name is then user-authored text).
+   */
+  via?: { action: string; homebrew: boolean };
 }
 
-function searchDefinitions(char: Record<string, unknown>, query: string, editions: CharacterEditions, index: SourceIndex): DefinitionHit[] {
+/** The line a through-action hit prints after its Rules line (F1). */
+const viaLine = (action: string): string => `Found through the action "${action}", which this entry grants.`;
+
+/**
+ * `viaActions: false` searches entry names only; otherwise an action whose
+ * name matches also finds the entry that grants it (actionParents, F1).
+ */
+function searchDefinitions(
+  char: Record<string, unknown>,
+  query: string,
+  editions: CharacterEditions,
+  index: SourceIndex,
+  { viaActions = true }: { viaActions?: boolean } = {},
+): DefinitionHit[] {
   const results: DefinitionHit[] = [];
 
   // searchDefinitions intentionally keeps these as locals (not the shared
@@ -204,8 +222,14 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
     }
 
     // Plain definitions here, unlike classes[].classFeatures (featureDefinition reads both shapes).
+    // D&D Beyond lists the base class features here too (F2); an entry that is in
+    // classes[].classFeatures is the class loop's to decide (R4). Redundant today: plain
+    // entries carry `requiredLevel`, and `seen` dedupes by name. Kept as a guard (owner
+    // decision M17, 2026-11-17).
+    const classFeatureIds = new Set(records(cls.classFeatures).map(cf => num(obj(cf.definition).id)).filter(id => id !== 0));
     for (const cf of arr<Record<string, unknown>>(subDef.classFeatures)) {
       const d = featureDefinition(cf);
+      if (classFeatureIds.has(num(d.id))) continue;
       const name = str(d.name);
       const requiredLevel = num(d.requiredLevel || 1);
       if (requiredLevel <= charLevel && name && matchesDefinitionQuery(name, query) && !seen.has(name)) {
@@ -329,6 +353,20 @@ function searchDefinitions(char: Record<string, unknown>, query: string, edition
     }
   }
 
+  // ── Entries found through an action they grant (F1) ──────────────────────
+  // An action the sheet shows (Battle Medic, Stone's Endurance) finds its feat, trait or
+  // feature, through any chain of options. An entry already listed is not repeated.
+  if (viaActions) {
+    for (const { action, parent, homebrew } of actionParents(char as CharData, classEntries as unknown as ClassEntry[])) {
+      if (!matchesDefinitionQuery(action, query)) continue;
+      for (const hit of searchDefinitions(char, parent, editions, index, { viaActions: false })) {
+        if (nameFold(hit.name) !== nameFold(parent)) continue;
+        if (results.some(r => r.type === hit.type && r.name === hit.name)) continue;
+        results.push({ ...hit, via: { action, homebrew } });
+      }
+    }
+  }
+
   return results;
 }
 
@@ -374,15 +412,21 @@ function formatDefinitionHits(found: DefinitionHit[], query: string): string {
       const first = h.text.split("\n")[0];
       // A custom item has no ruleset, so no tag, as on the sheet (owner ruling 2026-11-07).
       const tag = h.customItem ? "" : ` ${editionTag(h.info)}`;
-      return wrapIfHomebrew(`${i + 1}. [${h.type}] ${h.name}${tag}${first.slice(h.name.length)}`, h.untrusted);
+      // A through-action hit names its action (owner decision A5, 2026-11-17).
+      const via = h.via ? ` (through "${h.via.action}")` : "";
+      return wrapIfHomebrew(`${i + 1}. [${h.type}] ${h.name}${tag}${first.slice(h.name.length)}${via}`, userAuthored(h));
     }).join("\n");
     return `Found ${hits.length} matches for "${query}". Be more specific, or here are the matches:\n\n${list}`;
   }
 
   return hits.map(h => {
     const [first, ...rest] = h.text.split("\n");
-    // The whole block, rules line included, is delimited when it is user-authored.
+    // The whole block, rules line and via line included, is delimited when it is user-authored.
     const rules = h.customItem ? CUSTOM_ITEM_RULES_LINE : rulesLine(h.info);
-    return `[${h.type}]\n${wrapIfHomebrew([first, rules, ...rest].join("\n"), h.untrusted)}`;
+    const via = h.via ? [viaLine(h.via.action)] : [];
+    return `[${h.type}]\n${wrapIfHomebrew([first, rules, ...via, ...rest].join("\n"), userAuthored(h))}`;
   }).join("\n\n===\n\n");
 }
+
+/** A hit's text is user-authored: the entry is, or (a through-action hit) the action's name is. */
+const userAuthored = (h: DefinitionHit): boolean => h.untrusted || h.via?.homebrew === true;
