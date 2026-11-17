@@ -48,7 +48,7 @@ Shows up as: an equipped magic or attunable item with quantity above 1 listed in
 ## Character lookup
 
 ### (bv) Some short words still match loosely
-Shows up as: `ddb_character_lookup` listing an unrelated entry next to the right one ("bless" → Eldritch Blast, "rage" → Mage Armor, "cure" → Hexblade's Curse). An exact name match is listed first, so this is noise, not a wrong answer; a wrong entry listed *first* is a new finding. The action names a lookup also searches (an entry found through its action) follow the same rule, so "age" can also list a feat through an action named "…Damage".
+Shows up as: `ddb_character_lookup` listing an unrelated entry next to the right one ("bless" → Eldritch Blast, "rage" → Mage Armor, "cure" → Hexblade's Curse). An exact name match is listed first, so this is noise, not a wrong answer; a wrong entry listed *first* is a new finding. The action names a lookup also searches (an entry found through its action) match only by substring, without typo tolerance, but a short query can still sit inside a longer word: "age" can also list a feat through an action named "…Damage".
 
 ## Monsters
 

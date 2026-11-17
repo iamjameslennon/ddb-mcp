@@ -204,7 +204,7 @@ describe("option hits under a homebrew class or subclass (I-1)", () => {
 describe("one isSubclassFeature rule for label and wrapping (M-8)", () => {
   const ranger = (classId: unknown) => fighter({
     level: 5,
-    definition: { ...(FIGHTER.definition as Record<string, unknown>), name: "Ranger", sourceId: 1, sources: [{ sourceId: 1 }] },
+    definition: { ...(FIGHTER.definition as Record<string, unknown>), id: 5, name: "Ranger", sourceId: 1, sources: [{ sourceId: 1 }] },
     subclassDefinition: { id: 108, name: "Gloom Stalker", isHomebrew: true, classFeatures: [] },
     classFeatures: [feature(900, "Dread Ambusher", { classId, requiredLevel: 3 })],
   });

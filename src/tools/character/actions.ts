@@ -78,21 +78,24 @@ export function grantingEntities(char: CharData, classes: readonly ClassEntry[])
  * grantingEntities records them (options excluded; see withOptions). Shared
  * with grantingEntityNames so the two cover the same sources.
  */
-function walkBaseEntities(char: CharData, classes: readonly ClassEntry[], add: (def: unknown, homebrew: boolean) => void): void {
+/** Which kind of base entity a definition is (walkBaseEntities), for matching it to a lookup hit. */
+export type EntityKind = "class-feature" | "racial-trait" | "feat" | "item" | "background";
+
+function walkBaseEntities(char: CharData, classes: readonly ClassEntry[], add: (def: unknown, homebrew: boolean, kind: EntityKind) => void): void {
   // Null or non-object entries are skipped.
   for (const cls of classes) {
-    for (const cf of arr<unknown>(cls.classFeatures).filter(isRecord)) add(featureDefinition(cf), isHomebrewClassFeature(cf, cls));
+    for (const cf of arr<unknown>(cls.classFeatures).filter(isRecord)) add(featureDefinition(cf), isHomebrewClassFeature(cf, cls), "class-feature");
     // Subclass features listed only on the subclass definition (plain shape).
-    for (const cf of arr<unknown>(obj(cls.subclassDefinition).classFeatures).filter(isRecord)) add(featureDefinition(cf), isHomebrewClassFeature(cf, cls));
+    for (const cf of arr<unknown>(obj(cls.subclassDefinition).classFeatures).filter(isRecord)) add(featureDefinition(cf), isHomebrewClassFeature(cf, cls), "class-feature");
   }
   const race = obj(char.race);
-  for (const t of arr<unknown>(race.racialTraits).filter(isRecord)) add(t.definition, isHomebrewEntry(t, race));
-  for (const f of arr<unknown>(char.feats).filter(isRecord)) add(f.definition, isHomebrewEntry(f));
-  for (const i of arr<unknown>(char.inventory).filter(isRecord)) add(i.definition, isHomebrewEntry(i));
+  for (const t of arr<unknown>(race.racialTraits).filter(isRecord)) add(t.definition, isHomebrewEntry(t, race), "racial-trait");
+  for (const f of arr<unknown>(char.feats).filter(isRecord)) add(f.definition, isHomebrewEntry(f), "feat");
+  for (const i of arr<unknown>(char.inventory).filter(isRecord)) add(i.definition, isHomebrewEntry(i), "item");
   const { bgDef, untrusted } = resolveBackground(char);
-  add(bgDef, untrusted);
+  add(bgDef, untrusted, "background");
   // A custom background shows its own definition; an action can still name the stock one.
-  if (obj(obj(char.background).definition) !== bgDef) add(obj(char.background).definition, untrusted);
+  if (obj(obj(char.background).definition) !== bgDef) add(obj(char.background).definition, untrusted, "background");
 }
 
 /**
@@ -100,25 +103,25 @@ function walkBaseEntities(char: CharData, classes: readonly ClassEntry[], add: (
  * entityKey (options included). Where several share a key the first named wins.
  */
 export function grantingEntityNames(char: CharData, classes: readonly ClassEntry[]): Map<string, string> {
-  const names = baseEntityNames(char, classes);
-  for (const o of allOptions(char)) addName(names, o.definition);
+  const names = new Map([...baseEntities(char, classes)].map(([key, e]) => [key, e.name]));
+  for (const o of allOptions(char)) addName(names, o.definition, n => n);
   return names;
 }
 
-/** Records a definition's trimmed name under its entityKey; the first named wins. */
-function addName(names: Map<string, string>, def: unknown): void {
+/** Records a definition's trimmed name (as `make` builds the value) under its entityKey; the first named wins. */
+function addName<T>(names: Map<string, T>, def: unknown, make: (name: string) => T): void {
   const d = obj(def);
   const name = str(d.name).trim();
   if (!num(d.id) || !num(d.entityTypeId) || !name) return;
   const key = entityKey(d.id, d.entityTypeId);
-  if (!names.has(key)) names.set(key, name);
+  if (!names.has(key)) names.set(key, make(name));
 }
 
-/** grantingEntityNames without the options: the names walkBaseEntities sees. */
-function baseEntityNames(char: CharData, classes: readonly ClassEntry[]): Map<string, string> {
-  const names = new Map<string, string>();
-  walkBaseEntities(char, classes, def => addName(names, def));
-  return names;
+/** The named definitions walkBaseEntities sees (options excluded), with their kind, by entityKey. */
+function baseEntities(char: CharData, classes: readonly ClassEntry[]): Map<string, { name: string; kind: EntityKind }> {
+  const entities = new Map<string, { name: string; kind: EntityKind }>();
+  walkBaseEntities(char, classes, (def, _homebrew, kind) => addName(entities, def, name => ({ name, kind })));
+  return entities;
 }
 
 /** Every option the character chose, in every bucket (null or non-object entries skipped). */
@@ -301,17 +304,23 @@ function isShownAction(a: Record<string, unknown>): boolean {
 }
 
 /**
- * The entry that grants each action the combat block shows (isShownAction,
- * among getAllActions' visible ones) with a name, for ddb_character_lookup (F1).
+ * The entry that grants each action the sheet shows with a name, for
+ * ddb_character_lookup (F1): among getAllActions' visible ones, a combat-block
+ * row (isShownAction, owner decision A6) or a LIMITED USE line (hasUses,
+ * whatever its activation type; fix round, owner decision 2026-11-17).
  * The action's componentId / componentTypeId key names its granting
  * definition. While that key is an option's (any bucket, matched by the
  * option definition's entityKey), it moves to that option's own owner, at most
  * options + 1 steps, so a cycle ends unresolved. The final key's name comes
  * from the base entities (walkBaseEntities). An unresolved action, or one whose
- * parent's name folds to its own (Sneak Attack), is left out. `homebrew` is the
- * action line's own flag.
+ * parent's name folds to its own (Sneak Attack), is left out. `kind` is the
+ * parent's kind, so the lookup marks only that kind's entry of the name.
+ * `homebrew` is the action line's own flag.
  */
-export function actionParents(char: CharData, classes: readonly ClassEntry[]): Array<{ action: string; parent: string; homebrew: boolean }> {
+export function actionParents(
+  char: CharData,
+  classes: readonly ClassEntry[],
+): Array<{ action: string; parent: string; kind: EntityKind; homebrew: boolean }> {
   const options = allOptions(char);
   const ownerOf = new Map<string, string>();
   for (const o of options) {
@@ -320,16 +329,16 @@ export function actionParents(char: CharData, classes: readonly ClassEntry[]): A
     const key = entityKey(d.id, d.entityTypeId);
     if (!ownerOf.has(key)) ownerOf.set(key, entityKey(o.componentId, o.componentTypeId));
   }
-  const names = baseEntityNames(char, classes);
+  const entities = baseEntities(char, classes);
   return getAllActions(char, classes).flatMap(({ action, homebrew }) => {
     const name = str(action.name).trim();
-    if (name === "" || !isShownAction(action)) return [];
+    if (name === "" || !(isShownAction(action) || hasUses(obj(action.limitedUse)))) return [];
     let key = entityKey(action.componentId, action.componentTypeId);
     for (let step = 0; step <= options.length && ownerOf.has(key); step++) key = ownerOf.get(key) ?? key;
     if (ownerOf.has(key)) return [];
-    const parent = names.get(key);
-    if (parent === undefined || nameFold(parent) === nameFold(name)) return [];
-    return [{ action: name, parent, homebrew }];
+    const parent = entities.get(key);
+    if (parent === undefined || nameFold(parent.name) === nameFold(name)) return [];
+    return [{ action: name, parent: parent.name, kind: parent.kind, homebrew }];
   });
 }
 

@@ -19,12 +19,30 @@ import { loadCharacterForParse, withNotice } from "../character.js";
 import { computeCharacterEditions, type CharacterEditions } from "./editions.js";
 import { featureDefinition, isHomebrewClassFeature, isHomebrewEntry, isSubclassFeature, records } from "./helpers.js";
 import { resolveBackground } from "./features.js";
-import { actionParents, chosenClassOptions } from "./actions.js";
+import { actionParents, chosenClassOptions, type EntityKind } from "./actions.js";
 import type { CharData, ClassEntry } from "./types.js";
 import { castingTimeText } from "../casting-time.js";
 import { withoutMasteryParagraph } from "../weapon-mastery.js";
 
 const matchesDefinitionQuery = matchesLooseName;
+
+/**
+ * An action name matches only when the folded query is a substring of it (fix round,
+ * owner decision 2026-11-17): the loose rule (carry-over (bv)) stays for entry names.
+ */
+const matchesActionQuery = (action: string, query: string): boolean => {
+  const q = nameFold(query);
+  return q !== "" && nameFold(action).includes(q);
+};
+
+/** The lookup hit types an entity kind gives (actionParents' `kind`). */
+const HIT_TYPES: Record<EntityKind, readonly string[]> = {
+  "class-feature": ["Class Feature", "Subclass Feature"],
+  "racial-trait": ["Racial Trait"],
+  feat: ["Feat"],
+  item: ["Item"],
+  background: ["Background Feature"],
+};
 
 function formatSpellResult(spell: Record<string, unknown>): string {
   const d = (spell.definition ?? spell) as Record<string, unknown>;
@@ -210,7 +228,7 @@ function searchDefinitions(
       if (requiredLevel <= charLevel && name && matchesDefinitionQuery(name, query) && !seen.has(name)) {
         seen.add(name);
         // A subclass feature (helpers.ts isSubclassFeature, F9) takes the subclass's book.
-        const sub = isSubclassFeature(cf, subDef);
+        const sub = isSubclassFeature(cf, cls);
         results.push({
           type: sub ? "Subclass Feature" : "Class Feature",
           name,
@@ -265,7 +283,7 @@ function searchDefinitions(
         owner = {
           cls,
           parentName: str(featureDefinition(parent).name),
-          viaSubclass: !inClass || isSubclassFeature(inClass, subDef),
+          viaSubclass: !inClass || isSubclassFeature(inClass, cls),
           homebrew: isHomebrewClassFeature(parent, cls),
         };
         break;
@@ -357,10 +375,11 @@ function searchDefinitions(
   // An action the sheet shows (Battle Medic, Stone's Endurance) finds its feat, trait or
   // feature, through any chain of options. An entry already listed is not repeated.
   if (viaActions) {
-    for (const { action, parent, homebrew } of actionParents(char as CharData, classEntries as unknown as ClassEntry[])) {
-      if (!matchesDefinitionQuery(action, query)) continue;
+    for (const { action, parent, kind, homebrew } of actionParents(char as CharData, classEntries as unknown as ClassEntry[])) {
+      if (!matchesActionQuery(action, query)) continue;
       for (const hit of searchDefinitions(char, parent, editions, index, { viaActions: false })) {
-        if (nameFold(hit.name) !== nameFold(parent)) continue;
+        // Only the granting entry's own kind: an item named like a racial trait grants nothing.
+        if (!HIT_TYPES[kind].includes(hit.type) || nameFold(hit.name) !== nameFold(parent)) continue;
         if (results.some(r => r.type === hit.type && r.name === hit.name)) continue;
         results.push({ ...hit, via: { action, homebrew } });
       }

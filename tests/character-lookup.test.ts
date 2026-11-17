@@ -270,7 +270,7 @@ describe("formatCharacterLookup", () => {
       ] };
       d.actions = { feat: [act("Mending Touch", 62, CLASS_OPTION_TYPE, 3)] };
     }).data as Record<string, unknown>;
-    expect(parents(char)).toEqual([{ action: "Mending Touch", parent: "Healer", homebrew: false }]);
+    expect(parents(char)).toEqual([{ action: "Mending Touch", parent: "Healer", kind: "feat", homebrew: false }]);
     expect(formatCharacterLookup(char, "mending touch", INDEX).split("\n").slice(0, 4)).toEqual(
       ["[Feat]", "Healer", "Rules: 2024 · Player's Handbook (2024)", "Found through the action \"Mending Touch\", which this entry grants."]);
   });
@@ -298,6 +298,50 @@ describe("formatCharacterLookup", () => {
       d.actions = { feat: [act("Quick Aid", 1789152, FEAT_TYPE, 3), act("Ward Aid", 1789152, FEAT_TYPE, 4), act("Odd Aid", 1789152, FEAT_TYPE, 8)] };
     }).data as Record<string, unknown>;
     expect(parents(shown).map(p => p.action)).toEqual(["Quick Aid", "Ward Aid", "Odd Aid"]);
+  });
+
+  it("an action the sheet lists only under LIMITED USE is found, whatever its activation type (fix round)", () => {
+    const char = variant(FIGHTER_5, d => {
+      d.feats = [healer];
+      d.actions = { feat: [
+        act("Long Rite", 1789152, FEAT_TYPE, 6, { limitedUse: { maxUses: 2, numberUsed: 0, resetType: 2 } }),
+        act("Quiet Rite", 1789152, FEAT_TYPE, 6, { limitedUse: { maxUses: 0 } }),
+      ] };
+    }).data as Record<string, unknown>;
+    expect(parents(char).map(p => p.action)).toEqual(["Long Rite"]);
+    expect(formatCharacterLookup(char, "long rite", INDEX).split("\n").slice(0, 4)).toEqual(
+      ["[Feat]", "Healer", "Rules: 2024 · Player's Handbook (2024)", "Found through the action \"Long Rite\", which this entry grants."]);
+    expect(formatCharacterLookup(char, "quiet rite", INDEX)).toMatch(/^No definition found/);
+  });
+
+  it("an action name matches by folded substring only; entry names keep the loose rule (fix round)", () => {
+    const char = variant(FIGHTER_5, d => {
+      d.feats = [healer];
+      d.actions = { feat: [act("Reactive Spell", 1789152, FEAT_TYPE, 4)] };
+    }).data as Record<string, unknown>;
+    // "speed" is within the loose rule's edit distance of "spell", but not a substring.
+    expect(formatCharacterLookup(char, "speed", INDEX)).toMatch(/^No definition found/);
+    expect(formatCharacterLookup(char, "reactive spells", INDEX)).toMatch(/^No definition found/);
+    expect(formatCharacterLookup(char, "reactive", INDEX)).toContain('Found through the action "Reactive Spell"');
+    // Folded as entry names are: hyphens and apostrophes.
+    expect(formatCharacterLookup(char, "Reactive-Spell", INDEX)).toContain("Found through");
+    // An entry's own name still matches loosely ("heeler" → Healer).
+    expect(formatCharacterLookup(char, "heeler", INDEX).split("\n")[0]).toBe("[Feat]");
+  });
+
+  it("only the granting entry's kind gets the via line: an item named like the racial trait does not (fix round)", () => {
+    const char = variant(FIGHTER_5, d => {
+      d.race.racialTraits = [{ definition: { id: 13856126, entityTypeId: TRAIT_TYPE, name: "Giant Ancestry", description: "Giant blood." } }];
+      d.inventory = [{ equipped: true, quantity: 1, definition: { id: 9100, entityTypeId: 2103445194, name: "Giant Ancestry", type: "Trinket", rarity: "Common", sources: S(145) } }];
+      d.options = { race: [{ componentId: 13856126, componentTypeId: TRAIT_TYPE,
+        definition: { id: 3727539, entityTypeId: RACE_OPTION_TYPE, name: "Stone’s Endurance (Stone Giant)" } }] };
+      d.actions = { race: [act("Stone’s Endurance (Stone Giant)", 3727539, RACE_OPTION_TYPE, 4)] };
+    }).data as Record<string, unknown>;
+    expect(parents(char)).toEqual([{ action: "Stone’s Endurance (Stone Giant)", parent: "Giant Ancestry", kind: "racial-trait", homebrew: false }]);
+    const out = formatCharacterLookup(char, "stones endurance", INDEX);
+    expect(out.startsWith("[Racial Trait]\nGiant Ancestry (Mountain Dwarf)\n")).toBe(true);
+    expect(out).not.toContain("[Item]");
+    expect(out.match(/which this entry grants/g)).toHaveLength(1);
   });
 
   it("an option cycle ends without a hit and without hanging", () => {

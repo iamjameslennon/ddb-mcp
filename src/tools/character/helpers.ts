@@ -58,22 +58,25 @@ const coercedId = (v: unknown): number => {
 };
 
 /**
- * Whether a class feature entry is one of its class's subclass features. A
- * definition with a non-zero `classId` belongs to that class: it is a subclass
- * feature exactly when the `classId` is the subclass's id (F9, owner ruling
- * 2026-11-12; either may be a numeric string). Only without a `classId` does
- * membership decide: the same definition id as one in
- * `subclassDefinition.classFeatures`, or (an entry without ids) the same name.
- * D&D Beyond's subclass list also lists the base class features (plain, no
- * `classId`), so membership alone would make Sneak Attack an Arcane Trickster
- * feature (F2, owner ruling R4, 2026-11-13, confirmed 2026-11-17).
- * The one rule for the lookup's label and Rules line and for homebrew wrapping
- * (`isHomebrewClassFeature`), so they always agree (M-8).
+ * Whether a class feature entry of the class entry `cls` (`classes[]`) is one
+ * of its subclass features. A definition's non-zero `classId` names its owner:
+ * the subclass's id makes it a subclass feature (F9, owner ruling 2026-11-12),
+ * and the class's own id (`cls.definition.id`) a class feature (F2, owner
+ * ruling R4, 2026-11-13, confirmed 2026-11-17); either may be a numeric
+ * string. A `classId` that is absent, 0 or names neither is left to
+ * membership (R4 fix round, owner decision 2026-11-17): the same definition id
+ * as one in `subclassDefinition.classFeatures`, or (an entry without ids) the
+ * same name. D&D Beyond's subclass list also lists the base class features
+ * (plain, no `classId`), so membership alone would make Sneak Attack an Arcane
+ * Trickster feature. The one rule for the lookup's label and Rules line and
+ * for homebrew wrapping (`isHomebrewClassFeature`), so they always agree (M-8).
  */
-export function isSubclassFeature(feature: unknown, subclass: Record<string, unknown>): boolean {
+export function isSubclassFeature(feature: unknown, cls: unknown): boolean {
+  const subclass = obj(obj(cls).subclassDefinition);
   const def = featureDefinition(feature);
   const classId = coercedId(def.classId);
-  if (classId) return classId === coercedId(subclass.id);
+  if (classId && classId === coercedId(subclass.id)) return true;
+  if (classId && classId === coercedId(obj(obj(cls).definition).id)) return false;
   const id = num(def.id);
   const name = str(def.name);
   return arr<unknown>(subclass.classFeatures).some(sf => {
@@ -86,7 +89,7 @@ export function isSubclassFeature(feature: unknown, subclass: Record<string, unk
 /** A class or subclass feature of `cls` is homebrew: the feature, its class, or (a subclass feature) its subclass. */
 export const isHomebrewClassFeature = (feature: unknown, cls: unknown): boolean => {
   const subclass = obj(obj(cls).subclassDefinition);
-  return isHomebrewEntry(feature, cls, isSubclassFeature(feature, subclass) ? subclass : null);
+  return isHomebrewEntry(feature, cls, isSubclassFeature(feature, cls) ? subclass : null);
 };
 
 /**
