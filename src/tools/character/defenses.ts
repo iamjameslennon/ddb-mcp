@@ -22,11 +22,32 @@ export interface Defenses {
   conditions: string[];
 }
 
-/** A subType is printed as the defense's name, so an unknown one is untrusted text (F-2026-10-20). */
+/** The slug a display name stands for: lowercase, other runs of non-alphanumerics as "-". */
+const slugOf = (name: string): string => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+/**
+ * D&D Beyond's wording for a known defense (`friendlySubtypeName`, "Magical Sleep" for
+ * `magical-sleep`), but only when that name is the subType spelled out in plain text
+ * (letters, digits, spaces and light punctuation). Anything else falls back to
+ * capitalize(subType), so a mismatched or unusual friendly name is never printed.
+ */
+function defenseName(m: Mod & { subType: string }): string {
+  const name = m.friendlySubtypeName;
+  const plain = typeof name === "string" && /^[A-Za-z0-9][A-Za-z0-9 ,'’-]*$/.test(name);
+  return plain && slugOf(name) === m.subType ? name : capitalize(m.subType);
+}
+
+/**
+ * A subType is printed as the defense's name, so an unknown one is untrusted text (F-2026-10-20).
+ * A known subType prints its allowlisted name (F15), so it stays plain.
+ */
 function defenseList(mods: ReadonlyArray<Mod & { subType: string }>): DefenseList {
   const known: string[] = [];
   const custom: string[] = [];
-  for (const m of mods) (DAMAGE_ADJUSTMENT_SLUGS.has(m.subType) ? known : custom).push(capitalize(m.subType));
+  for (const m of mods) {
+    if (DAMAGE_ADJUSTMENT_SLUGS.has(m.subType)) known.push(defenseName(m));
+    else custom.push(capitalize(m.subType));
+  }
   return { known: [...new Set(known)], custom: [...new Set(custom)] };
 }
 
