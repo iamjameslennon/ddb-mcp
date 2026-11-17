@@ -651,11 +651,15 @@ const SRD_NAME: Record<RulesEdition, string> = { "2024": "SRD 5.2", "2014": "SRD
 const OPEN5E_SUFFIX = {
   unavailable: " (Open5e fallback — D&D Beyond unavailable)",
   "not-found": " (Open5e fallback — not found on D&D Beyond)",
+  // No usable login, so D&D Beyond was never asked: say how to get its version, not that it is down (F13).
+  "logged-out": " (Open5e fallback — not logged in; ddb_login shows D&D Beyond's version)",
   // A logged-out monster get whose D&D Beyond entry is locked shows the SRD text instead (owner ruling 2026-11-02).
   "needs-login": " (Open5e — the D&D Beyond version needs ddb_login)",
   primary: "",
 } as const;
 export type Open5eOrigin = keyof typeof OPEN5E_SUFFIX;
+/** Why a catalog search or get fell back to Open5e (not the monster `needs-login`/`primary` origins). */
+export type Open5eFallbackOrigin = "unavailable" | "not-found" | "logged-out";
 
 /**
  * The line under a single lookup's title, e.g. "Rules: 2024 · Player's Handbook (2024)".
@@ -743,7 +747,7 @@ export const NEAR_MATCH_RULES_LINE = "Rules: closest matches only — no edition
  * First line of an Open5e fallback search: its lines mix SRD 5.2 and SRD 5.1
  * entries, selected like D&D Beyond entries.
  */
-export function open5eSearchHeader(requested: RulesEdition, origin: "unavailable" | "not-found"): string {
+export function open5eSearchHeader(requested: RulesEdition, origin: Open5eFallbackOrigin): string {
   const other: RulesEdition = requested === "2024" ? "2014" : "2024";
   const head = requested === "2024" ? "Rules: 2024 by default" : "Rules: 2014 requested";
   return `${head} — ${SRD_NAME[requested]}, with ${SRD_NAME[other]} entries only where no ${requested} version was found ${OPEN5E_SUFFIX[origin].trim()}.`;

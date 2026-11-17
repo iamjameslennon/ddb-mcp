@@ -14,7 +14,7 @@
 
 import {
   beginAuthenticatedSession, hasValidSession,
-  captureSession, assertSessionCurrent, onSessionInvalidated, SessionChangedError,
+  captureSession, assertSessionCurrent, onSessionInvalidated, SessionChangedError, NoSessionError, SessionNotSignedInError,
 } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
 import { describeTemplates } from "./character/templates.js";
@@ -22,7 +22,7 @@ import { stripHtml, wrapIfHomebrew } from "../utils.js";
 import {
   twinNames, classOwnerTwinKey, classifyEdition, selectByEdition, definitionTiebreak, isEdition,
   normalizeName, searchFooter, dedupeByKey, homebrewLoginRequired, homebrewUnreachable, homebrewNoMatch, homebrewNotFound,
-  type RulesEdition, type EditionInfo,
+  type RulesEdition, type EditionInfo, type Open5eFallbackOrigin,
 } from "../edition.js";
 import { MASTERY_NAMES, withoutMasteryParagraph } from "./weapon-mastery.js";
 import { peekSourceIndex, getSourceIndex } from "../game-config.js";
@@ -61,6 +61,18 @@ async function refFetch(url: string): Promise<Response> {
   // Single authenticated-fetch path: token + request bound to one snapshot.
   const session = await beginAuthenticatedSession();
   return session.fetch(url);
+}
+
+/**
+ * Why a catalog load failed, for the Open5e fallback's wording: "logged-out"
+ * when `err` or anything in its `cause` chain is a missing or not-signed-in
+ * session, else "unavailable" (D&D Beyond itself failed).
+ */
+function fallbackOrigin(err: unknown): "unavailable" | "logged-out" {
+  for (let e: unknown = err, i = 0; e instanceof Error && i < 8; e = e.cause, i++) {
+    if (e instanceof NoSessionError || e instanceof SessionNotSignedInError) return "logged-out";
+  }
+  return "unavailable";
 }
 
 // ── Shared game-data list loader ──────────────────────────────────────────────
@@ -252,6 +264,8 @@ async function loadSpellCompendium(): Promise<SpellStore> {
   }
 
   let failedTasks = 0;
+  // The first per-request error, kept as the cause of the all-failed error below.
+  let firstError: unknown;
 
   // Two requests per spellcasting class, both at classLevel=20:
   //
@@ -288,6 +302,7 @@ async function loadSpellCompendium(): Promise<SpellStore> {
       if (e instanceof SessionChangedError) throw e;
       // Otherwise continue — a partial compendium is still useful.
       failedTasks++;
+      firstError ??= e;
       return [];
     }
   }));
@@ -308,7 +323,8 @@ async function loadSpellCompendium(): Promise<SpellStore> {
     // falls through to per-call Open5e, and the next call retries DDB fresh.
     throw new Error(
       "Failed to load spell compendium — all D&D Beyond requests failed. " +
-      "Run ddb_login if your session has expired. Falling back to SRD content for this call."
+      "Run ddb_login if your session has expired. Falling back to SRD content for this call.",
+      { cause: firstError },
     );
   }
 
@@ -511,7 +527,7 @@ async function searchSpellsCore(params: SpellSearchParams): Promise<SearchSectio
     startedIndex?.withdraw();
     if (source === "homebrew") return plainSection(homebrewUnreachable("spells"));
     try {
-      return withSourceCaveatSection(await o5SearchSpellsSection(params, "unavailable"), params.source);
+      return withSourceCaveatSection(await o5SearchSpellsSection(params, fallbackOrigin(err)), params.source);
     } catch {
       throw err;
     }
@@ -580,7 +596,7 @@ export async function getSpell(spellName: string, rulesEdition: RulesEdition = "
     startedIndex?.withdraw();
     if (resolved === "homebrew") return homebrewUnreachable("spells");
     try {
-      const o5Result = await o5GetSpell(spellName, rulesEdition, "unavailable");
+      const o5Result = await o5GetSpell(spellName, rulesEdition, fallbackOrigin(err));
       if (o5Result) return withSourceCaveat(o5Result, source);
     } catch {
       // fall through
@@ -805,7 +821,7 @@ export async function getItem(itemName: string, rulesEdition: RulesEdition = "20
     startedIndex?.withdraw();
     if (resolved === "homebrew") return homebrewUnreachable("items");
     try {
-      const result = await o5GetEquipment(itemName, rulesEdition, "unavailable");
+      const result = await o5GetEquipment(itemName, rulesEdition, fallbackOrigin(err));
       if (result) return withSourceCaveat(result, source);
     } catch { /* fall through to the compendium's error */ }
     throw err;
@@ -868,7 +884,7 @@ async function searchCatalogListCore<T>(
     adapter: CatalogAdapter<T>;
     render: (hits: CatalogHit<T>[]) => string;
     notFound: string;
-    fallback: (kind: "not-found" | "unavailable") => Promise<SearchSection>;
+    fallback: (kind: Open5eFallbackOrigin) => Promise<SearchSection>;
     /** The reply when the load and Open5e both fail; omitted, the load error is rethrown. */
     unavailable?: string;
     /** Whether `source: "br-2024"` redirects to phb-2024 (R4). False for items, which carry source 148. */
@@ -890,7 +906,7 @@ async function searchCatalogListCore<T>(
     if (source === "homebrew") return plainSection(homebrewUnreachable(spec.homebrew.plural));
     let fallback: SearchSection;
     try {
-      fallback = await spec.fallback("unavailable");
+      fallback = await spec.fallback(fallbackOrigin(err));
     } catch {
       if (spec.unavailable === undefined) throw err;
       fallback = plainSection(spec.unavailable);
@@ -938,7 +954,7 @@ async function searchOptionList<T>(
     rowKey?: (hit: { entry: T; label: string }) => string;
     /** The text for "no match" (Open5e fallback first). */
     notFound: string;
-    fallback: (kind: "not-found" | "unavailable") => Promise<SearchSection>;
+    fallback: (kind: Open5eFallbackOrigin) => Promise<SearchSection>;
   },
 ): Promise<SearchSection> {
   return searchCatalogList<T>(params, {

@@ -158,7 +158,7 @@ Not applicable: invalid, ambiguous, locked, gate
 - source: spells from one book (an unowned one too) → that book's spells, or a clear "you don't own this book" rather than "No spells found".
 - homebrew: `source: "homebrew"` (homebrew accounts only) → only homebrew entries, each `[homebrew]` and wrapped as untrusted.
 - pagination: a broad search with `limit`/`offset` → consistent pages and total.
-- logged-out: same search → SRD fallback, labelled.
+- logged-out: same search → the SRD fallback, labelled `(Open5e fallback — not logged in; ddb_login shows D&D Beyond's version)`, never "D&D Beyond unavailable".
 
 ## `ddb_get_spell`
 
@@ -172,7 +172,7 @@ Not applicable: invalid, pagination, gate
 - edition: "Sleep, 2014 version" → 2014 text; default gives 2024 (which is concentration).
 - source: a spell from a named book → that book's version, note if editions differ.
 - homebrew: `source: "homebrew"` (homebrew accounts only) → only homebrew results, the full entry wrapped, each `[homebrew]` and wrapped as untrusted.
-- logged-out: "What does Fireball do?" → SRD fallback, labelled.
+- logged-out: "What does Fireball do?" → the SRD fallback, labelled `(Open5e fallback — not logged in; ddb_login shows D&D Beyond's version)`, never "D&D Beyond unavailable".
 
 ## `ddb_search_equipment`
 
@@ -184,7 +184,7 @@ Not applicable: invalid, ambiguous, locked, pagination, gate
 - edition: "Longsword" with 2014 → no 2024 mastery text.
 - source: items from one book → that book's items.
 - homebrew: `source: "homebrew"` (homebrew accounts only) → only homebrew entries, each `[homebrew]` and wrapped as untrusted.
-- logged-out: same search → SRD fallback, labelled.
+- logged-out: same search → the SRD fallback, labelled `(Open5e fallback — not logged in; ddb_login shows D&D Beyond's version)`, never "D&D Beyond unavailable".
 
 ## `ddb_get_equipment`
 
@@ -197,7 +197,7 @@ Not applicable: invalid, ambiguous, pagination, gate
 - edition: "Longsword, 2014" → no mastery paragraph; default 2024 shows mastery.
 - source: an item from a named book → that book's version.
 - homebrew: `source: "homebrew"` (homebrew accounts only) → only homebrew results, the full entry wrapped, each `[homebrew]` and wrapped as untrusted.
-- logged-out: "Longsword" → SRD fallback, labelled.
+- logged-out: "Longsword" → the SRD fallback, labelled `(Open5e fallback — not logged in; ddb_login shows D&D Beyond's version)`, never "D&D Beyond unavailable".
 
 ## `ddb_search_races`
 
@@ -210,7 +210,7 @@ Not applicable: invalid, ambiguous, locked, gate
 - source: species from one book → that book's entries.
 - homebrew: `source: "homebrew"` (homebrew accounts only) → only homebrew entries, each `[homebrew]` and wrapped as untrusted.
 - pagination: `limit`/`offset` → consistent pages.
-- logged-out: same → SRD fallback, labelled.
+- logged-out: same → the SRD fallback, labelled `(Open5e fallback — not logged in; ddb_login shows D&D Beyond's version)`, never "D&D Beyond unavailable".
 
 ## `ddb_search_classes`
 
@@ -223,7 +223,7 @@ Not applicable: invalid, ambiguous, locked, gate
 - source: classes from one book.
 - homebrew: `source: "homebrew"` (homebrew accounts only) → only homebrew entries, each `[homebrew]` and wrapped as untrusted.
 - pagination: `limit`/`offset` → consistent pages.
-- logged-out: same → SRD fallback, labelled.
+- logged-out: same → the SRD fallback, labelled `(Open5e fallback — not logged in; ddb_login shows D&D Beyond's version)`, never "D&D Beyond unavailable".
 
 ## `ddb_search_backgrounds`
 
@@ -236,7 +236,7 @@ Not applicable: invalid, ambiguous, locked, gate
 - source: backgrounds from one book.
 - homebrew: `source: "homebrew"` (homebrew accounts only) → only homebrew entries, each `[homebrew]` and wrapped as untrusted.
 - pagination: `limit`/`offset` → consistent pages.
-- logged-out: same → SRD fallback, labelled.
+- logged-out: same → the SRD fallback, labelled `(Open5e fallback — not logged in; ddb_login shows D&D Beyond's version)`, never "D&D Beyond unavailable".
 
 ## `ddb_search_feats`
 
@@ -249,7 +249,7 @@ Not applicable: invalid, ambiguous, locked, gate
 - source: feats from one book.
 - homebrew: `source: "homebrew"` (homebrew accounts only) → only homebrew entries, each `[homebrew]` and wrapped as untrusted.
 - pagination: `limit`/`offset` with `prerequisite` → consistent pages (the fallback once dropped these).
-- logged-out: same → SRD fallback, labelled.
+- logged-out: same → the SRD fallback, labelled `(Open5e fallback — not logged in; ddb_login shows D&D Beyond's version)`, never "D&D Beyond unavailable".
 
 ## `ddb_search_class_features`
 

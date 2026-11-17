@@ -17,9 +17,9 @@
 
 import { TtlCache } from "./cache.js";
 import {
-  createTwinNamer, editionTag, groupAndSelect, LEGENDARY_USES_NOTE, loggedOutReason, lookupByName, normalizeName, open5eSearchHeader, reasonLine, renameLine, rulesLine, searchFooter,
+  createTwinNamer, editionTag, groupAndSelect, LEGENDARY_USES_NOTE, loggedOutReason, lookupByName, NOT_LOGGED_IN_SUFFIX, normalizeName, open5eSearchHeader, reasonLine, renameLine, rulesLine, searchFooter,
   searchHeader, selectByEdition,
-  type EditionInfo, type Open5eOrigin, type RulesEdition, type RulesLineReason, type SelectionReason, type TwinNamer,
+  type EditionInfo, type Open5eFallbackOrigin, type Open5eOrigin, type RulesEdition, type RulesLineReason, type SelectionReason, type TwinNamer,
 } from "./edition.js";
 import { paginateResults, renderSection, narrowingHint, MONSTER_SEARCH_LIMIT, formatCount, type SearchSection } from "./tools/edition-search.js";
 import { EDITION_RENAMES, OPEN5E_ARMOUR_RENAMES, OPEN5E_EQUIPMENT_RENAMES, type RenameKind } from "./edition-renames.js";
@@ -543,7 +543,8 @@ function o5Label(edition: RulesEdition, origin: Open5eOrigin, extra: { reason?: 
  * empty too (`"not-found"`) both were searched; with D&D Beyond unreachable
  * (`"unavailable"`) only the SRD was.
  */
-function o5NoMatch(base: string, origin: "unavailable" | "not-found"): string {
+function o5NoMatch(base: string, origin: Open5eFallbackOrigin): string {
+  if (origin === "logged-out") return `${base}${NOT_LOGGED_IN_SUFFIX}.`;
   return origin === "not-found" ? `${base} on D&D Beyond or in the SRD.` : `${base} (SRD only).`;
 }
 
@@ -554,7 +555,7 @@ function o5NoMatch(base: string, origin: "unavailable" | "not-found"): string {
  */
 function o5SearchReply(
   requested: RulesEdition,
-  origin: "unavailable" | "not-found",
+  origin: Open5eFallbackOrigin,
   heading: string,
   lines: string[],
   hidden: number,
@@ -663,11 +664,11 @@ type O5SpellSearchParams = {
   rulesEdition?: RulesEdition;
 };
 
-export async function o5SearchSpells(params: O5SpellSearchParams, origin: "unavailable" | "not-found"): Promise<string> {
+export async function o5SearchSpells(params: O5SpellSearchParams, origin: Open5eFallbackOrigin): Promise<string> {
   return renderSection(await o5SearchSpellsSection(params, origin));
 }
 
-export async function o5SearchSpellsSection(params: O5SpellSearchParams, origin: "unavailable" | "not-found"): Promise<SearchSection> {
+export async function o5SearchSpellsSection(params: O5SpellSearchParams, origin: Open5eFallbackOrigin): Promise<SearchSection> {
   const requested = params.rulesEdition ?? "2024";
   const limit = params.limit ?? 20;
   const offset = params.offset ?? 0;
@@ -869,11 +870,11 @@ type O5MonsterSearchParams = {
   siteSearch?: boolean;
 };
 
-export async function o5SearchMonsters(params: O5MonsterSearchParams, origin: "unavailable" | "not-found"): Promise<string> {
+export async function o5SearchMonsters(params: O5MonsterSearchParams, origin: Open5eFallbackOrigin): Promise<string> {
   return renderSection(await o5SearchMonstersSection(params, origin));
 }
 
-export async function o5SearchMonstersSection(params: O5MonsterSearchParams, origin: "unavailable" | "not-found"): Promise<SearchSection> {
+export async function o5SearchMonstersSection(params: O5MonsterSearchParams, origin: Open5eFallbackOrigin): Promise<SearchSection> {
   const requested = params.rulesEdition ?? "2024";
   const { selected, hidden } = await o5Select<O5Creature>(["creatures"], requested, {
     name: params.name,
@@ -1071,11 +1072,11 @@ type O5ItemSearchParams = {
   rulesEdition?: RulesEdition;
 };
 
-export async function o5SearchItems(params: O5ItemSearchParams, origin: "unavailable" | "not-found"): Promise<string> {
+export async function o5SearchItems(params: O5ItemSearchParams, origin: Open5eFallbackOrigin): Promise<string> {
   return renderSection(await o5SearchItemsSection(params, origin));
 }
 
-export async function o5SearchItemsSection(params: O5ItemSearchParams, origin: "unavailable" | "not-found"): Promise<SearchSection> {
+export async function o5SearchItemsSection(params: O5ItemSearchParams, origin: Open5eFallbackOrigin): Promise<SearchSection> {
   const requested = params.rulesEdition ?? "2024";
   const rarity = params.rarity?.trim().toLowerCase();
   const type = params.type?.toLowerCase();
@@ -1127,7 +1128,7 @@ async function o5Parent<T extends O5Record>(endpoint: O5Endpoint, edition: Rules
  */
 async function o5OptionReply<T extends O5Record>(
   requested: RulesEdition,
-  origin: "unavailable" | "not-found",
+  origin: Open5eFallbackOrigin,
   result: { selected: Array<{ entry: O5Entry<T>; reason?: SelectionReason }>; hidden: number },
   opts: {
     /** Whether a single hit renders its detail block. */
@@ -1231,11 +1232,11 @@ async function o5SelectSpecies(requested: RulesEdition, name?: string): ReturnTy
   return { selected: kept, hidden: hidden + selected.length - kept.length };
 }
 
-export async function o5SearchRaces(params: O5OptionSearchParams, origin: "unavailable" | "not-found"): Promise<string> {
+export async function o5SearchRaces(params: O5OptionSearchParams, origin: Open5eFallbackOrigin): Promise<string> {
   return renderSection(await o5SearchRacesSection(params, origin));
 }
 
-export async function o5SearchRacesSection(params: O5OptionSearchParams, origin: "unavailable" | "not-found"): Promise<SearchSection> {
+export async function o5SearchRacesSection(params: O5OptionSearchParams, origin: Open5eFallbackOrigin): Promise<SearchSection> {
   const requested = params.rulesEdition ?? "2024";
   return o5OptionReply(requested, origin, await o5SelectSpecies(requested, params.name), {
     single: !!params.name,
@@ -1292,11 +1293,11 @@ async function formatO5Class(hit: O5Hit<O5Class>, origin: Open5eOrigin): Promise
   return lines.join("\n");
 }
 
-export async function o5SearchClasses(params: O5OptionSearchParams, origin: "unavailable" | "not-found"): Promise<string> {
+export async function o5SearchClasses(params: O5OptionSearchParams, origin: Open5eFallbackOrigin): Promise<string> {
   return renderSection(await o5SearchClassesSection(params, origin));
 }
 
-export async function o5SearchClassesSection(params: O5OptionSearchParams, origin: "unavailable" | "not-found"): Promise<SearchSection> {
+export async function o5SearchClassesSection(params: O5OptionSearchParams, origin: Open5eFallbackOrigin): Promise<SearchSection> {
   const requested = params.rulesEdition ?? "2024";
   return o5OptionReply(requested, origin, await o5Select<O5Class>(["classes"], requested, { name: params.name }), {
     single: !!params.name,
@@ -1334,11 +1335,11 @@ function formatO5Background(hit: O5Hit<O5Background>, origin: Open5eOrigin): str
   ].join("\n");
 }
 
-export async function o5SearchBackgrounds(params: O5OptionSearchParams, origin: "unavailable" | "not-found"): Promise<string> {
+export async function o5SearchBackgrounds(params: O5OptionSearchParams, origin: Open5eFallbackOrigin): Promise<string> {
   return renderSection(await o5SearchBackgroundsSection(params, origin));
 }
 
-export async function o5SearchBackgroundsSection(params: O5OptionSearchParams, origin: "unavailable" | "not-found"): Promise<SearchSection> {
+export async function o5SearchBackgroundsSection(params: O5OptionSearchParams, origin: Open5eFallbackOrigin): Promise<SearchSection> {
   const requested = params.rulesEdition ?? "2024";
   return o5OptionReply(requested, origin, await o5Select<O5Background>(["backgrounds"], requested, { name: params.name }), {
     single: true,
@@ -1381,11 +1382,11 @@ function formatO5Feat(hit: O5Hit<O5Feat>, origin: Open5eOrigin): string {
 
 type O5FeatSearchParams = O5OptionSearchParams & { prerequisite?: string };
 
-export async function o5SearchFeats(params: O5FeatSearchParams, origin: "unavailable" | "not-found"): Promise<string> {
+export async function o5SearchFeats(params: O5FeatSearchParams, origin: Open5eFallbackOrigin): Promise<string> {
   return renderSection(await o5SearchFeatsSection(params, origin));
 }
 
-export async function o5SearchFeatsSection(params: O5FeatSearchParams, origin: "unavailable" | "not-found"): Promise<SearchSection> {
+export async function o5SearchFeatsSection(params: O5FeatSearchParams, origin: Open5eFallbackOrigin): Promise<SearchSection> {
   const requested = params.rulesEdition ?? "2024";
   const wanted = params.prerequisite?.trim();
   // A feat without a prerequisite never matches a prerequisite query.

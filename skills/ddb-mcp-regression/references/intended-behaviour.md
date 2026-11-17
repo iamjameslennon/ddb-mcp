@@ -24,6 +24,10 @@ Source: tool-notes.md, "Unowned-book note (F17)" (2026-11-11 remediation).
 Looks like: `You don't own <book> on D&D Beyond, so its text can't be read here. Books you can read:` followed by the owned books as `  • <title> (<slug>)` lines, instead of the store page. It applies only when the library list loaded and the book is known to the source index and not free; the free Basic Rules books (and `ee`) still read. A title that is in neither the library nor the index keeps the "No book found" error. When the library can't be fetched, reads work as before (a title resolves through the source index).
 Source: tool-notes.md, "Unowned-book read (F27)" (2026-11-11 remediation).
 
+### Logged out, a catalog fallback says to log in
+Looks like: with no session (or saved cookies that aren't signed in), `ddb_search_spells`, `ddb_get_spell`, `ddb_search_equipment`, `ddb_get_equipment`, `ddb_search_races`, `ddb_search_classes`, `ddb_search_backgrounds` and `ddb_search_feats` answer from Open5e labelled `(Open5e fallback — not logged in; ddb_login shows D&D Beyond's version)`, and a no-match search ends `(not logged in — ddb_login may show more)`. They don't say "D&D Beyond unavailable"; that wording is only for an outage while logged in.
+Source: tool-notes.md, "Logged-out catalog fallbacks (F13)" (2026-11-13 remediation); `src/edition.ts`, `OPEN5E_SUFFIX`.
+
 ### `source: "homebrew"` is reserved
 Looks like: `source: "homebrew"` lists only homebrew entries, each tagged `[homebrew]`, and needs login.
 Source: CLAUDE.md, Invariants; tool-notes C1 (owner ruling 2026-11-10).
