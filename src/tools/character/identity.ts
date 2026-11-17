@@ -7,7 +7,7 @@
  */
 
 import { wrapUntrusted } from "../../utils.js";
-import { arr, isHomebrewEntry, num, obj, str } from "./helpers.js";
+import { arr, isHomebrewEntry, num, obj, records, str } from "./helpers.js";
 import type { CharacterEditions } from "./editions.js";
 import type { CharData, ClassEntry, CoreStats } from "./types.js";
 
@@ -130,12 +130,12 @@ export function notReadyParts(char: CharData): string[] {
   const parts: string[] = [];
   const race = obj(char.race);
   const hasRace = str(race.fullName).trim() !== "" || str(race.baseName).trim() !== "";
-  const hasLineage = arr<Record<string, unknown>>(obj(char.options).race)
+  const hasLineage = records(obj(char.options).race)
     .some(opt => str(obj(opt.definition).name).trim() !== "");
   if (!hasRace && !hasLineage) parts.push("a species");
   if (arr<unknown>(char.classes).length === 0) parts.push("a class");
-  const baseScores = arr<Record<string, unknown>>(char.stats);
-  const overrides = arr<Record<string, unknown>>(char.overrideStats);
+  const baseScores = records(char.stats);
+  const overrides = records(char.overrideStats);
   const unset = [1, 2, 3, 4, 5, 6].some(id => {
     const base = num(baseScores.find(s => num(s.id) === id)?.value);
     const override = num(overrides.find(s => num(s.id) === id)?.value);

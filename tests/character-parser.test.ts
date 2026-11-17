@@ -3,6 +3,7 @@ import { parseCharacterData } from "../src/tools/character.js";
 import { wrapUntrusted } from "../src/utils.js";
 import { formatCharacterLookup } from "../src/tools/character/definition.js";
 import { INDEX, variant } from "./fixtures/character-edition-helpers.js";
+import { notReadyLine, notReadyParts } from "../src/tools/character/identity.js";
 import { FIGHTER_5, MONK_3_HANDAXE, ARCANE_TRICKSTER_9, CLERIC_5_SPELLS } from "./fixtures/character-fixtures.js";
 
 describe("parseCharacterData", () => {
@@ -2943,6 +2944,35 @@ describe("an unfinished character (F12)", () => {
     expect(parseCharacterData(c, "inventory", INDEX)).toContain("ATTUNEMENT (0/3): none");
     expect(parseCharacterData(c, "notes", INDEX)).toContain("No notes or backstory");
     expect(parseCharacterData(c, "spells", INDEX)).not.toContain("No spellcasting on this character.");
+    expect(parseCharacterData(c, "concentration", INDEX)).not.toContain("Great Weapon Master");
+  });
+
+  it("summary, combat, spells and concentration print only the header and the not-ready line", () => {
+    const c = variant(FIGHTER_5, d => { d.stats = [1, 2, 3, 4, 5, 6].map(id => ({ id, value: null })); });
+    const line = notReadyLine(["ability scores"]);
+    const bare = parseCharacterData(c, "summary", INDEX);
+    expect(bare.endsWith("\n" + line)).toBe(true);
+    const header = bare.slice(0, bare.length - line.length);
+    expect(parseCharacterData(c, "full", INDEX).startsWith(header)).toBe(true);
+    for (const section of ["summary", "combat", "spells", "concentration"] as const) {
+      const out = parseCharacterData(c, section, INDEX);
+      expect(out).toBe(bare);
+      expect(out).not.toContain("Great Weapon Master");
+      expect(out).not.toContain("ATTUNEMENT");
+      expect(out).not.toContain("No notes or backstory");
+    }
+  });
+
+  it("null entries in stats, overrideStats and options.race do not throw in notReadyParts, and a named lineage still finishes the character", () => {
+    const c = variant(FIGHTER_5, d => {
+      d.stats = [null, ...[2, 3, 4, 5, 6].map(id => ({ id, value: 10 })), { id: 1, value: 12 }];
+      d.overrideStats = [null];
+      d.race = null;
+      d.options = { race: [null, { definition: { id: 61, name: "Dwarf" } }] };
+    });
+    const char = c.data as Record<string, unknown>;
+    expect(() => notReadyParts(char)).not.toThrow();
+    expect(notReadyParts(char)).toEqual([]);
   });
 
   it("the character name in the header stays wrapped", () => {

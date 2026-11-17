@@ -75,6 +75,12 @@ export function parseCharacterData(
       case "features": out.push(...featuresBlock); break;
       case "inventory": out.push(...inventoryBlock); break;
       case "notes": out.push(...notesBlock); break;
+      // The numeric sections and the spell lists print nothing beyond the not-ready line.
+      case "summary":
+      case "combat":
+      case "spells":
+      case "concentration":
+        break;
       case "full":
       default:
         out.push(...featuresBlock, ...inventoryBlock, ...notesBlock);
