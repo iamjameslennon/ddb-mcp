@@ -603,4 +603,45 @@ describe("spell slot labels", () => {
     const o = { spells: { race: [{ usesSpellSlot: false, definition: act(1, { name: "Hold Fast", level: 0, concentration: true }) }] } };
     expect(conc(o)).toContain("    • Hold Fast\n");
   });
+
+  it("a bonus-action item spell without a slot reads from item, with its fixed level when it has one", () => {
+    const item = (castAtLevel: number | null) => ({ spells: { item: [{ usesSpellSlot: false, castAtLevel, definition: HEX }] } });
+    expect(block(sheet(item(null)), "BONUS ACTIONS")).toContain("• Hex (spell, from item)");
+    expect(block(sheet(item(6)), "BONUS ACTIONS")).toContain("• Hex (spell, 6th level, from item)");
+  });
+
+  it("a reaction racial or feat spell without a slot or castAtLevel reads no slot", () => {
+    for (const bucket of ["race", "feat"]) {
+      const o = { spells: { [bucket]: [{ usesSpellSlot: false, castAtLevel: null, definition: HELLISH_REBUKE }] } };
+      expect(block(sheet(o), "REACTIONS")).toContain("• Hellish Rebuke (spell, no slot)");
+    }
+  });
+
+  it.each([null, 0])("castAtLevel %s with no slot reads no slot", castAtLevel => {
+    const o = { spells: { race: [{ usesSpellSlot: false, castAtLevel, definition: HELLISH_REBUKE }] } };
+    expect(block(sheet(o), "REACTIONS")).toContain("• Hellish Rebuke (spell, no slot)");
+  });
+
+  it("on a Warlock multiclass a Warlock-list spell reads the pact slot and a Cleric-list spell its own level", () => {
+    const BANE = act(3, { name: "Bane", level: 1, concentration: true });
+    const VAMPIRIC_BOLT = act(3, { name: "Vampiric Bolt", level: 3, concentration: true });
+    const o = {
+      classes: [cls(1, "Warlock", 5, 6), cls(2, "Cleric", 3, 5)],
+      classSpells: [list(1, known(VAMPIRIC_BOLT)), list(2, known(BANE))],
+      stats: stats({ cha: 18, wis: 14 }),
+    };
+    const bonus = block(sheet(o), "BONUS ACTIONS");
+    expect(bonus).toContain("• Bane (spell, 1st-level slot)");
+    expect(bonus).toContain("• Vampiric Bolt (spell, 3rd-level slot)"); // no shared slot of level 3: the pact slot (3rd)
+  });
+
+  it("a spell in a class list and in the item bucket takes the class label in BONUS ACTIONS", () => {
+    const o = {
+      ...warlock(9, [known(HEX)]),
+      spells: { item: [{ usesSpellSlot: false, castAtLevel: null, definition: HEX }] },
+    };
+    const bonus = block(sheet(o), "BONUS ACTIONS");
+    expect(bonus).toContain("• Hex (spell, 5th-level slot)");
+    expect(bonus).not.toContain("from item");
+  });
 });

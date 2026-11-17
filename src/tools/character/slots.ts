@@ -1,8 +1,9 @@
 /**
- * How a spell is cast: the slot it uses, shared by the SPELLS-adjacent blocks
- * (CONCENTRATION SPELLS and the bonus-action / reaction spell lines) and the
- * ACTIONS spell rows. Pure helpers over the character's class entries; this
- * module imports neither spells.ts nor spell-attacks.ts.
+ * How a spell is cast: the slot it uses. `spellCastLabel` serves the
+ * CONCENTRATION SPELLS block and the bonus-action / reaction spell lines; the
+ * ACTIONS spell rows (spell-attacks.ts) share only `castLevel`, and still print
+ * `(cantrip | Nth level)`. Pure helpers over the character's class entries;
+ * this module imports neither spells.ts nor spell-attacks.ts.
  */
 
 import { num, obj, str } from "./helpers.js";
@@ -17,6 +18,11 @@ const levelRow = (cls: ClassEntry): unknown[] => {
   const table = obj(obj(cls.definition).spellRules).levelSpellSlots;
   const row = Array.isArray(table) ? table[num(cls.level)] : undefined;
   return Array.isArray(row) ? row : [];
+};
+/** The entry's `castAtLevel` when it is an integer above 0, else 0. */
+const fixedCastLevel = (entry: Rec): number => {
+  const fixed = entry.castAtLevel;
+  return typeof fixed === "number" && Number.isInteger(fixed) && fixed > 0 ? fixed : 0;
 };
 const isWarlock = (cls: ClassEntry): boolean => str(obj(cls.definition).name) === "Warlock";
 
@@ -55,8 +61,8 @@ export function lowestSharedSlot(classes: readonly ClassEntry[], spellLevel: num
  * slot level and the lowest shared slot; otherwise the spell's own level.
  */
 export function castLevel(entry: Rec, spellLevel: number, isWarlockList: boolean, classes: readonly ClassEntry[]): number {
-  const fixed = entry.castAtLevel;
-  if (typeof fixed === "number" && Number.isInteger(fixed) && fixed > 0) return fixed;
+  const fixed = fixedCastLevel(entry);
+  if (fixed) return fixed;
   if (!isWarlockList) return spellLevel;
   const pact = Math.max(0, ...classes.map(pactSlotLevel));
   const options = [pact, lowestSharedSlot(classes, spellLevel)].filter(l => l >= spellLevel && l > 0);
@@ -80,8 +86,8 @@ export function spellCastLabel(
   if (level === 0) return "cantrip";
   if (entry.usesSpellSlot === false) {
     const how = opts.bucket === "item" ? "from item" : "no slot";
-    const fixed = entry.castAtLevel;
-    return typeof fixed === "number" && Number.isInteger(fixed) && fixed > 0 ? `${slotOrdinal(fixed)} level, ${how}` : how;
+    const fixed = fixedCastLevel(entry);
+    return fixed ? `${slotOrdinal(fixed)} level, ${how}` : how;
   }
   return `${slotOrdinal(castLevel(entry, level, opts.isWarlockList, classes))}-level slot`;
 }
