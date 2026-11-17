@@ -137,7 +137,7 @@ Looks like: `• Fighting Style (Fighter 1): Archery`; `ddb_character_lookup` re
 Source: history.md, Regression remediation 2026-11-11 (owner rulings R1 and R6, 2026-11-11).
 
 ### EQUIPPED lists armour and magic or attunable gear
-Looks like: EQUIPPED holds equipped armour with `(AC n)` and equipped items that are magic or attunable; mundane equipped gear (Backpack, Pouch, Arrows) stays in INVENTORY. The attunement line names the items: `ATTUNEMENT (1/3): Staff of the Woodlands`.
+Looks like: EQUIPPED holds equipped armour with `(AC n)` and equipped items that are magic or attunable, except non-armor items that attack through a weapon behaviour (a staff shows in ACTIONS instead; an equipped armor item with a weapon behaviour keeps its EQUIPPED line and also gets an ACTIONS row); mundane equipped gear (Backpack, Pouch, Arrows) stays in INVENTORY. The attunement line names the items: `ATTUNEMENT (1/3): Staff of the Woodlands`.
 Source: history.md, Regression remediation 2026-11-11 (owner ruling R2, 2026-11-11).
 
 ### `ddb_get_monster` takes a fuzzy hit only when it is close

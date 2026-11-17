@@ -5,7 +5,8 @@
  * Phase 8 of the character.ts refactor — see docs/character-refactor.md.
  *
  * Weapons are intentionally excluded — they're surfaced in the ACTIONS
- * block (Phase 6a). Equipped armor is shown separately with its AC value;
+ * block (Phase 6a), as are equipped non-armor items with a weapon behaviour
+ * (staffs; an attuned one still shows on the attunement line). Equipped armor is shown separately with its AC value;
  * everything else non-weapon is rolled into a single `; `-separated
  * INVENTORY line (item names hold commas, e.g. `Clothes, Common`) with ×N consolidation.
  *
@@ -46,7 +47,8 @@ export function computeInventory(core: CoreStats): Inventory {
     const iName = editions.named(str(def.name).trim(), def);
     const filterType = str(def.filterType);
     // An equipped item that attacks (a Weapon, or a staff with a weapon behaviour) shows in ACTIONS, not here.
-    const attacksFromActions = i.equipped === true && weaponDefinition(def) !== null;
+    // Armor with a weapon behaviour keeps its EQUIPPED line (AC) and also gets its ACTIONS row (owner decision 2026-11-17).
+    const attacksFromActions = i.equipped === true && filterType !== "Armor" && weaponDefinition(def) !== null;
     const qty = num(i.quantity) || 1;
     const homebrew = shownHomebrew(i, iName);
     if (i.isAttuned) attunedItems.push({ text: iName, homebrew });

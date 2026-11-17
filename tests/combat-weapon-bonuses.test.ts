@@ -310,6 +310,19 @@ describe("weapon-behaviour items (F11, owner ruling S5)", () => {
     expect(out).not.toMatch(/^EQUIPPED$/m);
     expect(out).toContain("ATTUNEMENT (1/3): Staff of the Woodlands");
   });
+  it("an equipped armor item with a weapon behaviour keeps its EQUIPPED line and also gets an ACTIONS row", () => {
+    const armor = staff(11, "Spiked Shield", { filterType: "Armor", armorClass: 2 });
+    expect(inventorySection([armor])).toMatch(/^ {2}Spiked Shield(?: \[edition not stated\])? \(AC 2\)$/m);
+    expect(row(combat({ inventory: [armor], modifiers: modsOf([MARTIAL, SIMPLE]) }), "Spiked Shield")).not.toBe("");
+  });
+  it("shows Topple on a staff only with the Weapon Mastery feature and a topple-quarterstaff modifier", () => {
+    const woodlands = staff(12, "Staff of the Woodlands", magic());
+    const base = { inventory: [woodlands], classes: [fighter({ classFeatures: [feature(192, "Weapon Mastery")] })] };
+    const withMod = row(combat({ ...base, modifiers: modsOf([MARTIAL, SIMPLE, { type: "weapon-mastery", subType: "topple-quarterstaff" }], "feat") }), "Staff of the Woodlands");
+    expect(withMod).toMatch(/Versatile, Topple$/);
+    const without = row(combat({ ...base, modifiers: modsOf([MARTIAL, SIMPLE], "feat") }), "Staff of the Woodlands");
+    expect(without).not.toContain("Topple");
+  });
   it("an equipped mundane Other Gear staff leaves INVENTORY", () => {
     const out = inventorySection([staff(10, "Staff", { filterType: "Other Gear" })]);
     expect(out).not.toMatch(/^INVENTORY$/m);

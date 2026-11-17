@@ -43,7 +43,7 @@ const isObject = (v: unknown): v is Record<string, unknown> =>
 const markers = (def: unknown): EditionMarkers => obj(def) as EditionMarkers;
 
 // The items the sheet prints: every non-weapon (EQUIPPED / INVENTORY) plus the
-// equipped weapons (ACTIONS). Mirrors inventory.ts and weapons.ts.
+// equipped weapons and weapon-behaviour items (ACTIONS). Mirrors inventory.ts and weapons.ts.
 function shownItemDefinitions(inventory: readonly InventoryItem[]): Record<string, unknown>[] {
   return inventory
     .filter(i => str(obj(i.definition).filterType) !== "Weapon" || i.equipped === true)
