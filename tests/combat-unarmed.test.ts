@@ -77,8 +77,9 @@ describe("Unarmed Strike row", () => {
     expect(row(out)).toHaveLength(1);
   });
 
-  it("prints a row on a classless level-0 sheet", () => {
-    const out = combat({ classes: [] });
+  it("prints a row on a level-0 sheet", () => {
+    // An empty `classes` now gets the F12 not-ready line, so the level-0 sheet has one class entry at level 0.
+    const out = combat({ classes: [{ definition: { id: 1, name: "Fighter" }, level: 0 }] });
     expect(row(out)).toEqual(["• Unarmed Strike   +4 to hit   4 bludgeoning   reach 5 ft."]);
     expect(out).not.toContain("NaN");
   });

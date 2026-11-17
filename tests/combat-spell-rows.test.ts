@@ -445,11 +445,12 @@ describe("spell rows in ACTIONS", () => {
     expect(out.split(wrapUntrusted(brewRow)).join("")).not.toContain("untrusted");
   });
 
-  it("prints base cantrip dice at totalLevel 0", () => {
-    const o = { classes: [], spells: { race: [known(FIRE_BOLT, { spellCastingAbilityId: 4 })] } };
+  it("prints base cantrip dice on a level-0 sheet", () => {
+    // An empty `classes` now gets the F12 not-ready line, so the level-0 sheet has one class entry at level 0.
+    const o = { classes: [{ definition: { id: 1, name: "Wizard" }, level: 0 }], spells: { race: [known(FIRE_BOLT, { spellCastingAbilityId: 4 })] } };
     expect(coreOf(o).totalLevel).toBe(0);
     const out = sheet(o);
-    // A classless sheet states no edition, so the spell carries its own tag.
+    // A level-0 sheet states no edition, so the spell carries its own tag.
     expect(rowFor(out, "Fire Bolt [2024]")).toContain("   1d10 fire   range 120 ft.");
     expect(out).not.toMatch(/NaN|undefined/);
   });

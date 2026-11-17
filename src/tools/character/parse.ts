@@ -17,7 +17,7 @@ import type { SourceIndex } from "../../edition.js";
 import { peekSourceIndex } from "../../game-config.js";
 import { computeCoreStats } from "./core.js";
 import type { CharData, ParseSection } from "./types.js";
-import { computeIdentity, formatHeaderBlock } from "./identity.js";
+import { computeIdentity, formatHeaderBlock, notReadyLine, notReadyParts } from "./identity.js";
 import { computeVitals, formatVitalsBlock } from "./vitals.js";
 import { computeAc } from "./ac.js";
 import { computeStats, formatStatsBlock } from "./stats.js";
@@ -67,6 +67,21 @@ export function parseCharacterData(
   const notesBlock         = formatNotesBlock(notes);
 
   const out: string[] = [...headerBlock];
+  const notReady = notReadyParts(char);
+  if (notReady.length) {
+    // F12: no numbers for an unfinished character. Features, inventory and notes still print.
+    out.push(notReadyLine(notReady));
+    switch (sections) {
+      case "features": out.push(...featuresBlock); break;
+      case "inventory": out.push(...inventoryBlock); break;
+      case "notes": out.push(...notesBlock); break;
+      case "full":
+      default:
+        out.push(...featuresBlock, ...inventoryBlock, ...notesBlock);
+        break;
+    }
+    return out.join("\n");
+  }
   switch (sections) {
     case "summary":
       out.push(...vitalsBlock, ...statsBlock);

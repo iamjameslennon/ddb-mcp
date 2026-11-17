@@ -2,8 +2,8 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { parseCharacterData } from "../src/tools/character.js";
 import { wrapUntrusted } from "../src/utils.js";
 import { formatCharacterLookup } from "../src/tools/character/definition.js";
-import { INDEX } from "./fixtures/character-edition-helpers.js";
-import { FIGHTER_5, MONK_3_HANDAXE, ARCANE_TRICKSTER_9 } from "./fixtures/character-fixtures.js";
+import { INDEX, variant } from "./fixtures/character-edition-helpers.js";
+import { FIGHTER_5, MONK_3_HANDAXE, ARCANE_TRICKSTER_9, CLERIC_5_SPELLS } from "./fixtures/character-fixtures.js";
 
 describe("parseCharacterData", () => {
   let result: string;
@@ -2849,5 +2849,104 @@ describe("parseCharacterData — inventory separator, EQUIPPED magic items, name
     const off = inv([entry(1, "Ring of Protection", "Ring", { canAttune: true }, { equipped: true, isAttuned: true })]);
     expect(off).toContain("\nATTUNEMENT (1/3): Ring of Protection");
     expect(off).not.toContain(wrapUntrusted("ATTUNEMENT (1/3): Ring of Protection"));
+  });
+});
+
+describe("an unfinished character (F12)", () => {
+  const SECTIONS = ["summary", "combat", "spells", "inventory", "features", "notes", "concentration", "full"] as const;
+  const NOT_READY = "isn't finished on D&D Beyond";
+  const withScores = (value: number | null, overrides: Array<{ id: number; value: number }> = []) =>
+    variant(FIGHTER_5, d => {
+      d.stats = [1, 2, 3, 4, 5, 6].map(id => ({ id, value }));
+      d.overrideStats = overrides;
+    });
+
+  it("null base scores print the not-ready line and no numbers", () => {
+    const c = variant(FIGHTER_5, d => {
+      d.stats = [1, 2, 3, 4, 5, 6].map(id => ({ id, value: null }));
+      d.bonusStats = [1, 2, 3, 4, 5, 6].map(id => ({ id, value: id === 6 ? 2 : null }));
+    });
+    const summary = parseCharacterData(c, "summary", INDEX);
+    expect(summary).toContain("⚠️ This character isn't finished on D&D Beyond (missing ability scores), so its numbers can't be worked out yet. D&D Beyond shows \"Character Not Ready!\" for it.");
+    expect(summary).not.toContain("STR 0");
+    expect(summary).not.toContain("AC:");
+    expect(summary).not.toContain("Initiative");
+  });
+
+  it("names every missing part", () => {
+    const c = variant(FIGHTER_5, d => {
+      d.race = null;
+      d.classes = [];
+      d.stats = [1, 2, 3, 4, 5, 6].map(id => ({ id, value: null }));
+    });
+    expect(parseCharacterData(c, "summary", INDEX)).toContain("(missing a species, a class and ability scores)");
+  });
+
+  it("an overridden score counts as set", () => {
+    const c = variant(FIGHTER_5, d => {
+      d.stats = [{ id: 1, value: null }, ...[2, 3, 4, 5, 6].map(id => ({ id, value: 10 }))];
+      d.overrideStats = [{ id: 1, value: 15 }];
+    });
+    expect(parseCharacterData(c, "full", INDEX)).not.toContain(NOT_READY);
+  });
+
+  it("a low but real score is not missing", () => {
+    expect(parseCharacterData(withScores(1), "full", INDEX)).not.toContain(NOT_READY);
+  });
+
+  it("a finished character never gets the line, in any section", () => {
+    for (const c of [FIGHTER_5, ARCANE_TRICKSTER_9, CLERIC_5_SPELLS]) {
+      for (const section of SECTIONS) {
+        expect(parseCharacterData(c, section, INDEX)).not.toContain(NOT_READY);
+      }
+    }
+  });
+
+  it("a 2024 character with race null and the lineage in options.race is finished, in any section", () => {
+    const c = variant(FIGHTER_5, d => {
+      d.race = null;
+      d.options = { race: [{ definition: { id: 61, name: "Dwarf" } }] };
+    });
+    for (const section of SECTIONS) {
+      expect(parseCharacterData(c, section, INDEX)).not.toContain(NOT_READY);
+    }
+  });
+
+  it("a species with no fullName or baseName and no named lineage is missing", () => {
+    const c = variant(FIGHTER_5, d => {
+      d.race = { fullName: "", baseName: "" };
+      d.options = { race: [{ definition: { id: 61, name: "" } }] };
+    });
+    expect(parseCharacterData(c, "summary", INDEX)).toContain("(missing a species)");
+  });
+
+  it("no classes prints the class part", () => {
+    const c = variant(FIGHTER_5, d => { d.classes = []; });
+    expect(parseCharacterData(c, "summary", INDEX)).toContain("(missing a class)");
+  });
+
+  it("features, inventory and notes still print under the line", () => {
+    const c = variant(FIGHTER_5, d => {
+      d.stats = [1, 2, 3, 4, 5, 6].map(id => ({ id, value: null }));
+    });
+    const full = parseCharacterData(c, "full", INDEX);
+    const line = full.indexOf(NOT_READY);
+    expect(line).toBeGreaterThan(-1);
+    expect(full.indexOf("Great Weapon Master")).toBeGreaterThan(line);
+    expect(full.indexOf("ATTUNEMENT (0/3): none")).toBeGreaterThan(line);
+    expect(full.indexOf("No notes or backstory")).toBeGreaterThan(line);
+    expect(full).not.toContain("STR 0");
+    expect(full).not.toContain("Prof Bonus");
+    const feats = parseCharacterData(c, "features", INDEX);
+    expect(feats).toContain(NOT_READY);
+    expect(feats).toContain("Great Weapon Master");
+    expect(parseCharacterData(c, "inventory", INDEX)).toContain("ATTUNEMENT (0/3): none");
+    expect(parseCharacterData(c, "notes", INDEX)).toContain("No notes or backstory");
+    expect(parseCharacterData(c, "spells", INDEX)).not.toContain("No spellcasting on this character.");
+  });
+
+  it("the character name in the header stays wrapped", () => {
+    const c = variant(FIGHTER_5, d => { d.stats = [1, 2, 3, 4, 5, 6].map(id => ({ id, value: null })); });
+    expect(parseCharacterData(c, "summary", INDEX)).toContain(wrapUntrusted("  Thorin"));
   });
 });

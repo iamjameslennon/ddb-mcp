@@ -113,6 +113,43 @@ export function computeIdentity(core: CoreStats): Identity {
   };
 }
 
+/** The English list form: "a", "a and b", "a, b and c". */
+function joinAnd(parts: readonly string[]): string {
+  if (parts.length <= 1) return parts.join("");
+  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
+/**
+ * What D&D Beyond still lacks before a character has numbers (F12): a species,
+ * a class, or a base ability score (1–6) with no override. A species is
+ * present when `race` names one or `options.race` holds a named lineage (the
+ * 2024 shape: `race` null, the lineage in options). Empty when the character
+ * is finished.
+ */
+export function notReadyParts(char: CharData): string[] {
+  const parts: string[] = [];
+  const race = obj(char.race);
+  const hasRace = str(race.fullName).trim() !== "" || str(race.baseName).trim() !== "";
+  const hasLineage = arr<Record<string, unknown>>(obj(char.options).race)
+    .some(opt => str(obj(opt.definition).name).trim() !== "");
+  if (!hasRace && !hasLineage) parts.push("a species");
+  if (arr<unknown>(char.classes).length === 0) parts.push("a class");
+  const baseScores = arr<Record<string, unknown>>(char.stats);
+  const overrides = arr<Record<string, unknown>>(char.overrideStats);
+  const unset = [1, 2, 3, 4, 5, 6].some(id => {
+    const base = num(baseScores.find(s => num(s.id) === id)?.value);
+    const override = num(overrides.find(s => num(s.id) === id)?.value);
+    return !(base > 0) && !(override > 0);
+  });
+  if (unset) parts.push("ability scores");
+  return parts;
+}
+
+/** The line that replaces an unfinished character's numbers (F12). */
+export function notReadyLine(parts: string[]): string {
+  return `⚠️ This character isn't finished on D&D Beyond (missing ${joinAnd(parts)}), so its numbers can't be worked out yet. D&D Beyond shows "Character Not Ready!" for it.`;
+}
+
 /**
  * The header box. The character's name is the player's own text (another
  * player's, in ddb_get_party), so it is always delimited as untrusted; the
