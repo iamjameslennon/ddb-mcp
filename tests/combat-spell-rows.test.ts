@@ -541,3 +541,66 @@ describe("item and other bonuses to spell attack and save DC", () => {
     expect(rowFor(sheet(o(false)), "Eldritch Blast")).toContain("2 beams × 1d10 force");
   });
 });
+
+// ── How a spell is cast: slot labels (F3; R5, owner 2026-11-17) ──────────────
+describe("spell slot labels", () => {
+  const act = (activationType: number, extra: Record<string, unknown> = {}) =>
+    spellDef(String(extra.name), Number(extra.level), { ...extra, activation: { activationTime: 1, activationType }, concentration: extra.concentration ?? false });
+  const HEX = act(3, { name: "Hex", level: 1, concentration: true });
+  const BLESS = act(1, { name: "Bless", level: 1, concentration: true });
+  const HELLISH_REBUKE = act(4, { name: "Hellish Rebuke", level: 1 });
+  const WALL_OF_THORNS = act(1, { name: "Wall of Thorns", level: 6, concentration: true });
+  const BEAST_SENSE = act(1, { name: "Beast Sense", level: 2, concentration: true });
+  const LIMITED = { maxUses: 1, resetType: 2 };
+  const conc = (overrides: Record<string, unknown>) => withoutNameWrap(parseCharacterData({ data: sheetData(overrides) }, "concentration", INDEX));
+
+  it("a Warlock class spell reads the pact slot in both places", () => {
+    const o = warlock(9, [known(HEX)]);
+    expect(conc(o)).toContain("    • Hex [5th-level slot]");
+    expect(block(sheet(o), "BONUS ACTIONS")).toContain("• Hex (spell, 5th-level slot)");
+  });
+
+  it("a non-Warlock class spell keeps its own level", () => {
+    expect(conc(cleric(5, [known(BLESS)]))).toContain("    • Bless [1st-level slot]");
+  });
+
+  it("a class spell with castAtLevel and a slot reads that level", () => {
+    const o = cleric(5, [known(HEX, { castAtLevel: 3, usesSpellSlot: true })]);
+    expect(conc(o)).toContain("    • Hex [3rd-level slot]");
+    expect(block(sheet(o), "BONUS ACTIONS")).toContain("• Hex (spell, 3rd-level slot)");
+  });
+
+  it("an item spell without a slot reads from item", () => {
+    const o = { spells: { item: [{ usesSpellSlot: false, castAtLevel: null, definition: WALL_OF_THORNS }] } };
+    expect(conc(o)).toContain("    • Wall of Thorns [from item]");
+  });
+
+  it("an item spell without a slot and with castAtLevel reads its level, from item", () => {
+    const o = { spells: { item: [{ usesSpellSlot: false, castAtLevel: 6, definition: WALL_OF_THORNS }] } };
+    expect(conc(o)).toContain("    • Wall of Thorns [6th level, from item]");
+  });
+
+  it("a feature spell without a slot reads no slot", () => {
+    const o = { classes: [cls(1, "Druid", 5, 5)], classSpells: [list(1, known(BEAST_SENSE, { usesSpellSlot: false }))] };
+    expect(conc(o)).toContain("    • Beast Sense [no slot]");
+  });
+
+  it("a racial spell with castAtLevel and no slot reads its level, no slot", () => {
+    const o = { spells: { race: [{ usesSpellSlot: false, castAtLevel: 2, limitedUse: LIMITED, definition: HELLISH_REBUKE }] } };
+    expect(block(sheet(o), "REACTIONS")).toContain("• Hellish Rebuke (spell, 2nd level, no slot)");
+  });
+
+  it("a spell held as a class spell and an item spell takes the class entry's label", () => {
+    const o = {
+      ...cleric(5, [known(BLESS)]),
+      spells: { item: [{ usesSpellSlot: false, castAtLevel: null, definition: BLESS }] },
+    };
+    expect(conc(o)).toContain("    • Bless [1st-level slot]");
+    expect(conc(o)).not.toContain("from item");
+  });
+
+  it("a cantrip has no concentration label", () => {
+    const o = { spells: { race: [{ usesSpellSlot: false, definition: act(1, { name: "Hold Fast", level: 0, concentration: true }) }] } };
+    expect(conc(o)).toContain("    • Hold Fast\n");
+  });
+});

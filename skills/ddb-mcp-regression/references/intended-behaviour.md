@@ -96,6 +96,10 @@ Source: tool-notes.md (owner decision 2026-11-07; owner ruling 2026-11-09).
 Looks like: `• Spiritual Weapon (spell, 2nd-level slot)` in BONUS ACTIONS with no to-hit or damage, although the website shows them (carry-over (bj), also listed in known-open-issues).
 Source: tool-notes.md (owner ruling 2026-11-09).
 
+### Spells are labelled by how they are cast
+Looks like: CONCENTRATION SPELLS entries and the `(spell, …)` lines in BONUS ACTIONS / REACTIONS name the slot actually used: `[1st-level slot]` for a class spell, the pact slot for a Warlock class spell (`• Hex (spell, 5th-level slot)` at Warlock 9), `[from item]` for an item spell that uses no slot, `[no slot]` for a feature or racial spell that uses none, and with a fixed cast level `[2nd level, no slot]` / `• Hellish Rebuke (spell, 2nd level, no slot)` (item: `6th level, from item`). A cantrip has no concentration label. A spell held twice takes the label of the class entry.
+Source: tool-notes.md (F3; owner ruling R5, 2026-11-17).
+
 ### Subclass always-prepared spells are on the sheet, though not in the raw JSON
 Looks like: a subclass caster's sheet lists the spells its subclass always has prepared (Calderax 14814039's Grave Domain Vampiric Touch, a Life cleric's Bless) in SPELLS, CONCENTRATION and the combat block, although `ddb_get_character_raw` and `ddb_download_character` don't contain them: they come from D&D Beyond's separate always-prepared list, and the raw JSON stays as D&D Beyond publishes it. A 2024 subclass adds none. Zayda (49128422) lists both Arcanist's Magic Aura and Nystul's Magic Aura, as the website does. When a list can't be loaded, the reply starts with `⚠️ Subclass always-prepared spells couldn't be loaded from D&D Beyond, so the spell lists may be incomplete.`
 Source: tool-notes.md, "Subclass always-prepared spells"; history.md R1 (owner ruling 2026-11-13).

@@ -18,22 +18,26 @@ import { isConcentrationSpell } from "../reference.js";
 import { wrapIfHomebrew } from "../../utils.js";
 import { isBonusMod, isHomebrewEntry, num, obj, records, shownHomebrew, signed, splitListLines, statNames, str } from "./helpers.js";
 import { isActiveItemMod } from "./item-gate.js";
+import { slotOrdinal, spellCastLabel } from "./slots.js";
 import type { CharData, ClassEntry, CoreStats, ListEntry } from "./types.js";
 import type { CharacterEditions } from "./editions.js";
+
+/** A concentration spell with how it is cast ("1st-level slot", "no slot", …); empty for a cantrip. */
+export interface ConcentrationEntry extends ListEntry { label: string }
 
 export interface Spells {
   spellcastingLines: string[];                  // "  Wizard: INT  Spell Attack: +5  Save DC: 13"
   slotLines: string[];                          // "  Level 1: 4/4"
   spellSections: string[];                      // "  Cantrips: ...", "  Spells: ...", "  From Racial Trait: ...", duplicate warnings; homebrew entries on wrapped "(homebrew)" lines
-  concentrationByLevel: Map<number, ListEntry[]>;  // level → ordered spell names, each flagged homebrew or not
+  concentrationByLevel: Map<number, ConcentrationEntry[]>;  // level → ordered spell names, each flagged homebrew or not, with how it is cast
 }
 
 const SOURCE_LABELS: Record<string, string> = {
   race: "Racial Trait", class: "Class Feature", background: "Background", feat: "Feat", item: "Item",
 };
 
-const SLOT_ORDINAL = ["", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th"];
-export const slotOrdinal = (lvl: number): string => SLOT_ORDINAL[lvl] ?? `${lvl}th`;
+// Re-exported from slots.ts, where it moved with the other cast-level helpers.
+export { slotOrdinal };
 
 // ── Spellcasting ability, attack and DC (shared with the ACTIONS spell rows) ─
 /**
@@ -328,9 +332,9 @@ function buildConcentrationByLevel(
   char: CharData,
   classes: readonly ClassEntry[],
   editions: CharacterEditions,
-): Map<number, ListEntry[]> {
-  const concByLevel = new Map<number, ListEntry[]>();
-  const addConcSpell = (s: Record<string, unknown>) => {
+): Map<number, ConcentrationEntry[]> {
+  const concByLevel = new Map<number, ConcentrationEntry[]>();
+  const addConcSpell = (s: Record<string, unknown>, list?: ClassSpellList, source?: string) => {
     const def = obj(s.definition);
     if (!str(def.name)) return;
     const text = editions.named(str(def.name), def);
@@ -339,13 +343,13 @@ function buildConcentrationByLevel(
     const isConc = isConcentrationSpell(def) ?? false;
     if (!isConc) return;
     const bucket = concByLevel.get(level) ?? [];
-    if (!bucket.some(e => e.text === text && e.homebrew === homebrew)) { bucket.push({ text, homebrew }); concByLevel.set(level, bucket); }
+    if (!bucket.some(e => e.text === text && e.homebrew === homebrew)) { bucket.push({ text, homebrew, label: spellCastLabel(s, { isWarlockList: list?.className === "Warlock", bucket: source }, classes) }); concByLevel.set(level, bucket); }
   };
-  for (const { isSpellbook, spells } of classSpellLists(char, classes)) {
-    for (const s of spells) if (isShownClassSpell(s, isSpellbook)) addConcSpell(s);
+  for (const list of classSpellLists(char, classes)) {
+    for (const s of list.spells) if (isShownClassSpell(s, list.isSpellbook)) addConcSpell(s, list);
   }
-  for (const spellList of Object.values(obj(char.spells))) {
-    for (const s of records(spellList)) addConcSpell(s);
+  for (const [source, spellList] of Object.entries(obj(char.spells))) {
+    for (const s of records(spellList)) addConcSpell(s, undefined, source);
   }
   return concByLevel;
 }
@@ -376,8 +380,8 @@ export function formatConcentrationBlock(s: Spells): string[] {
   const out: string[] = ["CONCENTRATION SPELLS"];
   for (const lvl of [...s.concentrationByLevel.keys()].sort((a, b) => a - b)) {
     out.push(lvl === 0 ? "  Cantrips (no slot required):" : `  Level ${lvl}:`);
-    for (const { text, homebrew } of s.concentrationByLevel.get(lvl)!) {
-      out.push(wrapIfHomebrew(`    • ${text}${lvl > 0 ? ` [${slotOrdinal(lvl)}-level slot]` : ""}`, homebrew));
+    for (const { text, homebrew, label } of s.concentrationByLevel.get(lvl)!) {
+      out.push(wrapIfHomebrew(`    • ${text}${lvl > 0 ? ` [${label}]` : ""}`, homebrew));
     }
   }
   out.push("");
