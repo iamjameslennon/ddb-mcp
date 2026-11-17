@@ -14,7 +14,7 @@
 import { stripHtml as stripHtmlFull, wrapIfHomebrew } from "../../utils.js";
 import { classifyEdition, CUSTOM_ITEM_RULES_LINE, editionTag, entrySourceIds, rulesLine, type EditionInfo, type EditionMarkers, type SourceIndex } from "../../edition.js";
 import { getSourceIndex, LOGGED_OUT_CHARACTER_INDEX_WAIT_MS } from "../../game-config.js";
-import { matchesLooseName, nameFold } from "../../name-match.js";
+import { matchesAtWordStart, matchesLooseName, nameFold } from "../../name-match.js";
 import { loadCharacterForParse, withNotice } from "../character.js";
 import { computeCharacterEditions, type CharacterEditions } from "./editions.js";
 import { featureDefinition, isHomebrewClassFeature, isHomebrewEntry, isSubclassFeature, records } from "./helpers.js";
@@ -27,13 +27,12 @@ import { withoutMasteryParagraph } from "../weapon-mastery.js";
 const matchesDefinitionQuery = matchesLooseName;
 
 /**
- * An action name matches only when the folded query is a substring of it (fix round,
- * owner decision 2026-11-17): the loose rule (carry-over (bv)) stays for entry names.
+ * An action name matches only when the folded query starts at a word of it
+ * (`matchesAtWordStart`, ddb_search_monsters' rule; fix round, owner decisions
+ * 2026-11-17), so "age" doesn't reach "Piercer: Reroll Damage". The loose rule
+ * (carry-over (bv)) stays for entry names.
  */
-const matchesActionQuery = (action: string, query: string): boolean => {
-  const q = nameFold(query);
-  return q !== "" && nameFold(action).includes(q);
-};
+const matchesActionQuery = (action: string, query: string): boolean => matchesAtWordStart(action, query);
 
 /** The lookup hit types an entity kind gives (actionParents' `kind`). */
 const HIT_TYPES: Record<EntityKind, readonly string[]> = {

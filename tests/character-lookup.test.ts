@@ -314,7 +314,7 @@ describe("formatCharacterLookup", () => {
     expect(formatCharacterLookup(char, "quiet rite", INDEX)).toMatch(/^No definition found/);
   });
 
-  it("an action name matches by folded substring only; entry names keep the loose rule (fix round)", () => {
+  it("an action name matches without typo tolerance; entry names keep the loose rule (fix round)", () => {
     const char = variant(FIGHTER_5, d => {
       d.feats = [healer];
       d.actions = { feat: [act("Reactive Spell", 1789152, FEAT_TYPE, 4)] };
@@ -327,6 +327,24 @@ describe("formatCharacterLookup", () => {
     expect(formatCharacterLookup(char, "Reactive-Spell", INDEX)).toContain("Found through");
     // An entry's own name still matches loosely ("heeler" → Healer).
     expect(formatCharacterLookup(char, "heeler", INDEX).split("\n")[0]).toBe("[Feat]");
+  });
+
+  it("an action name matches at a word start: \"age\" misses \"Piercer: Reroll Damage\" (fix round, owner decision 2026-11-17)", () => {
+    const char = variant(FIGHTER_5, d => {
+      d.feats = [{ definition: { id: 1789153, entityTypeId: FEAT_TYPE, name: "Piercer", description: "Pierce.", sources: S(145), categories: [] } }, healer];
+      d.race.racialTraits = [{ definition: { id: 13856126, entityTypeId: TRAIT_TYPE, name: "Giant Ancestry", description: "Giant blood." } }];
+      d.options = { race: [{ componentId: 13856126, componentTypeId: TRAIT_TYPE,
+        definition: { id: 3727539, entityTypeId: RACE_OPTION_TYPE, name: "Stone’s Endurance (Stone Giant)" } }] };
+      d.actions = {
+        feat: [act("Piercer: Reroll Damage", 1789153, FEAT_TYPE, 8), act("Battle Medic", 1789152, FEAT_TYPE)],
+        race: [act("Stone’s Endurance (Stone Giant)", 3727539, RACE_OPTION_TYPE, 4)],
+      };
+    }).data as Record<string, unknown>;
+    expect(formatCharacterLookup(char, "age", INDEX)).toMatch(/^No definition found matching "age"/);
+    expect(formatCharacterLookup(char, "damage", INDEX)).toContain('Found through the action "Piercer: Reroll Damage"');
+    expect(formatCharacterLookup(char, "battle medic", INDEX)).toContain('Found through the action "Battle Medic"');
+    expect(formatCharacterLookup(char, "stones endurance", INDEX)).toContain('Found through the action "Stone’s Endurance (Stone Giant)"');
+    expect(formatCharacterLookup(char, "endurance", INDEX)).toContain("Found through");
   });
 
   it("only the granting entry's kind gets the via line: an item named like the racial trait does not (fix round)", () => {
