@@ -74,7 +74,8 @@ export function ddbPrerequisiteText(prereqs: Groups): string {
   const allClassFeature = shown.every(g => mappingsOf(g).length > 0 && mappingsOf(g).every(m => m.type === "class-feature"));
   const parts = [...new Set(shown.map(g => allClassFeature ? classFeatureSummary(g) : (g.description ?? "").trim()).filter(Boolean))];
   if (allClassFeature) return parts.join(" or ");
-  return parts.reduce((out, p) => out ? out + (/^or(\s|$)/i.test(p) ? " " : "; ") + p : p, "");
+  // A continuation ("or Dexterity 13+") joins with a space; so does the part after a dangling bare "or".
+  return parts.reduce((out, p) => !out ? p : out + (/^or(\s|$)/i.test(p) || /(^|\s)or$/i.test(out) ? " " : "; ") + p, "");
 }
 
 function ddbGroupText(g: DdbPrerequisite): string {

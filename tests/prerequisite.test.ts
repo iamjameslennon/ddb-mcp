@@ -82,6 +82,6 @@ describe("ddbPrerequisiteText / ddbPrerequisiteMatches", () => {
   });
 
   it("a bare 'or' group joins with a space", () => {
-    expect(ddbPrerequisiteText([g("Level 4+, Strength"), g(" or "), g("Dexterity 13+")])).toBe("Level 4+, Strength or; Dexterity 13+");
+    expect(ddbPrerequisiteText([g("Level 4+, Strength"), g(" or "), g("Dexterity 13+")])).toBe("Level 4+, Strength or Dexterity 13+");
   });
 });
