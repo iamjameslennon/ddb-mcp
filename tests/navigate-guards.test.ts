@@ -12,6 +12,7 @@ interface FakeOpts {
   url?: string;            // current page url
   content?: string;        // what page.evaluate() returns
   urlAfterClick?: string;  // url the page lands on after a click, if any
+  urlAfterGoto?: string;   // url the page ends on after goto (a server-side redirect), if any
 }
 
 function makeFake(opts: FakeOpts = {}) {
@@ -31,7 +32,7 @@ function makeFake(opts: FakeOpts = {}) {
 
   const page = {
     url: () => currentUrl,
-    goto: async (u: string) => { calls.goto.push(u); currentUrl = u; },
+    goto: async (u: string) => { calls.goto.push(u); currentUrl = opts.urlAfterGoto ?? u; },
     waitForLoadState: async () => {},
     evaluate: async () => opts.content ?? "",
     waitForTimeout: async () => {},
@@ -78,6 +79,22 @@ describe("navigate() host allowlist", () => {
     expect(out).toContain("Aboleth stat block");
     // The network-layer guard was installed before navigating
     expect(calls.routes).toBe(1);
+  });
+});
+
+describe("navigate() final-URL re-check", () => {
+  it("refuses and returns no content when a redirect ends off the allowlist", async () => {
+    const { context } = makeFake({ content: "EVIL PAGE TEXT", urlAfterGoto: "https://evil.example/" });
+    const err = await navigate(context, "https://www.dndbeyond.com/redirect?to=evil").catch(e => e as Error);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toMatch(/outside the dndbeyond\.com allowlist/);
+    expect((err as Error).message).not.toContain("EVIL PAGE TEXT");
+  });
+
+  it("still returns content when the final URL is allowlisted", async () => {
+    const { context } = makeFake({ content: "Sheet", urlAfterGoto: "https://www.dndbeyond.com/characters/1" });
+    const out = await navigate(context, "https://www.dndbeyond.com/old");
+    expect(out).toContain("Sheet");
   });
 });
 

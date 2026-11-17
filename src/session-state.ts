@@ -34,6 +34,7 @@ import {
 import { isAbsolute, join } from "path";
 import { homedir } from "os";
 import { createHash } from "crypto";
+import { safeErrorLine } from "./utils.js";
 
 // ── Session-file location (moved here so the lifecycle owner sits at the
 // bottom of the dependency graph; session-fetch re-exports these for
@@ -546,7 +547,7 @@ export async function revokeSession(): Promise<void> {
 
   if (errors.length > 0) {
     const detail = errors
-      .map(e => (e instanceof Error ? e.message : String(e)))
+      .map(safeErrorLine)
       .join("; ");
     throw new SessionLayerError(`Session revocation completed with cleanup errors: ${detail}`, {
       cause: errors[0],

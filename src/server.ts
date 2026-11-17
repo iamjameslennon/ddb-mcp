@@ -144,7 +144,7 @@ server.tool(
         }],
       };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = safeErrorLine(err);
       process.stderr.write(`[ddb-mcp] ddb_logout error: ${msg}\n`);
       return {
         content: [{

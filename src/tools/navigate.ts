@@ -105,6 +105,16 @@ export async function navigate(context: BrowserContext, url: string): Promise<st
   await page.goto(url, { waitUntil: "load", timeout: 30000 });
   await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
 
+  // The route guard never sees the target of a server-side 3xx redirect, so an
+  // open redirect on an allowlisted host can land the page elsewhere. Re-check
+  // where the page actually ended up, as getCurrentPageContent does.
+  if (!isAllowedPageUrl(page.url())) {
+    throw new Error(
+      `Navigation ended on ${page.url()}, outside the dndbeyond.com allowlist — refusing to return its content. ` +
+      `Use ddb_navigate with a D&D Beyond page URL.`
+    );
+  }
+
   // Extract page text content and convert to readable markdown-ish format
   const content = await page.evaluate(() => {
     // Remove scripts and styles

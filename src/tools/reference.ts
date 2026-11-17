@@ -75,6 +75,17 @@ function fallbackOrigin(err: unknown): "unavailable" | "logged-out" {
   return "unavailable";
 }
 
+/**
+ * A catalog load that failed because the account changed (here or anywhere in
+ * the `cause` chain) must surface, never fall back to Open5e: the same rule as
+ * fetchCharacter's "an account change must surface, never be papered over".
+ */
+function rethrowSessionChange(err: unknown): void {
+  for (let e: unknown = err, i = 0; e instanceof Error && i < 8; e = e.cause, i++) {
+    if (e instanceof SessionChangedError) throw e;
+  }
+}
+
 // ── Shared game-data list loader ──────────────────────────────────────────────
 
 /** Non-OK response from a character-service game-data list endpoint. */
@@ -525,6 +536,7 @@ async function searchSpellsCore(params: SpellSearchParams): Promise<SearchSectio
     store = await loadSpellCompendium();
   } catch (err) {
     startedIndex?.withdraw();
+    rethrowSessionChange(err);
     if (source === "homebrew") return plainSection(homebrewUnreachable("spells"));
     try {
       return withSourceCaveatSection(await o5SearchSpellsSection(params, fallbackOrigin(err)), params.source);
@@ -594,6 +606,7 @@ export async function getSpell(spellName: string, rulesEdition: RulesEdition = "
     store = await loadSpellCompendium();
   } catch (err) {
     startedIndex?.withdraw();
+    rethrowSessionChange(err);
     if (resolved === "homebrew") return homebrewUnreachable("spells");
     try {
       const o5Result = await o5GetSpell(spellName, rulesEdition, fallbackOrigin(err));
@@ -819,6 +832,7 @@ export async function getItem(itemName: string, rulesEdition: RulesEdition = "20
     items = await loadItemCompendium();
   } catch (err) {
     startedIndex?.withdraw();
+    rethrowSessionChange(err);
     if (resolved === "homebrew") return homebrewUnreachable("items");
     try {
       const result = await o5GetEquipment(itemName, rulesEdition, fallbackOrigin(err));
@@ -903,6 +917,7 @@ async function searchCatalogListCore<T>(
     all = await spec.load();
   } catch (err) {
     startedIndex?.withdraw();
+    rethrowSessionChange(err);
     if (source === "homebrew") return plainSection(homebrewUnreachable(spec.homebrew.plural));
     let fallback: SearchSection;
     try {
@@ -1397,6 +1412,7 @@ async function searchOwnedEntriesCore<T>(
     build = await spec.load();
   } catch (err) {
     startedIndex?.withdraw();
+    rethrowSessionChange(err);
     // Homebrew never falls back; otherwise a failed load throws, as before.
     if (source === "homebrew") return plainSection(homebrewUnreachable(spec.homebrew.plural));
     throw err;
