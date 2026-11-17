@@ -335,14 +335,21 @@ const snippetClassLevel = (action: Record<string, unknown>, ctx: FeatureLineCont
 
 /** A die (or `{{scalevalue}}`) and the templates added to it, e.g. `1d10 + {{classlevel}}`. */
 const SNIPPET_DICE = /(\d+d\d+|\{\{\s*scalevalue\s*\}\})((?:\s*[+-]?\s*\{\{[^}]+\}\})*)/;
-/** A template that adds an ability modifier (owner ruling R2; carry-over (be)(2)). */
-const ABILITY_TEMPLATE = /modifier:|savedc:|spellattack:|abilityscore:/;
+/** A template that adds an ability modifier (owner ruling R2; carry-over (be)(2)); tested on the body with whitespace removed. */
+const ABILITY_TEMPLATE = /modifier:|savedc:|spellattack:|abilityscore:/i;
+/** One added template in the dice's tail, with the sign written before it, if any. */
+const TAIL_TEMPLATE = /([+-]?)\s*\{\{([^}]+)\}\}/g;
+/** Appended to snippet dice when a template had no sign, before it or of its own, and was taken as added (owner decision 2026-11-17, fix round 1). */
+export const ASSUMED_ADD_NOTE = "(assumed the values add)";
 
 /**
  * The dice in a feature action's own snippet, for a row D&D Beyond gives no
  * dice (owner ruling R2, 2026-11-13): the first `<die>` or `{{scalevalue}}`
  * with the templates added to it, used only when it holds a template and none
- * adds an ability modifier. `{{scalevalue}}` is the granting class feature's
+ * adds an ability modifier (whitespace in a template ignored). Each template
+ * is resolved and added on its own; one with no sign before it and none of its
+ * own is assumed to add, and ASSUMED_ADD_NOTE follows the dice.
+ * `{{scalevalue}}` is the granting class feature's
  * `levelScale` die; one that is a number (`{{scalevalue}} times`) gives none.
  * Martial Arts actions and those adding an ability modifier print none
  * (carry-over (be)). `""` when there are no such dice.
@@ -354,16 +361,24 @@ export function snippetDice(action: Record<string, unknown>, ctx: FeatureLineCon
   const [, head, tail] = m;
   const scaled = head.startsWith("{{");
   if (!scaled && tail.trim() === "") return "";
-  const bodies = [...tail.matchAll(/\{\{([^}]+)\}\}/g)].map(t => t[1]);
-  if (bodies.some(b => ABILITY_TEMPLATE.test(b))) return "";
+  const templates = [...tail.matchAll(TAIL_TEMPLATE)].map(t => ({ sign: t[1], body: t[2] }));
+  if (templates.some(t => ABILITY_TEMPLATE.test(t.body.replace(/\s+/g, "")))) return "";
   const die = scaled ? str(obj(grantingFeature(action, ctx)?.levelScale.dice).diceString).trim() : head;
   if (die === "") return "";
-  const resolved = ctx.resolveTemplates(tail, snippetClassLevel(action, ctx));
-  if (resolved.includes("?")) return "";
-  // A sign run ("-+3" from `- {{x#signed}}`) reads as one sign.
-  const signs = resolved.replace(/\s+/g, "").replace(/[+-]{2,}(?=\d)/g, run => ((run.match(/-/g) ?? []).length % 2 ? "-" : "+"));
-  const sum = [...signs.matchAll(/[+-]?\d+/g)].reduce((s, n) => s + Number(n[0]), 0);
-  return sum === 0 ? die : `${die} ${sum > 0 ? "+" : "-"} ${Math.abs(sum)}`;
+  // Each template is resolved on its own, so adjacent values never run together.
+  // A sign before a template combines with the template's own (`- {{x#signed}}`
+  // at +3 is -3). A template with neither is taken as added, and the row says so.
+  const classLevel = snippetClassLevel(action, ctx);
+  let sum = 0;
+  let assumed = false;
+  for (const { sign, body } of templates) {
+    const value = ctx.resolveTemplates(`{{${body}}}`, classLevel).trim();
+    if (!/^[+-]?\d+$/.test(value)) return "";
+    if (sign === "" && !body.endsWith("#signed")) assumed = true;
+    sum += sign === "-" ? -Number(value) : Number(value);
+  }
+  const dice = sum === 0 ? die : `${die} ${sum > 0 ? "+" : "-"} ${Math.abs(sum)}`;
+  return assumed ? `${dice} ${ASSUMED_ADD_NOTE}` : dice;
 }
 
 /**
@@ -375,8 +390,9 @@ export function snippetDice(action: Record<string, unknown>, ctx: FeatureLineCon
  */
 export function snippetSaveDc(action: Record<string, unknown>, ctx: FeatureLineContext): number | null {
   const bodies = [...str(action.snippet).matchAll(/\{\{([^}]+)\}\}/g)].map(t => t[1].replace(/\s+/g, ""));
-  const withDc = bodies.filter(b => b.includes("savedc:"));
-  const abilities = new Set(withDc.flatMap(b => [...b.matchAll(/savedc:([a-z]*)/g)].map(a => a[1])));
+  const withDc = bodies.filter(b => /savedc:/i.test(b));
+  // Counted case-insensitively: `{{SAVEDC:con}}` and `{{savedc:wis}}` are two abilities.
+  const abilities = new Set(withDc.flatMap(b => [...b.toLowerCase().matchAll(/savedc:([a-z]*)/g)].map(a => a[1])));
   if (abilities.size !== 1) return null;
   const value = ctx.resolveTemplates(`{{${withDc[0]}}}`, snippetClassLevel(action, ctx)).trim();
   return /^[+-]?\d+$/.test(value) ? Number(value) : null;

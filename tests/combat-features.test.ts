@@ -179,6 +179,27 @@ describe("feature rows: snippet dice (R2) and save DC (R3)", () => {
     expect(snippetDice(a("roll 1d4 - {{proficiency#signed}}"), ctx)).toBe(`1d4${signed(-c.profBonus)}`);
   });
 
+  it("adjacent templates with no sign between them are added, and the row says so (fix round 1, I1)", () => {
+    const c = core();
+    const level = num(FIGHTER.level);
+    const ctx = featureLineContext(c);
+    const a = (snippet: string) => action("Odd", 15, CLASS_FEATURE, ACTION, snip(snippet));
+    const assumed = (n: number) => `1d6${signed(n)} (assumed the values add)`;
+    expect(snippetDice(a("roll 1d6 {{classlevel}} {{proficiency}}"), ctx)).toBe(assumed(level + c.profBonus));
+    expect(snippetDice(a("roll 1d6 + {{proficiency}}{{classlevel}}"), ctx)).toBe(assumed(level + c.profBonus));
+    const text = out([a("roll 1d6 {{classlevel}} {{proficiency}} HP")]);
+    expect(lines(text, "ACTIONS")).toContain(`• Odd   ${assumed(level + c.profBonus)}`);
+    // Templates that carry their own sign, or follow an explicit one, are no assumption.
+    expect(snippetDice(a("roll 1d6{{proficiency#signed}}{{classlevel#signed}}"), ctx)).toBe(`1d6${signed(level + c.profBonus)}`);
+    expect(snippetDice(a("roll 1d6 + {{proficiency}} - {{classlevel}}"), ctx)).toBe(`1d6${signed(c.profBonus - level)}`);
+    expect(snippetDice(a("roll 1d4 - {{proficiency#signed}}"), ctx)).toBe(`1d4${signed(-c.profBonus)}`);
+  });
+
+  it("a spaced ability-modifier template prints no dice (fix round 1, I2)", () => {
+    const text = out([action("Stone's Endurance", 15, CLASS_FEATURE, REACTION, snip("roll 1d12 + {{modifier : con}}"))]);
+    expect(lines(text, "REACTIONS")).toContain("• Stone's Endurance");
+  });
+
   it("an ability-modifier expression prints no dice (R2, (be)(2))", () => {
     const text = out([
       action("Stone's Endurance", 15, CLASS_FEATURE, REACTION, snip("reduce damage dealt to you by 1d12 {{modifier:con}}  once per short rest.")),
@@ -265,6 +286,7 @@ describe("feature rows: snippet dice (R2) and save DC (R3)", () => {
     const ctx = featureLineContext(core());
     expect(snippetSaveDc(action("Odd", 14, CLASS_FEATURE, ACTION, snip("DC {{savedc:wis}} or DC {{savedc:con}}")), ctx)).toBeNull();
     expect(snippetSaveDc(action("Odd", 14, CLASS_FEATURE, ACTION, snip("DC {{savedc:wis}} or DC {{1+savedc:con}}")), ctx)).toBeNull();
+    expect(snippetSaveDc(action("Odd", 14, CLASS_FEATURE, ACTION, snip("DC {{SAVEDC:con}} or DC {{savedc:wis}}")), ctx)).toBeNull();
     expect(snippetSaveDc(action("Odd", 14, CLASS_FEATURE, ACTION, snip("no save here")), ctx)).toBeNull();
     expect(snippetSaveDc(action("Odd", 14, CLASS_FEATURE, ACTION, {}), ctx)).toBeNull();
     const text = out([action("Odd", 14, CLASS_FEATURE, ACTION, snip("DC {{savedc:wis}} or DC {{savedc:con}}"))]);
