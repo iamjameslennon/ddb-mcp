@@ -96,6 +96,10 @@ Source: tool-notes.md (owner decision 2026-11-07; owner ruling 2026-11-09).
 Looks like: `• Spiritual Weapon (spell, 2nd-level slot)` in BONUS ACTIONS with no to-hit or damage, although the website shows them (carry-over (bj), also listed in known-open-issues).
 Source: tool-notes.md (owner ruling 2026-11-09).
 
+### Subclass always-prepared spells are on the sheet, though not in the raw JSON
+Looks like: a subclass caster's sheet lists the spells its subclass always has prepared (Calderax 14814039's Grave Domain Vampiric Touch, a Life cleric's Bless) in SPELLS, CONCENTRATION and the combat block, although `ddb_get_character_raw` and `ddb_download_character` don't contain them: they come from D&D Beyond's separate always-prepared list, and the raw JSON stays as D&D Beyond publishes it. A 2024 subclass adds none. Zayda (49128422) lists both Arcanist's Magic Aura and Nystul's Magic Aura, as the website does. When a list can't be loaded, the reply starts with `⚠️ Subclass always-prepared spells couldn't be loaded from D&D Beyond, so the spell lists may be incomplete.`
+Source: tool-notes.md, "Subclass always-prepared spells"; history.md R1 (owner ruling 2026-11-13).
+
 ### Weapon-attack cantrip rows
 Looks like: `• Green-Flame Blade (cantrip) melee weapon attack   weapon damage + 1d8 fire   reach 5 ft.   (to second target: 1d8 + 3 fire)`, and for the 2024 True Strike `weapon attack with INT   weapon damage + 1d6 radiant` with no range. Neither has its own to-hit: the weapon's applies.
 Source: history.md (owner rulings 2026-11-11).

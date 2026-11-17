@@ -12,7 +12,7 @@ import {
   hasValidSession, beginAuthenticatedSession, SessionChangedError, CobaltTokenError, MalformedCobaltTokenError, SessionNotSignedInError,
   captureSession, assertSessionCurrent, onSessionInvalidated,
 } from "../session-fetch.js";
-import type { AuthenticatedSession } from "../session-fetch.js";
+import type { AuthenticatedSession, SessionSnapshot } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
 import { getSourceIndex, LOGGED_OUT_CHARACTER_INDEX_WAIT_MS } from "../game-config.js";
 import { writeFileSync, mkdirSync, realpathSync } from "fs";
@@ -22,6 +22,8 @@ import type { ParseSection } from "./character/types.js";
 import { levenshteinDistance } from "./character/helpers.js";
 import { parseCharacterData } from "./character/parse.js";
 import { wrapUntrusted } from "../utils.js";
+import { fetchSubclassSpellLists } from "./subclass-spells.js";
+import { mergeAlwaysPreparedSpells } from "./character/always-prepared.js";
 
 // Re-export so MCP server registrations (src/server.ts) and tests
 // (tests/character-parser.test.ts, party.test.ts, character-snapshot.test.ts)
@@ -133,9 +135,33 @@ export async function parseCharacter(
   // rejects); a failed fetch withdraws it, as nothing will read it.
   const indexCtl = new AbortController();
   const indexPromise = getSourceIndex({ signal: indexCtl.signal, loggedOutWaitMs: LOGGED_OUT_CHARACTER_INDEX_WAIT_MS });
-  const { json, notice } = await fetchCharacter(characterId).catch((err: unknown) => { indexCtl.abort(); throw err; });
-  const raw = JSON.parse(json) as Record<string, unknown>;
+  const { raw, notice } = await loadCharacterForParse(characterId).catch((err: unknown) => { indexCtl.abort(); throw err; });
   return withNotice(parseCharacterData(raw, sections, await indexPromise), notice);
+}
+
+/** Added to a character's notice when any subclass's always-prepared spell list failed to load. */
+export const SUBCLASS_SPELLS_UNAVAILABLE_NOTICE =
+  "Subclass always-prepared spells couldn't be loaded from D&D Beyond, so the spell lists may be incomplete.";
+
+/**
+ * The character JSON a sheet, lookup or party member is parsed from: D&D
+ * Beyond's JSON plus each subclass's always-prepared spells (F4, owner ruling
+ * R1 2026-11-13), which the character JSON leaves out. The character and its
+ * lists are fetched under ONE session snapshot and checked against it after
+ * the merge (owner decision S2), so one account's character is never merged
+ * with another's lists. A list that fails adds SUBCLASS_SPELLS_UNAVAILABLE_NOTICE.
+ * ddb_get_character_raw and ddb_download_character use fetchCharacter, unmerged.
+ */
+export async function loadCharacterForParse(characterId: string): Promise<{ raw: Record<string, unknown>; notice?: string }> {
+  const snapshot = captureSession();
+  const { json, notice } = await fetchCharacter(characterId, snapshot);
+  const published = JSON.parse(json) as Record<string, unknown>;
+  const char = (published?.data ?? published) as Record<string, unknown>;
+  const { lists, failed } = await fetchSubclassSpellLists(char, snapshot);
+  const raw = mergeAlwaysPreparedSpells(published, lists);
+  assertSessionCurrent(snapshot);
+  const notices = [notice, failed ? SUBCLASS_SPELLS_UNAVAILABLE_NOTICE : undefined].filter(Boolean);
+  return notices.length ? { raw, notice: notices.join(" ") } : { raw };
 }
 
 /** Character JSON, plus a notice when a logged-in fetch had to go out anonymously. */
@@ -207,13 +233,13 @@ export async function getCharacterRaw(characterId: string): Promise<CharacterFet
  * to the user call this and pass the notice through `withNotice()`, so an
  * expired session is reported even when the character happens to be public.
  */
-export async function fetchCharacter(characterId: string): Promise<CharacterFetch> {
+export async function fetchCharacter(characterId: string, snapshot: SessionSnapshot = captureSession()): Promise<CharacterFetch> {
   // Observe the on-disk authority BEFORE the early cache return. captureSession
   // runs the boundary check, so a pending logout/replacement fires the
   // invalidation hook (which clears this cache) before we read it. Without this,
   // an early cache hit could hand back account A's PRIVATE character after A was
-  // revoked, having never re-read the authority.
-  const snapshot = captureSession();
+  // revoked, having never re-read the authority. A caller that passes its own
+  // snapshot (loadCharacterForParse) took it just before this call.
   const loggedIn = snapshot.state.kind === "authenticated" && hasValidSession();
 
   // Keyed by generation as well as cleared by the invalidation hook, so an entry

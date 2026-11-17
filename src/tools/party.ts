@@ -1,5 +1,5 @@
 import { getCampaignData } from "./campaign.js";
-import { fetchCharacter, parseCharacterData, withNotice } from "./character.js";
+import { loadCharacterForParse, parseCharacterData, withNotice } from "./character.js";
 import { getSourceIndex } from "../game-config.js";
 import { wrapUntrusted } from "../utils.js";
 
@@ -33,8 +33,7 @@ export async function getParty(campaignId: string): Promise<string> {
     const fetched = await Promise.all(
       batch.map(async id => {
         try {
-          const { json, notice } = await fetchCharacter(id);
-          const raw = JSON.parse(json) as Record<string, unknown>;
+          const { raw, notice } = await loadCharacterForParse(id);
           return withNotice(parseCharacterData(raw, "summary", index), notice);
         } catch (err) {
           // The message can quote D&D Beyond's response (a JSON.parse error

@@ -7,6 +7,7 @@ import { login, LOGIN_TIMEOUT_MS, LOGIN_PROGRESS_INTERVAL_MS } from "./auth.js";
 import { safeErrorLine } from "./utils.js";
 import { revokeSession } from "./session-state.js";
 import { getCharacterRaw, downloadCharacter, listCharacters, parseCharacter, findCharacterByName, characterNameError, getDefinition, clearCharacterCache } from "./tools/character.js";
+import { clearSubclassSpellCache } from "./tools/subclass-spells.js";
 import { getCampaign, listMyCampaigns, invalidateCampaignCache } from "./tools/campaign.js";
 import { getParty } from "./tools/party.js";
 import { navigate, interact, getCurrentPageContent } from "./tools/navigate.js";
@@ -170,7 +171,7 @@ server.tool(
     cache: z
       .enum(["spells", "characters", "monsters", "all"])
       .default("spells")
-      .describe("Which cache to clear. 'spells' (default) — the spell / equipment / races / classes / feats compendium. 'characters' — character JSON cache. 'monsters' — monster stat-block cache, the full monster list, the game config, and the Open5e SRD creature data (including a remembered Open5e failure). 'all' — everything, including the library list, campaigns and Open5e responses."),
+      .describe("Which cache to clear. 'spells' (default) — the spell / equipment / races / classes / feats compendium. 'characters' — character JSON cache and the subclass always-prepared spell lists. 'monsters' — monster stat-block cache, the full monster list, the game config, and the Open5e SRD creature data (including a remembered Open5e failure). 'all' — everything, including the library list, campaigns and Open5e responses."),
   },
   { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   async ({ cache }) => {
@@ -181,7 +182,8 @@ server.tool(
     }
     if (cache === "characters" || cache === "all") {
       clearCharacterCache();
-      cleared.push("character JSON");
+      clearSubclassSpellCache();
+      cleared.push("character JSON", "subclass always-prepared spells");
     }
     if (cache === "monsters" || cache === "all") {
       clearMonsterCache();

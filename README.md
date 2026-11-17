@@ -228,7 +228,7 @@ In these searches, entries that aren't 2014 or 2024 content are tagged `[homebre
 | `ddb_interact` | Click, fill (requires `confirm_fill: true`), or screenshot the currently loaded page. |
 | `ddb_get_page` | Return the text content of the currently loaded page. |
 | `ddb_close_browser` | Close the background browser window. Call this when done with `ddb_navigate`, `ddb_interact`, or `ddb_get_page`. |
-| `ddb_clear_cache` | Clear the server's in-memory caches so the next call re-fetches from D&D Beyond: `spells` (default; the reference compendium: spells, items, species, classes, backgrounds, feats, class features and racial traits), `characters`, `monsters` (stat blocks, the full monster list, the cached source list and the Open5e creature data), or `all` (everything, including the library list, campaigns and Open5e SRD data). Useful when results look like the SRD fallback right after logging in. |
+| `ddb_clear_cache` | Clear the server's in-memory caches so the next call re-fetches from D&D Beyond: `spells` (default; the reference compendium: spells, items, species, classes, backgrounds, feats, class features and racial traits), `characters` (character data and subclass always-prepared spell lists), `monsters` (stat blocks, the full monster list, the cached source list and the Open5e creature data), or `all` (everything, including the library list, campaigns and Open5e SRD data). Useful when results look like the SRD fallback right after logging in. |
 
 </details>
 

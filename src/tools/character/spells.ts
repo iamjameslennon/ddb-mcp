@@ -172,12 +172,13 @@ export function classSpellLists(char: CharData, classes: readonly ClassEntry[]):
   });
 }
 
-// Spellbook (Wizard) gate: a leveled spell shows only when prepared or a
-// ritual; cantrips always show.
+// Spellbook (Wizard) gate: a leveled spell shows only when prepared (or always
+// prepared) or a ritual; cantrips always show.
 export function isShownClassSpell(s: Record<string, unknown>, isSpellbook: boolean): boolean {
   const def = obj(s.definition);
   if (num(def.level) === 0 || !isSpellbook) return true;
-  return s.prepared === true || def.ritual === true;
+  // A subclass's always-prepared spell (F4) is prepared whatever its `prepared` says.
+  return s.prepared === true || s.alwaysPrepared === true || def.ritual === true;
 }
 
 /**

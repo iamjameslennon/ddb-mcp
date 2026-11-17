@@ -13,7 +13,7 @@ vi.mock("../src/tools/campaign.js", () => ({
 }));
 
 vi.mock("../src/tools/character.js", async (importActual) => ({
-  fetchCharacter: vi.fn(),
+  loadCharacterForParse: vi.fn(),
   parseCharacterData: vi.fn(),
   withNotice: (await importActual<typeof import("../src/tools/character.js")>()).withNotice,
 }));
@@ -21,7 +21,7 @@ vi.mock("../src/tools/character.js", async (importActual) => ({
 import { getParty } from "../src/tools/party.js";
 import { getCampaignData, type CampaignInfo } from "../src/tools/campaign.js";
 import { wrapUntrusted } from "../src/utils.js";
-import { fetchCharacter, parseCharacterData } from "../src/tools/character.js";
+import { loadCharacterForParse, parseCharacterData } from "../src/tools/character.js";
 import { getSourceIndex } from "../src/game-config.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -37,8 +37,8 @@ function campaignData(name: string, ids: number[]): CampaignInfo {
   });
 }
 
-function charJson(name: string): string {
-  return JSON.stringify({ data: { name } });
+function charRaw(name: string): Record<string, unknown> {
+  return { data: { name } };
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -50,7 +50,7 @@ describe("getParty", () => {
 
   it("happy path — returns all character summaries with campaign header", async () => {
     vi.mocked(getCampaignData).mockResolvedValue(campaignData("Curse of Strahd", [101, 102, 103]));
-    vi.mocked(fetchCharacter).mockImplementation(async id => ({ json: charJson(`Hero${id}`) }));
+    vi.mocked(loadCharacterForParse).mockImplementation(async id => ({ raw: charRaw(`Hero${id}`) }));
     vi.mocked(parseCharacterData).mockImplementation(raw => {
       const name = (raw as Record<string, unknown>).data
         ? ((raw as Record<string, { name: string }>).data).name
@@ -65,7 +65,7 @@ describe("getParty", () => {
     expect(result).toContain("Summary: Hero101");
     expect(result).toContain("Summary: Hero102");
     expect(result).toContain("Summary: Hero103");
-    expect(vi.mocked(fetchCharacter)).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(loadCharacterForParse)).toHaveBeenCalledTimes(3);
     expect(vi.mocked(parseCharacterData)).toHaveBeenCalledWith(expect.anything(), "summary", SENTINEL_INDEX);
   });
 
@@ -76,14 +76,14 @@ describe("getParty", () => {
 
     // The campaign name is the DM's text, so the reply is delimited as untrusted.
     expect(result).toBe(wrapUntrusted('Campaign "Empty Campaign" has no active characters.'));
-    expect(vi.mocked(fetchCharacter)).not.toHaveBeenCalled();
+    expect(vi.mocked(loadCharacterForParse)).not.toHaveBeenCalled();
   });
 
   it("partial failure — failed character shows error line, others succeed", async () => {
     vi.mocked(getCampaignData).mockResolvedValue(campaignData("Storm King's Thunder", [201, 202, 203]));
-    vi.mocked(fetchCharacter).mockImplementation(async id => {
+    vi.mocked(loadCharacterForParse).mockImplementation(async id => {
       if (id === "202") throw new Error("character is private");
-      return { json: charJson(`Hero${id}`) };
+      return { raw: charRaw(`Hero${id}`) };
     });
     vi.mocked(parseCharacterData).mockImplementation(() => "Summary");
 
@@ -98,12 +98,12 @@ describe("getParty", () => {
 
   it("large party (6) — processes all characters across two batches of 3", async () => {
     vi.mocked(getCampaignData).mockResolvedValue(campaignData("Waterdeep", [1, 2, 3, 4, 5, 6]));
-    vi.mocked(fetchCharacter).mockImplementation(async id => ({ json: charJson(`Hero${id}`) }));
+    vi.mocked(loadCharacterForParse).mockImplementation(async id => ({ raw: charRaw(`Hero${id}`) }));
     vi.mocked(parseCharacterData).mockImplementation(() => "Summary");
 
     const result = await getParty("999");
 
-    expect(vi.mocked(fetchCharacter)).toHaveBeenCalledTimes(6);
+    expect(vi.mocked(loadCharacterForParse)).toHaveBeenCalledTimes(6);
     // Result should contain 6 summaries
     expect(result.split("Summary")).toHaveLength(7); // 6 "Summary" occurrences → 7 parts
     expect(result).toContain("PARTY: Waterdeep");
@@ -111,7 +111,7 @@ describe("getParty", () => {
 
   it("fetches the source index once per party", async () => {
     vi.mocked(getCampaignData).mockResolvedValue(campaignData("Phandelver", [401, 402, 403, 404]));
-    vi.mocked(fetchCharacter).mockImplementation(async id => ({ json: charJson(`Hero${id}`) }));
+    vi.mocked(loadCharacterForParse).mockImplementation(async id => ({ raw: charRaw(`Hero${id}`) }));
     vi.mocked(parseCharacterData).mockImplementation(() => "Summary");
 
     await getParty("999");
@@ -122,7 +122,7 @@ describe("getParty", () => {
 
   it("shows a fetch notice above that character's summary", async () => {
     vi.mocked(getCampaignData).mockResolvedValue(campaignData("Rime", [301]));
-    vi.mocked(fetchCharacter).mockResolvedValue({ json: charJson("Hero301"), notice: "Loaded without signing in." });
+    vi.mocked(loadCharacterForParse).mockResolvedValue({ raw: charRaw("Hero301"), notice: "Loaded without signing in." });
     vi.mocked(parseCharacterData).mockImplementation(() => "Summary");
 
     const result = await getParty("999");

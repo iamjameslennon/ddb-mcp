@@ -6,7 +6,7 @@
  * Phase 9 of the character.ts refactor — see docs/character-refactor.md.
  *
  * `getDefinition` is the public entry point (re-exported from character.ts).
- * It depends on `fetchCharacter` from the network/IO layer in character.ts
+ * It depends on `loadCharacterForParse` from the network/IO layer in character.ts
  * — that import is intentionally one-way (definition consumes IO, not
  * the other way around).
  */
@@ -15,7 +15,7 @@ import { stripHtml as stripHtmlFull, wrapIfHomebrew } from "../../utils.js";
 import { classifyEdition, CUSTOM_ITEM_RULES_LINE, editionTag, entrySourceIds, rulesLine, type EditionInfo, type EditionMarkers, type SourceIndex } from "../../edition.js";
 import { getSourceIndex, LOGGED_OUT_CHARACTER_INDEX_WAIT_MS } from "../../game-config.js";
 import { matchesLooseName, nameFold } from "../../name-match.js";
-import { fetchCharacter, withNotice } from "../character.js";
+import { loadCharacterForParse, withNotice } from "../character.js";
 import { computeCharacterEditions, type CharacterEditions } from "./editions.js";
 import { featureDefinition, isHomebrewClassFeature, isHomebrewEntry, isSubclassFeature, records } from "./helpers.js";
 import { resolveBackground } from "./features.js";
@@ -339,8 +339,7 @@ export async function getDefinition(
   // Alongside the character fetch; a failed fetch withdraws it, as nothing will read it.
   const indexCtl = new AbortController();
   const indexPromise = getSourceIndex({ signal: indexCtl.signal, loggedOutWaitMs: LOGGED_OUT_CHARACTER_INDEX_WAIT_MS });
-  const { json, notice } = await fetchCharacter(characterId).catch((err: unknown) => { indexCtl.abort(); throw err; });
-  const raw = JSON.parse(json) as Record<string, unknown>;
+  const { raw, notice } = await loadCharacterForParse(characterId).catch((err: unknown) => { indexCtl.abort(); throw err; });
   const char = (raw?.data ?? raw) as Record<string, unknown>;
   const index = await indexPromise;
 

@@ -16,7 +16,12 @@
  *
  * Each character's JSON is fetched once, anonymously (all are public), cached
  * under the work dir, and fed to both parsers, so edits on D&D Beyond between
- * runs can't show up as differences. --refresh re-fetches.
+ * runs can't show up as differences. --refresh re-fetches. HEAD parses it with
+ * each subclass's always-prepared spells merged in, as the server does (F4,
+ * owner ruling R1 2026-11-13); those lists are fetched once too and cached
+ * beside the character JSON (`<id>.always-prepared.json`, owner decision M13
+ * 2026-11-17). The baseline parses D&D Beyond's JSON as published, unmerged,
+ * so the added spells show up as (intended) differences.
  *
  *   npx tsx scripts/regress-all-characters.mts                 # vs latest npm release
  *   npx tsx scripts/regress-all-characters.mts --baseline 2.10.2
@@ -46,6 +51,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseCharacterData as headParse } from "../src/tools/character/parse.js";
+import { mergeAlwaysPreparedSpells, subclassRequests, type SubclassSpellLists } from "../src/tools/character/always-prepared.js";
 import { getSourceIndex } from "../src/game-config.js";
 import { mapWithConcurrency } from "../src/utils.js";
 
@@ -194,6 +200,53 @@ async function fetchCharacterJson(id: string, cacheDir: string, refresh: boolean
   return { ok: false, error: lastError };
 }
 
+type ListsResult = { lists: SubclassSpellLists; error?: string };
+
+/**
+ * The character's subclass always-prepared spell lists, keyed by class entry id.
+ * Read from `<id>.always-prepared.json` when it is there; otherwise fetched
+ * anonymously, like the character, and written only when every list loaded, so
+ * a failure is retried on the next run. A list that failed is left out.
+ */
+async function fetchAlwaysPrepared(id: string, json: string, cacheDir: string, refresh: boolean): Promise<ListsResult> {
+  const file = join(cacheDir, `${id}.always-prepared.json`);
+  if (!refresh && existsSync(file)) {
+    const stored = JSON.parse(readFileSync(file, "utf8")) as Record<string, Record<string, unknown>[]>;
+    return { lists: new Map(Object.entries(stored).map(([k, v]) => [Number(k), v])) };
+  }
+  const raw = JSON.parse(json) as Record<string, unknown>;
+  const char = (raw.data ?? raw) as Record<string, unknown>;
+  const lists: SubclassSpellLists = new Map();
+  const errors: string[] = [];
+  for (const r of subclassRequests(char)) {
+    const url = `https://character-service.dndbeyond.com/character/v5/game-data/always-prepared-spells?classId=${r.subclassId}&classLevel=${r.level}&sharingSetting=2`;
+    let lastError = "";
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const resp = await fetch(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(20_000) });
+        if (resp.ok) {
+          const data = ((await resp.json()) as { data?: unknown } | null)?.data;
+          if (Array.isArray(data)) {
+            lists.set(r.characterClassId, data as Record<string, unknown>[]);
+            lastError = "";
+            break;
+          }
+          lastError = "malformed reply";
+        } else {
+          lastError = `HTTP ${resp.status}`;
+          if (resp.status < 500) break;
+        }
+      } catch (e) {
+        lastError = e instanceof Error ? e.message : String(e);
+      }
+    }
+    if (lastError) errors.push(`subclass ${r.subclassId} level ${r.level}: ${lastError}`);
+  }
+  if (errors.length) return { lists, error: errors.join("; ") };
+  writeFileSync(file, JSON.stringify(Object.fromEntries(lists)));
+  return { lists };
+}
+
 // ── normalising, diffing, scanning ──────────────────────────────────────────
 
 function normalise(text: string, keepTags: boolean): string[] {
@@ -292,6 +345,7 @@ function scanAnomalies(text: string): Map<string, string> {
 interface CharResult {
   char: Character;
   fetchError?: string;
+  listsError?: string;        // an always-prepared list that couldn't be loaded (HEAD parsed without it)
   crashes: string[];          // "<version> <section>: message"
   diffs: { section: Section; changed: number; hunks: string[] }[];
   newAnomalies: { kind: string; line: string }[];
@@ -317,7 +371,10 @@ async function main(): Promise<void> {
   if (chars.length === 0) fail("no characters to run");
 
   log(`fetching ${chars.length} characters (cache: ${cacheDir})`);
-  const fetched = await mapWithConcurrency(chars, 4, c => fetchCharacterJson(c.id, cacheDir, opts.refresh));
+  const fetched = await mapWithConcurrency(chars, 4, async c => {
+    const f = await fetchCharacterJson(c.id, cacheDir, opts.refresh);
+    return f.ok ? { ...f, alwaysPrepared: await fetchAlwaysPrepared(c.id, f.json, cacheDir, opts.refresh) } : f;
+  });
   const index = await getSourceIndex();
   if (fetched.every(f => !f.ok)) fail("every character fetch failed — offline?");
 
@@ -335,13 +392,18 @@ async function main(): Promise<void> {
     const r: CharResult = { char, crashes: [], diffs: [], newAnomalies: [], oldAnomalies: [], fixedAnomalies: 0, consistency: [] };
     results.push(r);
     if (!f.ok) { r.fetchError = f.error; continue; }
+    r.listsError = f.alwaysPrepared.error;
+    const headInput = (): unknown => mergeAlwaysPreparedSpells(JSON.parse(f.json) as Record<string, unknown>, f.alwaysPrepared.lists);
 
     const outputs: Record<"baseline" | "head", Partial<Record<Section, string>>> = { baseline: {}, head: {} };
     for (const section of SECTIONS) {
-      for (const [side, parse] of [["baseline", baseParse], ["head", (raw: unknown, s: Section) => headParse(raw as never, s, index)]] as const) {
+      for (const [side, parse, input] of [
+        ["baseline", baseParse, () => JSON.parse(f.json) as unknown],
+        ["head", (raw: unknown, s: Section) => headParse(raw as never, s, index), headInput],
+      ] as const) {
         try {
           // A fresh copy per call, in case a parser mutates its input.
-          const text = parse(JSON.parse(f.json), section);
+          const text = parse(input(), section);
           outputs[side][section] = text;
           writeFileSync(join(runDir, side, `${char.id}-${section}.txt`), text + "\n");
         } catch (e) {
@@ -413,6 +475,7 @@ async function main(): Promise<void> {
     `- Outputs: ${runDir}`,
     "",
     `- Fetch failures: ${results.length - ran.length}${results.filter(r => r.fetchError).map(r => `\n  - ${r.char.id} ${r.char.name}: ${r.fetchError}`).join("")}`,
+    `- Always-prepared list failures (HEAD parsed without them; retried next run): ${results.filter(r => r.listsError).length}${results.filter(r => r.listsError).map(r => `\n  - ${r.char.id} ${r.char.name}: ${r.listsError}`).join("")}`,
     `- HEAD crashes: ${headCrashes.length}${headCrashes.map(c => `\n  - ${c}`).join("")}`,
     `- Baseline crashes: ${baseCrashes.length}${baseCrashes.map(c => `\n  - ${c}`).join("")}`,
     `- Section consistency failures: ${inconsistent.length}${inconsistent.map(c => `\n  - ${c}`).join("")}`,

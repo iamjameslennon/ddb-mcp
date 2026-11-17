@@ -9,10 +9,6 @@ If you see the same symptom somewhere this list doesn't mention, or it has becom
 ### (ba) Custom item names are not applied
 Shows up as: an item the player renamed (for example "Drake's Tooth Dagger") prints under its stock name. 6 of the 56 test characters have one.
 
-### (bb) Subclass always-prepared spells are missing
-Shows up as: Calderax (14814039, Grave Domain) has no Vampiric Touch anywhere on the sheet. D&D Beyond leaves these spells out of the character data.
-The 2026-11-11 run found it on all 8 subclass casters checked, and Bless missing from `concentration`. Flagged for re-prioritising.
-
 ### (bc) The global save bonus ignores whether the item is equipped
 Shows up as: a save bonus from an item that isn't equipped or attuned still counts (Ethelrede's unequipped Battleaxe +1, Aerin's unequipped Slippers).
 
