@@ -16,7 +16,7 @@ Shows up as: a save bonus from an item that isn't equipped or attuned still coun
 Shows up as: Luck Points, Draconic Cry, Stonecunning, Stone's Endurance and similar features are absent from LIMITED USE.
 
 ### (be) Some feature dice are omitted
-Shows up as: Deflect Missiles (Flemin 112315775, Petit Nuage 40193614), Arms of the Astral Self and some monk Unarmed Strike actions print without their dice.
+Shows up as: Martial Arts actions print without their dice: Deflect Missiles (Flemin 112315775, Petit Nuage 40193614), Arms of the Astral Self and some monk Unarmed Strike actions. So do rows whose dice add an ability modifier: Stone's Endurance, the Eldritch Cannon entries and Arms of the Astral Self: Summon (which still prints its save DC). Other feature rows now take their dice from their own text (2014 Second Wind, 2014 Bardic Inspiration), so a missing die on one of those is a new finding.
 
 ### (bf) A null AC override entry would throw
 Shows up as: an error on a character whose data has a null `characterValues` entry. No live character has one, so a crash here is this issue.

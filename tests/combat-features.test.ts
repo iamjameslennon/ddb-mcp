@@ -4,8 +4,12 @@
  */
 import { describe, expect, it } from "vitest";
 import { wrapUntrusted } from "../src/utils.js";
-import { isMasteryAction } from "../src/tools/character/actions.js";
-import { CLASS_FEATURE, combat, block, ACTION, BONUS, REACTION, SPECIAL, action, limited, actions, feature, fighter } from "./fixtures/combat-helpers.js";
+import { featureLineContext, isMasteryAction, snippetDice, snippetSaveDc } from "../src/tools/character/actions.js";
+import { computeCoreStats } from "../src/tools/character/core.js";
+import { num } from "../src/tools/character/helpers.js";
+import type { CharData } from "../src/tools/character/types.js";
+import { INDEX } from "./fixtures/character-edition-helpers.js";
+import { BASE, CLASS_FEATURE, FIGHTER, combat, block, ACTION, BONUS, REACTION, SPECIAL, action, limited, actions, feature, fighter } from "./fixtures/combat-helpers.js";
 
 const FEATS = [feature(1, "Channel Divinity"), feature(2, "Bard"), feature(3, "Rogue"), feature(4, "Monk"), feature(5, "Second")];
 const sheet = (list: unknown[], bucket = "class", extra: Record<string, unknown> = {}) =>
@@ -123,5 +127,178 @@ describe("action features", () => {
       expect(text).toContain(wrapUntrusted("• Hex Wrath"));
       expect(text.split("\n")).toContain("• Fair Wrath");
     }
+  });
+});
+
+describe("feature rows: snippet dice (R2) and save DC (R3)", () => {
+  const scaled = (id: number, name: string, levelScale: Record<string, unknown>) => ({ ...feature(id, name), levelScale });
+  const FEATURES = [
+    feature(10, "Second Wind"),
+    scaled(11, "Bardic Inspiration", { dice: { diceString: "1d6" } }),
+    scaled(12, "Quickened Healing", { dice: { diceString: "1d6" } }),
+    scaled(13, "Action Surge", { dice: null, fixedValue: 2 }),
+    feature(14, "Stunning Strike"),
+    feature(15, "Odd"),
+  ];
+  const overrides = (list: unknown[], extra: Record<string, unknown> = {}) =>
+    ({ classes: [fighter({ classFeatures: FEATURES })], ...actions({ class: list }), ...extra });
+  const out = (list: unknown[], extra: Record<string, unknown> = {}) => combat(overrides(list, extra));
+  const core = (extra: Record<string, unknown> = {}) =>
+    computeCoreStats({ ...BASE, inventory: [], classSpells: [], spells: {}, ...overrides([], extra) } as unknown as CharData, INDEX);
+  const snip = (snippet: string, extra: Record<string, unknown> = {}) => ({ snippet, ...extra });
+  const lines = (text: string, header: string) => block(text, header).split("\n");
+  const WIS = 4;
+  const signed = (n: number) => (n < 0 ? ` - ${-n}` : n > 0 ? ` + ${n}` : "");
+
+  it("2014 Second Wind prints its snippet's dice at the class level", () => {
+    const c = core();
+    const level = num(FIGHTER.level);
+    expect(featureLineContext(c).features.get(10)?.classLevel).toBe(level);
+    const text = out([action("Second Wind", 10, CLASS_FEATURE, BONUS, snip("Once per short rest, you can use a bonus action to regain 1d10 + {{classlevel}} HP."))]);
+    expect(lines(text, "BONUS ACTIONS")).toContain(`• Second Wind   1d10${signed(level)}`);
+  });
+
+  it("2014 Bardic Inspiration prints its levelScale die", () => {
+    const text = out([action("Bardic Inspiration", 11, CLASS_FEATURE, BONUS, snip("gains an inspiration die ({{scalevalue}}). For 10 minutes"))]);
+    expect(lines(text, "BONUS ACTIONS")).toContain("• Bardic Inspiration   1d6");
+  });
+
+  it("scalevalue plus proficiency adds up", () => {
+    const { profBonus } = core();
+    const text = out([action("Quickened Healing", 12, CLASS_FEATURE, ACTION, snip("<p>you can spend 2 ki points to regain {{scalevalue}}{{proficiency#signed}} hit points.</p>"))]);
+    expect(lines(text, "ACTIONS")).toContain(`• Quickened Healing   1d6${signed(profBonus)}`);
+  });
+
+  it("resolves a negative tail and sums several templates", () => {
+    const c = core();
+    const ctx = featureLineContext(c);
+    const a = (snippet: string) => action("Odd", 15, CLASS_FEATURE, ACTION, snip(snippet));
+    expect(snippetDice(a("roll 1d4 - {{proficiency}} extra"), ctx)).toBe(`1d4${signed(-c.profBonus)}`);
+    expect(snippetDice(a("roll 2d6 + {{proficiency}} + {{classlevel}}"), ctx)).toBe(`2d6${signed(c.profBonus + num(FIGHTER.level))}`);
+    expect(snippetDice(a("roll 1d8 + {{proficiency - proficiency}}"), ctx)).toBe("1d8");
+    expect(snippetDice(a("roll 1d4 - {{proficiency#signed}}"), ctx)).toBe(`1d4${signed(-c.profBonus)}`);
+  });
+
+  it("an ability-modifier expression prints no dice (R2, (be)(2))", () => {
+    const text = out([
+      action("Stone's Endurance", 15, CLASS_FEATURE, REACTION, snip("reduce damage dealt to you by 1d12 {{modifier:con}}  once per short rest.")),
+      action("Deft Explorer: Tireless", 15, CLASS_FEATURE, ACTION, snip("give yourself <strong>1d8</strong>{{modifier:wis}} temporary hit points")),
+      action("Eldritch Cannon: Protector", 15, CLASS_FEATURE, BONUS, snip("grants <strong>1d8</strong>{{modifier:int@min:1}} temporary hit points")),
+      action("Odd Save", 15, CLASS_FEATURE, ACTION, snip("1d6 + {{savedc:wis}} and 1d6 + {{spellattack:wis}} and {{abilityscore:str}}")),
+      action("Odd Mixed", 15, CLASS_FEATURE, ACTION, snip("1d6 + {{proficiency}} + {{modifier:dex}}")),
+    ]);
+    expect(lines(text, "REACTIONS")).toContain("• Stone's Endurance");
+    expect(lines(text, "ACTIONS")).toContain("• Deft Explorer: Tireless");
+    expect(lines(text, "BONUS ACTIONS")).toContain("• Eldritch Cannon: Protector");
+    expect(lines(text, "ACTIONS")).toContain("• Odd Mixed");
+    expect(lines(text, "ACTIONS").some(l => l.startsWith("• Odd Save   1d6"))).toBe(false);
+  });
+
+  it("an action with abilityModifierStatId prints no snippet dice", () => {
+    const text = out([action("Stone's Endurance", 15, CLASS_FEATURE, REACTION, snip("roll 1d12 + {{proficiency}}", { abilityModifierStatId: 3 }))]);
+    expect(lines(text, "REACTIONS")).toContain("• Stone's Endurance");
+  });
+
+  it("a plain die with no template prints no dice", () => {
+    const text = out([
+      action("Restore", 15, CLASS_FEATURE, ACTION, snip("restore 1d6 + 4 HP")),
+      action("Smite", 15, CLASS_FEATURE, BONUS, snip("deal 2d8 extra radiant damage, then 1d6 + {{proficiency}} more")),
+    ]);
+    expect(lines(text, "ACTIONS")).toContain("• Restore");
+    expect(lines(text, "BONUS ACTIONS")).toContain("• Smite");
+  });
+
+  it("a numeric scalevalue prints no dice", () => {
+    const text = out([
+      action("Action Surge", 13, CLASS_FEATURE, SPECIAL, snip("You can use this {{scalevalue}} times per short rest.")),
+      action("No Feature", 15, CLASS_FEATURE, SPECIAL, snip("an extra {{scalevalue}} damage")),
+      action("Option", 13, 258900837, SPECIAL, snip("an extra {{scalevalue}} damage")),
+    ]);
+    expect(block(text, "OTHER")).toBe(["OTHER", "• Action Surge", "• No Feature", "• Option"].join("\n"));
+  });
+
+  it("a signed scalevalue is not a die", () => {
+    const text = out([action("Rage", 11, CLASS_FEATURE, BONUS, snip("{{scalevalue#signed}} melee damage"))]);
+    expect(lines(text, "BONUS ACTIONS")).toContain("• Rage");
+  });
+
+  it("an unresolvable tail prints no dice", () => {
+    const text = out([action("Odd", 15, CLASS_FEATURE, ACTION, snip("roll 1d6 + {{limiteduse}}"))]);
+    expect(lines(text, "ACTIONS")).toContain("• Odd");
+  });
+
+  it("an action with its own dice keeps them", () => {
+    const text = out([action("Second Wind", 10, CLASS_FEATURE, BONUS, {
+      displayAsAttack: true, dice: { diceString: "1d10 + 1" },
+      snippet: "regain <strong>1d10</strong>{{classlevel#signed}} HP.",
+    })]);
+    expect(lines(text, "BONUS ACTIONS")).toContain("• Second Wind   1d10 + 1");
+    // dice the sheet does not print still block the snippet
+    const hidden = out([action("Second Wind", 10, CLASS_FEATURE, BONUS, {
+      displayAsAttack: null, dice: { diceString: "1d10 + 1" },
+      snippet: "regain <strong>1d10</strong>{{classlevel#signed}} HP.",
+    })]);
+    expect(lines(hidden, "BONUS ACTIONS")).toContain("• Second Wind");
+  });
+
+  it("Martial Arts actions stay dice-less ((be)(1))", () => {
+    const text = out([
+      action("Deflect Missiles", 12, CLASS_FEATURE, REACTION, snip("reduced by 1d10 + {{classlevel}}", { isMartialArts: true })),
+      action("Flurry", 12, CLASS_FEATURE, BONUS, snip("deal {{scalevalue}} damage", { isMartialArts: true })),
+    ]);
+    expect(lines(text, "REACTIONS")).toContain("• Deflect Missiles");
+    expect(lines(text, "BONUS ACTIONS")).toContain("• Flurry");
+  });
+
+  it("a single savedc template prints DC N (R3)", () => {
+    const stats = [10, 10, 10, 10, 16, 10].map((value, i) => ({ id: i + 1, value }));
+    const c = core({ stats, bonusStats: [], overrideStats: [] });
+    const dc = 8 + c.profBonus + c.statMods[WIS];
+    const text = out([
+      action("Stunning Strike", 14, CLASS_FEATURE, SPECIAL, snip("if it fails a CON saving throw (DC {{savedc:wis}}).")),
+      action("Ki Points", 14, CLASS_FEATURE, SPECIAL, snip("You have {{limiteduse}} points and your Ki save DC is {{savedc:wis}}; DC {{savedc:wis#signed}} again")),
+    ], { stats, bonusStats: [], overrideStats: [] });
+    expect(block(text, "OTHER").split("\n")).toEqual(["OTHER", `• Stunning Strike   DC ${dc}`, `• Ki Points   DC ${dc}`]);
+  });
+
+  it("two different savedc abilities print no DC", () => {
+    const ctx = featureLineContext(core());
+    expect(snippetSaveDc(action("Odd", 14, CLASS_FEATURE, ACTION, snip("DC {{savedc:wis}} or DC {{savedc:con}}")), ctx)).toBeNull();
+    expect(snippetSaveDc(action("Odd", 14, CLASS_FEATURE, ACTION, snip("DC {{savedc:wis}} or DC {{1+savedc:con}}")), ctx)).toBeNull();
+    expect(snippetSaveDc(action("Odd", 14, CLASS_FEATURE, ACTION, snip("no save here")), ctx)).toBeNull();
+    expect(snippetSaveDc(action("Odd", 14, CLASS_FEATURE, ACTION, {}), ctx)).toBeNull();
+    const text = out([action("Odd", 14, CLASS_FEATURE, ACTION, snip("DC {{savedc:wis}} or DC {{savedc:con}}"))]);
+    expect(lines(text, "ACTIONS")).toContain("• Odd");
+  });
+
+  it("an unresolvable savedc template prints no DC", () => {
+    const text = out([action("Odd", 14, CLASS_FEATURE, ACTION, snip("DC {{savedc:xyz}}"))]);
+    expect(lines(text, "ACTIONS")).toContain("• Odd");
+    expect(text).not.toContain("DC ?");
+  });
+
+  it("dice and DC both print, dice first", () => {
+    const c = core();
+    const dc = 8 + c.profBonus + c.statMods[WIS];
+    const text = out([
+      action("Arms of the Astral Self: Summon", 14, CLASS_FEATURE, BONUS, { ...dice("2d6"), snippet: "a DEX saving throw (DC {{savedc:wis}}) or take 2d6 damage" }),
+      action("Second Wind", 10, CLASS_FEATURE, BONUS, snip("regain 1d10 + {{classlevel}} HP; DC {{savedc:wis}}")),
+    ]);
+    expect(lines(text, "BONUS ACTIONS")).toContain(`• Arms of the Astral Self: Summon   2d6   DC ${dc}`);
+    expect(lines(text, "BONUS ACTIONS")).toContain(`• Second Wind   1d10${signed(num(FIGHTER.level))}   DC ${dc}`);
+  });
+
+  it("a homebrew feature row with DC is wrapped whole", () => {
+    const c = core();
+    const dc = 8 + c.profBonus + c.statMods[WIS];
+    const text = combat({
+      classes: [fighter({ classFeatures: [feature(900, "Hex Surge", { isHomebrew: true }), feature(901, "Rally")] })],
+      ...actions({ class: [
+        action("Hex Surge", 900, CLASS_FEATURE, ACTION, snip("DC {{savedc:wis}} or take 1d6 + {{proficiency}}")),
+        action("Rally", 901, CLASS_FEATURE, ACTION, snip("DC {{savedc:wis}}")),
+      ] }),
+    });
+    expect(block(text, "ACTIONS")).toContain(wrapUntrusted(`• Hex Surge   1d6${signed(c.profBonus)}   DC ${dc}`));
+    expect(lines(text, "ACTIONS")).toContain(`• Rally   DC ${dc}`);
   });
 });

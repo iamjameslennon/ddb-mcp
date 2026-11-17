@@ -10,7 +10,9 @@
  * activationType 3/4 spells into bonus-action and reaction lists (with the
  * spellbook prepared/ritual gate applied), and computes "X used / Y max"
  * for limited-use features (including stat-mod-keyed uses like Bardic
- * Inspiration). Output is pre-formatted lines.
+ * Inspiration). Feature rows without dice take them from their own snippet,
+ * and print a single save DC from it (owner rulings R2 and R3). Output is
+ * pre-formatted lines.
  *
  * A homebrew spell's line, and the line of an action granted by a homebrew
  * entity (resolved by componentId / componentTypeId, see grantingEntities),
@@ -18,7 +20,7 @@
  */
 
 import { wrapIfHomebrew } from "../../utils.js";
-import { arr, featureDefinition, isHomebrewClassFeature, isHomebrewEntry, num, obj, records, shownHomebrew, str } from "./helpers.js";
+import { arr, featureDefinition, isHomebrewClassFeature, isHomebrewEntry, num, obj, records, shownHomebrew, str, stripHtml } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, InventoryItem, Mod } from "./types.js";
 import { resolveBackground } from "./features.js";
 import type { CharacterEditions } from "./editions.js";
@@ -303,10 +305,92 @@ export function isMasteryAction(a: Record<string, unknown>): boolean {
   return m != null && MASTERY_NAMES.has(m[1]);
 }
 
-/** `• <name>` for an action, wrapped whole when its granting entity is homebrew. */
-const actionLine = ({ action, homebrew }: CharAction): string => {
-  const dice = actionDice(action);
-  return wrapIfHomebrew(`• ${str(action.name)}${dice ? `   ${dice}` : ""}`, homebrew);
+// ── Snippet dice and save DC (owner rulings R2 and R3, 2026-11-13) ──────────
+/** What a feature row needs to resolve the templates in its action's snippet. */
+export interface FeatureLineContext {
+  resolveTemplates: CoreStats["resolveTemplates"];
+  totalLevel: number;
+  /** Keyed by class-feature definition id, from `classes[].classFeatures` (the wrapped entries carry `levelScale`). */
+  features: Map<number, { levelScale: Record<string, unknown>; classLevel: number }>;
+}
+
+export function featureLineContext(core: CoreStats): FeatureLineContext {
+  const features: FeatureLineContext["features"] = new Map();
+  for (const cls of core.classes) {
+    for (const cf of arr<unknown>(cls.classFeatures).filter(isRecord)) {
+      const id = num(featureDefinition(cf).id);
+      if (id && !features.has(id)) features.set(id, { levelScale: obj(cf.levelScale), classLevel: num(cls.level) });
+    }
+  }
+  return { resolveTemplates: core.resolveTemplates, totalLevel: core.totalLevel, features };
+}
+
+/** The class feature that grants an action, when it is one (componentTypeId = CLASS_FEATURE_TYPE). */
+const grantingFeature = (action: Record<string, unknown>, ctx: FeatureLineContext) =>
+  num(action.componentTypeId) === CLASS_FEATURE_TYPE ? ctx.features.get(num(action.componentId)) : undefined;
+
+/** The level a snippet's `{{classlevel}}` means: the granting feature's class level, else the character level. */
+const snippetClassLevel = (action: Record<string, unknown>, ctx: FeatureLineContext): number =>
+  grantingFeature(action, ctx)?.classLevel ?? ctx.totalLevel;
+
+/** A die (or `{{scalevalue}}`) and the templates added to it, e.g. `1d10 + {{classlevel}}`. */
+const SNIPPET_DICE = /(\d+d\d+|\{\{\s*scalevalue\s*\}\})((?:\s*[+-]?\s*\{\{[^}]+\}\})*)/;
+/** A template that adds an ability modifier (owner ruling R2; carry-over (be)(2)). */
+const ABILITY_TEMPLATE = /modifier:|savedc:|spellattack:|abilityscore:/;
+
+/**
+ * The dice in a feature action's own snippet, for a row D&D Beyond gives no
+ * dice (owner ruling R2, 2026-11-13): the first `<die>` or `{{scalevalue}}`
+ * with the templates added to it, used only when it holds a template and none
+ * adds an ability modifier. `{{scalevalue}}` is the granting class feature's
+ * `levelScale` die; one that is a number (`{{scalevalue}} times`) gives none.
+ * Martial Arts actions and those adding an ability modifier print none
+ * (carry-over (be)). `""` when there are no such dice.
+ */
+export function snippetDice(action: Record<string, unknown>, ctx: FeatureLineContext): string {
+  if (str(obj(action.dice).diceString).trim() !== "" || action.isMartialArts === true || action.abilityModifierStatId != null) return "";
+  const m = SNIPPET_DICE.exec(stripHtml(str(action.snippet)));
+  if (!m) return "";
+  const [, head, tail] = m;
+  const scaled = head.startsWith("{{");
+  if (!scaled && tail.trim() === "") return "";
+  const bodies = [...tail.matchAll(/\{\{([^}]+)\}\}/g)].map(t => t[1]);
+  if (bodies.some(b => ABILITY_TEMPLATE.test(b))) return "";
+  const die = scaled ? str(obj(grantingFeature(action, ctx)?.levelScale.dice).diceString).trim() : head;
+  if (die === "") return "";
+  const resolved = ctx.resolveTemplates(tail, snippetClassLevel(action, ctx));
+  if (resolved.includes("?")) return "";
+  // A sign run ("-+3" from `- {{x#signed}}`) reads as one sign.
+  const signs = resolved.replace(/\s+/g, "").replace(/[+-]{2,}(?=\d)/g, run => ((run.match(/-/g) ?? []).length % 2 ? "-" : "+"));
+  const sum = [...signs.matchAll(/[+-]?\d+/g)].reduce((s, n) => s + Number(n[0]), 0);
+  return sum === 0 ? die : `${die} ${sum > 0 ? "+" : "-"} ${Math.abs(sum)}`;
+}
+
+/**
+ * The save DC in a feature action's own snippet (owner ruling R3, 2026-11-13):
+ * only when its templates name exactly one ability's `savedc` (A8, 2026-11-17:
+ * `{{savedc:wis}}` and `{{savedc:wis#signed}}` are one). The first such
+ * template's value; null when there is none, several, or it doesn't resolve to
+ * an integer.
+ */
+export function snippetSaveDc(action: Record<string, unknown>, ctx: FeatureLineContext): number | null {
+  const bodies = [...str(action.snippet).matchAll(/\{\{([^}]+)\}\}/g)].map(t => t[1].replace(/\s+/g, ""));
+  const withDc = bodies.filter(b => b.includes("savedc:"));
+  const abilities = new Set(withDc.flatMap(b => [...b.matchAll(/savedc:([a-z]*)/g)].map(a => a[1])));
+  if (abilities.size !== 1) return null;
+  const value = ctx.resolveTemplates(`{{${withDc[0]}}}`, snippetClassLevel(action, ctx)).trim();
+  return /^[+-]?\d+$/.test(value) ? Number(value) : null;
+}
+
+/**
+ * `• <name>[   <dice>][   DC <n>]` for a feature action, wrapped whole when its
+ * granting entity is homebrew. The dice are D&D Beyond's (actionDice), else the
+ * snippet's (snippetDice).
+ */
+const actionLine = (ctx: FeatureLineContext) => ({ action, homebrew }: CharAction): string => {
+  const dice = actionDice(action) || snippetDice(action, ctx);
+  const dc = snippetSaveDc(action, ctx);
+  return wrapIfHomebrew(`• ${str(action.name)}${dice ? `   ${dice}` : ""}${dc != null ? `   DC ${dc}` : ""}`, homebrew);
 };
 
 // ── Limited-use features ─────────────────────────────────────────────────────
@@ -383,6 +467,7 @@ export function computeActions(core: CoreStats): Actions {
   const { char, classes, statMods, inventory, editions } = core;
   const allActions = getAllActions(char, classes);
   const allCharSpells = actionSpells(char, classes);
+  const line = actionLine(featureLineContext(core));
 
   // Spell activationTypes (from rule-data): 1=Action, 2=No Action, 3=Bonus Action, 4=Reaction, 8=Special
   const bonusActionSpells = allCharSpells.filter(s => spellActivationType(s.spell) === 3).map(s => formatSpellAction(s, classes));
@@ -393,16 +478,16 @@ export function computeActions(core: CoreStats): Actions {
   // activationType 8 = special, listed under OTHER
   const actionFeatures = allActions
     .filter(a => activationType(a.action) === 1 && !isMasteryAction(a.action))
-    .map(actionLine);
-  const otherFeatures = allActions.filter(a => activationType(a.action) === 8).map(actionLine);
+    .map(line);
+  const otherFeatures = allActions.filter(a => activationType(a.action) === 8).map(line);
   const bonusActions = [
-    ...allActions.filter(a => activationType(a.action) === 3).map(actionLine),
+    ...allActions.filter(a => activationType(a.action) === 3).map(line),
     ...bonusActionSpells,
   ];
   // Reactions: Opportunity Attack is universal, then class reactions, then reaction spells
   const reactions: string[] = [
     "• Opportunity Attack",
-    ...allActions.filter(a => activationType(a.action) === 4).map(actionLine),
+    ...allActions.filter(a => activationType(a.action) === 4).map(line),
     ...reactionSpells,
   ];
   const limitedUseFeatures = [
