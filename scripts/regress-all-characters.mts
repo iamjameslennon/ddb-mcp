@@ -175,11 +175,12 @@ function readCharacterList(): Character[] {
   return chars;
 }
 
-type FetchResult = { ok: true; json: string } | { ok: false; error: string };
+/** `fresh`: fetched from D&D Beyond this run, not read from the cache. */
+type FetchResult = { ok: true; json: string; fresh: boolean } | { ok: false; error: string };
 
 async function fetchCharacterJson(id: string, cacheDir: string, refresh: boolean): Promise<FetchResult> {
   const file = join(cacheDir, `${id}.json`);
-  if (!refresh && existsSync(file)) return { ok: true, json: readFileSync(file, "utf8") };
+  if (!refresh && existsSync(file)) return { ok: true, json: readFileSync(file, "utf8"), fresh: false };
   const url = `https://character-service.dndbeyond.com/character/v5/character/${encodeURIComponent(id)}?includeCustomItems=true`;
   let lastError = "";
   for (let attempt = 1; attempt <= 2; attempt++) {
@@ -189,7 +190,7 @@ async function fetchCharacterJson(id: string, cacheDir: string, refresh: boolean
       if (resp.ok) {
         const json = JSON.stringify(await resp.json());
         writeFileSync(file, json);
-        return { ok: true, json };
+        return { ok: true, json, fresh: true };
       }
       lastError = `HTTP ${resp.status}`;
       if (resp.status < 500) break; // 403/404 won't change on a retry
@@ -204,15 +205,24 @@ type ListsResult = { lists: SubclassSpellLists; error?: string };
 
 /**
  * The character's subclass always-prepared spell lists, keyed by class entry id.
- * Read from `<id>.always-prepared.json` when it is there; otherwise fetched
- * anonymously, like the character, and written only when every list loaded, so
- * a failure is retried on the next run. A list that failed is left out.
+ * Read from `<id>.always-prepared.json` when it is there and readable;
+ * otherwise (or when the character JSON was just fetched afresh, so its class
+ * levels may have changed) fetched anonymously, like the character, and
+ * written only when every list loaded, so a failure is retried on the next run.
+ * A list that failed is left out.
  */
 async function fetchAlwaysPrepared(id: string, json: string, cacheDir: string, refresh: boolean): Promise<ListsResult> {
   const file = join(cacheDir, `${id}.always-prepared.json`);
   if (!refresh && existsSync(file)) {
-    const stored = JSON.parse(readFileSync(file, "utf8")) as Record<string, Record<string, unknown>[]>;
-    return { lists: new Map(Object.entries(stored).map(([k, v]) => [Number(k), v])) };
+    try {
+      const stored = JSON.parse(readFileSync(file, "utf8")) as unknown;
+      if (stored && typeof stored === "object" && !Array.isArray(stored) && Object.values(stored).every(Array.isArray)) {
+        return { lists: new Map(Object.entries(stored as Record<string, Record<string, unknown>[]>).map(([k, v]) => [Number(k), v])) };
+      }
+    } catch {
+      // Unreadable: fetched again below.
+    }
+    log(`${file} is unreadable; fetching it again`);
   }
   const raw = JSON.parse(json) as Record<string, unknown>;
   const char = (raw.data ?? raw) as Record<string, unknown>;
@@ -373,7 +383,7 @@ async function main(): Promise<void> {
   log(`fetching ${chars.length} characters (cache: ${cacheDir})`);
   const fetched = await mapWithConcurrency(chars, 4, async c => {
     const f = await fetchCharacterJson(c.id, cacheDir, opts.refresh);
-    return f.ok ? { ...f, alwaysPrepared: await fetchAlwaysPrepared(c.id, f.json, cacheDir, opts.refresh) } : f;
+    return f.ok ? { ...f, alwaysPrepared: await fetchAlwaysPrepared(c.id, f.json, cacheDir, opts.refresh || f.fresh) } : f;
   });
   const index = await getSourceIndex();
   if (fetched.every(f => !f.ok)) fail("every character fetch failed — offline?");

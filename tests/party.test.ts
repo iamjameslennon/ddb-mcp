@@ -1,7 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { SENTINEL_INDEX } = vi.hoisted(() => ({
+const { SENTINEL_INDEX, SNAPSHOT } = vi.hoisted(() => ({
   SENTINEL_INDEX: { sources: new Map(), categories: new Map() },
+  SNAPSHOT: { generation: 7, state: { kind: "authenticated", cookies: [] }, signal: new AbortController().signal },
+}));
+
+// The session file is never read: getParty's one snapshot is this sentinel.
+vi.mock("../src/session-fetch.js", async (importActual) => ({
+  ...(await importActual<typeof import("../src/session-fetch.js")>()),
+  captureSession: vi.fn(() => SNAPSHOT),
 }));
 
 vi.mock("../src/game-config.js", () => ({
@@ -23,6 +30,7 @@ import { getCampaignData, type CampaignInfo } from "../src/tools/campaign.js";
 import { wrapUntrusted } from "../src/utils.js";
 import { loadCharacterForParse, parseCharacterData } from "../src/tools/character.js";
 import { getSourceIndex } from "../src/game-config.js";
+import { SessionChangedError } from "../src/session-fetch.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -107,6 +115,42 @@ describe("getParty", () => {
     // Result should contain 6 summaries
     expect(result.split("Summary")).toHaveLength(7); // 6 "Summary" occurrences → 7 parts
     expect(result).toContain("PARTY: Waterdeep");
+  });
+
+  it("passes one session snapshot to every member, across batches", async () => {
+    vi.mocked(getCampaignData).mockResolvedValue(campaignData("Waterdeep", [1, 2, 3, 4]));
+    vi.mocked(loadCharacterForParse).mockImplementation(async id => ({ raw: charRaw(`Hero${id}`) }));
+    vi.mocked(parseCharacterData).mockImplementation(() => "Summary");
+
+    await getParty("999");
+
+    const snapshots = vi.mocked(loadCharacterForParse).mock.calls.map(c => c[1]);
+    expect(snapshots).toHaveLength(4);
+    for (const s of snapshots) expect(s).toBe(SNAPSHOT);
+  });
+
+  it("a session change in a later batch fails the whole call, not one member's line", async () => {
+    vi.mocked(getCampaignData).mockResolvedValue(campaignData("Waterdeep", [1, 2, 3, 4, 5, 6]));
+    vi.mocked(loadCharacterForParse).mockImplementation(async id => {
+      if (id === "5") throw new SessionChangedError();
+      return { raw: charRaw(`Hero${id}`) };
+    });
+    vi.mocked(parseCharacterData).mockImplementation(() => "Summary");
+
+    await expect(getParty("999")).rejects.toBeInstanceOf(SessionChangedError);
+  });
+
+  it("a member that isn't found (404) is still a per-member line", async () => {
+    vi.mocked(getCampaignData).mockResolvedValue(campaignData("Waterdeep", [1, 2]));
+    vi.mocked(loadCharacterForParse).mockImplementation(async id => {
+      if (id === "2") throw new Error("Character 2 was not found (404) — check the ID, or that the character still exists.");
+      return { raw: charRaw(`Hero${id}`) };
+    });
+    vi.mocked(parseCharacterData).mockImplementation(() => "Summary");
+
+    const result = await getParty("999");
+    expect(result).toContain("Summary");
+    expect(result).toContain(wrapUntrusted("[Could not load character 2: Character 2 was not found (404) — check the ID, or that the character still exists.]"));
   });
 
   it("fetches the source index once per party", async () => {

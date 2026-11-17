@@ -79,7 +79,7 @@ This module is the single authority on which account is active. It sits below ev
   - awaits the cleanup hooks.
   - On any failure it stays revoked and rejects, naming the step that failed.
   - `ddb_login` clears the flag.
-- **Every account-derived cache must register an `onSessionInvalidated()` hook.** Character JSON, compendia, features/traits, monsters, campaigns, the library and the game config all do.
+- **Every account-derived cache must register an `onSessionInvalidated()` hook.** Character JSON, subclass always-prepared spell lists, compendia, features/traits, monsters, campaigns, the library and the game config all do.
 - **Future design rule:** any browser factory or on-disk cache must adopt this lifecycle. That means binding each context to a captured snapshot and registering a revocation hook. A disk cache needs a durable per-account key that is validated at read time. The `generation` counter is process-local and resets on restart, so it cannot identify an account across restarts.
 
 Full detail: [docs/claude/architecture.md](docs/claude/architecture.md).
@@ -102,6 +102,7 @@ Full detail: [docs/claude/architecture.md](docs/claude/architecture.md).
 | `src/tools/monster.ts` | Monster get/stat blocks/`getMonsterStats` (anonymous when logged out, Open5e fallback); re-exports the search |
 | `src/tools/monster-service.ts` | Monster-service fetch layer, asker/session binding, the full monster list scan and its cache (8-way, 60 s deadline, 24 h / 5 min TTL) |
 | `src/tools/monster-search.ts`, `src/name-match.ts` | `ddb_search_monsters`: word-start/twin name rule (`matchesAtWordStart`), near matches, the 50 / `list_all` rule, incomplete-scan notes |
+| `src/tools/subclass-spells.ts` | Subclass always-prepared spell lists (F4): fetch under the character's snapshot, 10 s deadline, `gen<n>:` cache; merged by `loadCharacterForParse` via `character/always-prepared.ts` |
 | `src/tools/character.ts` + `src/tools/character/*` | Character fetch/cache and the per-domain sheet parser (`parse.ts`, `editions.ts`, `definition.ts`, `actions.ts` + `spell-attacks.ts` for the combat block, `item-gate.ts`, …) |
 | `src/tools/campaign.ts`, `library.ts`, `search.ts` | Campaigns/party, library + book reading (cheerio, no browser), `ddb_search_site` |
 | `src/tools/conditions.ts` | Vendored conditions: SRD 5.1 (2014) and SRD 5.2.1 (2024), with CC-BY-4.0 attribution |

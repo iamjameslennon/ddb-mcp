@@ -2,8 +2,13 @@ import { getCampaignData } from "./campaign.js";
 import { loadCharacterForParse, parseCharacterData, withNotice } from "./character.js";
 import { getSourceIndex } from "../game-config.js";
 import { wrapUntrusted } from "../utils.js";
+import { captureSession, SessionChangedError } from "../session-fetch.js";
 
 export async function getParty(campaignId: string): Promise<string> {
+  // One session snapshot for every member (owner decision M5 2026-11-17): an
+  // account change part-way fails the whole call rather than mixing accounts.
+  const snapshot = captureSession();
+
   // Start the source index with the campaign fetch (getSourceIndex never
   // rejects); a failed campaign fetch, or a campaign with no characters,
   // withdraws it, as nothing will read it.
@@ -33,9 +38,10 @@ export async function getParty(campaignId: string): Promise<string> {
     const fetched = await Promise.all(
       batch.map(async id => {
         try {
-          const { raw, notice } = await loadCharacterForParse(id);
+          const { raw, notice } = await loadCharacterForParse(id, snapshot);
           return withNotice(parseCharacterData(raw, "summary", index), notice);
         } catch (err) {
+          if (err instanceof SessionChangedError) throw err;
           // The message can quote D&D Beyond's response (a JSON.parse error
           // includes part of the body), so the line is delimited as untrusted.
           return wrapUntrusted(`[Could not load character ${id}: ${err instanceof Error ? err.message : String(err)}]`);

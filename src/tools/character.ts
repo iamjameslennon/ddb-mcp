@@ -150,17 +150,32 @@ export const SUBCLASS_SPELLS_UNAVAILABLE_NOTICE =
  * lists are fetched under ONE session snapshot and checked against it after
  * the merge (owner decision S2), so one account's character is never merged
  * with another's lists. A list that fails adds SUBCLASS_SPELLS_UNAVAILABLE_NOTICE.
+ * `snapshot`: ddb_get_party passes one for all its members (owner decision M5).
  * ddb_get_character_raw and ddb_download_character use fetchCharacter, unmerged.
  */
-export async function loadCharacterForParse(characterId: string): Promise<{ raw: Record<string, unknown>; notice?: string }> {
-  const snapshot = captureSession();
-  const { json, notice } = await fetchCharacter(characterId, snapshot);
+export async function loadCharacterForParse(
+  characterId: string,
+  snapshot: SessionSnapshot = captureSession(),
+): Promise<{ raw: Record<string, unknown>; notice?: string }> {
+  const { json, notice, tokenFailed } = await fetchCharacter(characterId, snapshot);
   const published = JSON.parse(json) as Record<string, unknown>;
   const char = (published?.data ?? published) as Record<string, unknown>;
-  const { lists, failed } = await fetchSubclassSpellLists(char, snapshot);
+  // A failed character exchange sends the lists anonymously, without a second exchange.
+  const { lists, failed, tokenError } = await fetchSubclassSpellLists(char, snapshot, { tokenFailed });
   const raw = mergeAlwaysPreparedSpells(published, lists);
-  assertSessionCurrent(snapshot);
-  const notices = [notice, failed ? SUBCLASS_SPELLS_UNAVAILABLE_NOTICE : undefined].filter(Boolean);
+  // A call that started logged out has no account to protect, like
+  // fetchCharacter's anonymous path: a login landing mid-call doesn't fail it
+  // (owner decision M1 2026-11-17); the invalidation hook still drops its cache.
+  if (snapshot.state.kind === "authenticated") assertSessionCurrent(snapshot);
+  // A character from the cache carries no token notice: when the lists' own
+  // exchange failed, give the one fetchCharacter would have (owner decision M2).
+  let tokenNotice = notice;
+  if (tokenNotice === undefined && tokenError !== undefined) {
+    const failure = describeTokenFailure(tokenError);
+    process.stderr.write(`[ddb-mcp] ${failure.cause} — fetching character ${characterId}'s subclass spell lists anonymously\n`);
+    tokenNotice = anonymousLoadNotice(failure);
+  }
+  const notices = [tokenNotice, failed ? SUBCLASS_SPELLS_UNAVAILABLE_NOTICE : undefined].filter(Boolean);
   return notices.length ? { raw, notice: notices.join(" ") } : { raw };
 }
 
@@ -169,6 +184,8 @@ export interface CharacterFetch {
   json: string;
   /** Set only when the token exchange failed and the character loaded anyway. */
   notice?: string;
+  /** True exactly when `notice` is set: this call's token exchange failed and the character loaded anonymously. */
+  tokenFailed?: boolean;
 }
 
 /** Prefix tool output with a fetch's notice, if it has one. */
@@ -176,12 +193,19 @@ export function withNotice(text: string, notice: string | undefined): string {
   return notice ? `⚠️ ${notice}\n\n${text}` : text;
 }
 
+type TokenFailure = { cause: string; advice: string };
+
+/** The notice for a character loaded without signing in because the token exchange failed. */
+function anonymousLoadNotice(failure: TokenFailure): string {
+  return `${failure.cause}, so this character was loaded without signing in — only publicly shared data is shown. ${failure.advice}`;
+}
+
 /**
  * Explain a failed token exchange: what went wrong, and what the user should do.
  * Only a 401/403 from auth-service means the saved session itself was rejected;
  * a network error or 5xx after retries is an outage a later retry can get past.
  */
-function describeTokenFailure(e: unknown): { cause: string; advice: string } {
+function describeTokenFailure(e: unknown): TokenFailure {
   const detail = e instanceof Error ? e.message : String(e);
   if (e instanceof CobaltTokenError && (e.status === 401 || e.status === 403)) {
     return {
@@ -261,7 +285,7 @@ export async function fetchCharacter(characterId: string, snapshot: SessionSnaps
   let resp: Response;
   // Set only when the token exchange failed and we fell back to anonymous: used
   // for the notice on success, or the error if the character needs auth.
-  let authFailure: { cause: string; advice: string } | undefined;
+  let authFailure: TokenFailure | undefined;
   if (loggedIn) {
     let session: AuthenticatedSession | undefined;
     try {
@@ -302,10 +326,7 @@ export async function fetchCharacter(characterId: string, snapshot: SessionSnaps
     if (authFailure) {
       // Not cached: the next call should retry with the token, not keep serving
       // the anonymous copy for the rest of the TTL.
-      return {
-        json,
-        notice: `${authFailure.cause}, so this character was loaded without signing in — only publicly shared data is shown. ${authFailure.advice}`,
-      };
+      return { json, notice: anonymousLoadNotice(authFailure), tokenFailed: true };
     }
     characterCache.set(cacheKey, json);
     return { json };

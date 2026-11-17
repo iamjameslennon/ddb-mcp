@@ -177,11 +177,12 @@ function setSessionFile(content: string | null): void {
   fsMock.readFileSync.mockReturnValue(content);
 }
 
-function makeJwt(userId: string): string {
+/** A cobalt JWT; `ttl` under 60 s is never cached by session-fetch, so every lookup runs an exchange. */
+function makeJwt(userId: string, ttl = 3600): string {
   const header = Buffer.from(JSON.stringify({ alg: "none" })).toString("base64url");
   const payload = Buffer.from(JSON.stringify({
     "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier": userId,
-    exp: Math.floor(Date.now() / 1000) + 3600,
+    exp: Math.floor(Date.now() / 1000) + ttl,
   })).toString("base64url");
   return `${header}.${payload}.sig`;
 }
@@ -196,6 +197,15 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 const charUrl = (id: string) => `${CHAR_SERVICE}/character/${id}?includeCustomItems=true`;
 const listCalls = () => fetchMock.mock.calls.filter(c => c[0].startsWith(ALWAYS_PREPARED));
+const cobaltCalls = () => fetchMock.mock.calls.filter(c => c[0] === COBALT_URL);
+const headersOf = (call: unknown[]) => ((call[1] as RequestInit | undefined)?.headers ?? {}) as Record<string, string>;
+/** The line holding `name` is wrapped whole: an opening tag just above it and a closing tag just below. */
+function wrappedLine(out: string, name: string): boolean {
+  const lines = out.split("\n");
+  const at = lines.findIndex(l => l.includes(name));
+  expect(at, `no ${name} in:\n${out}`).toBeGreaterThan(-1);
+  return lines[at - 1] === "<untrusted_dndbeyond_content>" && lines[at + 1] === "</untrusted_dndbeyond_content>";
+}
 const listParams = (url: string) => {
   const q = new URL(url).searchParams;
   return { classId: Number(q.get("classId")), classLevel: Number(q.get("classLevel")), sharingSetting: q.get("sharingSetting") };
@@ -399,12 +409,63 @@ describe("parseCharacter with subclass always-prepared spells", () => {
     expect(lines[at("Bless") + 1]).not.toBe("</untrusted_dndbeyond_content>");
   });
 
+  it("a homebrew merged spell is wrapped in CONCENTRATION and in its BONUS ACTIONS row too", async () => {
+    const brew = entry(990002, "Brewed Smite", 1, { isHomebrew: true, sources: [], concentration: true, activation: bonusAction });
+    serve({ "1": lifeCleric() }, () => jsonResponse({ data: [BLESS, SPIRITUAL_WEAPON, brew] }));
+    const conc = await character.parseCharacter("1", "concentration");
+    expect(wrappedLine(conc, "Brewed Smite")).toBe(true);
+    expect(wrappedLine(conc, "Bless")).toBe(false);
+    const combat = await character.parseCharacter("1", "combat");
+    expect(block(combat, "BONUS ACTIONS")).toContain("Brewed Smite");
+    expect(wrappedLine(combat, "Brewed Smite")).toBe(true);
+    expect(wrappedLine(combat, "• Spiritual Weapon (spell")).toBe(false);
+  });
+
   it("ddb_get_character_raw returns D&D Beyond's JSON unchanged", async () => {
     const raw = lifeCleric();
     serve({ "1": raw }, lifeList);
     const { json } = await character.getCharacterRaw("1");
     expect(json).toBe(`<untrusted_dndbeyond_content>\n${JSON.stringify(raw)}\n</untrusted_dndbeyond_content>`);
     expect(listCalls()).toHaveLength(0);
+  });
+
+  it("ddb_download_character writes D&D Beyond's JSON unmerged", async () => {
+    const raw = lifeCleric();
+    serve({ "1": raw }, lifeList);
+    await character.downloadCharacter("1");
+    expect(fsMock.writeFileSync).toHaveBeenCalledTimes(1);
+    const written = fsMock.writeFileSync.mock.calls[0] as unknown[];
+    expect(written[1]).toBe(JSON.stringify(raw, null, 2));
+    expect(written[1]).not.toContain("alwaysPrepared");
+    expect(listCalls()).toHaveLength(0);
+  });
+
+  it("a caller that joins a request in flight waits on its own deadline, not the starter's", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    let release!: () => void;
+    const gate = new Promise<void>(r => { release = r; });
+    serve({ "1": lifeCleric() }, async params => { await gate; return lifeList(params); });
+
+    const starter = character.parseCharacter("1", "spells");           // t = 0
+    await vi.advanceTimersByTimeAsync(9_900);
+    let joinerDone = false;
+    const joiner = character.parseCharacter("1", "spells").finally(() => { joinerDone = true; }); // t = 9.9 s
+    await vi.advanceTimersByTimeAsync(100);                              // t = 10 s: the starter's deadline
+    const first = await starter;
+    expect(first.startsWith(`⚠️ ${NOTICE}`)).toBe(true);
+    expect(joinerDone).toBe(false);
+    expect(listCalls()).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(2_000);                            // t = 12 s: the answer arrives
+    release();
+    const second = await joiner;
+    expect(second).not.toContain(NOTICE);
+    expect(second).toContain("Bless");
+    expect(listCalls()).toHaveLength(1);
+
+    // The shared request wrote the cache: a later call sends nothing.
+    await character.parseCharacter("1", "spells");
+    expect(listCalls()).toHaveLength(1);
   });
 
   it("a character with no subclass sends no always-prepared request", async () => {
@@ -446,37 +507,81 @@ describe("always-prepared lists and the session", () => {
     const headers = (listCalls()[0][1]?.headers ?? {}) as Record<string, string>;
     expect(headers.Authorization).toBeUndefined();
     expect(headers.Cookie).toBeUndefined();
+    // One exchange per call: the failed one is not repeated for the lists.
+    expect(cobaltCalls()).toHaveLength(1);
     await character.parseCharacter("1", "spells");
     expect(listCalls()).toHaveLength(2);
+    expect(cobaltCalls()).toHaveLength(2);
   });
 
-  it("a token lookup that stalls counts against the 10 s deadline: notice, character still parsed", async () => {
+  it("a failed character exchange is not run again for the lists, even when another would stall", async () => {
     vi.spyOn(process.stderr, "write").mockReturnValue(true);
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     setSessionFile(sessionJson("SECRET_A"));
-    let cobaltCalls = 0;
     fetchMock.mockImplementation(async (url: string, opts?: RequestInit) => {
       if (url === COBALT_URL) {
-        // The character's exchange is refused; the lists' retry never answers.
-        if (++cobaltCalls === 1) return jsonResponse({}, 401);
-        return new Promise<Response>((_, reject) => opts?.signal?.addEventListener("abort", () => reject(opts.signal!.reason)));
+        // The character's exchange is refused; a second one would never answer.
+        if (cobaltCalls().length === 1) return jsonResponse({}, 401);
+        return new Promise<Response>(() => {});
       }
       if (url === charUrl("1")) return jsonResponse(lifeCleric());
       if (url.startsWith(ALWAYS_PREPARED)) return lifeList(listParams(url), opts);
       return jsonResponse({}, 404);
     });
-    const pending = character.parseCharacter("1", "spells");
-    await vi.advanceTimersByTimeAsync(subclassSpells.SUBCLASS_SPELLS_TIMEOUT_MS);
-    const out = await pending;
-    expect(out).toMatch(/rejected the saved session/);
-    expect(out).toContain(NOTICE);
-    expect(out).toContain("Guiding Bolt");
-    expect(listCalls()).toHaveLength(0);
+    const out = await character.parseCharacter("1", "spells");
+    expect(cobaltCalls()).toHaveLength(1);
+    expect(out).toMatch(/^⚠️ D&D Beyond rejected the saved session .*without signing in/);
+    expect(out).not.toContain(NOTICE);
+    expect(out).toContain("Bless");
+    expect(listCalls()).toHaveLength(1);
+    expect(headersOf(listCalls()[0]).Authorization).toBeUndefined();
+    expect(headersOf(listCalls()[0]).Cookie).toBeUndefined();
   });
 
-  it("a session change between the character fetch and the lists fetch rejects with SessionChangedError and caches nothing", async () => {
-    // Logged out, the character fetch itself has no session to re-check, so a
-    // login landing while its body is read is first seen by the lists fetch.
+  /**
+   * Character 1 loads with a token (tokens live under 60 s here, so none is
+   * cached) while its lists fail, so the character is cached and the lists are
+   * not. The next call takes the character from the cache and runs an exchange
+   * for the lists alone, answered by `secondExchange`.
+   */
+  async function cachedCharacterThenListExchange(secondExchange: () => Promise<Response>): Promise<string> {
+    vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    setSessionFile(sessionJson("SECRET_A"));
+    let firstCall = true;
+    fetchMock.mockImplementation(async (url: string, opts?: RequestInit) => {
+      if (url === COBALT_URL) return firstCall ? jsonResponse({ token: makeJwt("99", 30) }) : secondExchange();
+      if (url === charUrl("1")) return jsonResponse(lifeCleric());
+      if (url.startsWith(ALWAYS_PREPARED)) return firstCall ? jsonResponse({}, 404) : lifeList(listParams(url), opts);
+      return jsonResponse({}, 404);
+    });
+    expect(await character.parseCharacter("1", "spells")).toContain(NOTICE);
+    expect(cobaltCalls()).toHaveLength(2); // the character's exchange and the lists'
+    firstCall = false;
+    return character.parseCharacter("1", "spells");
+  }
+
+  it("a cached character whose lists' exchange fails gets the token notice fetchCharacter would give", async () => {
+    const out = await cachedCharacterThenListExchange(async () => jsonResponse({}, 401));
+    expect(fetchMock.mock.calls.filter(c => c[0] === charUrl("1"))).toHaveLength(1);
+    expect(cobaltCalls()).toHaveLength(3);
+    expect(out.startsWith("⚠️ D&D Beyond rejected the saved session (cobalt-token request failed: 401), so this character was loaded without signing in — only publicly shared data is shown. Your session may have expired — run ddb_login again.\n\n")).toBe(true);
+    expect(out).not.toContain(NOTICE);
+    expect(out).toContain("Bless");
+    expect(headersOf(listCalls().at(-1)!).Authorization).toBeUndefined();
+  });
+
+  it("a cached character whose lists' exchange stalls hits the 10 s deadline: list notice, character still parsed", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const pending = cachedCharacterThenListExchange(() => new Promise<Response>(() => {}));
+    await vi.advanceTimersByTimeAsync(subclassSpells.SUBCLASS_SPELLS_TIMEOUT_MS);
+    const out = await pending;
+    expect(out.startsWith(`⚠️ ${NOTICE}`)).toBe(true);
+    expect(out).toContain("Guiding Bolt");
+    expect(listCalls()).toHaveLength(1);
+  });
+
+  it("a call that started logged out isn't failed by a login landing mid-call, and its lists never serve the account", async () => {
+    // Logged out, neither the character nor its lists have an account to protect
+    // (owner decision M1 2026-11-17), as fetchCharacter's anonymous path.
     fetchMock.mockImplementation(async (url: string, opts?: RequestInit) => {
       if (url === charUrl("1")) {
         return { ...jsonResponse(null), json: async () => { setSessionFile(sessionJson("SECRET_A")); return lifeCleric(); } } as unknown as Response;
@@ -485,32 +590,74 @@ describe("always-prepared lists and the session", () => {
       if (url === COBALT_URL) return jsonResponse({ token: makeJwt("99") });
       return jsonResponse({}, 404);
     });
-    const err = await rejection(character.parseCharacter("1", "spells"));
-    expect(err).toBeInstanceOf(sf.SessionChangedError);
-
-    // Nothing was cached: account A's next call fetches its own list.
-    serve({ "1": lifeCleric() }, lifeList);
-    const before = listCalls().length;
     const out = await character.parseCharacter("1", "spells");
     expect(out).toContain("Bless");
-    expect(listCalls().length).toBe(before + 1);
-    expect(((listCalls().at(-1)![1]?.headers ?? {}) as Record<string, string>).Authorization).toBe(`Bearer ${makeJwt("99")}`);
-  });
+    expect(headersOf(listCalls()[0]).Authorization).toBeUndefined();
 
-  it("a session change after the character fetch is refused even when the lists come from the cache", async () => {
+    // The anonymous entries are dropped at the next call: account A fetches its own list.
     serve({ "1": lifeCleric() }, lifeList);
     await character.parseCharacter("1", "spells");
-    // Character 2 (the same class) is read while a login lands; its lists need no request.
-    fetchMock.mockImplementation(async (url: string, opts?: RequestInit) => {
-      if (url === charUrl("2")) {
-        return { ...jsonResponse(null), json: async () => { setSessionFile(sessionJson("SECRET_A")); return lifeCleric(); } } as unknown as Response;
+    expect(listCalls()).toHaveLength(2);
+    expect(headersOf(listCalls()[1]).Authorization).toBe(`Bearer ${makeJwt("99")}`);
+  });
+
+  it("logged in, a session change between the character fetch and the lists is refused wherever it lands, and never mixes accounts", async () => {
+    // Account A's character and lists vs account B's: a reply may hold only one account's.
+    const who = (call: unknown[]) => headersOf(call).Authorization === `Bearer ${makeJwt("99")}` ? "A" : headersOf(call).Authorization === `Bearer ${makeJwt("77")}` ? "B" : "anon";
+    const accountChar = (account: string) => lifeCleric({ name: `Char_${account}` });
+    // Built once: the cookie expiry is part of the file, so a rebuilt one is a new session.
+    const fileA = sessionJson("SECRET_A"), fileB = sessionJson("SECRET_B");
+    let caughtBetween = false;
+    for (let swapAt = 0; swapAt < 30; swapAt++) {
+      await loadModules();
+      fetchMock.mockReset();
+      setSessionFile(fileA);
+      fetchMock.mockImplementation(async (url: string, opts?: RequestInit) => {
+        const call = [url, opts];
+        if (url === COBALT_URL) {
+          const cookie = headersOf(call).Cookie ?? "";
+          return jsonResponse({ token: makeJwt(cookie.includes("SECRET_B") ? "77" : "99") });
+        }
+        if (url === charUrl("1")) return jsonResponse(accountChar(who(call)));
+        if (url.startsWith(ALWAYS_PREPARED)) return jsonResponse({ data: [entry(who(call) === "A" ? 7001 : 7002, `List_${who(call)}`, 1)] });
+        return jsonResponse({}, 404);
+      });
+      // Warm the character and its lists as A, then swap to B after `swapAt` session reads.
+      await character.parseCharacter("1", "spells");
+      const requestsBefore = fetchMock.mock.calls.length;
+      let reads = 0;
+      fsMock.readFileSync.mockImplementation(() => (reads++ < swapAt ? fileA : fileB));
+      const result = await character.parseCharacter("1", "spells").catch((e: unknown) => e);
+      if (result instanceof sf.SessionChangedError) {
+        expect(subclassSpells.__subclassSpellCacheSizeForTests()).toBe(0);
+        // Both came from A's caches, so only the check after the merge refused them.
+        if (fetchMock.mock.calls.length === requestsBefore) caughtBetween = true;
+        continue;
       }
-      if (url.startsWith(ALWAYS_PREPARED)) return lifeList(listParams(url), opts);
+      expect(typeof result).toBe("string");
+      const out = result as string;
+      const a = out.includes("Char_A") && out.includes("List_A");
+      const b = out.includes("Char_B") && out.includes("List_B");
+      expect(a || b, `swapAt ${swapAt}:\n${out}`).toBe(true);
+      if (reads <= swapAt) break; // the swap never happened: every read position is covered
+    }
+    expect(caughtBetween).toBe(true);
+  });
+
+  it("logged in, a session change during a list's body read is refused by the list fetch itself", async () => {
+    setSessionFile(sessionJson("SECRET_A"));
+    const snapshot = sf.captureSession();
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === COBALT_URL) return jsonResponse({ token: makeJwt("99") });
+      if (url.startsWith(ALWAYS_PREPARED)) {
+        return { ...jsonResponse(null), json: async () => { setSessionFile(sessionJson("SECRET_B")); return { data: [BLESS] }; } } as unknown as Response;
+      }
       return jsonResponse({}, 404);
     });
-    const err = await rejection(character.parseCharacter("2", "spells"));
+    // Called directly, with no check after it: only the post-body assert stands.
+    const err = await rejection(subclassSpells.fetchSubclassSpellLists(dataOf(lifeCleric()), snapshot));
     expect(err).toBeInstanceOf(sf.SessionChangedError);
-    expect(listCalls()).toHaveLength(1);
+    expect(subclassSpells.__subclassSpellCacheSizeForTests()).toBe(0);
   });
 
   it("an account change during the lists fetch rejects with SessionChangedError and caches nothing", async () => {
@@ -522,6 +669,7 @@ describe("always-prepared lists and the session", () => {
     });
     const err = await rejection(character.parseCharacter("1", "spells"));
     expect(err).toBeInstanceOf(sf.SessionChangedError);
+    expect(subclassSpells.__subclassSpellCacheSizeForTests()).toBe(0);
 
     swap = false;
     await character.parseCharacter("1", "spells");
