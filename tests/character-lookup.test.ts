@@ -138,6 +138,14 @@ describe("formatCharacterLookup", () => {
       "[Feat]\nGrappler\nRules: 2024 · Player's Handbook (2024)\nPrerequisite: Level 4+, Strength or Dexterity 13+\n\nYou grapple.");
   });
 
+  it("a homebrew feat's Prerequisite line sits inside the wrapped block, and a null group doesn't throw", () => {
+    const feat = { definition: { id: 6, name: "Zany Trick", snippet: "Zany.", isHomebrew: true, prerequisites: [null, { description: "Level 9+", prerequisiteMappings: [null] }] } };
+    const char = variant(FIGHTER_5, d => { d.feats.push(feat); }).data as Record<string, unknown>;
+    const lines = formatCharacterLookup(char, "zany", INDEX).split("\n");
+    expect(lines.indexOf("Prerequisite: Level 9+")).toBeGreaterThan(lines.indexOf("<untrusted_dndbeyond_content>"));
+    expect(lines.indexOf("Prerequisite: Level 9+")).toBeLessThan(lines.findIndex(l => l.startsWith("</untrusted_dndbeyond_content")));
+  });
+
   it("a homebrew full hit reads Rules: homebrew (edition not stated)", () => {
     const char = variant(FIGHTER_5, d => { d.feats.push({ definition: { name: "Zany Trick", snippet: "Zany.", isHomebrew: true } }); }).data as Record<string, unknown>;
     // The homebrew block is delimited as untrusted, rules line included.

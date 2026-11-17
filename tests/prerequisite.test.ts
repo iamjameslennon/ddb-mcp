@@ -66,4 +66,22 @@ describe("ddbPrerequisiteText / ddbPrerequisiteMatches", () => {
     const groups = [g("Strength 13", [STR]), g("Level 19+", [{ type: "level", value: 19, friendlySubTypeName: "Level" }])];
     expect(ddbPrerequisiteMatches(groups, "strength 19")).toBe(false);
   });
+
+  it("skips null groups, null mappings and a non-array prerequisites", () => {
+    const bad = [null, g("Level 4+", [null as never, LVL4])] as never;
+    expect(ddbPrerequisiteText(bad)).toBe("Level 4+");
+    expect(ddbPrerequisiteMatches(bad, "level 4")).toBe(true);
+    expect(ddbPrerequisiteText("oops" as never)).toBe("");
+    expect(ddbPrerequisiteMatches({} as never, "level")).toBe(false);
+    expect(ddbPrerequisiteText([{ description: "x", prerequisiteMappings: "bad" as never }])).toBe("x");
+  });
+
+  it("finds the fighting-style subType in any mapping of a group", () => {
+    const grp = g("Fighter Fighting Style 1", [{ type: "class-feature", subType: "fighter" }, { type: "class-feature", subType: "fighter-fighting-style" }]);
+    expect(ddbPrerequisiteText([grp])).toBe("a Fighting Style feature");
+  });
+
+  it("a bare 'or' group joins with a space", () => {
+    expect(ddbPrerequisiteText([g("Level 4+, Strength"), g(" or "), g("Dexterity 13+")])).toBe("Level 4+, Strength or; Dexterity 13+");
+  });
 });

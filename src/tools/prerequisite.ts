@@ -43,14 +43,22 @@ export interface DdbPrerequisite {
 
 type Groups = readonly DdbPrerequisite[] | null | undefined;
 
-function mappingsOf(g: DdbPrerequisite) {
-  return g.prerequisiteMappings ?? [];
+type Mapping = NonNullable<DdbPrerequisite["prerequisiteMappings"]>[number];
+
+/** Null or non-object entries (a bad payload) are skipped rather than thrown on. */
+function groupsOf(prereqs: unknown): DdbPrerequisite[] {
+  return Array.isArray(prereqs) ? prereqs.filter((g): g is DdbPrerequisite => !!g && typeof g === "object") : [];
+}
+
+function mappingsOf(g: DdbPrerequisite): Mapping[] {
+  const m: unknown = g.prerequisiteMappings;
+  return Array.isArray(m) ? m.filter((x): x is Mapping => !!x && typeof x === "object") : [];
 }
 
 function classFeatureSummary(g: DdbPrerequisite): string {
-  const sub = (mappingsOf(g)[0]?.subType ?? "").toLowerCase();
-  if (sub.includes("fighting-style")) return "a Fighting Style feature";
-  if (sub.includes("spellcasting") || sub.includes("pact-magic")) return "the Spellcasting or Pact Magic feature";
+  const subs = mappingsOf(g).map(m => (m.subType ?? "").toLowerCase());
+  if (subs.some(sub => sub.includes("fighting-style"))) return "a Fighting Style feature";
+  if (subs.some(sub => sub.includes("spellcasting") || sub.includes("pact-magic"))) return "the Spellcasting or Pact Magic feature";
   return (g.description ?? "").trim();
 }
 
@@ -61,12 +69,12 @@ function classFeatureSummary(g: DdbPrerequisite): string {
  * otherwise the distinct descriptions are, a continuation ("or Dexterity 13+") joined with a space.
  */
 export function ddbPrerequisiteText(prereqs: Groups): string {
-  const shown = (prereqs ?? []).filter(g => g.hidePrerequisite !== true);
+  const shown = groupsOf(prereqs).filter(g => g.hidePrerequisite !== true);
   if (shown.length === 0) return "";
   const allClassFeature = shown.every(g => mappingsOf(g).length > 0 && mappingsOf(g).every(m => m.type === "class-feature"));
   const parts = [...new Set(shown.map(g => allClassFeature ? classFeatureSummary(g) : (g.description ?? "").trim()).filter(Boolean))];
   if (allClassFeature) return parts.join(" or ");
-  return parts.reduce((out, p) => out ? out + (/^or\s/i.test(p) ? " " : "; ") + p : p, "");
+  return parts.reduce((out, p) => out ? out + (/^or(\s|$)/i.test(p) ? " " : "; ") + p : p, "");
 }
 
 function ddbGroupText(g: DdbPrerequisite): string {
@@ -88,5 +96,5 @@ export function ddbPrerequisiteMatches(prereqs: Groups, query: string): boolean 
   const q = query.trim().toLowerCase();
   if (!q) return true;
   if (ddbPrerequisiteText(prereqs).toLowerCase().includes(q)) return true;
-  return (prereqs ?? []).some(g => prerequisiteMatches(ddbGroupText(g), query));
+  return groupsOf(prereqs).some(g => prerequisiteMatches(ddbGroupText(g), query));
 }

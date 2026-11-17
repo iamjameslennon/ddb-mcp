@@ -256,8 +256,20 @@ describe("a filter only the other edition's twin passes (Grappler)", () => {
     expect(open5eCalls().length).toBeGreaterThan(0);
   });
 
+  it("a homebrew feat's Requires text sits inside its wrapped block", async () => {
+    install({ feats: [named(80, "Zany Trick", [], { isHomebrew: true, prerequisites: [grp("Level 9+ Zany")], snippet: "" })] });
+    const text = await reference.searchFeats({ name: "zany" });
+    const lines = text.split("\n");
+    const open = lines.findIndex(l => l.includes("<untrusted_dndbeyond_content"));
+    const close = lines.findIndex(l => l.includes("</untrusted_dndbeyond_content"));
+    const row = lines.findIndex(l => l.includes("Requires: Level 9+ Zany"));
+    expect(open).toBeGreaterThanOrEqual(0);
+    expect(open).toBeLessThan(row);
+    expect(row).toBeLessThan(close);
+  });
+
   it("abbreviated prerequisites match a full-name query", async () => {
-    install({ feats: [named(30, "Quick", [145], { prerequisites: [grp("Str or Dex 13+", STR(13), DEX(13))], snippet: "" })] });
+    install({ feats: [named(30, "Quick", [145], { prerequisites: [grp("Str or Dex 13+")], snippet: "" })] });
     expect(entryLines(await reference.searchFeats({ prerequisite: "Strength 13" }))).toHaveLength(1);
   });
 
