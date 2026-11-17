@@ -65,6 +65,9 @@ Shows up as: `ddb_search_monsters` answers that the SRD fallback is unavailable 
 ### (bu) The closest-match line can be skipped, and short names count as close
 Shows up as: `ddb_get_monster` showing a different entry without its `showing the closest match` line when the matching twin is locked; or a short name taken as a close match for another (Lich/Lion, Ogre/Ooze).
 
+### (bw) Open5e stat blocks use 2014 defense labels for SRD 5.2 creatures
+Shows up as: a `ddb_get_monster` stat block from the Open5e SRD fallback, for a 2024 (SRD 5.2) creature, printing its defense lines (damage resistances, immunities, vulnerabilities, condition immunities) under 2014 wording or labels. The D&D Beyond path is not affected.
+
 ## Browser tools
 
 ### (bs) Browser tools refuse after `ddb_logout` until the next login
