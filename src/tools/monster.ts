@@ -181,6 +181,10 @@ interface StatBlockExtras {
 export const DAMAGE_ADJUSTMENTS_UNAVAILABLE_LINE =
   "**Damage Adjustments** couldn't be loaded from D&D Beyond (the game configuration is unavailable), so this stat block may be missing resistances, immunities or vulnerabilities.";
 
+/** Printed when the monster has condition immunities but neither the config's conditions table nor conditionImmunitiesHtml names them. */
+export const CONDITION_IMMUNITIES_UNAVAILABLE_LINE =
+  "**Condition Immunities** couldn't be loaded from D&D Beyond (the game configuration is unavailable), so this stat block may be missing condition immunities.";
+
 const byName = (a: string, b: string) => a.localeCompare(b, "en");
 
 /**
@@ -217,15 +221,21 @@ export function defenseLines(m: DdbMonster, config: GameConfig | null, ruleset: 
   const immune = join(2);
 
   let conditions = "";
+  let conditionsUnavailable = false;
   if (m.conditionImmunities?.length) {
     if (config?.conditions) {
       const names = new Map(config.conditions.map(c => [c.definition.id, c.definition.name]));
-      conditions = [...new Set(m.conditionImmunities)]
-        .map(id => stripHtmlRich(names.get(id)) || `condition ${id}`)
-        .sort(byName).join(", ");
+      const unique = [...new Set(m.conditionImmunities)];
+      const named = unique.map(id => stripHtmlRich(names.get(id))).filter(Boolean).sort(byName);
+      const missing = unique.filter(id => !stripHtmlRich(names.get(id))).sort((a, b) => a - b).map(id => `condition ${id}`);
+      conditions = [...named, ...missing].join(", ");
+    } else {
+      conditions = stripHtmlRich(m.conditionImmunitiesHtml);
+      conditionsUnavailable = !conditions;
     }
+  } else {
+    conditions = stripHtmlRich(m.conditionImmunitiesHtml);
   }
-  if (!conditions) conditions = stripHtmlRich(m.conditionImmunitiesHtml);
 
   const lines: string[] = [];
   if (ruleset === "2024") {
@@ -239,7 +249,8 @@ export function defenseLines(m: DdbMonster, config: GameConfig | null, ruleset: 
     if (immune) lines.push(`**Damage Immunities** ${immune}`);
     if (conditions) lines.push(`**Condition Immunities** ${conditions}`);
   }
-  if (ids.length && !table) lines.push(DAMAGE_ADJUSTMENTS_UNAVAILABLE_LINE);
+  if (conditionsUnavailable) lines.push(CONDITION_IMMUNITIES_UNAVAILABLE_LINE);
+  if (ids.length && !table?.length) lines.push(DAMAGE_ADJUSTMENTS_UNAVAILABLE_LINE);
   else if (unknown.length) lines.push(`**Damage Adjustments** ${unknown.join(", ")}`);
   return lines;
 }

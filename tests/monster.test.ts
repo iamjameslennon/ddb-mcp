@@ -44,7 +44,7 @@ vi.mock("../src/tools/reference.js", () => ({
   searchFeatsSection: refSections.feats,
 }));
 
-import { getMonster, defenseLines, DAMAGE_ADJUSTMENTS_UNAVAILABLE_LINE, searchMonsters, searchMonstersSection, getMonsterStats, clearMonsterCache, statBlockText } from "../src/tools/monster.js";
+import { getMonster, defenseLines, DAMAGE_ADJUSTMENTS_UNAVAILABLE_LINE, CONDITION_IMMUNITIES_UNAVAILABLE_LINE, searchMonsters, searchMonstersSection, getMonsterStats, clearMonsterCache, statBlockText } from "../src/tools/monster.js";
 import { rateEncounter } from "../src/tools/encounter.js";
 import { generateTreasure } from "../src/tools/treasure.js";
 import { sessionFetch, hasValidSession, onSessionInvalidated, beginAuthenticatedSession, captureSession, assertSessionCurrent, AnonymousFetchTimeoutError, NoSessionError, CobaltTokenError, CobaltTokenTimeoutError, MalformedCobaltTokenError } from "../src/session-fetch.js";
@@ -4100,7 +4100,7 @@ describe("damage adjustments and condition immunities (F7)", () => {
     expect(out).toContain("**Damage Immunities** Poison\n**Condition Immunities** Poisoned\n**Damage Adjustments** damage adjustment 999");
     const m = stats({ damageAdjustments: [999, 22], conditionImmunities: [4, 77] }) as never;
     expect(defenseLines(m, CONFIG.data as never, "2024")).toEqual([
-      "**Immunities** Poison; condition 77, Exhaustion", "**Damage Adjustments** damage adjustment 999",
+      "**Immunities** Poison; Exhaustion, condition 77", "**Damage Adjustments** damage adjustment 999",
     ]);
   });
 
@@ -4116,5 +4116,32 @@ describe("damage adjustments and condition immunities (F7)", () => {
     expect(lines).toEqual(["**Condition Immunities** Poisoned", DAMAGE_ADJUSTMENTS_UNAVAILABLE_LINE]);
     expect(lines.join("\n")).not.toMatch(/\b(22|33)\b/);
     expect(defenseLines(stats({ conditionImmunitiesHtml: "Poisoned" }) as never, null, "2024")).toEqual(["**Immunities** Poisoned"]);
+  });
+
+  it("a config without a damage-adjustment table, or with an empty one, gives the single unavailable line", () => {
+    const m = stats({ damageAdjustments: [22, 33] }) as never;
+    for (const damageAdjustments of [undefined, []]) {
+      const cfg = { ...CONFIG.data, damageAdjustments } as never;
+      const lines = defenseLines(m, cfg, "2014");
+      expect(lines).toEqual([DAMAGE_ADJUSTMENTS_UNAVAILABLE_LINE]);
+      expect(lines.join("\n")).not.toMatch(/\b(22|33)\b/);
+    }
+  });
+
+  it("lists condition ids missing from the config after the known names, in numeric order", () => {
+    const m = stats({ conditionImmunities: [4, 100, 77] }) as never;
+    expect(defenseLines(m, CONFIG.data as never, "2014")).toEqual(["**Condition Immunities** Exhaustion, condition 77, condition 100"]);
+  });
+
+  it("says condition immunities could not be loaded when neither the table nor the html names them", () => {
+    const cfg = { ...CONFIG.data, conditions: undefined } as never;
+    for (const html of [undefined, null, ""]) {
+      const m = stats({ conditionImmunities: [11], conditionImmunitiesHtml: html }) as never;
+      for (const edition of ["2014", "2024"] as const) {
+        const lines = defenseLines(m, cfg, edition);
+        expect(lines).toEqual([CONDITION_IMMUNITIES_UNAVAILABLE_LINE]);
+        expect(lines.join("\n")).not.toMatch(/\b11\b/);
+      }
+    }
   });
 });
