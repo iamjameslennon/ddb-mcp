@@ -79,6 +79,11 @@ const RACES = [
 function cls(id: number, sources: number[]) {
   return { id, name: "Fighter", description: "Fighter description", hitDice: 10, isHomebrew: false, spellCastingAbilityId: null, sources: src(...sources) };
 }
+const grp = (description: string, ...prerequisiteMappings: Array<Record<string, unknown>>) =>
+  ({ description, hidePrerequisite: false, prerequisiteMappings });
+const STR = (n: number) => ({ type: "ability-score", subType: "strength", value: n, friendlySubTypeName: "Strength" });
+const DEX = (n: number) => ({ type: "ability-score", subType: "dexterity", value: n, friendlySubTypeName: "Dexterity" });
+const LVL = (n: number) => ({ type: "level", subType: "character-level", value: n, friendlySubTypeName: "Level" });
 function named(id: number, name: string, sources: number[], extra: Record<string, unknown> = {}) {
   return { id, name, description: `${name} description`, isHomebrew: false, sources: src(...sources), ...extra };
 }
@@ -89,8 +94,8 @@ const BACKGROUNDS = [
   named(3, "Criminal / Spy", [1]), named(4, "Criminal", [145]),
 ];
 const FEATS = [
-  named(1, "Alert", [2], { prerequisite: null, snippet: "" }),
-  named(2, "Alert", [145], { prerequisite: "Level 4+", snippet: "" }),
+  named(1, "Alert", [2], { prerequisites: [], snippet: "" }),
+  named(2, "Alert", [145], { prerequisites: [grp("Level 4+", LVL(4))], snippet: "" }),
 ];
 
 function install(overrides: Record<string, unknown> = {}) {
@@ -215,15 +220,15 @@ describe("ddb_search_feats", () => {
 });
 
 describe("a filter only the other edition's twin passes (Grappler)", () => {
-  const GRAPPLER_2014 = named(10, "Grappler", [2], { prerequisite: "Strength 13 or higher", snippet: "" });
-  const GRAPPLER_2024 = named(11, "Grappler", [145], { prerequisite: "Level 4+; Strength or Dexterity 13+", snippet: "" });
-  const HEAVY = named(12, "Heavy Armor Master", [145], { prerequisite: "Level 4+; Strength 13+", snippet: "" });
+  const GRAPPLER_2014 = named(10, "Grappler", [2], { prerequisites: [grp("Strength 13 or higher", STR(13))], snippet: "" });
+  const GRAPPLER_2024 = named(11, "Grappler", [145], { prerequisites: [grp("Level 4+, Strength", LVL(4), STR(13)), grp("or Dexterity 13+", DEX(13))], snippet: "" });
+  const HEAVY = named(12, "Heavy Armor Master", [145], { prerequisites: [grp("Level 4+, Strength 13+", LVL(4), STR(13))], snippet: "" });
   const open5eCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).includes("open5e"));
 
   it("alone: the 2024 Grappler is listed (Strength or Dexterity 13+), and its 2014 twin still counts as hidden", async () => {
     install({ feats: [GRAPPLER_2014, GRAPPLER_2024] });
     const text = await reference.searchFeats({ prerequisite: "strength 13" });
-    expect(entryLines(text)).toEqual(["- **Grappler** [2024] *(Requires: Level 4+; Strength or Dexterity 13+)* — Grappler description"]);
+    expect(entryLines(text)).toEqual(["- **Grappler** [2024] *(Requires: Level 4+, Strength or Dexterity 13+)* — Grappler description"]);
     expect(text.split("\n").at(-1)).toBe(HIDDEN_2014(1));
     expect(open5eCalls()).toHaveLength(0);
   });
@@ -232,19 +237,32 @@ describe("a filter only the other edition's twin passes (Grappler)", () => {
     install({ feats: [GRAPPLER_2014, GRAPPLER_2024, HEAVY] });
     const text = await reference.searchFeats({ prerequisite: "strength 13" });
     expect(entryLines(text)).toEqual([
-      "- **Grappler** [2024] *(Requires: Level 4+; Strength or Dexterity 13+)* — Grappler description",
-      "- **Heavy Armor Master** [2024] *(Requires: Level 4+; Strength 13+)* — Heavy Armor Master description",
+      "- **Grappler** [2024] *(Requires: Level 4+, Strength or Dexterity 13+)* — Grappler description",
+      "- **Heavy Armor Master** [2024] *(Requires: Level 4+, Strength 13+)* — Heavy Armor Master description",
     ]);
     expect(text.split("\n").at(-1)).toBe(HIDDEN_2014(1));
   });
 
+  it("prerequisite 'level 4' lists the Ability Score Improvement; Strength 13 lists the 2014 Grappler, not ASI", async () => {
+    const asi = named(50, "Ability Score Improvement", [145], { prerequisites: [grp("Level 4+", LVL(4))], snippet: "" });
+    install({ feats: [asi, GRAPPLER_2024] });
+    expect(entryLines(await reference.searchFeats({ prerequisite: "level 4" }))).toHaveLength(2);
+    expect(entryLines(await reference.searchFeats({ prerequisite: "strength 13" })).join("\n")).not.toContain("Ability Score");
+  });
+
+  it("a prerequisite with no D&D Beyond match falls back to Open5e", async () => {
+    install({ feats: [GRAPPLER_2024] });
+    await reference.searchFeats({ prerequisite: "zzz nothing" });
+    expect(open5eCalls().length).toBeGreaterThan(0);
+  });
+
   it("abbreviated prerequisites match a full-name query", async () => {
-    install({ feats: [named(30, "Quick", [145], { prerequisite: "Str or Dex 13+", snippet: "" })] });
+    install({ feats: [named(30, "Quick", [145], { prerequisites: [grp("Str or Dex 13+", STR(13), DEX(13))], snippet: "" })] });
     expect(entryLines(await reference.searchFeats({ prerequisite: "Strength 13" }))).toHaveLength(1);
   });
 
   it("five identical rows list once with a count, and different names stay apart", async () => {
-    const asi = [1, 2, 3, 4, 5].map(i => named(40 + i, "Ability Score Improvement", [145], { prerequisite: null, snippet: "" }));
+    const asi = [1, 2, 3, 4, 5].map(i => named(40 + i, "Ability Score Improvement", [145], { prerequisites: [], snippet: "" }));
     install({ feats: [...asi, named(60, "Magic Initiate (Cleric)", [145], { snippet: "" }), named(61, "Magic Initiate (Wizard)", [145], { snippet: "" })] });
     const text = await reference.searchFeats({ source: "phb-2024" });
     const lines = entryLines(text);

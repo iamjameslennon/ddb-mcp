@@ -32,7 +32,7 @@ import {
   paginateResults, renderSection, plainSection, noMatchSection, withSourceCaveatSection, selectCatalog, lookupCatalog, alsoMatchesLine, lookupCatalogAdapter,
   type CatalogAdapter, type CatalogHit, type LookupAdapter, type SearchSection,
 } from "./edition-search.js";
-import { prerequisiteMatches } from "./prerequisite.js";
+import { ddbPrerequisiteMatches, ddbPrerequisiteText, type DdbPrerequisite } from "./prerequisite.js";
 import { createSpellStore, addSpells, spellList, type DdbSpell, type SpellStore } from "./spell-store.js";
 import { castingTimeText } from "./casting-time.js";
 import {
@@ -1165,7 +1165,7 @@ interface DdbFeat {
   name: string;
   description: string;
   snippet: string;
-  prerequisite: string | null;
+  prerequisites?: DdbPrerequisite[] | null;
   isHomebrew: boolean;
   isLegacy?: boolean;
   sources: Array<{ sourceId: number }>;
@@ -1195,10 +1195,11 @@ export async function searchFeatsSection(params: FeatSearchParams = {}): Promise
     heading: "Feat",
     defaultLimit: 30,
     adapter: { ...FEAT_ADAPTER, nameMatches: nameFilter(params.name, f => f.name) },
-    passes: prereqQuery ? f => prerequisiteMatches(f.prerequisite, prereqQuery) : undefined,
+    passes: prereqQuery ? f => ddbPrerequisiteMatches(f.prerequisites, prereqQuery) : undefined,
     rowKey: ({ entry, label }) => `${entry.name}\u0000${label}`,
     format: ({ entry: feat, label }) => {
-      const prereq = feat.prerequisite ? ` *(Requires: ${feat.prerequisite})*` : "";
+      const requires = ddbPrerequisiteText(feat.prerequisites);
+      const prereq = requires ? ` *(Requires: ${requires})*` : "";
       const desc = clip(describeTemplates(feat.snippet || feat.description || ""), 100);
       return `- **${feat.name}** ${label}${prereq}${desc ? ` — ${desc}` : ""}`;
     },

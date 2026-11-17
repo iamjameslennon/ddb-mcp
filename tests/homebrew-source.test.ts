@@ -146,8 +146,8 @@ describe("source: homebrew on the catalog tools", () => {
         { id: 2, name: "Smuggler", description: "d", isHomebrew: true },
       ],
       feats: [
-        { id: 1, name: "Alert", description: "d", isHomebrew: false, prerequisite: null, snippet: "", sources: [{ sourceId: 145 }] },
-        { id: 2, name: "Lucky Star", description: "d", isHomebrew: true, prerequisite: null, snippet: "" },
+        { id: 1, name: "Alert", description: "d", isHomebrew: false, prerequisites: [], snippet: "", sources: [{ sourceId: 145 }] },
+        { id: 2, name: "Lucky Star", description: "d", isHomebrew: true, prerequisites: [], snippet: "" },
       ],
     });
     const header = HOMEBREW_SEARCH_HEADER;

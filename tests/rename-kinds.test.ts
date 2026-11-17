@@ -134,7 +134,7 @@ describe("catalogs with no rename pairs (twinNames.none) twin no other kind's na
   const pairs = otherPairs("none");
 
   it("feats: a 2014 Thug feat and a 2024 Tough feat are two feats", async () => {
-    install({ feats: editions(pairs, named({ prerequisite: null, snippet: "" })) });
+    install({ feats: editions(pairs, named({ prerequisites: [], snippet: "" })) });
     expectAllListed(await reference.searchFeats({}), pairs);
   });
 

@@ -143,9 +143,9 @@ describe("homebrew compendium text is untrusted", () => {
         { id: 2, name: "Smuggler", description: "<p>Homebrew background</p>", ...homebrew },
       ],
       feats: [
-        { id: 1, name: "Alert", description: "<p>Official feat</p>", snippet: "Official feat", prerequisite: null, ...official },
-        { id: 2, name: "Hex Touched", description: "<p>Homebrew feat</p>", snippet: "Homebrew feat", prerequisite: null, ...homebrew },
-        { id: 3, name: "Keen Mind", description: "<p>x</p>", snippet: "add {{proficiency#signed}} to the roll", prerequisite: null, ...official },
+        { id: 1, name: "Alert", description: "<p>Official feat</p>", snippet: "Official feat", prerequisites: [], ...official },
+        { id: 2, name: "Hex Touched", description: "<p>Homebrew feat</p>", snippet: "Homebrew feat", prerequisites: [], ...homebrew },
+        { id: 3, name: "Keen Mind", description: "<p>x</p>", snippet: "add {{proficiency#signed}} to the roll", prerequisites: [], ...official },
       ],
       items: [
         {

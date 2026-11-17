@@ -186,7 +186,7 @@ function option(id: number, name: string, legacy: boolean, sourceId: number): Re
   return {
     id, entityRaceId: id, entityRaceTypeId: id, name, fullName: name, baseName: name, baseRaceName: name,
     description: `${name} description`, isHomebrew: false, isLegacy: legacy, isSubRace: false, hitDice: 10,
-    prerequisite: null, snippet: "", sources: [{ sourceId }],
+    prerequisites: [], snippet: "", sources: [{ sourceId }],
   };
 }
 // Classes carry one base feature and races one trait each, for the class-feature and racial-trait searches.

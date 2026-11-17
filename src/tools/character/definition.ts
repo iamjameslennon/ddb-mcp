@@ -23,6 +23,7 @@ import { actionParents, chosenClassOptions, type EntityKind } from "./actions.js
 import type { CharData, ClassEntry } from "./types.js";
 import { castingTimeText } from "../casting-time.js";
 import { withoutMasteryParagraph } from "../weapon-mastery.js";
+import { ddbPrerequisiteText, type DdbPrerequisite } from "../prerequisite.js";
 
 const matchesDefinitionQuery = matchesLooseName;
 
@@ -92,7 +93,8 @@ function formatSpellResult(spell: Record<string, unknown>): string {
 function formatFeatResult(feat: Record<string, unknown>): string {
   const d = (feat.definition ?? feat) as Record<string, unknown>;
   const lines = [String(d.name ?? "Unknown")];
-  if (d.prerequisite) lines.push(`Prerequisite: ${d.prerequisite}`);
+  const prereq = ddbPrerequisiteText(d.prerequisites as DdbPrerequisite[] | null | undefined) || (d.prerequisite ? String(d.prerequisite) : "");
+  if (prereq) lines.push(`Prerequisite: ${prereq}`);
   lines.push("", stripHtmlFull(String(d.description ?? d.snippet ?? "")));
   return lines.join("\n");
 }

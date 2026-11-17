@@ -466,7 +466,7 @@ describe("compendium catalog entries", () => {
       if (new URL(url).pathname.endsWith("/game-data/feats")) {
         return json({ data: [{
           id: 1, name: "Alert", description: "<p>Official feat</p>", snippet: "Official feat",
-          prerequisite: null, isHomebrew: false, sources: [{ sourceId: 145 }],
+          prerequisites: [], isHomebrew: false, sources: [{ sourceId: 145 }],
         }] });
       }
       return json({ data: [] });

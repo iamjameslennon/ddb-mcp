@@ -130,6 +130,14 @@ describe("formatCharacterLookup", () => {
     expect(formatCharacterLookup(char, "zzzz", INDEX)).toMatch(/^No definition found matching "zzzz"/);
   });
 
+  it("a sheet feat's lookup prints its Prerequisite line", () => {
+    const grappler = { definition: { id: 5, entityTypeId: FEAT_TYPE, name: "Grappler", description: "You grapple.", sources: S(145), categories: [],
+      prerequisites: [{ description: "Level 4+, Strength", hidePrerequisite: false, prerequisiteMappings: [] }, { description: "or Dexterity 13+", hidePrerequisite: false, prerequisiteMappings: [] }] } };
+    const char = variant(FIGHTER_5, d => { d.feats = [grappler]; }).data as Record<string, unknown>;
+    expect(formatCharacterLookup(char, "grappler", INDEX)).toBe(
+      "[Feat]\nGrappler\nRules: 2024 · Player's Handbook (2024)\nPrerequisite: Level 4+, Strength or Dexterity 13+\n\nYou grapple.");
+  });
+
   it("a homebrew full hit reads Rules: homebrew (edition not stated)", () => {
     const char = variant(FIGHTER_5, d => { d.feats.push({ definition: { name: "Zany Trick", snippet: "Zany.", isHomebrew: true } }); }).data as Record<string, unknown>;
     // The homebrew block is delimited as untrusted, rules line included.
