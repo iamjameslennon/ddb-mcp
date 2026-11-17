@@ -304,7 +304,7 @@ Not applicable: invalid, ambiguous, locked, source, homebrew, pagination, gate
 
 - normal: "What does Grappled do?" → 2024 text, labelled.
 - not-found: a made-up condition → "not found", the list of conditions.
-- edition: "Exhaustion, 2014" → the 2014 six-level table.
+- edition: "Exhaustion, 2014" → the full 2014 text: the six-level table, then the stacking, removal and long-rest paragraphs (not the six rows alone).
 - logged-out: same → works.
 
 ## `ddb_rate_encounter`

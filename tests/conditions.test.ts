@@ -68,4 +68,42 @@ describe("getCondition", () => {
     expect(getCondition("").startsWith('Condition "" not found.')).toBe(true);
     expect(getCondition("constructor")).toContain("not found");
   });
+
+  it("2014 Exhaustion includes stacking and removal", () => {
+    const out = getCondition("exhaustion", "2014");
+    expect(out).toContain("as well as all lower levels");
+    expect(out).toContain("Finishing a long rest reduces a creature's exhaustion level by 1");
+    expect(out).toContain("being raised from the dead reduces a creature's exhaustion level by 1");
+  });
+
+  it("2014 Grappled keeps the thunderwave sentence", () => {
+    expect(getCondition("grappled", "2014")).toContain("such as when a creature is hurled away by the thunderwave spell");
+  });
+
+  it("every 2014 condition prints description, effects, then notes", () => {
+    for (const n of CONDITION_NAMES) {
+      const lines = getCondition(n, "2014").split("\n");
+      expect(lines.slice(0, 3)).toEqual([`**${n}**`, "Rules: 2014 · SRD 5.1", ""]);
+      expect(lines[3]).toBeTruthy();
+      expect(lines[3]).not.toMatch(/^• /);
+      const rest = lines.slice(4);
+      const firstPlain = rest.findIndex(l => l !== "" && !l.startsWith("• "));
+      // After the bullets, everything is a blank line then a plain paragraph.
+      if (firstPlain >= 0) {
+        for (const l of rest.slice(0, firstPlain)) expect(l === "" || l.startsWith("• ")).toBe(true);
+        expect(rest[firstPlain - 1]).toBe("");
+        expect(rest.slice(firstPlain).filter(l => l.startsWith("• "))).toEqual([]);
+      }
+    }
+    const exhaustion = getCondition("exhaustion", "2014").split("\n");
+    expect(exhaustion.filter(l => l.startsWith("• Level "))).toHaveLength(6);
+    expect(exhaustion.at(-1)).toContain("Also, being raised from the dead");
+    expect(getCondition("Poisoned", "2014")).not.toMatch(/\n\n.*\n\n/);
+  });
+
+  it("2014 Invisible and Paralyzed carry the full SRD 5.1 text", () => {
+    expect(getCondition("invisible", "2014")).toContain("For the purpose of hiding, the creature is heavily obscured.");
+    expect(getCondition("paralyzed", "2014")).toContain("within 5 feet of the creature.");
+    expect(getCondition("petrified", "2014")).toContain("a poison or disease already in its system is suspended, not neutralized.");
+  });
 });

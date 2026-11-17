@@ -38,7 +38,7 @@ Data-refresh scripts. All except the last need `ddb_login`, and their output fil
 - `npx tsx scripts/dump-edition-renames.mts` rewrites `src/source-snapshot.ts`. It reports `sourceCategoryId`s missing from `src/edition.ts`, which you place by hand, and prints rename candidates. Add a pair to `src/edition-renames.ts` only after reading both descriptions, with the evidence in a comment. `--snapshot-only` needs no login.
 - `npx tsx scripts/dump-modifier-slugs.mts` rewrites `src/tools/character/modifier-slugs.ts`.
 - `npx tsx scripts/dump-sourced-languages.mts` prints entries to paste into `LANGUAGE_NAMES_BY_ID` in `stats.ts`.
-- `npx tsx scripts/check-conditions.mts` sanity-checks the vendored 2024 conditions against D&D Beyond.
+- `npx tsx scripts/check-conditions.mts` sanity-checks the vendored 2024 and 2014 conditions against D&D Beyond (`ok 2024 <name>` / `DIFF 2024 <name>`, then the same for 2014).
 - `npx tsx scripts/record-open5e-fixtures.mts [--check]` records the Open5e v2 fixtures. `--check` asserts only and writes nothing.
 
 Regression check before a release (needs no login): `npx tsx scripts/regress-all-characters.mts [--baseline <version>]`. It parses all 56 `testcharacters.md` characters × 8 sections with the published npm package and with HEAD's `src/`, diffs them with wrappers, `Rules:` lines and edition tags stripped, and scans HEAD for anomalies and section consistency. It fails only on a HEAD crash, an inconsistency or a new anomaly; differences need reading. Its output holds other people's characters, so it goes to the OS temp dir, never the repo. See [docs/character-refactor.md](docs/character-refactor.md#layer-4--whole-corpus-regression-before-a-release).
