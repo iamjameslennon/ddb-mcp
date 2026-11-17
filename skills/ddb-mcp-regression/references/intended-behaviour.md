@@ -124,8 +124,8 @@ Source: tool-notes.md (owner ruling 2026-11-06).
 Looks like: `ddb_download_character` refuses any `output_path` outside `~/Downloads` or `~/Documents` (including `..` escapes) and says where it saved.
 Source: CLAUDE.md, Invariants, "Safety gates".
 
-### Equipped weapons appear in ACTIONS, not INVENTORY
-Looks like: the `inventory` section lists armor and gear but no equipped weapons; they appear as attack rows in ACTIONS (`combat`, `full`). This holds only for equipped weapons: a carried weapon that isn't equipped and appears nowhere is not covered by this entry.
+### Equipped weapons, and other equipped items with a weapon behaviour, appear in ACTIONS, not INVENTORY
+Looks like: the `inventory` section lists armor and gear but no equipped weapons or staffs; they appear as attack rows in ACTIONS (`combat`, `full`). This covers equipped weapons and other equipped items with a weapon behaviour, such as staffs (an attuned one still shows on the ATTUNEMENT line); an unequipped staff stays in INVENTORY. It holds only for equipped items: a carried weapon that isn't equipped and appears nowhere is not covered by this entry.
 Source: `src/tools/character/inventory.ts` header comment.
 
 ### Encounter and treasure lookups count an exact name match

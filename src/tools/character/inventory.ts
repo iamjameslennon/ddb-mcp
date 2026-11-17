@@ -15,6 +15,7 @@
  */
 
 import { wrapIfHomebrew, wrapUntrusted } from "../../utils.js";
+import { weaponDefinition } from "./weapons.js";
 import { num, obj, shownHomebrew, str } from "./helpers.js";
 import type { CharData, CoreStats, ListEntry } from "./types.js";
 
@@ -44,9 +45,12 @@ export function computeInventory(core: CoreStats): Inventory {
     const def = obj(i.definition);
     const iName = editions.named(str(def.name).trim(), def);
     const filterType = str(def.filterType);
+    // An equipped item that attacks (a Weapon, or a staff with a weapon behaviour) shows in ACTIONS, not here.
+    const attacksFromActions = i.equipped === true && weaponDefinition(def) !== null;
     const qty = num(i.quantity) || 1;
     const homebrew = shownHomebrew(i, iName);
     if (i.isAttuned) attunedItems.push({ text: iName, homebrew });
+    if (attacksFromActions) continue;
     if (i.equipped && filterType === "Armor") {
       const ac2 = num(def.armorClass);
       equippedNonWeapons.push({ text: `${iName}${ac2 ? ` (AC ${ac2})` : ""}`, homebrew });

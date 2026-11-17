@@ -22,6 +22,23 @@ export const OFF_HAND_VALUE_TYPE = 18;
 /** `characterValues` typeId of the pact weapon flag (Pact of the Blade). */
 export const PACT_WEAPON_VALUE_TYPE = 28;
 
+/**
+ * The definition a weapon row reads. A `filterType: "Weapon"` item is its own definition (a stray
+ * `weaponBehaviors` is ignored, so nothing prints twice). Any other item with a `weaponBehaviors[0]`
+ * record (a staff) attacks through it: the behaviour's fields overlay the item's, except the identity
+ * and provenance fields. `equipped`, `quantity` and `id` belong to the inventory entry, not here.
+ * Returns null for an item that is not a weapon.
+ */
+export function weaponDefinition(def: Record<string, unknown>): Record<string, unknown> | null {
+  if (str(def.filterType) === "Weapon") return def;
+  const behaviour = arr<unknown>(def.weaponBehaviors)[0];
+  if (behaviour === null || typeof behaviour !== "object" || Array.isArray(behaviour)) return null;
+  return {
+    ...def, ...(behaviour as Record<string, unknown>),
+    name: def.name, grantedModifiers: def.grantedModifiers, isHomebrew: def.isHomebrew, sourceId: def.sourceId, sources: def.sources,
+  };
+}
+
 /** Inventory ids flagged by a `characterValues` entry of `typeId`: value true, `valueId` an integer (others skipped). */
 export function flaggedItemIds(char: CharData, typeId: number): Set<number> {
   const ids = new Set<number>();
@@ -159,8 +176,8 @@ export function computeWeaponAttacks(core: CoreStats): { attacks: string[]; offH
   // Lines are built after consolidation, so the ×N prefix is padded with the name.
   const weaponInventoryMap = new Map<string, { label: string; rest: string; qty: number; homebrew: boolean; offHand: boolean }>();
   for (const i of inventory) {
-    const def = obj(i.definition);
-    if (str(def.filterType) !== "Weapon") continue;
+    const def = weaponDefinition(obj(i.definition));
+    if (!def) continue;
     if (i.equipped !== true) continue; // only show equipped weapons in ACTIONS
 
     const wName = str(def.name).trim();
@@ -196,7 +213,8 @@ export function computeWeaponAttacks(core: CoreStats): { attacks: string[]; offH
       ((num(def.categoryId) === 1 && attackType === 1) || str(def.name) === "Shortsword");
 
     // Ability modifier for attack/damage
-    const usesDex = isRanged || ((isFinesse || isMonkWeapon) && dexMod > statMods[0]);
+    // Finesse (and Martial Arts) takes the better of STR and DEX, ranged or not; any other ranged weapon uses DEX.
+    const usesDex = (isFinesse || isMonkWeapon) ? dexMod > statMods[0] : isRanged;
     const abilityMod = usesDex ? dexMod : statMods[0];
     const profMod = isWeaponProficient(def, num(i.id)) ? profBonus : 0;
     const hitBonus = abilityMod + profMod + magicBonus + (isRanged ? bonuses.rangedHit : bonuses.meleeHit);

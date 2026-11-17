@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { computeCoreStats } from "../src/tools/character/core.js";
 import type { CharData } from "../src/tools/character/types.js";
+import { parseCharacterData as parseSheet } from "../src/tools/character.js";
 import { INDEX } from "./fixtures/character-edition-helpers.js";
 import { BASE, CLASS_FEATURE, ITEM, OPTION, block, combat, feature, fighter } from "./fixtures/combat-helpers.js";
 
@@ -204,5 +205,114 @@ describe("weapon row details (F6, F13)", () => {
     const r = row(combat({ inventory: [net], modifiers: modsOf([MARTIAL]) }), "Net");
     expect(r).toMatch(/• Net\s+\+\d+ to hit   no damage   range 5\/15 ft\.   Special, Thrown/);
     expect(r).not.toContain("bludgeoning");
+  });
+});
+
+describe("ranged Finesse (F9)", () => {
+  const SIMPLE = { type: "proficiency", subType: "simple-weapons" };
+  const dart = () => weapon(4, "Dart", {
+    attackType: 2, categoryId: 1, range: 20, longRange: 60, damage: { diceString: "1d4" }, damageType: "Piercing",
+    properties: [{ name: "Finesse" }, { name: "Thrown" }],
+  });
+  const lightCrossbow = () => weapon(5, "Light Crossbow", {
+    attackType: 2, categoryId: 1, range: 80, longRange: 320, damage: { diceString: "1d8" }, damageType: "Piercing",
+    properties: [{ name: "Ammunition" }, { name: "Loading" }, { name: "Two-Handed" }],
+  });
+  const stats = (str: number, dex: number) => ({
+    stats: [{ id: 1, value: str }, { id: 2, value: dex }, { id: 3, value: 10 }, { id: 4, value: 10 }, { id: 5, value: 10 }, { id: 6, value: 10 }],
+    bonusStats: [], overrideStats: [],
+  });
+
+  it("uses STR when STR is higher (Archery still applies)", () => {
+    const o = archer([dart()], { ...stats(16, 14), modifiers: modsOf([archeryMod, SIMPLE]) });
+    const c = coreOf(o);
+    expect(c.statMods[0]).toBeGreaterThan(c.statMods[1]);
+    const r = row(combat(o), "Dart");
+    expect(hit(r)).toBe(mod(c.statMods[0] + c.profBonus + 2));
+    expect(r).toContain(`1d4${mod(c.statMods[0])} piercing`);
+  });
+  it("uses DEX when DEX is higher", () => {
+    const o = { inventory: [dart()], ...stats(12, 16), modifiers: modsOf([SIMPLE]) };
+    const c = coreOf(o);
+    const r = row(combat(o), "Dart");
+    expect(hit(r)).toBe(mod(c.statMods[1] + c.profBonus));
+    expect(r).toContain(`1d4${mod(c.statMods[1])} piercing`);
+  });
+  it("a non-Finesse ranged weapon still uses DEX", () => {
+    const o = { inventory: [lightCrossbow()], ...stats(16, 14), modifiers: modsOf([SIMPLE]) };
+    const c = coreOf(o);
+    expect(hit(row(combat(o), "Light Crossbow"))).toBe(mod(c.statMods[1] + c.profBonus));
+  });
+});
+
+describe("weapon-behaviour items (F11, owner ruling S5)", () => {
+  const SIMPLE = { type: "proficiency", subType: "simple-weapons" };
+  const quarterstaff = {
+    baseItemId: 1, baseTypeId: 1, type: "Quarterstaff", attackType: 1, categoryId: 1, damage: { diceString: "1d6" }, damageType: "Bludgeoning",
+    range: 5, longRange: 0, isMonkWeapon: false,
+    properties: [{ name: "Versatile", notes: "1d8" }, { name: "Topple" }],
+  };
+  const staff = (id: number, name: string, def: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => ({
+    id, equipped: true, quantity: 1, isAttuned: false,
+    definition: { id: 9100 + id, entityTypeId: ITEM, name, type: "Staff", filterType: "Staff", attackType: null, magic: false, canAttune: false,
+      grantedModifiers: [], weaponBehaviors: [quarterstaff], ...def },
+    ...extra,
+  });
+  const magic = (value = 2) => ({ grantedModifiers: [{ type: "bonus", subType: "magic", value, fixedValue: value }], magic: true, canAttune: true });
+  const inventorySection = (inv: unknown[]) => {
+    const data = { ...BASE, inventory: inv, classSpells: [], spells: {}, modifiers: modsOf([MARTIAL, SIMPLE]) };
+    return parseSheet({ data }, "inventory", INDEX);
+  };
+
+  it("an equipped magic staff attacks as its weapon behaviour", () => {
+    const o = { inventory: [staff(1, "Staff of the Woodlands", magic())], modifiers: modsOf([MARTIAL, SIMPLE]) };
+    const c = coreOf(o);
+    const r = row(combat(o), "Staff of the Woodlands");
+    expect(r).toMatch(new RegExp(
+      `^• Staff of the Woodlands(?: \\[edition not stated\\])?\\s+\\${mod(c.statMods[0] + c.profBonus + 2)} to hit\\s+1d6\\${mod(c.statMods[0] + 2)} bludgeoning ` +
+      `\\(1d8\\${mod(c.statMods[0] + 2)} two-handed\\)\\s+reach 5 ft\\.\\s+Versatile$`));
+    expect(r).not.toContain("Topple");
+  });
+  it("an equipped mundane Staff (Other Gear) attacks as a quarterstaff", () => {
+    const o = { inventory: [staff(2, "Staff", { filterType: "Other Gear" })], modifiers: modsOf([MARTIAL, SIMPLE]) };
+    const c = coreOf(o);
+    const r = row(combat(o), "Staff");
+    expect(hit(r)).toBe(mod(c.statMods[0] + c.profBonus));
+    expect(r).toContain(`1d6${mod(c.statMods[0])} bludgeoning`);
+  });
+  it("an unequipped staff has no row and stays in INVENTORY", () => {
+    const o = { inventory: [staff(3, "Staff", { filterType: "Other Gear" }, { equipped: false })] };
+    expect(row(combat(o), "Staff")).toBe("");
+    expect(inventorySection(o.inventory)).toMatch(/^INVENTORY\n  Staff(?: \[edition not stated\])?$/m);
+  });
+  it("a filterType Weapon item ignores weaponBehaviors", () => {
+    const sword = weapon(6, "Longsword", { attackType: 1, categoryId: 2, damage: { diceString: "1d8" }, damageType: "Slashing", weaponBehaviors: [quarterstaff] });
+    const out = block(combat({ inventory: [sword], modifiers: modsOf([MARTIAL, SIMPLE]) }), "ACTIONS");
+    expect(out.split("\n").filter(l => l.startsWith("• Longsword"))).toHaveLength(1);
+    expect(out).toContain("1d8");
+    expect(out).not.toContain("Quarterstaff");
+  });
+  it("a homebrew staff's row is wrapped, an official one is plain", () => {
+    const brew = staff(7, "Brew Staff", { isHomebrew: true });
+    const plain = staff(8, "Plain Staff", { filterType: "Other Gear" });
+    const out = combat({ inventory: [brew, plain], modifiers: modsOf([MARTIAL, SIMPLE]) });
+    const lines = block(out, "ACTIONS").split("\n");
+    const i = lines.findIndex(l => l.startsWith("• Brew Staff"));
+    expect(lines[i - 1]).toBe("<untrusted_dndbeyond_content>");
+    expect(lines[i + 1]).toBe("</untrusted_dndbeyond_content>");
+    const j = lines.findIndex(l => l.startsWith("• Plain Staff"));
+    expect(lines[j - 1]).not.toBe("<untrusted_dndbeyond_content>");
+    expect(lines[j + 1] ?? "").not.toBe("</untrusted_dndbeyond_content>");
+  });
+  it("an equipped magic staff leaves EQUIPPED but stays on the Attuned line", () => {
+    const inv = [staff(9, "Staff of the Woodlands", magic(), { isAttuned: true })];
+    const out = inventorySection(inv);
+    expect(out).not.toMatch(/^EQUIPPED$/m);
+    expect(out).toContain("ATTUNEMENT (1/3): Staff of the Woodlands");
+  });
+  it("an equipped mundane Other Gear staff leaves INVENTORY", () => {
+    const out = inventorySection([staff(10, "Staff", { filterType: "Other Gear" })]);
+    expect(out).not.toMatch(/^INVENTORY$/m);
+    expect(out).not.toContain("Staff");
   });
 });
