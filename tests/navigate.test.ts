@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { isAllowedPageUrl, assertSafeSelector } from "../src/tools/navigate.js";
+import { isAllowedPageUrl, assertSafeSelector, navigate } from "../src/tools/navigate.js";
 
 // Stable fs mock so the transition tests below can flip the session file and
 // drive a REAL session-state transition through navigate()'s authority checks.
@@ -123,6 +123,7 @@ describe("navigate refuses scraped content across a session transition", () => {
     const page = {
       url: () => url,
       goto: async () => {},
+      waitForLoadState: async () => {},
       evaluate: async () => { onEvaluate(); return "SECRET_SCRAPE"; },
       waitForTimeout: async () => {},
       locator: () => ({ filter: () => page.locator(), first: () => page.locator() }),
@@ -164,5 +165,61 @@ describe("navigate refuses scraped content across a session transition", () => {
     );
 
     await expect(nav.getCurrentPageContent(context)).rejects.toThrow(sf.SessionChangedError);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A loaded page is a success (F8). navigate() waits for "load"; networkidle is
+// a best-effort extra wait whose timeout must not fail the call.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("navigate() counts a loaded page as a success", () => {
+  function makeLoadFake(opts: { networkidleTimesOut: boolean; gotoError?: Error }) {
+    const gotoCalls: Array<{ url: string; options: unknown }> = [];
+    const loadStateCalls: Array<{ state: string; options: unknown }> = [];
+    let currentUrl = "about:blank";
+    const page = {
+      url: () => currentUrl,
+      goto: async (url: string, options: unknown) => {
+        gotoCalls.push({ url, options });
+        if (opts.gotoError) throw opts.gotoError;
+        currentUrl = url;
+      },
+      waitForLoadState: async (state: string, options: unknown) => {
+        loadStateCalls.push({ state, options });
+        if (opts.networkidleTimesOut) throw new Error("Timeout 5000ms exceeded.");
+      },
+      evaluate: async () => "Aboleth stat block",
+      waitForTimeout: async () => {},
+      locator: () => ({ filter: () => page.locator(), first: () => page.locator() }),
+    };
+    const context = { pages: () => [page], newPage: async () => page, route: async () => {} };
+    return { context: context as unknown as Parameters<typeof navigate>[0], gotoCalls, loadStateCalls };
+  }
+
+  it("navigate returns the page when networkidle never comes", async () => {
+    const { context, loadStateCalls } = makeLoadFake({ networkidleTimesOut: true });
+    const out = await navigate(context, "https://www.dndbeyond.com/monsters/16762-aboleth");
+    expect(out).toContain("URL: https://www.dndbeyond.com/monsters/16762-aboleth");
+    expect(out).toContain("<untrusted_dndbeyond_content>");
+    expect(out).toContain("Aboleth stat block");
+    expect(loadStateCalls).toEqual([{ state: "networkidle", options: { timeout: 5000 } }]);
+  });
+
+  it("navigate waits for load, not networkidle, and keeps the 30 s deadline", async () => {
+    const { context, gotoCalls } = makeLoadFake({ networkidleTimesOut: false });
+    await navigate(context, "https://www.dndbeyond.com/monsters/16762-aboleth");
+    expect(gotoCalls).toEqual([
+      { url: "https://www.dndbeyond.com/monsters/16762-aboleth", options: { waitUntil: "load", timeout: 30000 } },
+    ]);
+  });
+
+  it("a failed load (goto rejects) still fails the call", async () => {
+    const { context } = makeLoadFake({
+      networkidleTimesOut: false,
+      gotoError: new Error("page.goto: Timeout 30000ms exceeded."),
+    });
+    await expect(
+      navigate(context, "https://www.dndbeyond.com/monsters/16762-aboleth"),
+    ).rejects.toThrow(/Timeout 30000ms exceeded/);
   });
 });

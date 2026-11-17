@@ -32,6 +32,7 @@ function makeFake(opts: FakeOpts = {}) {
   const page = {
     url: () => currentUrl,
     goto: async (u: string) => { calls.goto.push(u); currentUrl = u; },
+    waitForLoadState: async () => {},
     evaluate: async () => opts.content ?? "",
     waitForTimeout: async () => {},
     locator: () => locator,

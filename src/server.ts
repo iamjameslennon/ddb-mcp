@@ -114,7 +114,7 @@ server.tool(
       await closeBrowser();
       return { content: [{ type: "text", text: "Browser closed." }] };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = safeErrorLine(err);
       process.stderr.write(`[ddb-mcp] ddb_close_browser error: ${msg}\n`);
       return { content: [{ type: "text", text: `Failed to close browser: ${msg}` }], isError: true };
     }
@@ -486,7 +486,7 @@ server.tool(
       const content = await navigate(context, url);
       return { content: [{ type: "text", text: content }] };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = safeErrorLine(err);
       process.stderr.write(`[ddb-mcp] ddb_navigate error: ${msg}\n`);
       return { content: [{ type: "text", text: `Navigation failed: ${msg}` }], isError: true };
     }
@@ -539,7 +539,7 @@ server.tool(
       const result = await interact(context, action, selector, value);
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = safeErrorLine(err);
       process.stderr.write(`[ddb-mcp] ddb_interact error: ${msg}\n`);
       return { content: [{ type: "text", text: `Interaction failed: ${msg}` }], isError: true };
     }
@@ -558,7 +558,7 @@ server.tool(
       const content = await getCurrentPageContent(context);
       return { content: [{ type: "text", text: content }] };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = safeErrorLine(err);
       process.stderr.write(`[ddb-mcp] ddb_get_page error: ${msg}\n`);
       return { content: [{ type: "text", text: `Failed to get page content: ${msg}` }], isError: true };
     }

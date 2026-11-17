@@ -99,7 +99,11 @@ export async function navigate(context: BrowserContext, url: string): Promise<st
     throw new Error("Only https://www.dndbeyond.com/ URLs are supported.");
   }
 
-  await page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
+  // "load" is the success signal: a page that has loaded is a success even if
+  // D&D Beyond keeps a connection open (analytics, polling) and networkidle
+  // never comes. The networkidle wait below is best-effort only.
+  await page.goto(url, { waitUntil: "load", timeout: 30000 });
+  await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
 
   // Extract page text content and convert to readable markdown-ish format
   const content = await page.evaluate(() => {
