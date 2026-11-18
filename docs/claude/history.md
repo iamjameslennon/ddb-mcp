@@ -159,7 +159,8 @@ Test-only corrections applied by the controller (the owner's standing rule to ap
 | F8 (a loaded page is a success; browser errors through `safeErrorLine`) | `2971e60` |
 | 12b (navigate re-checks the final URL; logout errors through `safeErrorLine`; catalog tools surface a session change) | `85339ba` |
 | 12c (a refused page goes blank and interact checks the URL first; redirect hops to foreign hosts never followed; walk limited to same-site GETs; opened (bx)) | `8b4593a`, `1ef2193`, `0fd1a21` |
-| Task 13 (verification, docs, comment-only `navigate.ts` fixes) | this commit |
+| Task 13 (verification, docs, comment-only `navigate.ts` fixes) | `ac28ec5` |
+| Final fix wave (m1 origin-only refusals; m3 monster session change and m4 background via mapping; m7–m9 redirect-walk fallback, UTF-8 `Location`, service workers blocked; docs) | `eea3583`, `b5e2064`, `86e61a0`, this commit |
 
 Tasks 12b and 12c are not in the report's F1–F15: the owner added them on 2026-11-17 and 2026-11-18 from the Task 12 and 12b adversarial reviews.
 
@@ -185,7 +186,39 @@ Controller rulings (not owner rulings; for owner review): Task 2 rejected the ro
 
 **Carry-overs**: none opened by Task 13; (bx) gains residual (5) above. Open from this run: (bw), (bx). Closed: (bb). Narrowed: (be).
 
-**Deferred review minors** (not carry-overs; for a later round): Task 1, both unavailable lines print condition before damage (untested order); Task 2, the `weaponDefinition` merge protects only five named fields, a `{}` behaviour makes a no-damage row, no tests for a quantity-above-1 staff or off-hand/Dueling on a staff; Task 3, the M2 notice says the character was loaded without signing in when only the lists were; Task 4, concentration dedupe within `char.spells` follows JSON key order; Task 5, a zero sum with the assumption prints `1d6 (assumed the values add)`, and a missing class level drops `{{classlevel}}`; Task 6, a whitespace-only race `fullName` counts as missing here but not in the header, and a null `stats` entry throws in `core.ts` (pre-existing); Task 7, the guard allows trailing or double spaces; Task 8, a class entry without `definition.id` can't match the class-id clause; Task 11, `check-conditions` excludes the Exhaustion level rows and drops "see" pointers on both sides; Task 12c, MIN-2/7/8/9 of the adversarial review.
+**Final fix wave** (2026-11-18, owner decision on the final whole-branch review; Claude only, as the branch holds unreleased security fixes): m1 (the four `navigate.ts` refusals name a foreign page by its origin only, 12b M-2 / 12c MIN-9), m3 (`getMonster` rethrows a session change, `rethrowSessionChange` moved to `session-state.ts`), m4 (the never-matching `background` via mapping dropped; carry-over (ay) notes it), m7 (12c MIN-7: a network-level `route.fetch` failure falls back to `route.continue()`, never after a foreign `Location`), m8 (12c MIN-8: `Location` read as UTF-8) and m9 (12c MIN-2: the shared context blocks service workers). Live check after the build: `navigate()` on `https://www.dndbeyond.com/sources` and `https://dndbeyond.com/sources` both load the library. The owner left the Haiku/Sonnet co-author trailers as they are (m6).
+
+**Deferred review minors** (not carry-overs; for a later round). Complete as of the final fix wave: every "minor (deferred)" in the run's ledger that is still open, plus the final review's m5. Already fixed and so not listed: the Task 2 tool-notes armor exception, the Task 5 (be) and Templates staleness and the Task 7 F15 note (all Task 13); the Task 4 and Task 9 reviewer minors (their fix rounds); 12c N-2, the comment over 140 characters (Task 13's comment reflow); 12c N-1 is carry-over (bx)(5).
+
+- Task 1 (router): official `conditionImmunitiesHtml` prints unwrapped (official text is trusted; `getMonster` wraps a homebrew block whole).
+- Task 1: unknown damage-adjustment ids are not sorted.
+- Task 1: when both unavailable lines apply, the condition line prints before the damage line (the order is untested).
+- Task 2: the `weaponDefinition` merge protects only five named fields, so a future behaviour key (such as `isLegacy`) could override one.
+- Task 2: a `{}` weapon behaviour makes a row with no damage.
+- Task 2: the `inventory.ts` header comment and the `editions.ts` comment at lines 47-49 are loose.
+- Task 2: no tests for a quantity-above-1 staff, a non-record behaviour, or off-hand and Dueling on a staff.
+- Task 3: the M2 notice says the character was loaded without signing in when only the lists were (the owner chose the shared wording).
+- Task 3: `ddb_get_party` takes its snapshot before `getCampaignData`'s own (fails closed: the members' final `assertSessionCurrent` refuses a swap).
+- Task 4: the concentration dedupe within `char.spells` follows JSON key order (as specified: "first entry by text").
+- Task 5: a missing class level (`classLevel` 0, malformed data) drops `{{classlevel}}`.
+- Task 5: the "Odd Save" test's assertion is weak, and there is no multiclass `{{classlevel}}` test.
+- Task 5: a zero sum with the assumption prints `1d6 (assumed the values add)`.
+- Task 6: a whitespace-only race `fullName` counts as missing in the not-ready check but as present in the `deriveRace` header.
+- Task 6: duplicate stat ids are read with `find`, and there are no tests for a missing stat id or an override of 0.
+- Task 6 (pre-existing): a null entry in `stats` throws in `core.ts` `statTotals` before `notReadyParts` runs.
+- Task 7: the `friendlySubtypeName` plain-text guard allows trailing or double spaces, and there is no zero-width-character test.
+- Task 8: a class entry without `definition.id` can't match the class-id clause (live data always has it).
+- Task 10: no test of a token-exchange 403 or 500.
+- Task 10: no cause-cycle test for `fallbackOrigin` (the final fix wave added one for `rethrowSessionChange`).
+- Task 10: the logged-out fallback is not exercised through `ddb_search_site`.
+- Task 10: no outage test for the option-list tools (species, classes, backgrounds, feats).
+- Task 10: the `cause`-chain walks stop at depth 8 and stop at a non-`Error` cause.
+- Task 11: `check-conditions` leaves out the Exhaustion level rows (D&D Beyond's legacy text is prose; checked by hand).
+- Task 11: `check-conditions` drops "see" pointers on both sides, so a pointer missing on one side would go unnoticed.
+- Task 11: the `<h3>Legacy Definition</h3>` strip is brittle.
+- Task 12b: the logout test asserts only the error kind, not the reason `revoked`.
+- Task 12b: a failed `rmSync`'s first line carries the session-file path (the user's own local path).
+- Final review m5: an unfinished character's features block still resolves `{{savedc:…}}` and `{{modifier:…}}` against null scores, so it prints numbers worked out from a score of 0 (conformant: the plan says features print "as today"; later, a resolver that yields `?` while `notReadyParts` is non-empty).
 
 ### Regression remediation 2026-11-11
 
