@@ -29,6 +29,26 @@ export function isAllowedPageUrl(url: string): boolean {
   }
 }
 
+/** What a refusal calls a page that has no meaningful origin to print. */
+export const FOREIGN_PAGE_PLACEHOLDER = "a non-D&D Beyond page";
+
+/**
+ * How a refusal names a page off the allowlist: its origin (scheme, host,
+ * port) only. The path and query are the foreign server's choice, so printing
+ * them would put attacker text in trusted tool output (final review m1). A URL
+ * that can't be parsed or has an opaque origin (about:, data:, chrome-error:,
+ * javascript:, file:) gets FOREIGN_PAGE_PLACEHOLDER. Exported for unit testing.
+ */
+export function foreignPageLabel(url: string): string {
+  try {
+    const { origin } = new URL(url);
+    if (origin && origin !== "null") return origin;
+  } catch {
+    // unparsable: the placeholder below
+  }
+  return FOREIGN_PAGE_PLACEHOLDER;
+}
+
 // The ddb_navigate allowlist only checks the URL passed to that tool — without
 // this guard, a click on a prompt-injected DDB page could follow an off-site
 // link and ddb_get_page would then scrape an arbitrary origin. Abort routed
@@ -159,7 +179,7 @@ function assertActionablePage(page: Page): void {
   }
   if (!isAllowedPageUrl(url)) {
     throw new Error(
-      `Current page (${url}) is outside the dndbeyond.com allowlist — refusing to act on it. ` +
+      `Current page (${foreignPageLabel(url)}) is outside the dndbeyond.com allowlist — refusing to act on it. ` +
       `Use ddb_navigate to load a D&D Beyond page.`
     );
   }
@@ -230,7 +250,7 @@ export async function navigate(context: BrowserContext, url: string): Promise<st
   if (!isAllowedPageUrl(finalUrl)) {
     await leaveForeignPage(page);
     throw new Error(
-      `Navigation ended on ${finalUrl}, outside the dndbeyond.com allowlist — refusing to return its content. ` +
+      `Navigation ended on ${foreignPageLabel(finalUrl)}, outside the dndbeyond.com allowlist — refusing to return its content. ` +
       `Use ddb_navigate with a D&D Beyond page URL.`
     );
   }
@@ -291,7 +311,7 @@ export async function interact(
       if (!isAllowedPageUrl(afterClickUrl)) {
         await leaveForeignPage(page);
         throw new Error(
-          `Click triggered a navigation away from dndbeyond.com (to ${afterClickUrl}) — ` +
+          `Click triggered a navigation away from dndbeyond.com (to ${foreignPageLabel(afterClickUrl)}) — ` +
           `it was blocked and no cross-origin content will be returned. ` +
           `Use ddb_navigate to load a D&D Beyond page.`
         );
@@ -343,7 +363,7 @@ export async function getCurrentPageContent(context: BrowserContext): Promise<st
   // Refuse to scrape anything that isn't an allowlisted DDB page.
   if (!isAllowedPageUrl(url)) {
     throw new Error(
-      `Current page (${url}) is outside the dndbeyond.com allowlist — refusing to return its content. ` +
+      `Current page (${foreignPageLabel(url)}) is outside the dndbeyond.com allowlist — refusing to return its content. ` +
       `Use ddb_navigate to load a D&D Beyond page.`
     );
   }
