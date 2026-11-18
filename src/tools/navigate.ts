@@ -59,16 +59,21 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
  * Playwright routes only the first request of a redirect chain: every later
  * hop, including one from a fulfilled 3xx, is continued natively without a
  * handler (checked against Playwright 1.64.1, Task 12c). So for a top-level
- * GET to an allowlisted URL that the page or the tools started (no `Origin`,
- * or an allowlisted one) the handler walks the chain itself, one
+ * GET to an allowlisted URL whose request has no `Origin` or an allowlisted
+ * one, the handler walks the chain itself, one
  * `route.fetch({ maxRedirects: 0 })` per hop, and checks each `Location`
  * before requesting it: a foreign hop is aborted and its host never contacted.
+ * Chrome sends no `Origin` on a GET navigation, so that includes a GET a
+ * foreign frame started (a `target=_top` link): the walk then sends the
+ * cookies Chrome would withhold cross-site (SameSite=Strict, partitioned) and
+ * no Sec-Fetch-Site. The saved session holds only Lax and None cookies, which
+ * Chrome sends on a cross-site top-level GET anyway (carry-over (bx)(5)).
  *
  * route.fetch takes the context's cookies but enforces no SameSite and sends
- * no Sec-Fetch-* headers, so a navigation started elsewhere (a foreign
- * frame's form POST with target=_top, say) must keep Chrome's own request:
- * every non-GET, and every GET with a foreign `Origin`, is continued natively,
- * as before Task 12c (fix round 1, adversarial IMP-1).
+ * no Sec-Fetch-* headers, so a non-GET navigation (a foreign frame's form POST
+ * with target=_top, say) must keep Chrome's own request: every non-GET, and
+ * every GET carrying a foreign `Origin` header, is continued natively, as
+ * before Task 12c (fix round 1, adversarial IMP-1).
  */
 export async function guardRoute(route: Route): Promise<void> {
   const req = route.request();
@@ -218,8 +223,9 @@ export async function navigate(context: BrowserContext, url: string): Promise<st
 
   // The route guard checks the redirect hops it fetches, but the browser's
   // repeat request for a chain's final URL, and the hops of a navigation it
-  // leaves to Chrome, are hops no handler sees (carry-over (bx)). Re-check where the page actually ended up, as getCurrentPageContent
-  // does, and leave the foreign page before refusing.
+  // leaves to Chrome, are hops no handler sees (carry-over (bx)). Re-check
+  // where the page actually ended up, as getCurrentPageContent does, and
+  // leave the foreign page before refusing.
   const finalUrl = page.url();
   if (!isAllowedPageUrl(finalUrl)) {
     await leaveForeignPage(page);
