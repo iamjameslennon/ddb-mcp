@@ -225,14 +225,112 @@ describe("guardRoute: redirect hops are checked before they are requested", () =
     expect(tooMany.calls.fulfilled).toEqual([]);
   });
 
-  it("a failed hop fails the navigation instead of leaving it pending", async () => {
+  it("a hop that fails at the network level falls back to Chrome's own request (12c MIN-7)", async () => {
     const { route, calls } = makeRoute({
       url: A,
       server: { [A]: { status: 302, headers: { location: B } } }, // B: fetch throws
     });
     await guardRoute(route);
-    expect(calls.aborted).toEqual(["failed"]);
+    expect(calls.fetched.map(f => f.url)).toEqual([A, B]);
+    expect(calls.continued).toBe(1);
+    expect(calls.aborted).toEqual([]);
     expect(calls.fulfilled).toEqual([]);
+  });
+
+  it("a first request that fails at the network level falls back too (a proxy, a TLS rule)", async () => {
+    const { route, calls } = makeRoute({ url: A, server: {} }); // A: fetch throws
+    await guardRoute(route);
+    expect(calls.fetched.map(f => f.url)).toEqual([A]);
+    expect(calls.continued).toBe(1);
+    expect(calls.aborted).toEqual([]);
+  });
+
+  it("a fetch that fails on the deadline aborts the navigation, never falls back", async () => {
+    let now = 1_000_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const { route, calls } = makeRoute({ url: A, server: { [A]: { status: 302, headers: { location: B } } } });
+    const fetch = (route as unknown as { fetch: (o: FetchCall) => Promise<unknown> }).fetch;
+    (route as unknown as { fetch: (o: FetchCall) => Promise<unknown> }).fetch = async (o: FetchCall) => {
+      if (o.url === B) { now += NAVIGATION_TIMEOUT_MS; throw new Error("socket hang up"); } // the deadline passed mid-fetch
+      return fetch(o);
+    };
+    await guardRoute(route);
+    expect(calls.continued).toBe(0);
+    expect(calls.aborted).toEqual(["timedout"]);
+  });
+
+  it("Playwright's own TimeoutError aborts the navigation, never falls back", async () => {
+    const { route, calls } = makeRoute({ url: A, server: {} });
+    (route as unknown as { fetch: (o: FetchCall) => Promise<unknown> }).fetch = async () => {
+      const e = new Error("apiRequestContext.fetch: Timeout 30000ms exceeded."); e.name = "TimeoutError"; throw e;
+    };
+    await guardRoute(route);
+    expect(calls.continued).toBe(0);
+    expect(calls.aborted).toEqual(["timedout"]);
+  });
+
+  it("never falls back once a foreign Location was seen, even when the abort itself fails", async () => {
+    const { route, calls } = makeRoute({
+      url: A,
+      server: { [A]: { status: 302, headers: { location: EVIL } } },
+    });
+    const abort = (route as unknown as { abort: (c?: string) => Promise<void> }).abort;
+    let first = true;
+    (route as unknown as { abort: (c?: string) => Promise<void> }).abort = async (code?: string) => {
+      await abort(code);
+      if (first) { first = false; throw new Error("Target page, context or browser has been closed"); }
+    };
+    await guardRoute(route);
+    expect(calls.fetched.map(f => f.url)).toEqual([A]);
+    expect(calls.continued).toBe(0);
+    expect(calls.aborted).toEqual(["blockedbyclient", "failed"]);
+  });
+
+  it("a fulfill that fails (the page closed) aborts, never falls back", async () => {
+    const { route, calls } = makeRoute({ url: A, server: { [A]: { status: 200 } } });
+    (route as unknown as { fulfill: () => Promise<void> }).fulfill = async () => { throw new Error("Target closed"); };
+    await guardRoute(route);
+    expect(calls.continued).toBe(0);
+    expect(calls.aborted).toEqual(["failed"]);
+  });
+});
+
+// Node hands header values over as latin1; a Location's bytes are UTF-8 (12c MIN-8).
+describe("guardRoute: a Location header is decoded as UTF-8", () => {
+  const asLatin1 = (utf8: string) => Buffer.from(utf8, "utf8").toString("latin1");
+
+  it("a raw UTF-8 path resolves to the right page, not mojibake", async () => {
+    const target = "https://www.dndbeyond.com/sources/caf\u00e9-r\u00e8gles";
+    const { route, calls } = makeRoute({
+      url: A,
+      server: {
+        [A]: { status: 302, headers: { location: asLatin1("/sources/caf\u00e9-r\u00e8gles") } },
+        [new URL(target).href]: { status: 200 },
+      },
+    });
+    await guardRoute(route);
+    expect(calls.fetched.map(f => f.url)).toEqual([A, "https://www.dndbeyond.com/sources/caf%C3%A9-r%C3%A8gles"]);
+    expect(calls.fulfilled).toEqual([{ status: 302, headers: { location: "https://www.dndbeyond.com/sources/caf%C3%A9-r%C3%A8gles" } }]);
+  });
+
+  it("an ASCII Location is unchanged", async () => {
+    const { route, calls } = makeRoute({
+      url: A,
+      server: { [A]: { status: 301, headers: { location: "/b" } }, [B]: { status: 200 } },
+    });
+    await guardRoute(route);
+    expect(calls.fetched.map(f => f.url)).toEqual([A, B]);
+  });
+
+  it("a UTF-8 foreign host is still refused, never requested", async () => {
+    const { route, calls } = makeRoute({
+      url: A,
+      server: { [A]: { status: 302, headers: { location: asLatin1("https://d\u00f1dbeyond.com/x") } } },
+    });
+    await guardRoute(route);
+    expect(calls.fetched.map(f => f.url)).toEqual([A]);
+    expect(calls.aborted).toEqual(["blockedbyclient"]);
+    expect(calls.continued).toBe(0);
   });
 });
 

@@ -94,6 +94,11 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
  * with target=_top, say) must keep Chrome's own request: every non-GET, and
  * every GET carrying a foreign `Origin` header, is continued natively, as
  * before Task 12c (fix round 1, adversarial IMP-1).
+ *
+ * A hop whose route.fetch fails for a reason other than the deadline (Node's
+ * network stack, not Chrome's) falls back to Chrome's own request,
+ * `route.continue()`; never after a foreign `Location`, which aborts first
+ * (12c MIN-7). The deadline aborts with `timedout`.
  */
 export async function guardRoute(route: Route): Promise<void> {
   const req = route.request();
@@ -113,8 +118,9 @@ export async function guardRoute(route: Route): Promise<void> {
   try {
     await followAllowedRedirects(route);
   } catch {
-    // A hop that fails (network error, the deadline, a page closed
-    // mid-chain) fails the navigation; the request is never left pending.
+    // Anything else that fails (a page closed mid-chain, a fulfill or abort
+    // that throws) fails the navigation; the request is never left pending
+    // and never falls back to Chrome's own request.
     await route.abort("failed").catch(() => {});
   }
 }
@@ -130,9 +136,24 @@ async function followAllowedRedirects(route: Route): Promise<void> {
   for (let redirects = 0; ; redirects++) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) return route.abort("timedout");
-    const response = await route.fetch({ url, method: "GET", headers, maxRedirects: 0, timeout: remaining });
+    let response: Awaited<ReturnType<Route["fetch"]>>;
+    try {
+      response = await route.fetch({ url, method: "GET", headers, maxRedirects: 0, timeout: remaining });
+    } catch (err) {
+      // The deadline fails the navigation, as goto's own timeout would.
+      if (Date.now() >= deadline || (err instanceof Error && err.name === "TimeoutError")) return route.abort("timedout");
+      // Any other failure is Node's network stack, not Chrome's (a bot rule
+      // keyed on its TLS fingerprint, a mandatory proxy, a CA only the OS
+      // store has): Chrome loads the original request itself, as before
+      // Task 12c, and follows its redirects natively (12c MIN-7, carry-over
+      // (bx)(4)). Reached only while every Location so far was allowlisted:
+      // a foreign one returns an abort below and is never fetched, so the
+      // walk never falls back after seeing one. The post-load allowlist
+      // checks still apply.
+      return route.continue();
+    }
     const status = response.status();
-    const location = response.headers()["location"];
+    const location = utf8Header(response.headers()["location"]);
     if (!REDIRECT_STATUSES.has(status) || !location) {
       if (redirects === 0) return route.fulfill({ response });
       await response.dispose();
@@ -153,6 +174,16 @@ async function followAllowedRedirects(route: Route): Promise<void> {
     }
     url = next;
   }
+}
+
+/**
+ * A header value Node handed over as latin1 (one char per byte), read as the
+ * UTF-8 its bytes are, as Chrome and Playwright's own redirect code read a
+ * Location (12c MIN-8). A value with a char above U+00FF was decoded already.
+ */
+function utf8Header(value: string | undefined): string | undefined {
+  if (value === undefined || !/^[\x00-\xff]*$/.test(value)) return value;
+  return Buffer.from(value, "latin1").toString("utf8");
 }
 
 function withoutHeaders(headers: Record<string, string>, names: string[]): Record<string, string> {

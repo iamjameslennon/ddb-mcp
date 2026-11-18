@@ -196,7 +196,10 @@ export async function getContext(browser: Browser): Promise<BrowserContext> {
   }
 
   ensureSessionDir();
-  const created = await browser.newContext(buildContextOptions(snapshot));
+  // Service workers are blocked: Playwright never routes a navigation a
+  // service worker answers, so one would bypass the navigation guard
+  // (navigate.ts; 12c MIN-2). The login context, which has no guard, keeps them.
+  const created = await browser.newContext({ ...buildContextOptions(snapshot), serviceWorkers: "block" });
 
   // Bind the pending creation to its opening generation: if the account changed
   // while newContext() was in flight, abandon this context rather than install

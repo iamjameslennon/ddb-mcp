@@ -432,3 +432,27 @@ describe("fix round 1: the shared context is seeded from a captureSession() snap
     expect(seeded.cookies.map(c => [c.domain, c.value])).toEqual([[".dndbeyond.com", "SAVED_SECRET"]]);
   });
 });
+
+// Playwright never routes a navigation a service worker answers, so a service
+// worker would bypass the shared context's navigation guard (12c MIN-2, final
+// review m9). The login context has no guard and is left as it was.
+describe("service workers: blocked on the shared context only", () => {
+  it("the shared context is created with serviceWorkers: \"block\", logged in or not", async () => {
+    const anon = makeBrowser();
+    await browser.getContext(anon as never);
+    expect(anon.newContext.mock.calls[0][0]).toMatchObject({ serviceWorkers: "block" });
+
+    setSessionFile(sessionJson("SAVED_SECRET"));
+    observeTransition();
+    const authed = makeBrowser();
+    await browser.getContext(authed as never);
+    expect(authed.newContext.mock.calls[0][0]).toMatchObject({ serviceWorkers: "block" });
+  });
+
+  it("the login context's options are unchanged (no serviceWorkers option)", async () => {
+    await browser.beginLoginSession();
+    const loginBrowser = await pw.launch.mock.results[0].value as FakeBrowser;
+    expect(loginBrowser.newContext.mock.calls[0][0]).not.toHaveProperty("serviceWorkers");
+    await browser.endLoginSession();
+  });
+});
