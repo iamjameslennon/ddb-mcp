@@ -13,16 +13,17 @@ interface FakeOpts {
   content?: string;        // what page.evaluate() returns
   urlAfterClick?: string;  // url the page lands on after a click, if any
   urlAfterGoto?: string;   // url the page ends on after goto (a server-side redirect), if any
+  gotoError?: Error;       // goto rejects (timeout/error) after landing on urlAfterGoto
 }
 
 function makeFake(opts: FakeOpts = {}) {
   let currentUrl = opts.url ?? "about:blank";
-  const calls = { goto: [] as string[], routes: 0, clicked: 0, filled: [] as string[] };
+  const calls = { goto: [] as string[], routes: 0, clicked: 0, filled: [] as string[], evaluated: 0, waited: 0 };
 
   const locator = {
     filter: () => locator,
     first: () => locator,
-    waitFor: async () => {},
+    waitFor: async () => { calls.waited++; },
     click: async () => {
       calls.clicked++;
       if (opts.urlAfterClick !== undefined) currentUrl = opts.urlAfterClick;
@@ -32,9 +33,14 @@ function makeFake(opts: FakeOpts = {}) {
 
   const page = {
     url: () => currentUrl,
-    goto: async (u: string) => { calls.goto.push(u); currentUrl = opts.urlAfterGoto ?? u; },
+    goto: async (u: string) => {
+      calls.goto.push(u);
+      if (u === "about:blank") { currentUrl = u; return; }
+      currentUrl = opts.urlAfterGoto ?? u;
+      if (opts.gotoError) throw opts.gotoError;
+    },
     waitForLoadState: async () => {},
-    evaluate: async () => opts.content ?? "",
+    evaluate: async () => { calls.evaluated++; return opts.content ?? ""; },
     waitForTimeout: async () => {},
     locator: () => locator,
   };
@@ -45,7 +51,7 @@ function makeFake(opts: FakeOpts = {}) {
     route: async () => { calls.routes++; },
   };
 
-  return { context: context as unknown as Ctx, calls };
+  return { context: context as unknown as Ctx, calls, page };
 }
 
 describe("navigate() host allowlist", () => {
@@ -91,6 +97,35 @@ describe("navigate() final-URL re-check", () => {
     expect((err as Error).message).not.toContain("EVIL PAGE TEXT");
   });
 
+  it("leaves the foreign page for about:blank before refusing, without reading it", async () => {
+    const { context, calls, page } = makeFake({ content: "EVIL PAGE TEXT", urlAfterGoto: "https://evil.example/" });
+    const err = await navigate(context, "https://www.dndbeyond.com/redirect?to=evil").catch(e => e as Error);
+    expect((err as Error).message).toContain("Navigation ended on https://evil.example/");
+    expect(calls.goto).toEqual(["https://www.dndbeyond.com/redirect?to=evil", "about:blank"]);
+    expect(page.url()).toBe("about:blank");
+    expect(calls.evaluated).toBe(0);
+  });
+
+  it("leaves the foreign page for about:blank when goto times out after a foreign redirect", async () => {
+    const { context, calls, page } = makeFake({
+      urlAfterGoto: "https://evil.example/slow",
+      gotoError: new Error("page.goto: Timeout 30000ms exceeded."),
+    });
+    await expect(navigate(context, "https://www.dndbeyond.com/redirect?to=evil")).rejects.toThrow(/Timeout 30000ms exceeded/);
+    expect(calls.goto.at(-1)).toBe("about:blank");
+    expect(page.url()).toBe("about:blank");
+    expect(calls.evaluated).toBe(0);
+  });
+
+  it("does not leave an allowlisted page when goto times out on it", async () => {
+    const { context, calls } = makeFake({
+      urlAfterGoto: "https://www.dndbeyond.com/slow",
+      gotoError: new Error("page.goto: Timeout 30000ms exceeded."),
+    });
+    await expect(navigate(context, "https://www.dndbeyond.com/slow")).rejects.toThrow(/Timeout 30000ms exceeded/);
+    expect(calls.goto).toEqual(["https://www.dndbeyond.com/slow"]);
+  });
+
   it("still returns content when the final URL is allowlisted", async () => {
     const { context } = makeFake({ content: "Sheet", urlAfterGoto: "https://www.dndbeyond.com/characters/1" });
     const out = await navigate(context, "https://www.dndbeyond.com/old");
@@ -130,6 +165,30 @@ describe("interact() guards", () => {
     expect(calls.clicked).toBe(0);
   });
 
+  it("refuses fill on a foreign page without filling", async () => {
+    const { context, calls } = makeFake({ url: "https://evil.example/form" });
+    await expect(interact(context, "fill", "input[name=q]", "secret")).rejects.toThrow(
+      /Current page \(https:\/\/evil\.example\/form\) is outside the dndbeyond\.com allowlist/
+    );
+    expect(calls.filled).toEqual([]);
+  });
+
+  it("refuses click on a foreign page without waiting or clicking", async () => {
+    const { context, calls } = makeFake({ url: "https://evil.example/" });
+    await expect(interact(context, "click", "button")).rejects.toThrow(/outside the dndbeyond\.com allowlist/);
+    expect(calls.clicked).toBe(0);
+    expect(calls.waited).toBe(0);
+  });
+
+  it("refuses every action on about:blank (no page loaded)", async () => {
+    const { context, calls } = makeFake({ url: "about:blank" });
+    await expect(interact(context, "fill", "input", "x")).rejects.toThrow(/No page is loaded yet/);
+    await expect(interact(context, "click", "button")).rejects.toThrow(/No page is loaded yet/);
+    await expect(interact(context, "screenshot", "body")).rejects.toThrow(/No page is loaded yet/);
+    expect(calls.filled).toEqual([]);
+    expect(calls.clicked).toBe(0);
+  });
+
   it("throws if a click navigates the page off the allowlist", async () => {
     const { context, calls } = makeFake({
       url: "https://www.dndbeyond.com/x",
@@ -137,6 +196,7 @@ describe("interact() guards", () => {
     });
     await expect(interact(context, "click", "button")).rejects.toThrow(/navigation away from dndbeyond\.com/);
     expect(calls.clicked).toBe(1); // the click happened; re-validation caught the result
+    expect(calls.goto).toEqual(["about:blank"]); // and the foreign page was left
   });
 
   it("succeeds on a click that stays on the allowlist", async () => {

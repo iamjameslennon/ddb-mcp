@@ -1,4 +1,4 @@
-import { BrowserContext } from "playwright";
+import { BrowserContext, Page } from "playwright";
 import { mkdirSync } from "fs";
 import { homedir } from "os";
 import { dirname, join } from "path";
@@ -56,6 +56,31 @@ async function ensureNavigationGuard(context: BrowserContext): Promise<void> {
   });
 }
 
+// Leave a page that is off the allowlist, so the shared authenticated page
+// never stays on (and keeps running the JS of) a foreign site after a refusal.
+// Best effort: its own failure is swallowed, never printed, and the caller's
+// refusal or original error is what the client sees.
+async function leaveForeignPage(page: Page): Promise<void> {
+  const url = page.url();
+  if (url === "about:blank" || isAllowedPageUrl(url)) return;
+  await page.goto("about:blank").catch(() => {});
+}
+
+// Refuse to act on the current page unless it is an allowlisted DDB page.
+// about:blank (nothing loaded yet, or a page left after a refusal) is not one.
+function assertActionablePage(page: Page): void {
+  const url = page.url();
+  if (url === "about:blank") {
+    throw new Error("No page is loaded yet — call ddb_navigate first.");
+  }
+  if (!isAllowedPageUrl(url)) {
+    throw new Error(
+      `Current page (${url}) is outside the dndbeyond.com allowlist — refusing to act on it. ` +
+      `Use ddb_navigate to load a D&D Beyond page.`
+    );
+  }
+}
+
 // Reject Playwright selector forms that go beyond CSS / text-locator matching.
 // A prompt-injected DDB page could otherwise craft a selector that runs
 // XPath, calls Playwright internals, pierces frames, or invokes an engine we
@@ -102,15 +127,25 @@ export async function navigate(context: BrowserContext, url: string): Promise<st
   // "load" is the success signal: a page that has loaded is a success even if
   // D&D Beyond keeps a connection open (analytics, polling) and networkidle
   // never comes. The networkidle wait below is best-effort only.
-  await page.goto(url, { waitUntil: "load", timeout: 30000 });
+  try {
+    await page.goto(url, { waitUntil: "load", timeout: 30000 });
+  } catch (err) {
+    // A load that fails or times out after a redirect off-site must not leave
+    // the shared page on the foreign site.
+    await leaveForeignPage(page);
+    throw err;
+  }
   await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
 
   // The route guard never sees the target of a server-side 3xx redirect, so an
   // open redirect on an allowlisted host can land the page elsewhere. Re-check
-  // where the page actually ended up, as getCurrentPageContent does.
-  if (!isAllowedPageUrl(page.url())) {
+  // where the page actually ended up, as getCurrentPageContent does, and leave
+  // the foreign page before refusing.
+  const finalUrl = page.url();
+  if (!isAllowedPageUrl(finalUrl)) {
+    await leaveForeignPage(page);
     throw new Error(
-      `Navigation ended on ${page.url()}, outside the dndbeyond.com allowlist — refusing to return its content. ` +
+      `Navigation ended on ${finalUrl}, outside the dndbeyond.com allowlist — refusing to return its content. ` +
       `Use ddb_navigate with a D&D Beyond page URL.`
     );
   }
@@ -151,6 +186,9 @@ export async function interact(
   const snapshot = captureSession();
   const page = await getPage(context);
   await ensureNavigationGuard(context);
+  // Never fill, click, wait on or capture a page that isn't an allowlisted
+  // DDB page (a foreign page could take a typed value anywhere).
+  assertActionablePage(page);
 
   switch (action) {
     case "click": {
@@ -164,9 +202,11 @@ export async function interact(
       // landed the page off-allowlist (e.g. the blocked navigation committed
       // an error page carrying the target URL), say so instead of letting a
       // follow-up ddb_get_page scrape a cross-origin page.
-      if (!isAllowedPageUrl(page.url())) {
+      const afterClickUrl = page.url();
+      if (!isAllowedPageUrl(afterClickUrl)) {
+        await leaveForeignPage(page);
         throw new Error(
-          `Click triggered a navigation away from dndbeyond.com (to ${page.url()}) — ` +
+          `Click triggered a navigation away from dndbeyond.com (to ${afterClickUrl}) — ` +
           `it was blocked and no cross-origin content will be returned. ` +
           `Use ddb_navigate to load a D&D Beyond page.`
         );
