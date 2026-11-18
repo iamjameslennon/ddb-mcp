@@ -137,9 +137,9 @@ Test-only corrections applied by the controller (the owner's standing rule to ap
 
 - **(bw)** the Open5e stat-block path prints 2014 defense labels for SRD 5.2 creatures (owner ruling A12, 2026-11-17: recorded, not fixed).
 
-**Carry-over opened by Task 12c** (redirect hardening; owner decision 2026-11-18, option B: the route guard walks a top-level navigation's redirect chain itself, because Playwright 1.64.1 never routes a redirect hop, not even one from a fulfilled 3xx):
+**Carry-over opened by Task 12c** (redirect hardening; owner decision 2026-11-18, option B: the route guard walks the redirect chain of a top-level GET itself, because Playwright 1.64.1 never routes a redirect hop, not even one from a fulfilled 3xx; fix round 1 limited the walk to GETs with no `Origin` or an allowlisted one, because `route.fetch` enforces no SameSite and sends no Sec-Fetch-*, so a foreign frame's `target=_top` POST got the Lax session cookie):
 
-- **(bx)** after a checked redirect chain the guard answers the browser with a 302 to the final URL, so that page is fetched twice (once by the guard, once natively). The browser's own request is a redirect hop the guard can't see: a server that answers the repeat request with a different 3xx is followed natively, but only from an allowlisted URL, and the post-load `isAllowedPageUrl` check still refuses foreign content. A chain whose last hop was a 307/308 POST is re-requested as a GET.
+- **(bx)** the redirect guard's residual risks: (1) the final page of a walked chain is fetched twice, and a server answering the repeat request with a different 3xx is followed natively, only from an allowlisted URL; (2) a non-GET or cross-origin-initiated navigation (a foreign `Origin`) keeps Chrome's native redirect following, because `route.fetch` enforces no SameSite and sends no Sec-Fetch-*; (3) a popup's first navigation is never routed, so it can reach any host (pre-existing); (4) a walked top-level GET goes through Playwright's Node HTTP client, whose TLS fingerprint (and HTTP version, proxy and CA store) differs from Chrome's. The post-load `isAllowedPageUrl` check still refuses foreign content in `ddb_navigate`, and `ddb_interact` / `ddb_get_page` refuse a page off the allowlist.
 
 ### Regression remediation 2026-11-11
 
