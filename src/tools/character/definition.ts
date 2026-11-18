@@ -35,13 +35,21 @@ const matchesDefinitionQuery = matchesLooseName;
  */
 const matchesActionQuery = (action: string, query: string): boolean => matchesAtWordStart(action, query);
 
-/** The lookup hit types an entity kind gives (actionParents' `kind`). */
+/**
+ * The lookup hit types an entity kind gives (actionParents' `kind`). A
+ * background gives none: actionParents names the background itself (its
+ * definition is the entity walkBaseEntities records), while the lookup's only
+ * background entry is named after the background's feature, so the two names
+ * never meet and a background-granted action finds nothing through it (final
+ * review m4; no test character has such an action, carry-over (ay)). An item
+ * is found only while equipped, as the lookup lists only equipped items.
+ */
 const HIT_TYPES: Record<EntityKind, readonly string[]> = {
   "class-feature": ["Class Feature", "Subclass Feature"],
   "racial-trait": ["Racial Trait"],
   feat: ["Feat"],
   item: ["Item"],
-  background: ["Background Feature"],
+  background: [],
 };
 
 function formatSpellResult(spell: Record<string, unknown>): string {
@@ -377,7 +385,7 @@ function searchDefinitions(
   // feature, through any chain of options. An entry already listed is not repeated.
   if (viaActions) {
     for (const { action, parent, kind, homebrew } of actionParents(char as CharData, classEntries as unknown as ClassEntry[])) {
-      if (!matchesActionQuery(action, query)) continue;
+      if (HIT_TYPES[kind].length === 0 || !matchesActionQuery(action, query)) continue;
       for (const hit of searchDefinitions(char, parent, editions, index, { viaActions: false })) {
         // Only the granting entry's own kind: an item named like a racial trait grants nothing.
         if (!HIT_TYPES[kind].includes(hit.type) || nameFold(hit.name) !== nameFold(parent)) continue;

@@ -455,3 +455,32 @@ describe("revokeSession", () => {
     expect(state.captureSession().state.kind).toBe("authenticated");
   });
 });
+
+describe("rethrowSessionChange", () => {
+  it("rethrows a SessionChangedError itself or anywhere in the cause chain, and nothing else", async () => {
+    const { rethrowSessionChange, SessionChangedError } = await loadState();
+    const changed = new SessionChangedError();
+    expect(() => rethrowSessionChange(changed)).toThrow(changed);
+    const wrapped = new Error("outer", { cause: new TypeError("fetch failed", { cause: changed }) });
+    expect(() => rethrowSessionChange(wrapped)).toThrow(changed);
+    expect(() => rethrowSessionChange(new Error("down", { cause: new Error("ECONNRESET") }))).not.toThrow();
+    expect(() => rethrowSessionChange("not an error")).not.toThrow();
+    expect(() => rethrowSessionChange(undefined)).not.toThrow();
+  });
+
+  it("stops after 8 links, so a cause cycle ends", async () => {
+    const { rethrowSessionChange, SessionChangedError } = await loadState();
+    const a = new Error("a");
+    const b = new Error("b", { cause: a });
+    (a as { cause?: unknown }).cause = b; // a ⇄ b
+    expect(() => rethrowSessionChange(a)).not.toThrow();
+    // Depth 8 is the last link read: the 8th is found, the 9th is not.
+    const chain = (depth: number) => {
+      let e: Error = new SessionChangedError();
+      for (let i = 1; i < depth; i++) e = new Error(`link ${i}`, { cause: e });
+      return e;
+    };
+    expect(() => rethrowSessionChange(chain(8))).toThrow(SessionChangedError);
+    expect(() => rethrowSessionChange(chain(9))).not.toThrow();
+  });
+});

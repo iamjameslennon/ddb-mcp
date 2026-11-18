@@ -266,6 +266,19 @@ export class SessionChangedError extends Error {
   }
 }
 
+/**
+ * Rethrows the SessionChangedError in `err` or anywhere in its `cause` chain
+ * (at most 8 deep, so a cycle ends). A load that failed because the account
+ * changed must surface, never fall back to Open5e or another answer: the same
+ * rule as fetchCharacter's "an account change must surface, never be papered
+ * over". Returns normally for any other error.
+ */
+export function rethrowSessionChange(err: unknown): void {
+  for (let e: unknown = err, i = 0; e instanceof Error && i < 8; e = e.cause, i++) {
+    if (e instanceof SessionChangedError) throw e;
+  }
+}
+
 // ── Snapshot shape ──────────────────────────────────────────────────────────
 
 interface AuthenticatedState {

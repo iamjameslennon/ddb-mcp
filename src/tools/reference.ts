@@ -15,6 +15,7 @@
 import {
   beginAuthenticatedSession, hasValidSession,
   captureSession, assertSessionCurrent, onSessionInvalidated, SessionChangedError, NoSessionError, SessionNotSignedInError,
+  rethrowSessionChange,
 } from "../session-fetch.js";
 import { TtlCache } from "../cache.js";
 import { describeTemplates } from "./character/templates.js";
@@ -73,17 +74,6 @@ function fallbackOrigin(err: unknown): "unavailable" | "logged-out" {
     if (e instanceof NoSessionError || e instanceof SessionNotSignedInError) return "logged-out";
   }
   return "unavailable";
-}
-
-/**
- * A catalog load that failed because the account changed (here or anywhere in
- * the `cause` chain) must surface, never fall back to Open5e: the same rule as
- * fetchCharacter's "an account change must surface, never be papered over".
- */
-function rethrowSessionChange(err: unknown): void {
-  for (let e: unknown = err, i = 0; e instanceof Error && i < 8; e = e.cause, i++) {
-    if (e instanceof SessionChangedError) throw e;
-  }
 }
 
 // ── Shared game-data list loader ──────────────────────────────────────────────

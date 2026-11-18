@@ -47,6 +47,7 @@ export {
   SESSION_PATH,
   tightenSessionPermissions,
   SessionChangedError,
+  rethrowSessionChange,
   SessionLayerError,
   NoSessionError,
   onSessionInvalidated,

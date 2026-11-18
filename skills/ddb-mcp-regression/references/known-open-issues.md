@@ -84,7 +84,7 @@ Shows up as: a paid book whose slug doesn't resolve, so `ddb_read_book` or `ddb_
 Shows up as: a homebrew optional class feature or racial trait on an official class or race not wrapped as untrusted.
 
 ### (ay) Item- and background-granted actions are unverified
-Shows up as: an action granted by an item or background printed plain when its source is homebrew.
+Shows up as: an action granted by an item or background printed plain when its source is homebrew; `ddb_character_lookup` on a background-granted action's name finding nothing (the background feature is found by its own name), or on an unequipped item's action finding nothing.
 
 ## Small leftovers
 

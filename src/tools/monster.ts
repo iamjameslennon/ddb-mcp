@@ -12,7 +12,7 @@
  */
 
 import {
-  captureSession, SessionChangedError, type SessionSnapshot,
+  captureSession, SessionChangedError, rethrowSessionChange, type SessionSnapshot,
 } from "../session-fetch.js";
 import { getSourceIndex, type GameConfig } from "../game-config.js";
 import {
@@ -557,7 +557,11 @@ export async function getMonster(
     // descriptions) — delimit as untrusted. Official WotC content is not.
     // Fail closed: only an explicitly official entry is left plain.
     return detail.data.isHomebrew === false ? statBlock : wrapUntrusted(statBlock);
-  } catch {
+  } catch (err) {
+    // An account change must surface, never be answered from Open5e labelled
+    // as an outage (or as homebrew being unreachable): final review m3, the
+    // catalog tools' rule.
+    rethrowSessionChange(err);
     if (homebrew) return HOMEBREW_UNREACHABLE;
     const o5Result = await o5GetMonster(monsterName, requested, "unavailable").catch(() => null);
     if (o5Result) return withSourceCaveat(o5Result, source);

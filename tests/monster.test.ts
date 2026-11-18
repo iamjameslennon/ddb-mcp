@@ -14,6 +14,7 @@ vi.mock("../src/session-fetch.js", async (orig) => {
     assertSessionCurrent: vi.fn(),
     onSessionInvalidated: vi.fn(),
     SessionChangedError: real.SessionChangedError,
+    rethrowSessionChange: real.rethrowSessionChange,
     AnonymousFetchTimeoutError: real.AnonymousFetchTimeoutError,
     NoSessionError: real.NoSessionError,
     SessionLayerError: real.SessionLayerError,
@@ -2497,6 +2498,47 @@ describe("unavailable names in encounter and treasure output (review pins)", () 
     expect(out.split("\n")).toContain('  ✗ "Goblin" — couldn\'t look up: D&D Beyond unreachable (supply cr manually)');
     expect(out).toContain("No treasure rolled");
     expect(out).not.toContain("not found in DDB or Open5e");
+  });
+});
+
+describe("getMonster: a session change surfaces, an outage still falls back (final review m3)", () => {
+  /** Every request to the monster detail endpoint throws `error`; the rest keep their route. */
+  function throwOnDetail(error: unknown): void {
+    const route = vi.mocked(sessionFetch).getMockImplementation()!;
+    vi.mocked(sessionFetch).mockImplementation(async (input: string | URL | Request, ...rest: unknown[]) => {
+      if (/\/v1\/Monster\/\d+/.test(String(input))) throw error;
+      return (route as (...a: unknown[]) => Promise<Response>)(input, ...rest);
+    });
+  }
+
+  it("a SessionChangedError is rethrown: no Open5e answer labelled as an outage", async () => {
+    const changed = new SessionChangedError();
+    throwOnDetail(changed);
+    await expect(getMonster("Zombie")).rejects.toBe(changed);
+    expect(o5GetMonster).not.toHaveBeenCalled();
+  });
+
+  it("a SessionChangedError anywhere in the cause chain is rethrown", async () => {
+    const changed = new SessionChangedError();
+    throwOnDetail(new Error("fetch failed", { cause: new Error("aborted", { cause: changed }) }));
+    await expect(getMonster("Zombie")).rejects.toBe(changed);
+    expect(o5GetMonster).not.toHaveBeenCalled();
+  });
+
+  it("with source: homebrew, a session change is rethrown rather than read as unreachable", async () => {
+    const changed = new SessionChangedError();
+    const route = vi.mocked(sessionFetch).getMockImplementation()!;
+    vi.mocked(sessionFetch).mockImplementation(async (input: string | URL | Request, ...rest: unknown[]) => {
+      if (String(input).includes("/v1/Monster?")) throw changed;
+      return (route as (...a: unknown[]) => Promise<Response>)(input, ...rest);
+    });
+    await expect(getMonster("Zombie", { source: "homebrew" })).rejects.toBe(changed);
+  });
+
+  it("a plain outage still falls back to Open5e as unavailable", async () => {
+    throwOnDetail(new Error("socket hang up", { cause: new Error("ECONNRESET") }));
+    expect(await getMonster("Zombie")).toBe("O5 MONSTER RESULT");
+    expect(o5GetMonster).toHaveBeenCalledWith("Zombie", "2024", "unavailable");
   });
 });
 

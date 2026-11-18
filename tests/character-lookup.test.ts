@@ -378,6 +378,23 @@ describe("formatCharacterLookup", () => {
     expect(out.match(/which this entry grants/g)).toHaveLength(1);
   });
 
+  it("a background-granted action finds nothing through the background (final review m4, carry-over (ay))", () => {
+    // The parent is the background (Soldier), but its only lookup entry is its feature (Military Rank).
+    const char = variant(FIGHTER_5, d => {
+      d.background.definition.id = 3001;
+      d.background.definition.entityTypeId = 1669830167;
+      d.background.definition.featureName = "Military Rank";
+      d.background.definition.featureDescription = "Soldiers defer.";
+      d.actions = { background: [act("Rally the Ranks", 3001, 1669830167, 1, { limitedUse: { maxUses: 1 } })] };
+    }).data as Record<string, unknown>;
+    expect(parents(char)).toEqual([{ action: "Rally the Ranks", parent: "Soldier", kind: "background", homebrew: false }]);
+    expect(formatCharacterLookup(char, "rally the ranks", INDEX)).toMatch(/^No definition found matching "rally the ranks"/);
+    // The feature itself is still found by its own name, with no via line.
+    const own = formatCharacterLookup(char, "military rank", INDEX);
+    expect(own.startsWith("[Background Feature]\nMilitary Rank (Soldier)\n")).toBe(true);
+    expect(own).not.toContain("Found through");
+  });
+
   it("an option cycle ends without a hit and without hanging", () => {
     const char = variant(FIGHTER_5, d => {
       d.feats = [healer];
