@@ -61,7 +61,7 @@ This is an [MCP](https://modelcontextprotocol.io) server exposing D&D Beyond (DD
   - Signed in is decided by D&D Beyond: `ddb_login` polls the cobalt-token exchange through the login context's own request API (`verifyLoginContext()`, the same `decodeCobaltToken()` as `mintCobaltToken`) for up to 180 s (`LOGIN_TIMEOUT_MS`). No DOM or URL heuristic.
   - `saveVerifiedSession()` writes only with that proof and only inside the active login (fail closed), keeps only `dndbeyond.com` cookies and origins, and re-checks the generation it began under.
   - Login errors reach stderr and the client only through `safeErrorLine()` (`src/utils.ts`): Playwright's `Call log:` on request errors lists the cookie header.
-  - navigate/interact/get_page carry a navigation allowlist guard (`ensureNavigationGuard` in `navigate.ts`). The login context deliberately bypasses it. A refused page goes to `about:blank`, and `interact` checks the current URL before acting.
+  - navigate/interact/get_page carry a navigation allowlist guard (`ensureNavigationGuard` in `navigate.ts`). The login context deliberately bypasses it. Every redirect hop is checked before it is requested (`guardRoute`). A refused page goes to `about:blank`, and `interact` checks the current URL before acting.
   - The sandbox is on by default. `DDB_NO_SANDBOX=1` turns it off for containers.
 
 ### Session lifecycle — `src/session-state.ts` (load-bearing)

@@ -137,6 +137,10 @@ Test-only corrections applied by the controller (the owner's standing rule to ap
 
 - **(bw)** the Open5e stat-block path prints 2014 defense labels for SRD 5.2 creatures (owner ruling A12, 2026-11-17: recorded, not fixed).
 
+**Carry-over opened by Task 12c** (redirect hardening; owner decision 2026-11-18, option B: the route guard walks a top-level navigation's redirect chain itself, because Playwright 1.64.1 never routes a redirect hop, not even one from a fulfilled 3xx):
+
+- **(bx)** after a checked redirect chain the guard answers the browser with a 302 to the final URL, so that page is fetched twice (once by the guard, once natively). The browser's own request is a redirect hop the guard can't see: a server that answers the repeat request with a different 3xx is followed natively, but only from an allowlisted URL, and the post-load `isAllowedPageUrl` check still refuses foreign content. A chain whose last hop was a 307/308 POST is re-requested as a GET.
+
 ### Regression remediation 2026-11-11
 
 The 2026-11-11 regression report is `docs/superpowers/specs/2026-11-11-regression-report.md`; the remediation plan is `docs/superpowers/plans/2026-11-11-regression-remediation.md`. Findings F29/F30 (`ddb_login` after `ddb_logout`) are not in the plan's original scope; the owner added them as an extra task (design to be chosen with the owner). The plan is done (Tasks 1–17); the findings, commits, corrections and rulings follow. Task 17 ran the live snapshot, the whole-corpus regression and live MCP samples before this docs commit.

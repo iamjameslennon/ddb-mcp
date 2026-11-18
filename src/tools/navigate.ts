@@ -1,4 +1,4 @@
-import { BrowserContext, Page } from "playwright";
+import { BrowserContext, Page, Route } from "playwright";
 import { mkdirSync } from "fs";
 import { homedir } from "os";
 import { dirname, join } from "path";
@@ -40,20 +40,93 @@ const guardedContexts = new WeakSet<BrowserContext>();
 async function ensureNavigationGuard(context: BrowserContext): Promise<void> {
   if (guardedContexts.has(context)) return;
   guardedContexts.add(context);
-  await context.route("**/*", (route) => {
-    const req = route.request();
-    let isTopLevelNav = false;
-    try {
-      isTopLevelNav = req.isNavigationRequest() && req.frame().parentFrame() === null;
-    } catch {
-      // frame() throws for service-worker requests and detached frames —
-      // neither can change the page the tools scrape, so let them through.
+  await context.route("**/*", (route) => guardRoute(route));
+}
+
+/** Most redirects one navigation may follow (Playwright's own default). */
+export const MAX_REDIRECT_HOPS = 20;
+// Statuses a browser follows through `Location`.
+const REDIRECT_STATUSES = new Set([300, 301, 302, 303, 307, 308]);
+// Redirects that turn the next hop into a GET with no body (owner decision
+// 2026-11-18); 300, 307 and 308 keep the method and the body.
+const TO_GET_STATUSES = new Set([301, 302, 303]);
+const BODY_HEADERS = ["content-type", "content-length", "content-encoding", "content-language", "content-location"];
+
+/**
+ * The shared context's route handler. Exported for unit testing.
+ *
+ * Playwright routes only the first request of a redirect chain: every later
+ * hop, including one from a fulfilled 3xx, is continued natively without a
+ * handler (checked against Playwright 1.64.1, Task 12c). So for a top-level
+ * navigation to an allowlisted URL the handler walks the chain itself, one
+ * `route.fetch({ maxRedirects: 0 })` per hop, and checks each `Location`
+ * before requesting it: a foreign hop is aborted and its host never contacted.
+ * route.fetch uses the context's cookie jar both ways (sends the matching
+ * cookies, stores Set-Cookie), as the browser would.
+ */
+export async function guardRoute(route: Route): Promise<void> {
+  const req = route.request();
+  let isTopLevelNav = false;
+  try {
+    isTopLevelNav = req.isNavigationRequest() && req.frame().parentFrame() === null;
+  } catch {
+    // frame() throws for service-worker requests and detached frames —
+    // neither can change the page the tools scrape, so let them through.
+  }
+  if (!isTopLevelNav) return route.continue();
+  if (!isAllowedPageUrl(req.url())) return route.abort("blockedbyclient");
+  try {
+    await followAllowedRedirects(route);
+  } catch {
+    // A hop that fails (network error, timeout, a page closed mid-chain)
+    // fails the navigation; the request is never left pending.
+    await route.abort("failed").catch(() => {});
+  }
+}
+
+async function followAllowedRedirects(route: Route): Promise<void> {
+  const req = route.request();
+  let url = req.url();
+  let method = req.method();
+  // undefined: route.fetch sends the original request's body.
+  let postData: Buffer | undefined;
+  // Each hop takes its cookies from the context's jar, never a header carried
+  // over from another hop or host.
+  let headers = withoutHeaders(req.headers(), ["cookie", "host"]);
+
+  for (let redirects = 0; ; redirects++) {
+    const response = await route.fetch({ url, method, headers, postData, maxRedirects: 0 });
+    const status = response.status();
+    const location = response.headers()["location"];
+    if (!REDIRECT_STATUSES.has(status) || !location) {
+      if (redirects === 0) return route.fulfill({ response });
+      // Answer with a redirect to the checked final URL so the page's URL is
+      // right. The browser fetches that URL again natively (carry-over (bx)).
+      return route.fulfill({ status: 302, headers: { location: url } });
     }
-    if (isTopLevelNav && !isAllowedPageUrl(req.url())) {
+
+    let next: string;
+    try {
+      next = new URL(location, url).href;
+    } catch {
       return route.abort("blockedbyclient");
     }
-    return route.continue();
-  });
+    if (!isAllowedPageUrl(next) || redirects + 1 > MAX_REDIRECT_HOPS) {
+      return route.abort("blockedbyclient");
+    }
+    if (TO_GET_STATUSES.has(status) && method !== "GET") {
+      method = "GET";
+      // An empty body stops route.fetch falling back to the original one.
+      postData = Buffer.alloc(0);
+      headers = withoutHeaders(headers, BODY_HEADERS);
+    }
+    url = next;
+  }
+}
+
+function withoutHeaders(headers: Record<string, string>, names: string[]): Record<string, string> {
+  const drop = new Set(names);
+  return Object.fromEntries(Object.entries(headers).filter(([name]) => !drop.has(name.toLowerCase())));
 }
 
 // Leave a page that is off the allowlist, so the shared authenticated page
@@ -137,10 +210,10 @@ export async function navigate(context: BrowserContext, url: string): Promise<st
   }
   await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
 
-  // The route guard never sees the target of a server-side 3xx redirect, so an
-  // open redirect on an allowlisted host can land the page elsewhere. Re-check
-  // where the page actually ended up, as getCurrentPageContent does, and leave
-  // the foreign page before refusing.
+  // The route guard checks every redirect hop it fetches, but the browser's
+  // repeat request for a chain's final URL is a hop no handler sees (carry-over
+  // (bx)). Re-check where the page actually ended up, as getCurrentPageContent
+  // does, and leave the foreign page before refusing.
   const finalUrl = page.url();
   if (!isAllowedPageUrl(finalUrl)) {
     await leaveForeignPage(page);

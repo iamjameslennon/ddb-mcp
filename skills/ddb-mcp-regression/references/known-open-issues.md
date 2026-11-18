@@ -69,6 +69,9 @@ Shows up as: a `ddb_get_monster` stat block from the Open5e SRD fallback, for a 
 ### (bs) Browser tools refuse after `ddb_logout` until the next login
 Shows up as: `ddb_navigate`, `ddb_interact` or `ddb_get_page` answering "Session changed" after a `ddb_logout`, until `ddb_login` runs again.
 
+### (bx) A redirected page is fetched twice
+Shows up as: a `ddb_navigate` to a URL that D&D Beyond redirects loading the final page twice (visible only in network logs), or, after a POST that a 307/308 redirected, the final page shown as its GET version. A navigation that ends on, or reaches, a non-D&D Beyond host is a new finding: redirect hops off the allowlist are refused before they are requested.
+
 ## Only visible with an account that owns books or homebrew
 
 ### (b) Subclass renames between editions are unverified
