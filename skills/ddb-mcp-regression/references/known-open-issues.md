@@ -39,9 +39,6 @@ Shows up as: a sheet whose item spell bonus is listed once per copy would double
 ### (bo) Homebrew and official save advantages with the same wording merge
 Shows up as: one save-advantage line, wrapped as untrusted, that combines an official and a homebrew source.
 
-### (bt) An equipped magic stack loses its ×N in EQUIPPED
-Shows up as: an equipped magic or attunable item with quantity above 1 listed in EQUIPPED without its `×N`. No test character has one, and no test checks that a homebrew item in EQUIPPED is wrapped, so an unwrapped homebrew EQUIPPED line belongs here too.
-
 ## Character lookup
 
 ### (bv) Some short words still match loosely

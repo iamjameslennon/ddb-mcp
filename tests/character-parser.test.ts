@@ -3068,6 +3068,29 @@ describe("parseCharacterData — inventory separator, EQUIPPED magic items, name
     expect(out.split("INVENTORY\n")[1].split("\n")[0]).toBe("  Backpack");
   });
 
+  it("an equipped magic or attunable stack keeps its ×N (bt)", () => {
+    const out = inv([
+      entry(1, "Ring of Warmth", "Ring", { magic: true }, { equipped: true, quantity: 2 }),
+      entry(2, "Staff of the Woodlands", "Other", { magic: true, canAttune: true }, { equipped: true, isAttuned: true, quantity: 1 }),
+    ]);
+    expect(out.split("EQUIPPED\n")[1].split("\n\n")[0]).toBe("  Ring of Warmth ×2\n  Staff of the Woodlands");
+  });
+
+  it("a homebrew item in EQUIPPED is wrapped whole, with its ×N; official items stay plain (bt)", () => {
+    const out = inv([
+      entry(1, "Odd Ring", "Ring", { isHomebrew: true, magic: true }, { equipped: true, quantity: 2 }),
+      entry(2, "Staff of the Woodlands", "Other", { magic: true }, { equipped: true }),
+    ]);
+    expect(out).toContain(wrapUntrusted("  Odd Ring [homebrew] ×2"));
+    expect(out).toContain("\n  Staff of the Woodlands\n");
+    expect(out).not.toContain(wrapUntrusted("  Staff of the Woodlands"));
+  });
+
+  it("a player-made item in EQUIPPED is wrapped too (isCustomItem)", () => {
+    const out = inv([entry(1, "My Charm", "Other", { isCustomItem: true, magic: true }, { equipped: true })]);
+    expect(out).toContain(wrapUntrusted("  My Charm"));
+  });
+
   it("the attunement line names every attuned item, weapons included, and the weapon keeps its ACTIONS row", () => {
     expect(mixed()).toContain("ATTUNEMENT (2/3): Staff of the Woodlands; Longsword, +1");
     const combat = parseCharacterData({ data: { ...(FIGHTER_5.data as Record<string, unknown>), inventory: [

@@ -75,7 +75,7 @@ export function computeInventory(core: CoreStats): Inventory {
       const ac2 = num(def.armorClass);
       equippedNonWeapons.push({ text: `${iName}${ac2 ? ` (AC ${ac2})` : ""}`, homebrew });
     } else if (i.equipped && filterType !== "Weapon" && (def.magic === true || def.canAttune === true)) {
-      equippedNonWeapons.push({ text: iName, homebrew });
+      equippedNonWeapons.push({ text: qty > 1 ? `${iName} ×${qty}` : iName, homebrew });
     } else if (filterType !== "Weapon") {
       const items = homebrew ? homebrewItems : carriedItems;
       const seen = items.get(iName);
