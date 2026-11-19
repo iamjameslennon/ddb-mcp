@@ -81,7 +81,7 @@ Pilot (2026-11-11, in Claude Code against the fresh build, narrowed scope: batch
 
 ### Regression remediation 2026-11-18
 
-The 2026-11-18 regression report is `docs/superpowers/specs/2026-11-18-regression-report.md` (findings F1–F11); the remediation plan is `docs/superpowers/plans/2026-11-18-regression-remediation.md`. The rulings, investigation results and verdicts below were recorded by its Setup commit, before Task 1. The findings and commits table, the verification and the later decisions are added when the plan is done.
+The 2026-11-18 regression report is `docs/superpowers/specs/2026-11-18-regression-report.md` (findings F1–F11); the remediation plan is `docs/superpowers/plans/2026-11-18-regression-remediation.md`. The rulings, investigation results and verdicts below were recorded by its Setup commit, before Task 1. The findings and commits table, the owner decisions made during execution, the verification and the carry-overs follow the investigation results.
 
 Owner rulings, all 2026-11-18:
 
@@ -118,6 +118,68 @@ Owner rulings, all 2026-11-18:
 **Carry-over opened by the investigation:**
 
 - **(by)** two latent speed gaps, not fixed (no corpus character is affected today): (1) a `set innate-speed-<axis>` modifier with a null value means "equal to your walking speed" (Roving's text; the Slippers' `restriction` "Climbing Speed Equal to Walking Speed"), and `speedCalc` ignores it; (2) an option's modifiers carry the **option's** id as `componentId`, not its parent feature's, so the orphan-modifier rule would drop Roving even with optional features enabled. Caution for any fix: item modifiers must be gated on `isActiveItemMod`, or Aerin's unequipped slippers would grant a climb speed.
+
+**Findings and commits** (report `docs/superpowers/specs/2026-11-18-regression-report.md`; Setup `a00aa87`; commits `a00aa87..630f960` on `main`):
+
+| Finding | Commit(s) |
+|---------|-----------|
+| F1 (the Other bonus applies after the 20 cap) | `abe711e` |
+| F2 (conditional proficiencies listed, not applied, R1) | `27415b5`; fix round `199f363` (match conditional grants by subType, not rendered name) |
+| F6 (speed bonuses raise only speeds the character has) | `f261f74`; fix round `fbb6a5d` (innate-speed bonus opens an axis; item speed modifiers gated on active items) |
+| F7 (player-set defenses listed) | `8256268`; fix round `2d4aa41` (bad entries tolerated, dedupe by slug) |
+| F5, F8 (slot-scaled dice, Dawn/Special resets, HP pools) | `45cc32c` |
+| F10 (OTHER FEATURES heading, no duplicate class features, blank line before notes) | `a53bad5` |
+| F11 (bundles named by size count in bundles) | `babd90c` |
+| F4 (logged-out fallback for spells; see Corrections) | `23579f1` |
+| F9 (racial trait search drops the vestigial 2024 ASI and Languages traits) | `bab9c0e` |
+| F3 (vendored the missing SRD 5.1 Damage and Healing sections, R3) | `754175e` |
+| Final fix wave, from the final whole-branch review and the owner's decisions (see Owner decisions) | `f7fa91d` (M7), `b9117f0` (G1, G2), `2219041` (M1, F2, F5, F4, M4, M6, T2, T3, T6), `dbcd964` (M2, M3, T7), `ba023b1` (T1, T4, T5), `f1ea117` (docs D1-D6, F1, F3) |
+| Final-review residual fixes (initiative half-proficiency gate; comment and notes fixes) | `630f960` |
+
+**Owner decisions 2026-11-19 (during execution):**
+
+- **Reviewer routing:** Zen's free quota was exhausted and OpenRouter Gemma kept erroring, so their review seats (Tasks 1, 3, 4, 8, 9 and the final review) went to Claude Opus; Task 8 stayed Claude/Zen only. Impact: none on the code.
+- **Task 1 (override vs set):** `core.ts` takes `Math.max(override, set)`, so a manual Override Score below an item `set` score loses. The owner left it and opened carry-over (bz), to be checked on dndbeyond.com with a test character before any change.
+- **Task 3 (F6), innate axis:** `hasSpeed` also counts applicable `innate-speed-<axis>` bonuses above 0, a deliberate refinement of the plan's literal rule (0 corpus characters have that combination; Laena has only `speed-<axis>` bonuses). Impact: latent, no output change.
+- **Task 3 (F6), item gate:** `speedCalc` set and bonus modifiers are gated on `isActiveItemMod` on all axes, fixed now. Impact: the only item speed modifier in the corpus is Aerin's unequipped Slippers (null value), so no output change.
+- **Task 6 (F10):** the name-only match stays, so a homebrew class feature with the same name as an official disguised feat also hides it; recorded as a known edge in tool-notes.md (D1) and the skill's intended-behaviour.md. Impact: 0 corpus characters.
+- **Task 10 (F3), generic trim:** the upstream Hit Points description ends with an embedded `## Damage Rolls` plus that section's description (the only embedded copy in any 2014 ruleset), so the patch has a generic rule: while a section's description ends with `## <other section name>` and that section's exact description, trim the tail. Impact: Hit Points 1443 to 604 characters and Critical Hits to the vendored 538, plus 9 appended sections; 2024 untouched.
+- **Final review, duplicate-section rule:** the SRD 5.1 replacement for a duplicated section stays generic and applies to any 2014 ruleset (Codex raised it; the brief's `srd_x` test mandates it; a live probe found no other section changed).
+- **Final review, item gates (G1, G2):** fixed now. Proficiency, expertise and half-proficiency modifiers (G1) and ability-score `set` and `bonus` modifiers (G2) from inactive items no longer apply. Corpus: 0 inactive-item proficiency modifiers, and the only ability-score item modifier is Laena's equipped and attuned Amulet of Health (CON 19), so no output change. The half-proficiency initiative reading (`joatInit`) was a residual of this and was fixed in `630f960`.
+- **`isActiveItemMod` stays fail-open** (Codex's final fix-wave review claimed an orphan or id-less item modifier would still apply). The design is documented in `item-gate.ts`: the gate runs over `allMods`, which mixes sources, so a modifier that matches no item is a non-item modifier and must apply. Corpus: 49 of 49 item modifiers resolve, none lacks an id.
+- **All deferred minors applied** in one fix wave (32 items, none skipped), and the **final review and the fix wave ran before Task 11**, not after it. The fix-wave re-review (Opus and Codex) left the residuals fixed in `630f960`.
+
+**Corrections:**
+
+- The plan's F4 investigation note was wrong for class features and racial traits. Only spells were affected: they fail at the base list with `NoSessionError`. Their early exits are defence in depth, and the ordering is untestable.
+- Commit `23579f1`'s subject ("spells, class features and racial traits fall back after ddb_logout") overstates the fix. Class features and racial traits were never broken and have no Open5e fallback. History is not rewritten.
+- The F10 heading change touches 18 corpus characters (14 renamed, 4 removed), not the 22 the investigation above states.
+
+**Verification** (Task 7 Step 0 and Task 11, 2026-11-19; outputs in the OS temp dir, not the repo):
+
+- **Task 7 Step 0** (`ddb_navigate`, read-only): Dunil's "Ball Bearings (bag of 1,000)" shows WEIGHT 2 lb, QTY 1000, cost 1 gp on the site. The weight column is a row total (Rations 5 to 10 lb, Piton 10 to 2.5 lb), so 2 lb is one bag and the quantity counts pieces. F11 went ahead.
+- **Step 1, live snapshot diff** (15 characters, at `630f960`): every changed line attributed to F1, F2, F6, F7, F8, F10 or F11; no drift.
+- **Step 2, whole corpus** (`scripts/regress-all-characters.mts --baseline-dir <baseline build> --diff`): exit 0; 56 of 56 parsed; 0 crashes, 0 inconsistencies, 0 new anomalies; F10's dropped Weapon Mastery line on exactly the 9 characters. The 47 always-prepared spell rows the script reports are by design (script header, lines 19-24).
+- **Step 3, website** (`ddb_navigate`, read-only, no clicks): Laena DEX 22, CON 19, AC 20, Initiative +11, DEX save +12, Stealth +18, Acrobatics +6, Longbow +15 1d8+9, Shortsword +12 1d6+6, walk 40 with no swim or climb, DEFENSES "Frightened* Magical Sleep Poison*". Skamos DEFENSES "Fire / Unconscious*" (type 1 is a condition). Idhren DEFENSES "Extra damage caused by Sneak Attack and Critical Hits*, Ranged Attacks*, Slashing*". Vi Pistol +2 1d10+2, cannons "50 / Special", Infuse Item and Magical Tinkering "Special"; the site's Weapons line reads "Firearms (Optional rule at DM discretion)" (the tool prints the fixed "(conditional, not applied)" by design).
+- **Step 4, live MCP** (dist rebuilt at `630f960`, MCP reconnected by the owner): with a session, `ddb_get_spell` Fireball is the PHB 2024 entry; `ddb_search_racial_traits` dwarf gives 7 traits, no Ability Score Increases or Languages; `ddb_get_rules` Damage and Healing (2014, query "death saving throw") jumps to "### Death Saving Throws"; `ddb_search_rules` 2014 lists Damage and Healing (Death Saving Throws). After `ddb_logout`, `ddb_get_spell`, `ddb_search_spells` (level 3, evocation) and `ddb_search_site` (Fireball, spells) all answer "Open5e fallback - not logged in" with no "Session changed" line, and racial traits answer "No session found. Please run ddb_login". After the owner's `ddb_login`, `ddb_get_spell` is the PHB 2024 entry again.
+
+**Carry-overs opened by this run** (continuing the lettered list):
+
+- **(by)** opened by the Setup commit (latent speed gaps, above, under "Carry-over opened by the investigation"); still open.
+- **(bz)** a manual Override Score lower than an item `set` score loses (`max(override, set)`, `core.ts`): override 15 with a set 19 gives 19, while the plan's wording had the override win outright. Not changed. To check on dndbeyond.com with a test character before any change (owner decision 2026-11-19).
+- **(ca)** the character sheet hides every `RACIALTRAIT: 0` trait, including the legacy High Elf "Extra Language", which the F9 search keeps (it is a real 2014 trait, and the filter is flag-based plus 2024-only). Owner decision 2026-11-19: recorded, no change.
+
+Open from this run: (by), (bz), (ca). Closed: none.
+
+**Parked / deferred** (not carry-overs):
+
+- Task 2: two different subTypes that render one name each print (theoretical; they are different proficiencies).
+- Task 4: shared truncated rule-data slugs (ids 30/31/80 and 83/85/90) can cross-dedupe (faithful to D&D Beyond). If ever fixed, compare slug and name; never fall back to name only, which reintroduces the 28-name miss. A mixed-case custom-line modifier plus the same custom entry prints twice (pre-existing).
+- Task 5: an item with an unknown numeric reset type falls back to the description rather than "Rest" (pre-existing, documented).
+- Task 10: an upstream fix that adds a "Dropping to 0 Hit Points" embedding its subsections would list them twice (follows the brief's rule). Memoising the trim: use the `endsWith` pre-check (done, M3), no standalone cache; if memoising at all, a `WeakMap` keyed on the loaded document array.
+- Plain `bonus` initiative modifiers from inactive items are still ungated (not requested; the half-proficiency reading was gated in `630f960`).
+
+**Reviews.** Each task had a Claude gate review (Sonnet; Opus for Tasks 8 and 10) and an adversarial second review. Codex reviewed Tasks 2 and 10, the final review and the fix wave; Claude Opus reviewed the final review, the fix wave and Tasks 1, 3, 4, 8 and 9 in place of Zen and Gemma, whose quota was exhausted or erroring all day (owner decision). `auto:reviewers` mostly landed on the paid Mistral DeepSeek model because Gemini returned 503 (Task 7's was served by Gemini 3.7 Flash). Free-model claims were checked against the code before acting. `630f960` had a scoped Sonnet review.
 
 ### Regression remediation 2026-11-13
 

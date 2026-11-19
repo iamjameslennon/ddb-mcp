@@ -152,7 +152,7 @@ Full detail: [docs/claude/architecture.md](docs/claude/architecture.md).
 
 ## Open work (history and closed items in [history.md](docs/claude/history.md))
 
-Last updated 2026-11-18. Releases and pushes go straight to `main`. The rules-edition work (phases 1–5) is complete, as are the follow-up rounds of minors A–E, the F-2026-10-20 residuals and the combat section completeness run (I1–I3). The regression remediations of 2026-11-11 (F1–F30) and 2026-11-13 (F1–F15, plus Tasks 12b and 12c) are done. Since v2.10.2, 391 commits are unreleased (`git rev-list --count v2.10.2..HEAD` on 2026-11-18, the final fix wave's docs commit included).
+Last updated 2026-11-19. Releases and pushes go straight to `main`. The rules-edition work (phases 1–5) is complete, as are the follow-up rounds of minors A–E, the F-2026-10-20 residuals and the combat section completeness run (I1–I3). The regression remediations of 2026-11-11 (F1–F30), 2026-11-13 (F1–F15, plus Tasks 12b and 12c) and 2026-11-18 (F1–F11) are done. Since v2.10.2, 413 commits are unreleased (`git rev-list --count v2.10.2..HEAD` on 2026-11-19, the 2026-11-18 remediation's docs commit included).
 
 1. **Stateless-safe plan, Task 2 onward**: [docs/superpowers/plans/2026-09-17-stateless-safe-ddb-mcp.md](docs/superpowers/plans/2026-09-17-stateless-safe-ddb-mcp.md). Nothing blocks it. The plan predates some moves, so refresh it first:
    - the registrations are in `src/server.ts`, not `src/index.ts`;
@@ -166,7 +166,11 @@ Last updated 2026-11-18. Releases and pushes go straight to `main`. The rules-ed
 5. **Regression remediation 2026-11-13 (F1–F15, plus 12b and 12c)**: done and verified 2026-11-18 (live snapshot, whole-corpus diff, website checks, live samples: every difference traced to a finding or ruling). Unreleased. Findings, commits, rulings R1–R5 and the later owner decisions, the verification, the final fix wave of 2026-11-18 (final review m1, m3, m4, m7–m9) and the deferred review minors are in history.md "Regression remediation 2026-11-13". It closed (bb), narrowed (be) and opened two carry-overs:
    - **(bw)** the Open5e stat-block path prints 2014 defense labels for SRD 5.2 creatures (owner ruling A12: recorded, not fixed).
    - **(bx)** the redirect guard's residuals (final page fetched twice; non-GET or foreign-`Origin` navigations follow redirects natively; a popup's first navigation is unrouted; Node's TLS fingerprint (a network-level failure falls back to Chrome's own request); a cross-site GET is walked with cookies Chrome would withhold, no impact while the session holds only Lax and None cookies). Open question for the owner: drop Strict cookies in the walk.
-6. **`ddb_login` live checks (Task 10b, F30/F29)**: the fix (verified sign-in, a real 180 s deadline, real errors, cancel and progress pings; tool-notes.md `ddb_login`) is unit-tested; the live checks:
+6. **Regression remediation 2026-11-18 (F1–F11)**: done and verified 2026-11-19 (live snapshot, whole-corpus diff, website checks, live MCP samples: every difference traced to a finding), after a final review and fix wave. Unreleased. Findings, commits, owner rulings R1–R3 and the owner decisions made during execution, the corrections, the verification and the parked items are in history.md "Regression remediation 2026-11-18". It opened three carry-overs:
+   - **(by)** two latent speed gaps (a null-valued `set innate-speed-<axis>` is ignored; an option's modifiers carry the option's `componentId`). No corpus character is affected.
+   - **(bz)** a manual Override Score below an item's `set` score loses (`max(override, set)`). To check on dndbeyond.com with a test character before any change.
+   - **(ca)** the sheet hides every `RACIALTRAIT: 0` trait, including the legacy High Elf "Extra Language", which the F9 search keeps (recorded, no change).
+7. **`ddb_login` live checks (Task 10b, F30/F29)**: the fix (verified sign-in, a real 180 s deadline, real errors, cancel and progress pings; tool-notes.md `ddb_login`) is unit-tested; the live checks:
    - **macOS**: passed 2026-11-12 (Google sign-in, then `ddb_list_characters` worked). Not exercised: the window-close message, the >60 s client timeout, Wizards ID.
    - **Windows: pending.** The owner runs it later on a Windows machine:
      1. `npm ci && npm run build`, and point Claude Desktop's `dndbeyond` server at the local build (`node <repo>/dist/index.js`); restart Claude Desktop.
@@ -176,4 +180,4 @@ Last updated 2026-11-18. Releases and pushes go straight to `main`. The rules-ed
      5. `ddb_login` again and close the window by hand: expect `Login failed: The sign-in window was closed before sign-in finished.` at once.
      6. After a successful sign-in, `ddb_list_characters` must list the characters.
      7. If the Google hand-back stalls on a white popup, decide whether to remove `--enable-automation` for the login launch (owner ruling 2026-11-12: decided after the live test).
-7. **Open by design** (no change planned): (q) either Open5e document failing fails the call; (y) the sheet keeps empty slots for nameless entries; (ab) "dual-edition" means only 2024 + 2014 books.
+8. **Open by design** (no change planned): (q) either Open5e document failing fails the call; (y) the sheet keeps empty slots for nameless entries; (ab) "dual-edition" means only 2024 + 2014 books.

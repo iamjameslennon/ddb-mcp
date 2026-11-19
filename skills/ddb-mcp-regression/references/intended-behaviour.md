@@ -104,6 +104,10 @@ Source: tool-notes.md, "Limited use" (F8, 2026-11-18).
 Looks like: a feature row whose own text names one ability's save DC ends with `   DC N`, after any dice: `• Channel Divinity: Turn Undead   DC 16` (Cathartic 112305147), `• Stunning Strike   DC 15` and `• Ki Points   DC 15` (Flemin 112315775), `• Arms of the Astral Self: Summon   DC 15` (Petit Nuage 40193614), and the 2024 Unarmed Strike (`DC 10`, and `DC 13` for the Dex. version, on Diana 133054584). Text that names two abilities' DCs, or one that can't be worked out, prints no DC, never `DC ?`.
 Source: tool-notes.md, "Save DC"; history.md R3 (owner ruling 2026-11-13; A8, owner decision 2026-11-17: counted by ability).
 
+### A disguised feat that repeats a shown class feature is dropped
+Looks like: Bobby 133053421 (and the eight other Weapon Mastery characters) shows Weapon Mastery once, under the class features, and not again in OTHER FEATURES. The `FEATS (N)` count and the `Rules:` line still count it. Known edge: the match is by name only, so a homebrew class feature with the same name also hides the official feat (owner decision 2026-11-19: keep the name match, no corpus character has it).
+Source: tool-notes.md, Feats (F10; fix wave 2026-11-19); history.md, Regression remediation 2026-11-18, owner decisions.
+
 ### Weapon mastery only with the Weapon Mastery feature
 Looks like: a weapon row shows its mastery property (Nick, Sap, Topple, Vex, Slow, Graze, …) only when the character has Weapon Mastery. 2014 characters and most casters show none.
 Source: history.md, B6 (owner rulings 2026-11-06).

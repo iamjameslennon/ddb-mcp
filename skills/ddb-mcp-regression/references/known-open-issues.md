@@ -64,6 +64,15 @@ Shows up as: `ddb_get_monster` showing a different entry without its `showing th
 ### (bw) Open5e stat blocks use 2014 defense labels for SRD 5.2 creatures
 Shows up as: a `ddb_get_monster` stat block from the Open5e SRD fallback, for a 2024 (SRD 5.2) creature, printing its defense lines (damage resistances, immunities, vulnerabilities, condition immunities) under 2014 wording or labels. The D&D Beyond path is not affected.
 
+### (by) Two latent speed gaps
+Shows up as (no test character is affected today): a `set innate-speed-<axis>` modifier with a null value ("equal to your walking speed", as in the Roving option or Slippers of Spider Climbing) giving no such speed; or an option's speed modifiers (Roving) dropped even with optional class features on.
+
+### (bz) A lower Override Score loses to an item's set score
+Shows up as: a character with a manual Override Score below an item's `set` score (override 15, Amulet of Health setting 19) showing the item's score. Whether dndbeyond.com agrees is unchecked (to test with a test character), so report it as a question, not a defect.
+
+### (ca) The sheet hides every `RACIALTRAIT: 0` trait
+Shows up as: `ddb_search_racial_traits` listing a legacy trait that dndbeyond.com's character sheet never shows, such as the 2014 High Elf "Extra Language". Owner decision 2026-11-19: recorded, no change.
+
 ## Browser tools
 
 ### (bs) Browser tools refuse after `ddb_logout` until the next login
