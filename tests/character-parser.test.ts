@@ -2873,6 +2873,43 @@ describe("proficiency routing", () => {
   });
 });
 
+describe("conditional proficiencies (F2, owner ruling R1)", () => {
+  const prof = (subType: string, friendly: string, entityTypeId?: number, restriction?: string) => ({
+    type: "proficiency", subType, friendlySubtypeName: friendly,
+    ...(entityTypeId === undefined ? {} : { entityTypeId }),
+    ...(restriction === undefined ? {} : { restriction }),
+  });
+  const sheet = (extra: unknown[]) => {
+    const fighter = FIGHTER_5.data as Record<string, unknown>;
+    const mods = fighter.modifiers as Record<string, unknown>;
+    // Extra grants go FIRST so a restricted modifier precedes an unrestricted one.
+    const out = parseCharacterData({ data: { ...fighter, modifiers: { ...mods, class: [...extra, ...(mods.class as unknown[])] } } }, "summary");
+    const line = (label: string) => out.split("\n").find(l => l.includes(label + ":")) ?? "";
+    return { weapons: line("Weapons"), tools: line("Tools"), armor: line("Armor") };
+  };
+  it("lists a restricted proficiency as conditional", () => {
+    const { weapons } = sheet([prof("firearms", "Firearms", 660121713, "Optional rule at DM discretion")]);
+    expect(weapons).toContain("Firearms (conditional, not applied)");
+    expect(weapons).not.toContain("Optional rule");
+  });
+  it("a restricted and an unrestricted grant list one plain entry", () => {
+    const { weapons } = sheet([
+      prof("firearms", "Firearms", 660121713, "Optional rule at DM discretion"),
+      prof("firearms", "Firearms", 660121713),
+    ]);
+    expect(weapons.match(/Firearms/g)).toHaveLength(1);
+    expect(weapons).not.toContain("conditional");
+  });
+  it("marks a restricted tool or armor proficiency as conditional", () => {
+    const r = sheet([prof("thieves-tools", "Thieves' Tools", 2103445194, "x"), prof("light-armor", "Light Armor", undefined, "x")]);
+    expect(r.tools).toContain("Thieves' Tools (conditional, not applied)");
+    expect(r.armor).toContain("Light Armor (conditional, not applied)");
+    const plain = sheet([prof("thieves-tools", "Thieves' Tools", 2103445194, "x"), prof("thieves-tools", "Thieves' Tools", 2103445194)]);
+    expect(plain.tools).toContain("Thieves' Tools");
+    expect(plain.tools).not.toContain("conditional");
+  });
+});
+
 describe("parseCharacterData — inventory separator, EQUIPPED magic items, named attunement (F1, F10; R2)", () => {
   const entry = (id: number, name: string, filterType: string, def: Record<string, unknown> = {}, rec: Record<string, unknown> = {}) => ({
     equipped: false, quantity: 1, isAttuned: false, ...rec,

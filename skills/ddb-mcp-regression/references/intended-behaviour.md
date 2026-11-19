@@ -196,3 +196,7 @@ Source: tool-notes.md, `ddb_character_lookup` "Entries found through an action" 
 ### The 2014 conditions are the full SRD 5.1 text
 Looks like: `ddb_get_condition` with `rules_edition: "2014"` prints the whole SRD 5.1 Appendix PH-A entry for all 15 conditions: the opening sentence, the bullets, then any further paragraphs. Exhaustion is the six-level table followed by the stacking ("as well as all lower levels"), removal and long-rest ("Finishing a long rest reduces a creature's exhaustion level by 1") rules. Grappled keeps its thunderwave sentence, and Invisible keeps the hiding and noise sentences.
 Source: tool-notes.md, `ddb_get_condition` (2026-11-13 remediation, F5); `src/tools/conditions.ts`.
+
+### Conditional proficiencies are listed but not applied
+Looks like: Vi 145415789 has a `firearms` proficiency whose restriction reads "Optional rule at DM discretion". Her Weapons line says `Firearms (conditional, not applied)` (the restriction text itself is never printed) and her Pistol shows +2 to hit, as on dndbeyond.com, not +6. The same note marks a restricted tool or armor proficiency. A restricted and an unrestricted grant of one proficiency print as one plain entry and give proficiency; a whitespace-only restriction counts as unrestricted.
+Source: tool-notes.md, Weapon modifier bonuses, Firearms (F2; owner ruling R1, 2026-11-18, reverses the 2026-11-11 F12 fix).

@@ -9,7 +9,7 @@
  * pass could lift these into structured data, but that's a separate concern.
  */
 
-import { arr, records, capitalize, knownAndCustomLines, hasRemarkableAthlete, isBonusMod, isExpertiseMod, isHalfProficiencyMod, isLanguageMod, isProficiencyMod, isSenseMod, isSetBaseMod, isSetMod, num, obj, signed, statKeys, statNames, str, weaponWordOrder } from "./helpers.js";
+import { arr, records, capitalize, knownAndCustomLines, hasRemarkableAthlete, isBonusMod, isConditionalMod, isExpertiseMod, isHalfProficiencyMod, isLanguageMod, isProficiencyMod, isSenseMod, isSetBaseMod, isSetMod, num, obj, signed, statKeys, statNames, str, weaponWordOrder } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
 import { bucketAnyHomebrew, entityKey, grantingEntities, grantingEntityNames, hiddenOptionIds, isVisibleAction, visibleClassFeatureIds } from "./actions.js";
 import { isActiveItemMod } from "./item-gate.js";
@@ -346,6 +346,9 @@ function friendlyName(m: Mod, sub: string): string {
 const WEAPON_ENTITY_TYPES: ReadonlySet<number> = new Set([1782728300, 660121713]);
 const TOOL_ENTITY_TYPE = 2103445194;
 
+/** Printed after a proficiency whose every grant has a restriction (owner ruling R1, 2026-11-18). */
+export const CONDITIONAL_PROFICIENCY_NOTE = "(conditional, not applied)";
+
 function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficiencies {
   const armorProfMap: Record<string, string> = {
     "light-armor": "Light Armor", "medium-armor": "Medium Armor",
@@ -367,12 +370,21 @@ function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficie
   const customWeapons: string[] = [];
   const customTools: string[] = [];
   const customLanguages: string[] = [];
+  // Names granted only through a restricted modifier. A name that any
+  // unconditional modifier lists prints plain, whatever the order of allMods.
+  const condArmor = new Set<string>();
+  const condWeapons = new Set<string>();
+  const condTools = new Set<string>();
+  const condCustomWeapons = new Set<string>();
+  const condCustomTools = new Set<string>();
   for (const m of allMods) {
+    const cond = isConditionalMod(m);
+    const add = (list: string[], condSet: Set<string>, name: string) => { if (cond) condSet.add(name); else list.push(name); };
     const sub = str(m.subType);
     if (isProfPlaceholder(sub)) continue;
     if (isProficiencyMod(m)) {
-      if (armorProfMap[sub]) armor.push(armorProfMap[sub]);
-      else if (weaponProfMap[sub]) weapons.push(weaponProfMap[sub]);
+      if (armorProfMap[sub]) add(armor, condArmor, armorProfMap[sub]);
+      else if (weaponProfMap[sub]) add(weapons, condWeapons, weaponProfMap[sub]);
       else if (sub.includes("saving-throws") || sub.includes("-skill") ||
                SKILLS.some(([n]) => n.toLowerCase().replace(/ /g, "-").replace(/'/g, "") === sub)) {
         // skill/save prof — handled elsewhere
@@ -390,9 +402,10 @@ function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficie
           : entityType === TOOL_ENTITY_TYPE ? false : isWeaponSlug(sub);
         if (isWeapon) {
           // "Crossbow, Light" prints as the item's name, "Light Crossbow" (owner ruling 2026-11-06).
-          (known ? weapons : customWeapons).push(friendly ? weaponWordOrder(friendly) : name);
+          const wName = friendly ? weaponWordOrder(friendly) : name;
+          if (known) add(weapons, condWeapons, wName); else add(customWeapons, condCustomWeapons, wName);
         } else {
-          (known ? tools : customTools).push(name);
+          if (known) add(tools, condTools, name); else add(customTools, condCustomTools, name);
         }
       }
     } else if (isLanguageMod(m)) {
@@ -416,6 +429,14 @@ function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficie
     if (!Number.isFinite(id) || id <= 0) continue;
     languages.push(LANGUAGE_NAMES_BY_ID[id] ?? `Language #${id}`);
   }
+  const withConditional = (list: string[], condSet: Set<string>) => {
+    for (const name of condSet) if (!list.includes(name)) list.push(`${name} ${CONDITIONAL_PROFICIENCY_NOTE}`);
+  };
+  withConditional(armor, condArmor);
+  withConditional(weapons, condWeapons);
+  withConditional(tools, condTools);
+  withConditional(customWeapons, condCustomWeapons);
+  withConditional(customTools, condCustomTools);
   return { armor, weapons, tools, languages, customWeapons, customTools, customLanguages };
 }
 

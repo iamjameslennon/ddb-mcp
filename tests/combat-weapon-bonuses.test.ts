@@ -169,16 +169,32 @@ describe("pact weapon", () => {
   });
 });
 
-describe("Firearms proficiency", () => {
+describe("Firearms proficiency (restricted grants do not apply, R1)", () => {
   const pistol = weapon(9, "Pistol", {
     attackType: 2, range: 60, longRange: 240, damage: { diceString: "1d10" }, damageType: "Piercing",
     properties: [{ name: "Ammunition (Firearms)" }, { name: "Loading" }],
   });
-  it("applies Firearms proficiency to a weapon with the Ammunition (Firearms) property", () => {
-    const withMod = { inventory: [pistol], modifiers: modsOf([{ type: "proficiency", subType: "firearms", entityTypeId: 660121713 }]) };
-    const c = coreOf(withMod);
-    expect(hit(row(combat(withMod), "Pistol"))).toBe(mod(c.statMods[1] + c.profBonus));
-    expect(hit(row(combat({ inventory: [pistol] }), "Pistol"))).toBe(mod(c.statMods[1]));
+  const firearms = (restriction?: string) => ({
+    type: "proficiency", subType: "firearms", entityTypeId: 660121713, ...(restriction === undefined ? {} : { restriction }),
+  });
+  const pistolHit = (mods: Record<string, unknown>[]) => {
+    const o = { inventory: [pistol], modifiers: modsOf(mods) };
+    const c = coreOf(o);
+    return { got: hit(row(combat(o), "Pistol")), dex: c.statMods[1], prof: c.profBonus };
+  };
+  it("a restricted Firearms proficiency doesn't apply (Vi shape, owner ruling R1)", () => {
+    const r = pistolHit([firearms("Optional rule at DM discretion")]);
+    expect(r.got).toBe(mod(r.dex));
+  });
+  it("an unrestricted or whitespace-restricted Firearms proficiency applies", () => {
+    for (const restriction of [undefined, "", "  "]) {
+      const r = pistolHit([firearms(restriction)]);
+      expect(r.got).toBe(mod(r.dex + r.prof));
+    }
+  });
+  it("a restricted and an unrestricted grant of one proficiency apply", () => {
+    const r = pistolHit([firearms("Optional rule at DM discretion"), firearms()]);
+    expect(r.got).toBe(mod(r.dex + r.prof));
   });
 });
 

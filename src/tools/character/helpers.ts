@@ -147,6 +147,10 @@ export const hasTag = (feat: Mod, tag: string): boolean =>
 // `types.ts`. Each guard checks `type` and the fields the consumer reads, so
 // downstream code sees `subType: string` directly without a `str()` wrapper.
 
+/** A modifier with a non-empty (trimmed) restriction is conditional: it never applies on its own. */
+export const isConditionalMod = (m: Mod): boolean =>
+  typeof m.restriction === "string" && m.restriction.trim() !== "";
+
 export const isProficiencyMod = (m: Mod): m is Mod & ProficiencyMod =>
   m.type === "proficiency" && typeof m.subType === "string";
 

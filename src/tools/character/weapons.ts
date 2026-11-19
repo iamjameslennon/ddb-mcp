@@ -12,7 +12,7 @@
 
 import { wrapIfHomebrew } from "../../utils.js";
 import { MASTERY_NAMES } from "../weapon-mastery.js";
-import { arr, records, isBonusMod, isHomebrewClassFeature, isHomebrewEntry, isProficiencyMod, num, obj, signed, str, weaponWordOrder } from "./helpers.js";
+import { arr, records, isBonusMod, isConditionalMod, isHomebrewClassFeature, isHomebrewEntry, isProficiencyMod, num, obj, signed, str, weaponWordOrder } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats } from "./types.js";
 import { hiddenOptionIds, isVisibleAction, visibleClassFeatureIds } from "./actions.js";
 import { isActiveItemMod } from "./item-gate.js";
@@ -76,7 +76,7 @@ export function weaponModifierBonuses(core: CoreStats): { rangedHit: number; mel
       const isHit = m.type === "bonus" && (sub === "ranged-weapon-attacks" || sub === "melee-weapon-attacks" || sub === "weapon-attacks");
       const isDamage = m.type === "damage" && sub === "one-handed-melee-attacks" && !str(obj(m.dice).diceString);
       if (!isHit && !isDamage) continue;
-      if (str(m.restriction).trim()) continue;
+      if (isConditionalMod(m)) continue;
       if (!isVisibleAction(bucket === "subclass" ? "class" : bucket, m, visibleIds, hiddenOptions)) continue;
       if (!isActiveItemMod(m, inventory)) continue;
       const value = num(m.value ?? m.fixedValue);
@@ -138,7 +138,7 @@ export function computeWeaponAttacks(core: CoreStats): { attacks: string[]; offH
   const dexMod = statMods[1];
 
   const weaponProfSlugs = new Set(
-    allMods.filter(isProficiencyMod).map(m => m.subType)
+    allMods.filter(m => isProficiencyMod(m) && !isConditionalMod(m)).map(m => str(m.subType))
   );
   const pactIds = flaggedItemIds(core.char, PACT_WEAPON_VALUE_TYPE);
   const bonuses = weaponModifierBonuses(core);
