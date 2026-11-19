@@ -141,13 +141,14 @@ Plan: `docs/superpowers/plans/2026-11-19-carry-overs.md` (plan commit `ea2457e`,
 
 **Deferred review minors (2026-11-19)** (not carry-overs; for a later round):
 
-- Final fix wave: to be filled
+- Final fix wave (commit `f2d6e03`; the final whole-branch review, Opus, verdict "ready to merge with fixes"). Fixed: I1 (the skill's "session drops" step no longer cites closed (bq); `regression-skill.test.ts` now fails when SKILL.md or a reference cites a closed carry-over code; (bj) in the report template example and two "closed" source notes removed), I2 (`hasMartialArts` gates an item's `martial-arts` modifier with `isActiveItemMod`), S1 (dead `B14` filter removed), S2 (`ABILITY_SCORE_CAP` comment reflowed), S3 and S4 (`tool-notes.md` ability-score and Unarmed Strike text; the `computeUnarmedStrike` docstring), S5 (`customItemNames` ignores a valueId of 0), S6 (Browser tools text rewritten; the Strict-cookie-rotation residual added to (5) and to the skill's (bx) entry), S7 (`walkCookieHeader` comment), S8 (the cookie lookup moved above `remaining`), S9 (report template uses `<(be)>`), S10 (`customSenses`, `customProficiencies`, `choices.race`, `options.race` read through `records()`). Controller rulings: (bj) figures keep the ACTIONS spell-row parts, order and separators (auto:reviewers suggested the site's column order `60ft. +8 1d8+4`), and the numbers match the site; plan-mandated items kept as is: Task 9's option modifier with no options entry applies (same rule as `isVisibleAction`), Task 11's `usePrimaryStat` per flagged modifier (D&D Beyond flags per component).
+- Final review, not fixed here: Task 12 rotated-cookie and per-URL-jar tests and the skipped same-site live probe; Task 8 helper refactor and test gaps; Task 7 duplicated level check.
 - Task 2: `ddb_search_site` category "all" now shows the monster section's `SessionChangedError` as an `_msg_` section (consistent with the other categories); no test pins it.
 - Task 2: `monster-session.test.ts` mocks `rethrowSessionChange` as a no-op (a latent trap for a future `SessionChangedError` test there).
-- Task 3: dead `codes.filter(c => c !== "B14")` in `regression-skill.test.ts:203`.
+- Task 3: dead `codes.filter(c => c !== "B14")` in `regression-skill.test.ts` (fixed in the final fix wave).
 - Task 3: `library-editions.test.ts:134` has a redundant `route([...])` and a duplicated book object; no end-to-end test of the query jump on collapsed text; no CRLF or U+2028 case for the collapse.
-- Task 4: the `core.ts` comment above `ABILITY_SCORE_CAP` is badly reflowed and duplicates the early-return comment.
-- Task 4: `tool-notes.md` "set modifiers floor the calculated score" needs a "(without an override)" qualifier.
+- Task 4: the `core.ts` comment above `ABILITY_SCORE_CAP` is badly reflowed and duplicates the early-return comment. (fixed in the final fix wave).
+- Task 4: `tool-notes.md` "set modifiers floor the calculated score" needs a "(without an override)" qualifier. (fixed in the final fix wave).
 - Task 4: no test of override + Other bonus + set together; no override-0 test.
 - Task 5: no test pins "two entries of one definition stay two EQUIPPED lines"; no magic-armor-stack (no ×N) test; the `isCustomItem` test has no ×N or official contrast.
 - Task 6: no test for an item-charge line deferring to a PB-keyed action, or for lookup parents gaining PB-keyed actions; no test for an unknown stat op with PB, PB at other levels, or a positive base with an unknown PB op; the operator test is inlined twice (an `isAdd` helper).
