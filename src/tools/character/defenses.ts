@@ -5,7 +5,7 @@
  * Phase 5b of the character.ts refactor — see docs/character-refactor.md.
  */
 
-import { arr, capitalize, isImmunityMod, isResistanceMod, isVulnerabilityMod, knownAndCustomLines, records, str } from "./helpers.js";
+import { capitalize, isImmunityMod, isResistanceMod, isVulnerabilityMod, knownAndCustomLines, records, str } from "./helpers.js";
 import { CONDITION_NAMES_BY_ID, DAMAGE_ADJUSTMENTS_BY_ID, DAMAGE_ADJUSTMENT_SLUGS } from "./modifier-slugs.js";
 import type { CoreStats, Mod } from "./types.js";
 
@@ -103,7 +103,7 @@ export function computeDefenses(core: CoreStats): Defenses {
     resistances,
     immunities,
     vulnerabilities,
-    conditions: arr<Record<string, unknown>>(char.conditions).map(c => str(c.id)),
+    conditions: records(char.conditions).map(c => str(c.id)),
   };
 }
 

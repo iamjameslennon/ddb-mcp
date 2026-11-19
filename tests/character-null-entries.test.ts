@@ -83,3 +83,13 @@ describe.each(["2014", "2024"] as const)("a null or non-object entry in the %s s
       });
   });
 });
+
+describe("a null entry in conditions (M7)", () => {
+  const withConditions = (conditions: unknown) => variant(FIGHTER_5, d => { d.conditions = conditions; });
+
+  it.each(SECTIONS)("the %s section does not crash and lists only the real condition", section => {
+    const out = parseCharacterData(withConditions([null, { id: "x" }]), section, INDEX);
+    expect(out).toBe(parseCharacterData(withConditions([{ id: "x" }]), section, INDEX));
+    if (section === "full" || section === "combat") expect(out).toContain("CONDITIONS: x");
+  });
+});
