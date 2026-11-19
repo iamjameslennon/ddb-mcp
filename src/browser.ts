@@ -425,6 +425,28 @@ export async function getPage(context: BrowserContext): Promise<Page> {
   return context.newPage();
 }
 
+/**
+ * Close every browser this process owns: a login still in progress (its
+ * window, browser and lock: the waiting ddb_login call then fails, saving
+ * nothing) and the shared browser. Both are attempted; the first error is
+ * rethrown afterwards. For shutdown only: ddb_close_browser keeps closing just
+ * the shared browser, so it can't end a sign-in the user is part-way through.
+ */
+export async function closeAllBrowsers(): Promise<void> {
+  let failure: unknown;
+  try {
+    await endLoginSession();
+  } catch (e) {
+    failure = e;
+  }
+  try {
+    await closeBrowser();
+  } catch (e) {
+    failure ??= e;
+  }
+  if (failure !== undefined) throw failure;
+}
+
 export async function closeBrowser(): Promise<void> {
   if (contextInstance) {
     await contextInstance.close();

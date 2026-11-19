@@ -327,6 +327,43 @@ describe("client cancellation (4.1 i)", () => {
   });
 });
 
+describe("closeAllBrowsers on shutdown (regression 2026-11-19 F3)", () => {
+  it("closes a login that is still waiting, its browser included, saves nothing, and frees the login lock", async () => {
+    let signedIn = false;
+    state.cobalt = () => apiResponse(signedIn ? { token: makeJwt("4242") } : ANONYMOUS_COBALT);
+    const { ctx, outcome } = await startLogin();
+    const loginBrowser = lastBrowser!;
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    await browser.closeAllBrowsers();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ctx.closed).toBe(true);
+    expect(loginBrowser.closed).toBe(true);
+    expect(outcome.result?.ok).toBe(false);
+
+    signedIn = true;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fsMock.renameSync).not.toHaveBeenCalled();
+    // The lock is free: a new login can begin.
+    await expect(browser.beginLoginSession()).resolves.toBeDefined();
+  });
+
+  it("closes the shared browser too, and still closes the login browser when the shared one fails to close", async () => {
+    const { ctx } = await startLogin();
+    const loginBrowser = lastBrowser!;
+    const shared = await browser.getBrowser();
+    const sharedClose = vi.spyOn(shared, "close").mockRejectedValueOnce(new Error("shared close failed"));
+    await expect(browser.closeAllBrowsers()).rejects.toThrow("shared close failed");
+    expect(sharedClose).toHaveBeenCalled();
+    expect(ctx.closed).toBe(true);
+    expect(loginBrowser.closed).toBe(true);
+  });
+
+  it("does nothing, and does not throw, when no browser is open", async () => {
+    await expect(browser.closeAllBrowsers()).resolves.toBeUndefined();
+  });
+});
+
 describe("never save without a verified token", () => {
   it("saveVerifiedSession refuses a forged or unverified proof", async () => {
     const ctx = await browser.beginLoginSession();

@@ -1,23 +1,25 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { closeBrowser } from "./browser.js";
+import { closeAllBrowsers } from "./browser.js";
 import { server } from "./server.js";
-
-// ─── Graceful shutdown ────────────────────────────────────────────────────────
-async function shutdown(signal: string): Promise<void> {
-  process.stderr.write(`[ddb-mcp] Received ${signal}, shutting down...\n`);
-  await closeBrowser().catch(() => {});
-  process.exit(0);
-}
-process.on("SIGTERM", () => { void shutdown("SIGTERM"); });
-process.on("SIGINT",  () => { void shutdown("SIGINT"); });
+import { installShutdownHandlers } from "./shutdown.js";
 
 // ─── Start server ─────────────────────────────────────────────────────────────
 async function main() {
   const transport = new StdioServerTransport();
-  // Clean up the browser if the MCP client disconnects (e.g. host process exits
-  // without sending a signal). Without this, Playwright can leak processes.
-  transport.onclose = () => { void shutdown("transport-close"); };
+  // Close every browser (a login window included) and exit when the client
+  // goes away (stdin ends: the SDK transport doesn't notice that itself), the
+  // transport closes, or a termination signal arrives. Without this, an
+  // in-flight ddb_login kept the process and its window alive after a
+  // disconnect, and Playwright could leak processes.
+  installShutdownHandlers({
+    stdin: process.stdin,
+    proc: process,
+    transport,
+    closeAll: closeAllBrowsers,
+    exit: code => process.exit(code),
+    log: line => { process.stderr.write(line); },
+  });
   await server.connect(transport);
   process.stderr.write("D&D Beyond MCP server running on stdio\n");
 }
