@@ -368,7 +368,7 @@ Not applicable: invalid, ambiguous, locked, source, homebrew, pagination, gate
 - normal: "Search D&D Beyond for Vorpal" → results whose names contain the term, per category, tagged.
 - not-found: a nonsense term → "no results".
 - edition: same with 2014 → 2014 versions, other edition's twins counted.
-- logged-out: same → works or falls back, labelled.
+- logged-out: same → works or falls back, labelled, also right after `ddb_logout` in one session (category spells takes the same path: the Open5e fallback, never "Session changed").
 
 ## `ddb_navigate`
 

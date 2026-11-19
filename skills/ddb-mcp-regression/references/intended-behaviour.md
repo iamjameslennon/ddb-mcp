@@ -69,7 +69,7 @@ Looks like: logged out, or when D&D Beyond can't answer, replies come from the O
 Source: CLAUDE.md, Invariants, "Open5e responses are distrusted"; history.md (q) (owner decision).
 
 ### 2014 Damage and Healing is complete
-Looks like: `ddb_get_rules` with `rules_edition: "2014"` and `Damage and Healing` returns Hit Points (its own text only), Damage Rolls, a real Critical Hits (not a copy of Damage Rolls), Damage Types, Resistance and Vulnerability, Healing, Dropping to 0 Hit Points, Instant Death, Falling Unconscious, Death Saving Throws, Stabilizing a Creature, Monsters and Death, Knocking a Creature Out and Temporary Hit Points. `Death Saving Throws` also resolves by section name, and `ddb_search_rules` for "death saving throw" under 2014 lists the chapter. 2024 is never patched.
+Looks like: `ddb_get_rules` with `rules_edition: "2014"` and `Damage and Healing` returns Hit Points (its own text only), Damage Rolls, a real Critical Hits (not a copy of Damage Rolls), Damage Types, Damage Resistance and Vulnerability, Healing, Dropping to 0 Hit Points, Instant Death, Falling Unconscious, Death Saving Throws, Stabilizing a Creature, Monsters and Death, Knocking a Creature Out and Temporary Hit Points. `Death Saving Throws` also resolves by section name, and `ddb_search_rules` for "death saving throw" under 2014 lists the chapter. 2024 is never patched.
 Source: owner ruling R3 (F3) and owner decision 2026-11-19 (embedded-copy trim); src/srd51-rules.ts.
 
 ### Nameless entries keep an empty slot
@@ -94,7 +94,7 @@ Source: tool-notes.md, "Snippet dice"; history.md R2 (owner ruling 2026-11-13).
 
 ### Slot-scaled feature dice say per slot level
 Looks like: a feature row whose own text reads "plus another 1d8 per level of the spell slot" adds that to its dice: `• Eldritch Smite   1d8 + 1d8 per slot level` (Weslocke 112317699). Divine Smite's 2014 wording ("for each spell level higher than 1st") prints no dice, as before (carry-over (be)).
-Source: history.md, Regression remediation 2026-11-13, R2 (F5, owner ruling 2026-11-18); tool-notes.md, "Slot-scaled dice".
+Source: history.md, Regression remediation 2026-11-18, R2 (F5, owner ruling 2026-11-18); tool-notes.md, "Slot-scaled dice".
 
 ### Limited-use resets and hit-point pools
 Looks like: reset types read Short Rest, Long Rest, Dawn or Special (D&D Beyond's "Other"), on actions and on charged items alike: Infuse Item and Magical Tinkering `(Special)`. An Eldritch Cannon action's pool prints remaining over maximum, `• Eldritch Cannon: Flamethrower   38/50 HP   (Special)`, not `12 used / 50 max`.
