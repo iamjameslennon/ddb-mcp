@@ -27,9 +27,6 @@ Shows up as: `• Spiritual Weapon (spell, 2nd-level slot)` in BONUS ACTIONS wit
 ### (bk) A stack of off-hand weapons moves wholesale
 Shows up as: a flagged off-hand weapon with quantity above 1 appears in BONUS ACTIONS as `×N`. No live case.
 
-### (bl) A Martial Arts feature without a level scale falls back to STR
-Shows up as: a DEX monk's Unarmed Strike row uses STR. No live case.
-
 ### (bn) Item spell bonuses assume one modifier per item definition
 Shows up as: a sheet whose item spell bonus is listed once per copy would double count it. Not seen live.
 

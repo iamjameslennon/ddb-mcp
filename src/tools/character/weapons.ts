@@ -120,6 +120,18 @@ function martialArts(core: CoreStats): { die: string; homebrew: boolean } | null
   return null;
 }
 
+/** A Martial Arts feature at or below its class level, or a martial-arts modifier: the monk's STR/DEX rule, whether or not a die is known. */
+function hasMartialArts(core: CoreStats): boolean {
+  const { allMods, classes } = core;
+  return allMods.some(m => str(m.subType) === "martial-arts") ||
+    classes.some(c =>
+      records(c.classFeatures).some(cf =>
+        str(obj(cf.definition).name) === "Martial Arts" &&
+        num(obj(cf.definition).requiredLevel || 1) <= num(c.level)
+      )
+    );
+}
+
 export function martialArtsDie(core: CoreStats): string | null {
   return martialArts(core)?.die ?? null;
 }
@@ -128,7 +140,7 @@ export function martialArtsDie(core: CoreStats): string | null {
 export function computeUnarmedStrike(core: CoreStats): string {
   const { statMods, profBonus } = core;
   const ma = martialArts(core);
-  const mod = ma ? Math.max(statMods[0], statMods[1]) : statMods[0];
+  const mod = (ma || hasMartialArts(core)) ? Math.max(statMods[0], statMods[1]) : statMods[0];
   const damage = ma ? `${ma.die}${mod === 0 ? "" : signed(mod)}` : String(Math.max(0, 1 + mod));
   return wrapIfHomebrew(`• ${"Unarmed Strike".padEnd(16)} ${signed(mod + profBonus)} to hit   ${damage} bludgeoning   reach 5 ft.`, ma?.homebrew);
 }
@@ -136,6 +148,7 @@ export function computeUnarmedStrike(core: CoreStats): string {
 export function computeWeaponAttacks(core: CoreStats): { attacks: string[]; offHand: string[] } {
   const { allMods, classes, inventory, statMods, profBonus, editions } = core;
   const dexMod = statMods[1];
+  const monkMartialArts = hasMartialArts(core);
 
   const weaponProfSlugs = new Set(
     allMods.filter(m => isProficiencyMod(m) && !isConditionalMod(m) && isActiveItemMod(m, inventory)).map(m => str(m.subType))
@@ -151,16 +164,6 @@ export function computeWeaponAttacks(core: CoreStats): { attacks: string[]; offH
            (catId === 2 && weaponProfSlugs.has("martial-weapons")) ||
            weaponProfSlugs.has(typeName);
   };
-
-  // Martial Arts: allows DEX for monk weapons (simple melee + shortsword, no Two-Handed/Heavy)
-  const hasMartialArts =
-    allMods.some(m => str(m.subType) === "martial-arts") ||
-    classes.some(c =>
-      records(c.classFeatures).some(cf =>
-        str(obj(cf.definition).name) === "Martial Arts" &&
-        num(obj(cf.definition).requiredLevel || 1) <= num(c.level)
-      )
-    );
 
   // Weapon Mastery (2024): one `weapon-mastery` modifier per mastered weapon,
   // subType `<mastery>-<weapon type>` ("sap-spear", "topple-maul"). A magic
@@ -208,7 +211,7 @@ export function computeWeaponAttacks(core: CoreStats): { attacks: string[]; offH
     const dmgType = (replacedType || str(def.damageType)).toLowerCase();
 
     // Monk weapons: simple melee or shortsword, no Two-Handed/Heavy
-    const isMonkWeapon = hasMartialArts &&
+    const isMonkWeapon = monkMartialArts &&
       !props.includes("Two-Handed") && !props.includes("Heavy") &&
       ((num(def.categoryId) === 1 && attackType === 1) || str(def.name) === "Shortsword");
 

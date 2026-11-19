@@ -50,7 +50,7 @@ describe("Unarmed Strike row", () => {
     const overrides = monk("definition", 10, 16);
     const core = coreOf(overrides);
     expect(row(combat(overrides))).toEqual([
-      `• ${"Unarmed Strike".padEnd(16)} +${core.statMods[0] + core.profBonus} to hit   1 bludgeoning   reach 5 ft.`,
+      `• ${"Unarmed Strike".padEnd(16)} +${core.statMods[1] + core.profBonus} to hit   ${1 + core.statMods[1]} bludgeoning   reach 5 ft.`,
     ]);
   });
 
@@ -107,5 +107,29 @@ describe("Unarmed Strike row", () => {
     const out = combat(overrides);
     const line = `• ${"Unarmed Strike".padEnd(16)} +${core.statMods[1] + core.profBonus} to hit   1d6+${core.statMods[1]} bludgeoning   reach 5 ft.`;
     expect(block(out, "ACTIONS")).toContain(wrapUntrusted(line));
+  });
+
+  it("a Martial Arts feature without a level scale still uses the better of STR/DEX (bl)", () => {
+    const overrides = monk("none", 8, 16);
+    const core = coreOf(overrides);
+    expect(core.statMods.slice(0, 2)).toEqual([-1, 3]);
+    expect(row(combat(overrides))).toEqual([`• ${"Unarmed Strike".padEnd(16)} +${3 + core.profBonus} to hit   4 bludgeoning   reach 5 ft.`]);
+  });
+
+  it("invents no Martial Arts die without a level scale", () => {
+    expect(row(combat(monk("none", 8, 16)))[0]).not.toMatch(/\dd\d/);
+  });
+
+  it("a martial-arts modifier counts as Martial Arts too", () => {
+    const overrides = { stats: stats(8, 16), modifiers: { ...(BASE.modifiers as object), class: [{ type: "bonus", subType: "martial-arts", componentId: 0 }] } };
+    expect(row(combat(overrides))[0]).toContain("4 bludgeoning");
+  });
+
+  it("a Martial Arts feature above the class level does not count", () => {
+    expect(row(combat(monk("none", 8, 16, { requiredLevel: 9 })))[0]).toContain("0 bludgeoning");   // STR -1: floored at 0
+  });
+
+  it("a non-monk keeps STR", () => {
+    expect(row(combat({ stats: stats(8, 16) }))[0]).toBe("• Unarmed Strike   +2 to hit   0 bludgeoning   reach 5 ft.");
   });
 });
