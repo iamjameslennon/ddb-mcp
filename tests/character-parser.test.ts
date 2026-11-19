@@ -1220,6 +1220,78 @@ describe("parseCharacterData — ability score 20 cap (PHB)", () => {
   });
 });
 
+describe("parseCharacterData — Other bonus (bonusStats) applies after the 20 cap", () => {
+  const SLUG = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"];
+  const build = (opts: {
+    base: number[];
+    other?: Record<number, number>;
+    override?: Record<number, number>;
+    mods?: Array<{ src: string; type: string; stat: number; val: number }>;
+  }): Record<string, unknown> => {
+    const fm = (FIGHTER_5.data as Record<string, unknown>).modifiers as Record<string, unknown>;
+    const mods: Record<string, unknown[]> = { race: [], background: [], item: [], condition: [], feat: [], class: [] };
+    for (const m of opts.mods ?? []) {
+      mods[m.src].push({ type: m.type, subType: `${SLUG[m.stat - 1]}-score`, fixedValue: m.val, value: m.val, isGranted: true });
+    }
+    return {
+      data: {
+        ...(FIGHTER_5.data as Record<string, unknown>),
+        stats: opts.base.map((value, i) => ({ id: i + 1, value })),
+        bonusStats: [1, 2, 3, 4, 5, 6].map(id => ({ id, value: opts.other?.[id] ?? null })),
+        overrideStats: [1, 2, 3, 4, 5, 6].map(id => ({ id, value: opts.override?.[id] ?? null })),
+        modifiers: { ...fm, ...mods },
+      },
+    };
+  };
+
+  it("adds the Other bonus after the cap (Laena shape)", () => {
+    const char = build({
+      base: [10, 14, 14, 10, 13, 8],
+      other: { 2: 2 },
+      mods: [
+        { src: "race", type: "bonus", stat: 2, val: 2 },
+        { src: "class", type: "bonus", stat: 2, val: 1 },
+        { src: "class", type: "bonus", stat: 2, val: 1 },
+        { src: "class", type: "bonus", stat: 2, val: 1 },
+        { src: "feat", type: "bonus", stat: 2, val: 1 },
+      ],
+    });
+    expect(parseCharacterData(char, "summary")).toContain("DEX 22 (+6)");
+  });
+
+  it("a higher set score still wins over base + Other bonus", () => {
+    const char = build({
+      base: [10, 12, 14, 10, 13, 8],
+      other: { 3: 2 },
+      mods: [{ src: "item", type: "set", stat: 3, val: 19 }],
+    });
+    expect(parseCharacterData(char, "summary")).toContain("CON 19 (+4)");
+  });
+
+  it("a negative Other bonus lowers a capped score", () => {
+    const char = build({
+      base: [18, 12, 14, 10, 13, 8],
+      other: { 1: -2 },
+      mods: [
+        { src: "class", type: "bonus", stat: 1, val: 1 },
+        { src: "class", type: "bonus", stat: 1, val: 1 },
+        { src: "class", type: "bonus", stat: 1, val: 1 },
+      ],
+    });
+    expect(parseCharacterData(char, "summary")).toContain("STR 18 (+4)");
+  });
+
+  it("an override ignores the Other bonus", () => {
+    const char = build({ base: [10, 14, 14, 10, 13, 8], other: { 2: 2 }, override: { 2: 15 } });
+    expect(parseCharacterData(char, "summary")).toContain("DEX 15 (+2)");
+  });
+
+  it("an Other bonus below the cap adds in full", () => {
+    const char = build({ base: [10, 14, 14, 10, 13, 8], other: { 2: 2 } });
+    expect(parseCharacterData(char, "summary")).toContain("DEX 16 (+3)");
+  });
+});
+
 // ── resolveTemplates — expression evaluation ──────────────────────────────────
 // FIGHTER_5: level 5, prof +3. Template tokens are injected via a feat snippet
 // so we can assert the resolved text in the parsed output.
