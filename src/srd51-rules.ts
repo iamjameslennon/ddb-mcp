@@ -55,14 +55,17 @@ const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
 /**
  * Cuts an embedded copy of another section from the end of `section.desc` (owner decision
- * 2026-11-19): the tail must be a "#"-heading naming another section of the same ruleset
+ * 2026-11-19): the tail must be a "##" heading (exactly two #) naming another section of the same ruleset
  * followed by that section's exact desc (whitespace between and after allowed). Anything
  * else is left alone, so once upstream is fixed nothing is trimmed.
  */
 function trimEmbeddedTail(section: Srd51Section, others: readonly Srd51Section[]): string {
   for (const other of others) {
-    if (other === section || !other.desc.trim()) continue;
-    const m = new RegExp(`(?:^|\n)[ \t]*#{2,6}[ \t]+${escapeRe(other.name)}[ \t]*\n+${escapeRe(other.desc.trim())}\\s*$`).exec(section.desc);
+    const tail = other.desc.trim();
+    if (other === section || !tail) continue;
+    // Cheap pre-check: building the per-pair regex costs about 10 ms across a ruleset.
+    if (!section.desc.trimEnd().endsWith(tail)) continue;
+    const m = new RegExp(`(?:^|\n)[ \t]*##[ \t]+${escapeRe(other.name)}[ \t]*\n+${escapeRe(tail)}\\s*$`).exec(section.desc);
     if (m && section.desc.slice(0, m.index).trim()) return section.desc.slice(0, m.index).trim();
   }
   return section.desc;

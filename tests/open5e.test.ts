@@ -1733,6 +1733,23 @@ describe("2014 Damage and Healing patch (F3)", () => {
       expect(r[0].desc).toBe("Mine.");
       expect(r[1].desc).toBe("Other text.");
     });
+    it("does not cut a tail under a '###' or deeper heading (M2)", () => {
+      for (const h of ["###", "####", "#"]) {
+        const d = `Mine.\n\n${h} Other\n\nOther text.`;
+        expect(run([sec("k1", "Own", d, 1), sec("k2", "Other", "Other text.", 2)])[0].desc).toBe(d);
+      }
+    });
+    it("leaves the input descs unchanged after a trim and a replace (T7)", () => {
+      const input = [{ key: "srd_x", rules: [
+        sec("k1", "Own", "Mine.\n\n## Other\n\nOther text.\n", 1),
+        sec("k2", "Other", "Other text.", 2),
+        sec("k3", "Dup", "Other text.", 3),
+      ] }];
+      const before = input[0].rules.map(r => r.desc);
+      const out = patchSrd51Rulesets(input);
+      expect(out[0].rules.map(r => r.desc)).toEqual(["Mine.", "Other text.", MISSING_UPSTREAM_TEXT]);
+      expect(input[0].rules.map(r => r.desc)).toEqual(before);
+    });
     it("trims before the duplicate step, so the two rules cannot interfere", () => {
       const r = run([
         sec("k1", "Own", "Mine.\n\n## Rolls\n\nRoll text.", 1),
