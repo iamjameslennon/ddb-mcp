@@ -465,12 +465,33 @@ export function snippetSaveDc(action: Record<string, unknown>, ctx: FeatureLineC
 }
 
 /**
+ * ` + <die> per slot level` when the action's own snippet says "plus another
+ * <die> per level of the spell slot" (owner ruling R2, 2026-11-18; Eldritch
+ * Smite). Only the matched die is emitted, never other snippet text. Divine
+ * Smite's 2014 wording ("for each spell level higher than 1st") doesn't match
+ * (carry-over (be)).
+ */
+export function slotScaling(action: Record<string, unknown>): string {
+  const m = /plus another (\d+d\d+) per level of the spell slot/i.exec(stripHtml(str(action.snippet)));
+  return m ? ` + ${m[1]} per slot level` : "";
+}
+
+/** True when the snippet ends with D&D Beyond's "Hit Points:" counter label (the Eldritch Cannon actions): the limited use counts hit points, not uses. */
+export function isHitPointPool(action: Record<string, unknown>): boolean {
+  return stripHtml(str(action.snippet)).trim().endsWith("Hit Points:");
+}
+
+/** D&D Beyond's limitedUseResetTypes (rule-data); the site prints type 4 ("Other") as "Special". An unknown type reads "Rest". */
+export const RESET_LABELS: Readonly<Record<number, string>> = { 1: "Short Rest", 2: "Long Rest", 3: "Dawn", 4: "Special" };
+
+/**
  * `• <name>[   <dice>][   DC <n>]` for a feature action, wrapped whole when its
  * granting entity is homebrew. The dice are D&D Beyond's (actionDice), else the
  * snippet's (snippetDice).
  */
 const actionLine = (ctx: FeatureLineContext) => ({ action, homebrew }: CharAction): string => {
-  const dice = actionDice(action) || snippetDice(action, ctx);
+  const base = actionDice(action) || snippetDice(action, ctx);
+  const dice = base ? `${base}${slotScaling(action)}` : "";
   const dc = snippetSaveDc(action, ctx);
   return wrapIfHomebrew(`• ${str(action.name)}${dice ? `   ${dice}` : ""}${dc != null ? `   DC ${dc}` : ""}`, homebrew);
 };
@@ -488,8 +509,7 @@ function buildLimitedUseLines(
     .filter(({ action: a }) => hasUses(obj(a.limitedUse)))
     .map(({ action: a, homebrew }) => {
       const lu = obj(a.limitedUse);
-      const resetLabels: Record<number, string> = { 1: "Short Rest", 2: "Long Rest" };
-      const reset = resetLabels[num(lu.resetType)] ?? "Rest";
+      const reset = RESET_LABELS[num(lu.resetType)] ?? "Rest";
       // A stat-based maximum is checked first: maxUses is its base, not the whole maximum.
       // Operator 1 (or absent) adds the modifier, at least once. No other operator is known.
       const statId = lu.statModifierUsesId != null ? num(lu.statModifierUsesId) : null;
@@ -501,6 +521,9 @@ function buildLimitedUseLines(
           ? String(num(lu.maxUses))
           : "?";
       const used = num(lu.numberUsed);
+      if (isHitPointPool(a) && maxStr !== "?") {
+        return wrapIfHomebrew(`• ${str(a.name)}   ${Number(maxStr) - used}/${maxStr} HP   (${reset})`, homebrew);
+      }
       return wrapIfHomebrew(`• ${str(a.name)}   ${used} used / ${maxStr} max   (${reset})`, homebrew);
     });
 }
@@ -521,7 +544,6 @@ function buildItemChargeLines(
   const actionKeys = new Set(
     allActions.filter(({ action: a }) => hasUses(obj(a.limitedUse))).map(({ action: a }) => entityKey(a.componentId, a.componentTypeId)),
   );
-  const resetLabels: Record<number, string> = { 1: "Short Rest", 2: "Long Rest" };
   return inventory.flatMap(i => {
     const def = obj(i.definition);
     const own = obj(i.limitedUse);
@@ -537,8 +559,8 @@ function buildItemChargeLines(
     const type = typeof lu.resetType === "string" ? lu.resetType.trim() : "";
     const reset = type !== "" && type !== "Other"
       ? type
-      : typeof lu.resetType === "number" && resetLabels[lu.resetType]
-        ? resetLabels[lu.resetType]
+      : typeof lu.resetType === "number" && RESET_LABELS[lu.resetType]
+        ? RESET_LABELS[lu.resetType]
         : description || type || "Rest";
     return [wrapIfHomebrew(`• ${name}   ${num(lu.numberUsed)} used / ${num(lu.maxUses)} max   (${reset})`, shownHomebrew(i, name))];
   });

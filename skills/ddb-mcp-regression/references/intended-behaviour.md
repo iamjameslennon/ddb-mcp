@@ -88,6 +88,14 @@ Source: tool-notes.md, "Visibility" (owner decision 2026-11-07); history.md B5.
 Looks like: a feature row D&D Beyond gives no dice prints the dice its own text names when they add no ability modifier: 2014 Second Wind `• Second Wind   1d10 + 9` (Ethelrede 112314883, Fighter 9), 2014 Bardic Inspiration `• Bardic Inspiration   1d6` (BillytheBard 40080729). Dice that add an ability modifier stay off: Stone's Endurance, Deft Explorer: Tireless and Eldritch Cannon: Protector print no dice, and Martial Arts actions (Deflect Missiles, Arms of the Astral Self, monk Unarmed Strike) print none either (carry-over (be)). A plain number such as Action Surge's `{{scalevalue}} times` is not dice.
 Source: tool-notes.md, "Snippet dice"; history.md R2 (owner ruling 2026-11-13).
 
+### Slot-scaled feature dice say per slot level
+Looks like: a feature row whose own text reads "plus another 1d8 per level of the spell slot" adds that to its dice: `• Eldritch Smite   1d8 + 1d8 per slot level` (Weslocke 112317699). Divine Smite's 2014 wording ("for each spell level higher than 1st") prints no dice, as before (carry-over (be)).
+Source: history.md, Regression remediation 2026-11-13, R2 (F5, owner ruling 2026-11-18); tool-notes.md, "Slot-scaled dice".
+
+### Limited-use resets and hit-point pools
+Looks like: reset types read Short Rest, Long Rest, Dawn or Special (D&D Beyond's "Other"), on actions and on charged items alike: Infuse Item and Magical Tinkering `(Special)`. An Eldritch Cannon action's pool prints remaining over maximum, `• Eldritch Cannon: Flamethrower   38/50 HP   (Special)`, not `12 used / 50 max`.
+Source: tool-notes.md, "Limited use" (F8, 2026-11-18).
+
 ### Feature rows print a save DC when their text names one
 Looks like: a feature row whose own text names one ability's save DC ends with `   DC N`, after any dice: `• Channel Divinity: Turn Undead   DC 16` (Cathartic 112305147), `• Stunning Strike   DC 15` and `• Ki Points   DC 15` (Flemin 112315775), `• Arms of the Astral Self: Summon   DC 15` (Petit Nuage 40193614), and the 2024 Unarmed Strike (`DC 10`, and `DC 13` for the Dex. version, on Diana 133054584). Text that names two abilities' DCs, or one that can't be worked out, prints no DC, never `DC ?`.
 Source: tool-notes.md, "Save DC"; history.md R3 (owner ruling 2026-11-13; A8, owner decision 2026-11-17: counted by ability).
