@@ -69,9 +69,61 @@ const STRIP_ENTITIES: Record<string, string> = {
  */
 export function stripHtml(s: string | null | undefined): string {
   if (!s) return "";
-  return decodeOnePass(s.replace(/<[^>]*>/g, ""), STRIP_ENTITIES)
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  // [^<>] rather than [^>]: a "<" that starts no tag stays text, and the scan stops at the next
+  // "<", so a run of unterminated "<" (homebrew text) stays linear instead of quadratic.
+  return blankLineRuns(decodeOnePass(flattenTables(normalizeNewlines(s)).replace(/<[^<>]*>/g, ""), STRIP_ENTITIES));
+}
+
+/** CRLF and lone CR as "\n": D&D Beyond's description HTML uses CRLF, which hid blank-line runs from the collapse. */
+function normalizeNewlines(s: string): string {
+  return s.replace(/\r\n?/g, "\n");
+}
+
+/** Lines holding only whitespace (an &nbsp; included) become empty, runs of 3+ newlines become one blank line, then trim. */
+function blankLineRuns(s: string): string {
+  return s.replace(/\n[^\S\n]+(?=\n)/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/**
+ * Each complete `<table …>…</table>` as one line per row, cells joined by " | "
+ * (an empty middle cell kept, an all-empty row dropped), set off by blank lines.
+ * A caption is a row of its own, and text after a row's last cell or the last
+ * row is kept as a last cell or row, so nothing is lost when closing tags are
+ * omitted. Cell text keeps its entities for the caller's single decode; only
+ * its tags are dropped and its whitespace collapsed. `<tablefoo>`, a table
+ * with no `</table`, or a `</table` with no `>` is left to the plain strip.
+ * Linear: indexOf, split and [^<>] scans only, as this runs on homebrew text.
+ */
+function flattenTables(s: string): string {
+  // ASCII-only lowercase keeps every index valid in `s` ("İ".toLowerCase() is two units long).
+  const lower = s.replace(/[A-Z]+/g, m => m.toLowerCase());
+  let out = "";
+  let from = 0;
+  let pos = 0;
+  for (;;) {
+    const start = lower.indexOf("<table", pos);
+    if (start === -1) break;
+    pos = start + "<table".length;
+    if (!/[\s>/]/.test(lower.charAt(pos))) continue;
+    const end = lower.indexOf("</table", pos);
+    if (end === -1) break;
+    const close = lower.indexOf(">", end);
+    if (close === -1) break;
+    out += s.slice(from, start) + "\n\n" + tableRows(s.slice(start, end)).join("\n") + "\n\n";
+    from = pos = close + 1;
+  }
+  return out + s.slice(from);
+}
+
+function tableRows(html: string): string[] {
+  const text = (h: string): string => h.replace(/<[^<>]*>/g, " ").replace(/\s+/g, " ").trim();
+  return html.replace(/<\/caption\s*>/gi, "</tr>").split(/<\/tr\s*>/i).flatMap(row => {
+    const pieces = row.split(/<\/t[dh]\s*>/i);
+    const cells = pieces.slice(0, -1).map(text);
+    const tail = text(pieces[pieces.length - 1]);
+    if (tail) cells.push(tail);
+    return cells.some(Boolean) ? [cells.join(" | ")] : [];
+  });
 }
 
 const NAMED_ENTITIES: Record<string, string> = {
@@ -92,7 +144,7 @@ function decodeEntities(s: string): string {
 /** Like stripHtml, but decodes named/hex entities and keeps line breaks and list bullets (monster stat blocks, source titles). */
 export function stripHtmlRich(html: string | null | undefined): string {
   if (!html) return "";
-  return decodeEntities(html
+  return decodeEntities(normalizeNewlines(html)
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n")
     .replace(/<\/li>/gi, "\n")

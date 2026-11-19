@@ -156,6 +156,68 @@ describe("stripHtml one-pass entities (minors B item 1)", () => {
   });
 });
 
+describe("stripHtml line endings and tables (regression 2026-11-19 F1)", () => {
+  // Shape of D&D Beyond's description HTML (Vi 145415789, Eldritch Cannon): CRLF line endings,
+  // a table whose cells hold <p> paragraphs on their own lines.
+  const cannon = "<p>It has legs.</p>\r\n<h4>Eldritch Cannons</h4>\r\n<table class=\"compendium-left-aligned-table\">\r\n<thead>\r\n<tr>\r\n<th>Cannon</th>\r\n<th>Activation</th>\r\n</tr>\r\n</thead>\r\n<tbody>\r\n<tr>\r\n<td>\r\n<p>Flamethrower</p>\r\n</td>\r\n<td>\r\n<p>The cannon exhales fire.</p>\r\n</td>\r\n</tr>\r\n<tr>\r\n<td>\r\n<p>Force Ballista</p>\r\n</td>\r\n<td>\r\n<p>Make a ranged spell attack.</p>\r\n</td>\r\n</tr>\r\n</tbody>\r\n</table>\r\n<p>Next paragraph.</p>";
+
+  it("prints a table as one line per row, cells joined by ' | ', with no runs of blank lines", () => {
+    expect(stripHtml(cannon)).toBe(
+      "It has legs.\nEldritch Cannons\n\nCannon | Activation\nFlamethrower | The cannon exhales fire.\nForce Ballista | Make a ranged spell attack.\n\nNext paragraph."
+    );
+  });
+  it("collapses blank-line runs written with CRLF or CR line endings, and drops the CRs", () => {
+    expect(stripHtml("<p>a</p>\r\n\r\n\r\n\r\n<p>b</p>")).toBe("a\n\nb");
+    expect(stripHtml("a\r\rb")).toBe("a\n\nb");
+    expect(stripHtml("a\r\nb")).toBe("a\nb");
+  });
+  it("treats whitespace-only lines as blank", () => {
+    expect(stripHtml("<div>\n<p>a</p>\n  \n \t\n<p>b</p>\n</div>")).toBe("a\n\nb");
+    expect(stripHtml("<p>a</p>\n&nbsp;\n\n<p>b</p>")).toBe("a\n\nb");
+  });
+  it("keeps an empty middle cell so columns stay aligned, and skips empty rows", () => {
+    expect(stripHtml("<table><tr><td>1</td><td></td><td>x</td></tr><tr><td> </td></tr></table>")).toBe("1 |  | x");
+  });
+  it("decodes entities in cells once, after the table is flattened", () => {
+    expect(stripHtml("<table><tr><td>A &amp;amp; B</td><td>&lt;b&gt;</td></tr></table>")).toBe("A &amp; B | <b>");
+  });
+  it("leaves an unterminated table to the plain strip", () => {
+    expect(stripHtml("<table><tr><td>a</td><td>b</td>")).toBe("ab");
+  });
+  it("stays linear on many unterminated table and row openings (untrusted homebrew text)", () => {
+    const evil = "<table>".repeat(20_000) + "<tr><td>".repeat(20_000);
+    const t0 = Date.now();
+    stripHtml(evil);
+    stripHtml("<table>" + "<tr><td>x</td>".repeat(20_000) + "</table>");
+    expect(Date.now() - t0).toBeLessThan(1_000);
+  });
+  // Adversarial review of the F1 fix, 2026-11-19: each of these was quadratic or lost text.
+  it("stays linear on a '<' with no matching '>' (in a cell, in plain text, or a dangling </table)", () => {
+    const t0 = Date.now();
+    stripHtml("<table><tr><td>" + "<".repeat(80_000) + "</td></tr></table>");
+    stripHtml("<table></table".repeat(40_000));
+    stripHtml("<".repeat(80_000));
+    stripHtml("a < b ".repeat(20_000));
+    expect(Date.now() - t0).toBeLessThan(500);
+  });
+  it("keeps a '<' that starts no tag as text", () => {
+    expect(stripHtml("a < b <i>c</i>")).toBe("a < b c");
+  });
+  it("is not thrown off by characters that lengthen when lowercased", () => {
+    expect(stripHtml("İ".repeat(12) + "<table><tr><td>a</td></tr></table>visible tail text")).toBe("İ".repeat(12) + "\n\na\n\nvisible tail text");
+  });
+  it("loses no text from a table it can't flatten cleanly", () => {
+    expect(stripHtml("a <table b </table c")).toBe("a <table b </table c");
+    expect(stripHtml("<table><tr><td>a<td>b<tr><td>c<td>d</table>tail")).toBe("a b c d\n\ntail");
+    expect(stripHtml("<tablefoo>A</tablefoo>")).toBe("A");
+    expect(stripHtml("<table><tr><td>a</td>tail1</tr>tail2</table>")).toBe("a | tail1\ntail2");
+    expect(stripHtml("<table><caption>Cap</caption><tr><td>a</td><td>b</td></tr></table>")).toBe("Cap\na | b");
+  });
+  it("stripHtmlRich collapses CRLF blank-line runs too", () => {
+    expect(stripHtmlRich("<p>a</p>\r\n\r\n\r\n<p>b</p>")).toBe("a\n\nb");
+  });
+});
+
 describe("mapWithConcurrency (fix round 1)", () => {
   it.each([0, -1, 0.5, Number.NaN])("rejects a limit of %s with a clear error", async limit => {
     await expect(mapWithConcurrency([1, 2], limit, async x => x)).rejects.toThrow(/limit must be a whole number of at least 1/);
