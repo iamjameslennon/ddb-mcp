@@ -370,21 +370,26 @@ function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficie
   const customWeapons: string[] = [];
   const customTools: string[] = [];
   const customLanguages: string[] = [];
-  // Names granted only through a restricted modifier. A name that any
-  // unconditional modifier lists prints plain, whatever the order of allMods.
-  const condArmor = new Set<string>();
-  const condWeapons = new Set<string>();
-  const condTools = new Set<string>();
-  const condCustomWeapons = new Set<string>();
-  const condCustomTools = new Set<string>();
+  // Restricted grants, keyed per list by the proficiency's subType slug. A
+  // slug that any unconditional modifier also grants prints plain, whatever
+  // the order of allMods or how each modifier spells its name.
+  interface ProfList { list: string[]; cond: Map<string, string>; plain: Set<string> }
+  const track = (list: string[]): ProfList => ({ list, cond: new Map(), plain: new Set() });
+  const tArmor = track(armor);
+  const tWeapons = track(weapons);
+  const tTools = track(tools);
+  const tCustomWeapons = track(customWeapons);
+  const tCustomTools = track(customTools);
   for (const m of allMods) {
     const cond = isConditionalMod(m);
-    const add = (list: string[], condSet: Set<string>, name: string) => { if (cond) condSet.add(name); else list.push(name); };
+    const add = (t: ProfList, name: string) => {
+      if (!cond) { t.list.push(name); t.plain.add(sub); } else if (!t.cond.has(sub)) t.cond.set(sub, name);
+    };
     const sub = str(m.subType);
     if (isProfPlaceholder(sub)) continue;
     if (isProficiencyMod(m)) {
-      if (armorProfMap[sub]) add(armor, condArmor, armorProfMap[sub]);
-      else if (weaponProfMap[sub]) add(weapons, condWeapons, weaponProfMap[sub]);
+      if (armorProfMap[sub]) add(tArmor, armorProfMap[sub]);
+      else if (weaponProfMap[sub]) add(tWeapons, weaponProfMap[sub]);
       else if (sub.includes("saving-throws") || sub.includes("-skill") ||
                SKILLS.some(([n]) => n.toLowerCase().replace(/ /g, "-").replace(/'/g, "") === sub)) {
         // skill/save prof — handled elsewhere
@@ -403,9 +408,9 @@ function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficie
         if (isWeapon) {
           // "Crossbow, Light" prints as the item's name, "Light Crossbow" (owner ruling 2026-11-06).
           const wName = friendly ? weaponWordOrder(friendly) : name;
-          if (known) add(weapons, condWeapons, wName); else add(customWeapons, condCustomWeapons, wName);
+          if (known) add(tWeapons, wName); else add(tCustomWeapons, wName);
         } else {
-          if (known) add(tools, condTools, name); else add(customTools, condCustomTools, name);
+          if (known) add(tTools, name); else add(tCustomTools, name);
         }
       }
     } else if (isLanguageMod(m)) {
@@ -429,14 +434,9 @@ function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficie
     if (!Number.isFinite(id) || id <= 0) continue;
     languages.push(LANGUAGE_NAMES_BY_ID[id] ?? `Language #${id}`);
   }
-  const withConditional = (list: string[], condSet: Set<string>) => {
-    for (const name of condSet) if (!list.includes(name)) list.push(`${name} ${CONDITIONAL_PROFICIENCY_NOTE}`);
-  };
-  withConditional(armor, condArmor);
-  withConditional(weapons, condWeapons);
-  withConditional(tools, condTools);
-  withConditional(customWeapons, condCustomWeapons);
-  withConditional(customTools, condCustomTools);
+  for (const t of [tArmor, tWeapons, tTools, tCustomWeapons, tCustomTools]) {
+    for (const [slug, name] of t.cond) if (!t.plain.has(slug)) t.list.push(`${name} ${CONDITIONAL_PROFICIENCY_NOTE}`);
+  }
   return { armor, weapons, tools, languages, customWeapons, customTools, customLanguages };
 }
 

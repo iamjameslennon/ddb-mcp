@@ -2901,12 +2901,42 @@ describe("conditional proficiencies (F2, owner ruling R1)", () => {
     expect(weapons).not.toContain("conditional");
   });
   it("marks a restricted tool or armor proficiency as conditional", () => {
-    const r = sheet([prof("thieves-tools", "Thieves' Tools", 2103445194, "x"), prof("light-armor", "Light Armor", undefined, "x")]);
+    const secret = "Only while raging";
+    const r = sheet([prof("thieves-tools", "Thieves' Tools", 2103445194, secret), prof("light-armor", "Light Armor", undefined, secret)]);
+    expect(`${r.tools}${r.armor}`).not.toContain(secret);
     expect(r.tools).toContain("Thieves' Tools (conditional, not applied)");
     expect(r.armor).toContain("Light Armor (conditional, not applied)");
     const plain = sheet([prof("thieves-tools", "Thieves' Tools", 2103445194, "x"), prof("thieves-tools", "Thieves' Tools", 2103445194)]);
     expect(plain.tools).toContain("Thieves' Tools");
     expect(plain.tools).not.toContain("conditional");
+  });
+});
+
+describe("conditional proficiencies, grant matching (fix round 1)", () => {
+  const prof = (subType: string, extra: Record<string, unknown>) => ({ type: "proficiency", subType, ...extra });
+  const lines = (extra: unknown[]) => {
+    const fighter = FIGHTER_5.data as Record<string, unknown>;
+    const mods = fighter.modifiers as Record<string, unknown>;
+    const out = parseCharacterData({ data: { ...fighter, modifiers: { ...mods, class: [...extra, ...(mods.class as unknown[])] } } }, "summary");
+    const line = (label: string) => out.split("\n").find(l => l.includes(label + ":")) ?? "";
+    return { weapons: line("Weapons"), tools: line("Tools") };
+  };
+  const TT = { friendlySubtypeName: "Thieves' Tools", entityTypeId: 2103445194 };
+  it("matches grants by subType, not by each modifier's spelling of the name", () => {
+    const { tools } = lines([prof("thieves-tools", { ...TT, restriction: "x" }), prof("thieves-tools", { entityTypeId: 2103445194 })]);
+    expect(tools).not.toContain("conditional");
+    expect(tools).toContain("Thieves");
+  });
+  it("an unrestricted grant first, then a restricted one, prints one plain entry", () => {
+    const { tools } = lines([prof("thieves-tools", TT), prof("thieves-tools", { ...TT, restriction: "x" })]);
+    expect(tools.match(/Thieves/g)).toHaveLength(1);
+    expect(tools).not.toContain("conditional");
+  });
+  it("a whitespace-only restriction prints plain", () => {
+    const r = lines([prof("firearms", { friendlySubtypeName: "Firearms", entityTypeId: 660121713, restriction: "  " }), prof("thieves-tools", { ...TT, restriction: "  " })]);
+    expect(r.weapons).toContain("Firearms");
+    expect(r.tools).toContain("Thieves' Tools");
+    expect(`${r.weapons}${r.tools}`).not.toContain("conditional");
   });
 });
 
