@@ -179,5 +179,7 @@ Last updated 2026-11-19. Releases and pushes go straight to `main`. The rules-ed
      4. `ddb_logout`, `ddb_login`, and leave the window idle for more than 60 s: it must stay open (the 3-minute deadline; the client must not cut the call off at 60 s), and at 3 minutes reply `Login failed: Sign-in wasn't finished within 3 minutes…`.
      5. `ddb_login` again and close the window by hand: expect `Login failed: The sign-in window was closed before sign-in finished.` at once.
      6. After a successful sign-in, `ddb_list_characters` must list the characters.
-     7. If the Google hand-back stalls on a white popup, decide whether to remove `--enable-automation` for the login launch (owner ruling 2026-11-12: decided after the live test).
-8. **Open by design** (no change planned): (q) either Open5e document failing fails the call; (y) the sheet keeps empty slots for nameless entries; (ab) "dual-edition" means only 2024 + 2014 books.
+     7. `ddb_login` again and, with the window still open, quit Claude Desktop (a client disconnect): the sign-in window must close within a few seconds and no Chrome process from the login may remain (2026-11-19 F3).
+     8. If the Google hand-back stalls on a white popup, decide whether to remove `--enable-automation` for the login launch (owner ruling 2026-11-12: decided after the live test).
+8. **Regression remediation 2026-11-19 (F1–F3)**: done (stripHtml CRLF and tables; `ddb_get_rules` query excerpts on a boundary; shutdown on client disconnect closes the login browser). Unreleased. Root causes, fixes and verification in history.md "Regression remediation 2026-11-19". No carry-overs opened.
+9. **Open by design** (no change planned): (q) either Open5e document failing fails the call; (y) the sheet keeps empty slots for nameless entries; (ab) "dual-edition" means only 2024 + 2014 books.
