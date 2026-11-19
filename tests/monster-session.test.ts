@@ -20,6 +20,7 @@ vi.mock("../src/session-fetch.js", () => {
       return { gen: S.gen };
     }),
     assertSessionCurrent: vi.fn(),
+    rethrowSessionChange: vi.fn(),
     onSessionInvalidated: vi.fn((cb: () => void) => { S.hooks.push(cb); }),
     anonymousFetch: vi.fn(),
   };

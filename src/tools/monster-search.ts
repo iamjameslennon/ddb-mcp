@@ -3,7 +3,7 @@
  * its Open5e fallback.
  */
 
-import { captureSession, type SessionSnapshot } from "../session-fetch.js";
+import { captureSession, rethrowSessionChange, type SessionSnapshot } from "../session-fetch.js";
 import { getSourceIndex } from "../game-config.js";
 import {
   classifyEdition, groupAndSelect, monsterTiebreak, twinAliases, normalizeName,
@@ -592,7 +592,10 @@ export async function monsterSearchParts(params: MonsterSearchParams): Promise<s
   if (summary) lines.push(summary);
 
   return { header, body: lines.join("\n"), footer: searchFooter(requested, hidden), hidden };
-  } catch {
+  } catch (err) {
+    // An account change must surface, never be answered from Open5e labelled as an outage
+    // (or as homebrew being unreachable): the rule getMonster and getMonsterStats follow (bq).
+    rethrowSessionChange(err);
     if (homebrew) return HOMEBREW_UNREACHABLE;
     return await o5SearchMonstersSection(params, "unavailable").then(r => withSourceCaveatSection(r, params.source)).catch(
       () => `Monster search unavailable — D&D Beyond and Open5e both failed.${asker.anonymous ? NOT_LOGGED_IN_SUFFIX : ""}`

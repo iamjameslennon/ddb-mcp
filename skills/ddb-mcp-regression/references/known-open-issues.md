@@ -52,9 +52,6 @@ Shows up as: `ddb_character_lookup` listing an unrelated entry next to the right
 ### (bp) `ddb_get_monster` can miss a monster in a crowded name
 Shows up as: `ddb_get_monster` says not found, or picks a different creature, for a name that `ddb_search_monsters` lists.
 
-### (bq) A session change mid-search reads as "Open5e unavailable"
-Shows up as: `ddb_search_monsters` answers that the SRD fallback is unavailable when the real cause was a login change during the call. Check the session (SKILL.md, "If the session drops") before filing.
-
 ### (bu) The closest-match line can be skipped, and short names count as close
 Shows up as: `ddb_get_monster` showing a different entry without its `showing the closest match` line when the matching twin is locked; or a short name taken as a close match for another (Lich/Lion, Ogre/Ooze).
 

@@ -862,8 +862,8 @@ describe("monster tools after ddb_logout and across session changes (anonymous p
   it("an authenticated request whose session changes mid-request is still rejected and not cached", async () => {
     setSessionFile(sessionJson("SECRET_A"));
     serve(() => setSessionFile(sessionJson("SECRET_B")));
-    const first = await monster.searchMonsters({ name: "goblin" });
-    expect(first).not.toContain("GoblinAuth");
+    // The change surfaces as the error (bq), never an Open5e answer or account A's list.
+    await expect(monster.searchMonsters({ name: "goblin" })).rejects.toBeInstanceOf(sf.SessionChangedError);
     serve();
     const second = await monster.searchMonsters({ name: "goblin" });
     expect(second).toContain("GoblinAnon"); // account B has no SECRET_A cookie; nothing of A's was cached

@@ -2567,6 +2567,34 @@ describe("getMonsterStats: session changes surface, lookup failures are logged",
     expect(o5GetMonsterStats).not.toHaveBeenCalled();
   });
 
+  it("searchMonsters rethrows a SessionChangedError: no Open5e answer labelled unavailable (bq)", async () => {
+    throwOnMonsterSearch(new SessionChangedError(), { sessionChanges: true });
+    await expect(searchMonsters({ name: "Goblin" })).rejects.toBeInstanceOf(SessionChangedError);
+    expect(o5SearchMonstersSection).not.toHaveBeenCalled();
+  });
+
+  it("a SessionChangedError anywhere in the cause chain is rethrown too", async () => {
+    const changed = new SessionChangedError();
+    throwOnMonsterSearch(new Error("fetch failed", { cause: new Error("aborted", { cause: changed }) }), { sessionChanges: true });
+    await expect(searchMonsters({ name: "Goblin" })).rejects.toBe(changed);
+  });
+
+  it("source: homebrew rethrows a session change instead of 'unreachable'", async () => {
+    const changed = new SessionChangedError();
+    const route = vi.mocked(sessionFetch).getMockImplementation()!;
+    vi.mocked(sessionFetch).mockImplementation(async (input: string | URL | Request, ...rest: unknown[]) => {
+      if (String(input).includes("/v1/Monster?")) throw changed;
+      return (route as (...a: unknown[]) => Promise<Response>)(input, ...rest);
+    });
+    await expect(searchMonsters({ name: "Zombie", source: "homebrew" })).rejects.toBe(changed);
+  });
+
+  it("a plain outage still falls back to Open5e as unavailable", async () => {
+    throwOnMonsterSearch(new Error("socket hang up"));
+    await searchMonsters({ name: "Goblin" });
+    expect(o5SearchMonstersSection).toHaveBeenCalledWith({ name: "Goblin" }, "unavailable");
+  });
+
   it("rateEncounter rejects cleanly with several lookups in flight", async () => {
     throwOnMonsterSearch(new SessionChangedError(), { sessionChanges: true });
     const names = ["Goblin", "Orc", "Wolf", "Ogre", "Troll", "Zombie", "Lich"].map(name => ({ name }));
