@@ -1688,6 +1688,44 @@ describe("parseCharacterData — speed bonuses from class/feat modifiers", () =>
       expect(parseCharacterData(build({}, [bonus("innate-speed-flying", 30)]), "summary")).toContain("fly 30 ft.");
     });
 
+    it("an innate-speed bonus opens the axis, so a speed-axis bonus raises it too", () => {
+      const out = parseCharacterData(build({}, [bonus("innate-speed-flying", 30), bonus("speed-flying", 10)]), "summary");
+      expect(speedLine(out)).toBe("Speed: 30 ft., fly 40 ft.");
+    });
+
+    it("walking is exempt: race walk 0 + speed-walking bonus still applies", () => {
+      expect(speedLine(parseCharacterData(build({ walk: 0 }, [bonus("speed-walking", 10)]), "summary"))).toBe("Speed: 40 ft.");
+    });
+
+    describe("item gating", () => {
+      const itemMod = (extra: Record<string, unknown>): Record<string, unknown> => ({
+        ...set("innate-speed-swimming", 30), componentId: 9001, componentTypeId: 2103445194, ...extra,
+      });
+      const withItem = (item: Record<string, unknown>): Record<string, unknown> => {
+        const d = build({}, [bonus("speed-swimming", 10)]).data as Record<string, unknown>;
+        const mods = d.modifiers as Record<string, unknown[]>;
+        return {
+          data: {
+            ...d,
+            modifiers: { ...mods, item: [...(mods.item ?? []), itemMod({})] },
+            inventory: [
+              ...((d.inventory as unknown[]) ?? []),
+              { equipped: false, isAttuned: false, definition: { id: 9001, entityTypeId: 2103445194, canAttune: true, name: "Test Fins" }, ...item },
+            ],
+          },
+        };
+      };
+      it("an unequipped item's speed modifier does not apply", () => {
+        expect(speedLine(parseCharacterData(withItem({}), "summary"))).toBe("Speed: 30 ft.");
+      });
+      it("an equipped but unattuned item (attunement required) does not apply", () => {
+        expect(speedLine(parseCharacterData(withItem({ equipped: true }), "summary"))).toBe("Speed: 30 ft.");
+      });
+      it("an equipped, attuned item applies", () => {
+        expect(speedLine(parseCharacterData(withItem({ equipped: true, isAttuned: true }), "summary"))).toBe("Speed: 30 ft., swim 40 ft.");
+      });
+    });
+
     it("a zero set speed doesn't open the axis", () => {
       const out = parseCharacterData(build({}, [set("innate-speed-flying", 0), bonus("speed-flying", 10)]), "summary");
       expect(speedLine(out)).toBe("Speed: 30 ft.");

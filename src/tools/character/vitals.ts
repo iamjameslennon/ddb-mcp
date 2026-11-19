@@ -10,6 +10,7 @@
  */
 
 import { arr, records, featureDefinition, hasRemarkableAthlete, isBonusMod, isHalfProficiencyMod, isSetMod, num, obj, signed, str } from "./helpers.js";
+import { isActiveItemMod } from "./item-gate.js";
 import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
 
 export interface HitPoints { current: number; max: number; temp: number }
@@ -106,15 +107,19 @@ function computeSpeed(core: CoreStats): string[] {
     const subTypes = new Set([`innate-speed-${axis}`, `speed-${axis}`]);
     // The bare "speed" subType is a walking-default bonus only; never applies to fly/swim/climb/burrow.
     if (axis === "walking") subTypes.add("speed");
+    // Item modifiers count only while the item is active (equipped, attuned when required).
+    const applies = (m: Mod): boolean => isApplicable(m) && isActiveItemMod(m, core.inventory);
     const override = allMods
-      .filter(m => isSetMod(m) && subTypes.has(m.subType) && num(m.value ?? m.fixedValue) > 0 && isApplicable(m))
+      .filter(m => isSetMod(m) && subTypes.has(m.subType) && num(m.value ?? m.fixedValue) > 0 && applies(m))
       .reduce((max, m) => Math.max(max, num(m.value ?? m.fixedValue)), 0);
-    // A `speed-{axis}` bonus (Superior Mobility) raises only a speed the character already has;
-    // it never opens a fly/swim/climb/burrow axis. `innate-speed-{axis}` bonuses still grant one.
-    const hasSpeed = axis === "walking" || (override || base) > 0;
-    const bonus = allMods
-      .filter(m => isBonusMod(m) && subTypes.has(m.subType) && isApplicable(m) && (hasSpeed || m.subType !== `speed-${axis}`))
-      .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
+    const bonusOf = (pred: (m: Mod) => boolean): number =>
+      allMods
+        .filter(m => isBonusMod(m) && applies(m) && pred(m))
+        .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
+    // A `speed-{axis}` bonus (Superior Mobility) raises only a speed the character already has
+    // (race, set, or an innate-speed bonus); it never opens a fly/swim/climb/burrow axis on its own.
+    const hasSpeed = axis === "walking" || (override || base) > 0 || bonusOf(m => m.subType === `innate-speed-${axis}`) > 0;
+    const bonus = bonusOf(m => subTypes.has(str(m.subType)) && (hasSpeed || m.subType !== `speed-${axis}`));
     return (override || base || fallback) + bonus;
   };
   // Monk Unarmored Movement uses "unarmored-movement" rather than "innate-speed-walking".
