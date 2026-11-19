@@ -200,3 +200,7 @@ Source: tool-notes.md, `ddb_get_condition` (2026-11-13 remediation, F5); `src/to
 ### Conditional proficiencies are listed but not applied
 Looks like: Vi 145415789 has a `firearms` proficiency whose restriction reads "Optional rule at DM discretion". Her Weapons line says `Firearms (conditional, not applied)` (the restriction text itself is never printed) and her Pistol shows +2 to hit, as on dndbeyond.com, not +6. The same note marks a restricted tool or armor proficiency. A restricted and an unrestricted grant of one proficiency print as one plain entry and give proficiency; a whitespace-only restriction counts as unrestricted.
 Source: tool-notes.md, Weapon modifier bonuses, Firearms (F2; owner ruling R1, 2026-11-18, reverses the 2026-11-11 F12 fix).
+
+### Player-set defenses are listed and marked
+Looks like: a character whose sheet has hand-added defenses (Laena, Idhren 155829352) lists them in the DEFENSES block after the granted ones, each marked, for example `Immunities: Magical Sleep, Poison (player-set), Frightened (player-set)`. A defense a feature already grants prints once, unmarked. The player's own note on why they added it is never shown.
+Source: tool-notes.md, Player-set defenses (F7; `src/tools/character/defenses.ts`).

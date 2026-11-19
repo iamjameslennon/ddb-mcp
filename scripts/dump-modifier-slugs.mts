@@ -59,6 +59,13 @@ const damageAdjustment = sorted([
   ...((data.conditions as Array<{ definition: Named }> | undefined) ?? []).map(c => slug(c.definition.name)),
   ...HAND_ADDED.damageAdjustment,
 ]);
+// Custom defenses carry rule-data ids: damageAdjustments (type 1 resistance, 2 immunity,
+// 3 vulnerability) and conditions (the 15 standard conditions). Sorted by id.
+const damageAdjustmentsById = ((data.damageAdjustments as Array<{ id: number; name: string; type: number }> | undefined) ?? [])
+  .filter(e => [1, 2, 3].includes(e.type)).sort((a, b) => a.id - b.id);
+const conditionsById = ((data.conditions as Array<{ definition: { id: number; name: string } }> | undefined) ?? [])
+  .map(c => c.definition).sort((a, b) => a.id - b.id);
+if (!damageAdjustmentsById.length || !conditionsById.length) throw new Error("rule-data is missing an id table");
 if (!proficiency.length || !language.length || !damageAdjustment.length) throw new Error("rule-data is missing a table");
 
 const block = (xs: string[]): string => {
@@ -91,6 +98,16 @@ ${block(language)}
 export const DAMAGE_ADJUSTMENT_SLUGS: ReadonlySet<string> = new Set([
 ${block(damageAdjustment)}
 ]);
+
+/** Rule-data damageAdjustments by id: \`type\` 1 resistance, 2 immunity, 3 vulnerability. */
+export const DAMAGE_ADJUSTMENTS_BY_ID: Readonly<Record<number, { name: string; type: 1 | 2 | 3 }>> = {
+${damageAdjustmentsById.map(e => `  ${e.id}: { name: ${JSON.stringify(e.name)}, type: ${e.type} },`).join("\n")}
+};
+
+/** Rule-data conditions by id (condition immunities). */
+export const CONDITION_NAMES_BY_ID: Readonly<Record<number, string>> = {
+${conditionsById.map(e => `  ${e.id}: ${JSON.stringify(e.name)},`).join("\n")}
+};
 `;
 writeFileSync(new URL("../src/tools/character/modifier-slugs.ts", import.meta.url), out);
 console.log(`proficiency ${proficiency.length}, language ${language.length}, damage adjustment ${damageAdjustment.length}`);

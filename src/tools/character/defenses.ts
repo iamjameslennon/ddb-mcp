@@ -6,7 +6,7 @@
  */
 
 import { arr, capitalize, isImmunityMod, isResistanceMod, isVulnerabilityMod, knownAndCustomLines, str } from "./helpers.js";
-import { DAMAGE_ADJUSTMENT_SLUGS } from "./modifier-slugs.js";
+import { CONDITION_NAMES_BY_ID, DAMAGE_ADJUSTMENTS_BY_ID, DAMAGE_ADJUSTMENT_SLUGS } from "./modifier-slugs.js";
 import type { CoreStats, Mod } from "./types.js";
 
 /** One defense list: known D&D Beyond values, and subTypes printed on a wrapped `(custom)` line. */
@@ -51,12 +51,44 @@ function defenseList(mods: ReadonlyArray<Mod & { subType: string }>): DefenseLis
   return { known: [...new Set(known)], custom: [...new Set(custom)] };
 }
 
+/** Marks a defense the player added by hand on the sheet. */
+export const PLAYER_SET_NOTE = "(player-set)";
+
+/**
+ * Appends the player's own defenses (`customDefenseAdjustments`) to the known lists.
+ * `type 2` is a rule-data damageAdjustments id, filed by that adjustment's own type
+ * (1 resistance, 2 immunity, 3 vulnerability); `type 1` is a conditions id, a condition
+ * immunity. An unknown id or type prints nothing. `source` is player-written and never
+ * printed. A name a modifier already grants stays plain and prints once.
+ */
+function addPlayerSet(char: Record<string, unknown>, lists: { 1: DefenseList; 2: DefenseList; 3: DefenseList }): void {
+  for (const e of arr<Record<string, unknown>>(char.customDefenseAdjustments)) {
+    let name: string | undefined;
+    let list: DefenseList | undefined;
+    if (e.type === 2 && typeof e.adjustmentId === "number" && Object.hasOwn(DAMAGE_ADJUSTMENTS_BY_ID, e.adjustmentId)) {
+      const adj = DAMAGE_ADJUSTMENTS_BY_ID[e.adjustmentId]!;
+      name = adj.name;
+      list = lists[adj.type];
+    } else if (e.type === 1 && typeof e.adjustmentId === "number" && Object.hasOwn(CONDITION_NAMES_BY_ID, e.adjustmentId)) {
+      name = CONDITION_NAMES_BY_ID[e.adjustmentId];
+      list = lists[2];
+    }
+    if (name === undefined || !list || list.known.includes(name)) continue;
+    const marked = `${name} ${PLAYER_SET_NOTE}`;
+    if (!list.known.includes(marked)) list.known.push(marked);
+  }
+}
+
 export function computeDefenses(core: CoreStats): Defenses {
   const { char, allMods } = core;
+  const resistances = defenseList(allMods.filter(isResistanceMod));
+  const immunities = defenseList(allMods.filter(isImmunityMod));
+  const vulnerabilities = defenseList(allMods.filter(isVulnerabilityMod));
+  addPlayerSet(char, { 1: resistances, 2: immunities, 3: vulnerabilities });
   return {
-    resistances: defenseList(allMods.filter(isResistanceMod)),
-    immunities: defenseList(allMods.filter(isImmunityMod)),
-    vulnerabilities: defenseList(allMods.filter(isVulnerabilityMod)),
+    resistances,
+    immunities,
+    vulnerabilities,
     conditions: arr<Record<string, unknown>>(char.conditions).map(c => str(c.id)),
   };
 }
