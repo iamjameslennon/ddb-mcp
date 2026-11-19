@@ -179,7 +179,7 @@ function computeInitiative(core: CoreStats): number {
   // alone — the DDB website doesn't. If a character has both JoAT and RA
   // somehow (Bard 2 / Champion 7 multiclass), take the max rather than
   // double-stacking.
-  const joatInit = allMods.some(m => isHalfProficiencyMod(m) && m.subType === "initiative")
+  const joatInit = allMods.some(m => isHalfProficiencyMod(m) && m.subType === "initiative" && isActiveItemMod(m, core.inventory))
     ? Math.floor(profBonus / 2)
     : 0;
   const raInit = hasRemarkableAthlete(classes) ? Math.ceil(profBonus / 2) : 0;

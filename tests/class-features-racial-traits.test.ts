@@ -794,10 +794,11 @@ describe("br-2024 redirect for class features and racial traits (R4)", () => {
 
 describe("a warmed build is not served after ddb_logout (T5)", () => {
   // Characterisation only. The early exit in loadClassFeatures / loadRacialTraits sits before the build
-  // cache read, but it cannot be pinned on its own: revokeSession's invalidation hook clears the build
-  // cache first, and the rebuild then fails with the same no-session reply (checked by removing the
-  // exit: this test still passes). The spell compendium, whose singleton survives and whose rebuild
-  // turns into SessionChangedError, is pinned in catalog-logged-out.test.ts.
+  // cache read, but its ordering cannot be pinned on its own: revokeSession's invalidation hook clears the
+  // build cache first, and the rebuild then fails with the same no-session reply (checked by removing the
+  // exit: this test still passes). The same holds for spells: the compendium's singleton does not survive
+  // a revoke either (the hook nulls spellStore and clears referenceCache, reference.ts), so the ordering of
+  // the spell exit is untestable too. The spell exit's existence is pinned by catalog-logged-out.test.ts.
   it("class features and racial traits refuse with the no-session reply once the session is revoked", async () => {
     fetchMock.mockImplementation(serviceMock());
     expect(await reference.searchClassFeatures({})).toContain("**Class Feature Search**");

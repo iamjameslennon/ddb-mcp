@@ -117,3 +117,17 @@ describe("item ability-score modifiers (G2)", () => {
     expect(conOf(sheet(gated([amulet], { equipped: true, canAttune: true, isAttuned: true })))).toBe(19);
   });
 });
+
+describe("item half-proficiency to initiative (G1)", () => {
+  const joat = { type: "half-proficiency", subType: "initiative", entityTypeId: 660121713 };
+  const initOf = (o: Record<string, unknown>): number => Number(/Initiative: ([+-]\d+)/.exec(sheet(o, "combat"))?.[1]);
+  const plain = initOf({ inventory: [] });
+
+  it.each(Object.entries(STATES))("a half-proficiency to initiative from an item that is %s changes nothing", (_n, state) => {
+    expect(initOf(gated([joat], state))).toBe(plain);
+  });
+
+  it.each(ACTIVE)("a half-proficiency to initiative from an item that is %s adds half the proficiency bonus, rounded down", (_n, state) => {
+    expect(initOf(gated([joat], state))).toBe(plain + 1); // proficiency bonus +3 at level 5, floor(3/2) = 1
+  });
+});
