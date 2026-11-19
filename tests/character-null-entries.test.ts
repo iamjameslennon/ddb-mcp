@@ -93,3 +93,25 @@ describe("a null entry in conditions (M7)", () => {
     if (section === "full" || section === "combat") expect(out).toContain("CONDITIONS: x");
   });
 });
+
+describe.each(BAD.map(b => [String(b === undefined ? "undefined" : JSON.stringify(b)), b] as const))(
+  "a %s entry in stats, bonusStats, overrideStats and characterValues (bf)", (_label, bad) => {
+    const clean = variant(FIGHTER_5, d => {
+      d.characterValues = [{ typeId: 1, value: 17, valueId: null }, { typeId: 35, value: 1, valueId: "2" }];
+      d.bonusStats = [{ id: 6, value: 2 }];
+      d.overrideStats = [{ id: 3, value: 15 }];
+    });
+    const pad = (list: unknown[]) => [bad, ...list, bad];
+    const dirty = variant(clean, d => {
+      d.stats = pad(d.stats); d.bonusStats = pad(d.bonusStats);
+      d.overrideStats = pad(d.overrideStats); d.characterValues = pad(d.characterValues);
+    });
+    it.each(SECTIONS)("the %s section renders as if the entry were absent", section => {
+      expect(parseCharacterData(dirty, section, INDEX)).toBe(parseCharacterData(clean, section, INDEX));
+    });
+    it("the AC override and the CON override still apply", () => {
+      const out = parseCharacterData(dirty, "summary", INDEX);
+      expect(out).toContain("AC: 17");
+      expect(out).toContain("CON 15 (+2)");
+    });
+  });

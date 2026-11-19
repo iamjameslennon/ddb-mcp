@@ -61,9 +61,9 @@ export function computeCoreStats(char: CharData, index: SourceIndex): CoreStats 
   const inventory = records<InventoryItem>(char.inventory);
 
   // ── Ability Scores ─────────────────────────────────────────────────────────
-  const baseStats = arr<Record<string, unknown>>(char.stats);
-  const bonusStats = arr<Record<string, unknown>>(char.bonusStats);
-  const overrideStats = arr<Record<string, unknown>>(char.overrideStats);
+  const baseStats = records(char.stats);
+  const bonusStats = records(char.bonusStats);
+  const overrideStats = records(char.overrideStats);
 
   // Sum ability-score `bonus` modifiers, but iterate per-source so we can
   // gate race-sourced bonuses on `isGranted`. In the 2024 rules ability

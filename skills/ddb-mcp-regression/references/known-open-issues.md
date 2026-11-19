@@ -18,9 +18,6 @@ Shows up as: Luck Points, Draconic Cry, Stonecunning, Stone's Endurance and simi
 ### (be) Some feature dice are omitted
 Shows up as: Martial Arts actions print without their dice: Deflect Missiles (Flemin 112315775, Petit Nuage 40193614), Arms of the Astral Self and some monk Unarmed Strike actions. So do rows whose dice add an ability modifier: Stone's Endurance, the Eldritch Cannon entries and Arms of the Astral Self: Summon (which still prints its save DC). Other feature rows now take their dice from their own text (2014 Second Wind, 2014 Bardic Inspiration), so a missing die on one of those is a new finding. An optional class feature whose text uses `{{scalevalue}}` (Petit Nuage 40193614's Quickened Healing) prints no dice, because the sheet carries no level scale for it.
 
-### (bf) A null AC override entry would throw
-Shows up as: an error on a character whose data has a null `characterValues` entry. No live character has one, so a crash here is this issue.
-
 ### (br) Pact and hex weapons using CHA are unverified
 Shows up as: a Warlock weapon row (2024 Pact of the Blade, 2014 Hex Warrior) that should use CHA but uses STR or DEX. No test character has one, so no data shape is verified.
 

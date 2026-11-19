@@ -431,7 +431,7 @@ function computeProficiencies(char: CharData, allMods: readonly Mod[], inventory
   }
   // Language grants stored in char.characterValues (typeId 35). valueId is
   // a stringified integer pointing into the rule-data language table.
-  for (const cv of arr<Record<string, unknown>>(char.characterValues)) {
+  for (const cv of records(char.characterValues)) {
     if (num(cv.typeId) !== CHAR_VALUE_TYPE_LANGUAGE) continue;
     if (num(cv.value) <= 0) continue;
     const id = parseInt(str(cv.valueId), 10);

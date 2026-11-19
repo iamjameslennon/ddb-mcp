@@ -16,7 +16,7 @@
  * that AC is isolated.
  */
 
-import { arr, isBonusMod, isSetMod, num, obj, str } from "./helpers.js";
+import { isBonusMod, isSetMod, num, obj, records, str } from "./helpers.js";
 import type { CoreStats, InventoryItem } from "./types.js";
 
 export function computeAc(core: CoreStats): number {
@@ -28,7 +28,7 @@ export function computeAc(core: CoreStats): number {
   // contextId / valueId, unlike item-scoped entries with typeIds 8/10/12/etc)
   // and replaces the entire calc — not a bonus. A literal 0 is treated as
   // absent (defensive: it would make no sense as an AC value).
-  const overrideEntry = arr<Record<string, unknown>>(char.characterValues)
+  const overrideEntry = records(char.characterValues)
     .find(v => num(v.typeId) === 1);
   if (overrideEntry && num(overrideEntry.value) > 0) {
     return num(overrideEntry.value);
