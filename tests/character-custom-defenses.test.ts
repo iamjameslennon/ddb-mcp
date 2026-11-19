@@ -60,6 +60,9 @@ describe("player-set defenses (F7)", () => {
     const slug = DAMAGE_ADJUSTMENTS_BY_ID[14]!.slug;
     const apos = sheet([{ adjustmentId: 14, type: 2, source: null }], { type: "resistance", subType: slug });
     expect(apos.match(/\(player-set\)/g)).toBeNull();
+    // The plain name is printed exactly once (T1).
+    // (the modifier carries no friendly name, so the plain form is the capitalised slug).
+    expect(line(apos, "Resistances")).toBe(`  Resistances: ${slug[0].toUpperCase()}${slug.slice(1)}`);
   });
 
   it("a vulnerability-typed adjustment lands on Vulnerabilities", () => {

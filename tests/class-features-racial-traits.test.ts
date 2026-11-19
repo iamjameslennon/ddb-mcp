@@ -791,3 +791,22 @@ describe("br-2024 redirect for class features and racial traits (R4)", () => {
     expect(await call()).toBe(`D&D Beyond files the Basic Rules (2024) ${plural} under the Player's Handbook (2024), so source "br-2024" matches none. Use source: "phb-2024" — on an account that doesn't own the Player's Handbook, that lists just the free (Basic Rules) ${plural}.`);
   });
 });
+
+describe("a warmed build is not served after ddb_logout (T5)", () => {
+  // Characterisation only. The early exit in loadClassFeatures / loadRacialTraits sits before the build
+  // cache read, but it cannot be pinned on its own: revokeSession's invalidation hook clears the build
+  // cache first, and the rebuild then fails with the same no-session reply (checked by removing the
+  // exit: this test still passes). The spell compendium, whose singleton survives and whose rebuild
+  // turns into SessionChangedError, is pinned in catalog-logged-out.test.ts.
+  it("class features and racial traits refuse with the no-session reply once the session is revoked", async () => {
+    fetchMock.mockImplementation(serviceMock());
+    expect(await reference.searchClassFeatures({})).toContain("**Class Feature Search**");
+    expect(await reference.searchRacialTraits({})).toContain("**Racial Trait Search**");
+    const state = await import("../src/session-state.js");
+    await state.revokeSession();
+    fsMock.existsSync.mockReturnValue(false);
+    for (const run of [() => reference.searchClassFeatures({}), () => reference.searchRacialTraits({})]) {
+      await expect(run()).rejects.toThrow(/ddb_login/);
+    }
+  });
+});

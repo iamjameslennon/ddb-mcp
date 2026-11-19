@@ -163,6 +163,20 @@ describe("after ddb_logout, the catalog tools fall back like a fresh logged-out 
     for (const text of actual) expect(text).not.toContain("Session changed");
   });
 
+  it("a warmed authenticated spell compendium is not served after ddb_logout (T5)", async () => {
+    await setUp("outage");
+    vi.stubGlobal("fetch", vi.fn(serviceMock({ spells: { "8": [spell("Fireball", 3)] } })));
+    const warm = await reference.getSpell("Fireball");
+    expect(warm).toContain("Fireball");
+    expect(warm).not.toContain("Open5e");
+    await (await import("../src/session-state.js")).revokeSession();
+    fsMock.existsSync.mockReturnValue(false);
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => o5(url)));
+    const text = await reply(() => reference.getSpell("Fireball"));
+    expect(text).toContain(LOGGED_OUT);
+    expect(text).not.toContain("Session changed");
+  });
+
   it("signing back in builds from D&D Beyond again", async () => {
     await setUp("after-logout");
     expect(await reply(() => reference.getSpell("Fireball"))).toContain(LOGGED_OUT);

@@ -3325,6 +3325,15 @@ describe("bundled items (F11)", () => {
   it("a name whose number isn't the bundle size keeps its count", () => {
     expect(invLine([entry(1, "Caltrops (bag of 20)", 2, 1)])).toBe("Caltrops (bag of 20) ×2");
   });
+  it("an edition-tagged bundle name counts in bundles, and the tag stays last (T4)", () => {
+    expect(invLine([entry(1, "Caltrops (bag of 20) [2014]", 40, 20)])).toBe("Caltrops (bag of 20) [2014] ×2");
+  });
+  it("a name with no word before 'of N' counts in bundles (T4)", () => {
+    expect(invLine([entry(1, "Caltrops (of 20)", 40, 20)])).toBe("Caltrops (of 20) ×2");
+  });
+  it("a name number that is not the bundle size, above 1, keeps the piece count (T4)", () => {
+    expect(invLine([entry(1, "Caltrops (bag of 20)", 3, 10)])).toBe("Caltrops (bag of 20) ×3");
+  });
   it("two copies of one bag merge before counting", () => {
     expect(invLine([
       entry(1, "Ball Bearings (bag of 1,000)", 1000, 1000),
