@@ -130,10 +130,11 @@ export function computeCoreStats(char: CharData, index: SourceIndex): CoreStats 
 
   // PHB cap: ability scores from race/class/feat/background ASI sources max
   // out at 20 (both 2014 and 2024 PHB). Three things sit outside the cap:
-  // manual overrides via `overrideStats` (which also ignore the Other bonus),
+  // manual overrides via `overrideStats` (which also ignore the Other bonus
+  // and beat a `type:"set"` score even when lower),
   // `type:"set"` item modifiers (Belt of Giant Strength, etc., which win when
-  // higher), and the "Other bonus" field (`bonusStats`), which D&D Beyond adds
-  // AFTER the cap: Laena 26158232 shows DEX 14 + 2 + 3 + 1 = 20, plus Other +2
+  // higher than the calculated score and no override is set), and the
+  // "Other bonus" field (`bonusStats`), which D&D Beyond adds AFTER the cap: Laena 26158232 shows DEX 14 + 2 + 3 + 1 = 20, plus Other +2
   // = 22. A negative Other bonus lowers a capped score. `bonusStats` is not in
   // `char.modifiers`, so it never reaches `scoreBonuses`.
   // Without the cap, characters like Calderax (base 18 + multiple +1 ASIs)
@@ -147,9 +148,10 @@ export function computeCoreStats(char: CharData, index: SourceIndex): CoreStats 
     const baseVal = num(base?.value ?? 0);
     const bonusVal = num(bonus?.value ?? 0);
     const overrideVal = override?.value != null ? num(override.value) : null;
-    const calculated = overrideVal != null
-      ? overrideVal
-      : Math.min(baseVal + (scoreBonuses[id] ?? 0), ABILITY_SCORE_CAP) + bonusVal;
+    // A manual override wins outright, even below an item's set score (owner ruling 2026-11-19, (bz));
+    // otherwise a higher set score wins.
+    if (overrideVal != null) return overrideVal;
+    const calculated = Math.min(baseVal + (scoreBonuses[id] ?? 0), ABILITY_SCORE_CAP) + bonusVal;
     return scoreSetValues[id] != null ? Math.max(calculated, scoreSetValues[id]) : calculated;
   });
   const statMods = statTotals.map(modOf);

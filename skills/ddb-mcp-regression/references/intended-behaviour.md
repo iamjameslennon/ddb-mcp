@@ -44,6 +44,10 @@ Source: CLAUDE.md, Invariants, "Safety gates"; history.md B11 (owner rulings 202
 Looks like: blocks wrapped in `<untrusted_dndbeyond_content>` tags: character, campaign and player names, homebrew entries, custom languages and items, notes, book text, page scrapes, raw character JSON, and the whole replies of `ddb_list_characters`, `ddb_list_campaigns` and `ddb_get_campaign`. In `ddb_get_party`, the PARTY line and each member's name are wrapped. This is protection against prompt injection, not clutter.
 Source: CLAUDE.md, Invariants, "Untrusted text"; history.md security findings (owner ruling 2026-11-06 for list replies).
 
+### A manual Override Score beats an item's set score
+Looks like: a score below what an item `set` modifier gives, such as override 15 under an Amulet of Health that sets 19, printing the override. An override above the set score also wins, and another ability's set score is unaffected.
+Source: tool-notes.md, ability scores (owner ruling 2026-11-19, reverses the 2026-11-18 `max()`); carry-over (bz) closed.
+
 ### Official content stays unwrapped
 Looks like: entries with `isHomebrew: false` print plain. Wrapping them would be the bug.
 Source: CLAUDE.md, Invariants, "Untrusted text".

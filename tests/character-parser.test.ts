@@ -1286,6 +1286,21 @@ describe("parseCharacterData — Other bonus (bonusStats) applies after the 20 c
     expect(parseCharacterData(char, "summary")).toContain("DEX 15 (+2)");
   });
 
+  it("a manual override wins even below an item's set score (bz, owner ruling 2026-11-19)", () => {
+    const char = build({ base: [10, 12, 14, 10, 13, 8], override: { 3: 15 }, mods: [{ src: "item", type: "set", stat: 3, val: 19 }] });
+    expect(parseCharacterData(char, "summary")).toContain("CON 15 (+2)");
+  });
+
+  it("an override above the set score still wins", () => {
+    const char = build({ base: [10, 12, 14, 10, 13, 8], override: { 3: 21 }, mods: [{ src: "item", type: "set", stat: 3, val: 19 }] });
+    expect(parseCharacterData(char, "summary")).toContain("CON 21 (+5)");
+  });
+
+  it("another ability's set score is unaffected by an override", () => {
+    const char = build({ base: [10, 12, 14, 10, 13, 8], override: { 2: 12 }, mods: [{ src: "item", type: "set", stat: 3, val: 19 }] });
+    expect(parseCharacterData(char, "summary")).toContain("CON 19 (+4)");
+  });
+
   it("an Other bonus below the cap adds in full", () => {
     const char = build({ base: [10, 14, 14, 10, 13, 8], other: { 2: 2 } });
     expect(parseCharacterData(char, "summary")).toContain("DEX 16 (+3)");
