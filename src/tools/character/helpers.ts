@@ -236,7 +236,7 @@ export function customItemNames(char: CharData): Map<number, string> {
     if (integerId(e.valueTypeId) !== INVENTORY_ENTRY_TYPE) continue;
     const id = integerId(e.valueId);
     const name = e.value.replace(/\s+/g, " ").trim();
-    if (!Number.isInteger(id) || name === "" || names.has(id)) continue;
+    if (!Number.isInteger(id) || id <= 0 || name === "" || names.has(id)) continue; // id 0: an entry with no `id` reads as 0
     names.set(id, name);
   }
   return names;

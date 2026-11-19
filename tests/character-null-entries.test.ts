@@ -39,6 +39,10 @@ function populated(shape: "2014" | "2024"): Record<string, unknown> {
     if (shape === "2014") d.classSpells = [{ characterClassId: 1, spells: [fireBolt, shield] }];
     else d.classSpells = [{ characterClassId: 1, classSpells: [fireBolt, shield] }];
     d.spells = { race: [spell(74, "Dancing Lights", 0, 1)], class: [healing], item: [spell(75, "Web", 2, 1)], feat: [spell(76, "Misty Step", 2, 3)] };
+    d.customSenses = [{ senseId: 2, value: 30 }];
+    d.customProficiencies = [{ type: 3, name: "Gnomish" }];
+    d.choices = { race: [{ componentId: 1, optionValue: 3521 }] };
+    d.options = { ...d.options, race: [...(d.options?.race ?? []), { definition: { id: 62, name: "Wood Elf Lineage", sources: S(145) } }] };
     d.actions = { race: [{ name: "Breath", activation: { activationType: 1 }, limitedUse: { maxUses: 1, numberUsed: 0, resetType: 1 } }], class: [], feat: null, item: null };
   });
 }
@@ -62,6 +66,11 @@ function withBad(base: Record<string, unknown>, bad: unknown): Record<string, un
     }
     for (const k of Object.keys(d.spells)) d.spells[k] = pad(d.spells[k]);
     for (const k of Object.keys(d.actions)) if (d.actions[k]) d.actions[k] = pad(d.actions[k]);
+    // Player-entered and choice lists read straight off the data (S10, same crash class as (bf)).
+    d.customSenses = pad(d.customSenses);
+    d.customProficiencies = pad(d.customProficiencies);
+    d.choices = { ...d.choices, race: pad(d.choices?.race) };
+    d.options = { ...d.options, race: pad(d.options?.race) };
   });
 }
 

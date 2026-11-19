@@ -146,9 +146,11 @@ async function followAllowedRedirects(route: Route): Promise<void> {
   const headers = withoutHeaders(req.headers(), ["cookie", "host"]);
 
   for (let redirects = 0; ; redirects++) {
+    // Looked up before `remaining` is computed, so the fetch timeout never
+    // overruns the shared deadline by the lookup time (a throw still aborts).
+    const cookie = walkCookieHeader(await context.cookies(url), chromeCookie);
     const remaining = deadline - Date.now();
     if (remaining <= 0) return route.abort("timedout");
-    const cookie = walkCookieHeader(await context.cookies(url), chromeCookie);
     let response: Awaited<ReturnType<Route["fetch"]>>;
     try {
       response = await route.fetch({ url, method: "GET", headers: { ...headers, cookie }, maxRedirects: 0, timeout: remaining });
@@ -200,6 +202,7 @@ export function walkCookieHeader(
   jar: ReadonlyArray<{ name: string; value: string; sameSite?: string; partitionKey?: string }>,
   chromeCookieHeader: string | undefined,
 ): string {
+  // Matched by name=value only: the jar is already per-URL, so domain and path are pre-filtered.
   const chromeSent = new Set((chromeCookieHeader ?? "").split(";").map((c) => c.trim()).filter(Boolean));
   return jar
     .filter((c) => (c.sameSite !== "Strict" && !c.partitionKey) || chromeSent.has(`${c.name}=${c.value}`))

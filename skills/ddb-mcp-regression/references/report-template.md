@@ -39,7 +39,7 @@ Rules for the whole report:
 
 | Code | Seen where |
 |------|-----------|
-| <(bj)> | <tool, character ID, one line> |
+| <(be)> | <tool, character ID, one line> |
 
 ## By design
 

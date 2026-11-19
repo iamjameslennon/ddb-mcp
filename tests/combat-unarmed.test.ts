@@ -125,6 +125,19 @@ describe("Unarmed Strike row", () => {
     expect(row(combat(overrides))[0]).toContain("4 bludgeoning");
   });
 
+  it("an item's martial-arts modifier counts only while the item is equipped (and attuned when it needs attunement)", () => {
+    const ITEM = { id: 880001, entityTypeId: 1112899 };
+    const sheet = (item: Record<string, unknown>) => ({
+      stats: stats(8, 16),
+      inventory: [{ id: 1, quantity: 1, equipped: false, isAttuned: false, ...item, definition: { ...ITEM, name: "Gloves", filterType: "Wondrous item", ...(item.definition as object) } }],
+      modifiers: { ...(BASE.modifiers as object), item: [{ type: "bonus", subType: "martial-arts", componentId: ITEM.id, componentTypeId: ITEM.entityTypeId }] },
+    });
+    expect(row(combat(sheet({})))[0]).toContain("0 bludgeoning"); // unequipped: STR -1
+    expect(row(combat(sheet({ equipped: true })))[0]).toContain("4 bludgeoning");
+    expect(row(combat(sheet({ equipped: true, definition: { canAttune: true } })))[0]).toContain("0 bludgeoning");
+    expect(row(combat(sheet({ equipped: true, isAttuned: true, definition: { canAttune: true } })))[0]).toContain("4 bludgeoning");
+  });
+
   it("a Martial Arts feature above the class level does not count", () => {
     expect(row(combat(monk("none", 8, 16, { requiredLevel: 9 })))[0]).toContain("0 bludgeoning");   // STR -1: floored at 0
   });

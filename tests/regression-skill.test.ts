@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import { server } from "../src/server.js";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
+const SKILL_DIR = join(ROOT, "skills/ddb-mcp-regression");
 
 /** A repo-relative file as UTF-8. */
 const read = (rel: string): string => readFileSync(join(ROOT, rel), "utf8");
@@ -144,9 +145,21 @@ describe("regression skill: judgement references and templates", () => {
     const expected = ["be", "bi", "bk", "bn", "bo", "bp", "br", "bs", "bu", "bv", "bw", "bx", "ca", "b", "aa", "ah", "ay"];
     expect([...codes].sort()).toEqual([...expected].sort());
     // history.md closes a carry-over as `**(bg)** ~~…~~` or "(bg) closed".
-    for (const code of codes.filter(c => c !== "B14")) {
+    for (const code of codes) {
       expect(history, code).toContain(`(${code})`);
       expect(history, code).not.toMatch(new RegExp(`\\*\\*\\(${code}\\)\\*\\* ~~|\\(${code}\\) closed`));
+    }
+  });
+
+  it("cites no closed carry-over code in SKILL.md or the references (history.md excluded)", () => {
+    const history = read("docs/claude/history.md");
+    const closed = [...history.matchAll(/\*\*\(([A-Za-z0-9]+)\)\*\* ~~/g)].map(m => m[1]);
+    expect(closed.length).toBeGreaterThan(0);
+    const dir = join(SKILL_DIR, "references");
+    const files = ["SKILL.md", ...readdirSync(dir).map(f => `references/${f}`)];
+    for (const f of files) {
+      const text = readFileSync(join(SKILL_DIR, f), "utf8");
+      for (const code of closed) expect(text, `${f} cites closed (${code})`).not.toContain(`(${code})`);
     }
   });
 
@@ -181,8 +194,6 @@ describe("regression skill: judgement references and templates", () => {
     expect(account).not.toMatch(/<books>|owns: </);
   });
 });
-
-const SKILL_DIR = join(ROOT, "skills/ddb-mcp-regression");
 
 describe("regression skill: SKILL.md", () => {
   const skill = () => read("skills/ddb-mcp-regression/SKILL.md");

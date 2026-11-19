@@ -40,7 +40,7 @@ export interface Identity {
  * Header correctly shows just "Aasimar" with no parenthetical.
  */
 function detectRaceVariant(char: CharData): string | null {
-  for (const opt of arr<Record<string, unknown>>(obj(char.options).race)) {
+  for (const opt of records(obj(char.options).race)) {
     const name = str(obj(opt.definition).name).trim();
     if (!name) continue;
     // "Wood Elf Lineage" / "High Elf Lineage" / "Drow Lineage"

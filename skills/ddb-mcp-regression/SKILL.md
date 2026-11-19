@@ -158,7 +158,7 @@ When a tool that worked before fails with a login, token or session error:
 1. Pause the batch and call `ddb_list_characters`.
 2. If that fails too, the session has gone: tell the contributor, ask them to sign in again with `ddb_login`, then re-run the failed call once.
 3. If it works, check it is the same account as at the start (the same characters as in your notes). If it isn't, a login changed mid-run: confirm the intended account with the contributor, then re-run the failed call once.
-4. If the failed call now works, record an environment note, not a finding. If a monster search failed with "Open5e unavailable" around a login change, that is the known issue (bq): put it under "Known open issues". Only a call that still fails, on the same account, with a working session, is a `suspected` finding.
+4. If the failed call now works, record an environment note, not a finding. A monster search that fails mid-search with `Monster search failed: ` plus a session-change message is a session error: check the session as above, not a finding or a "Known open issues" entry. An "Open5e unavailable" answer while the session is stable is a normal finding. Only a call that still fails, on the same account, with a working session, is a `suspected` finding.
 
 Don't file the failures caused by a dropped or changed session as findings.
 

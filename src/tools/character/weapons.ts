@@ -120,10 +120,10 @@ function martialArts(core: CoreStats): { die: string; homebrew: boolean } | null
   return null;
 }
 
-/** A Martial Arts feature at or below its class level, or a martial-arts modifier: the monk's STR/DEX rule, whether or not a die is known. */
+/** A Martial Arts feature at or below its class level, or a martial-arts modifier (an item's only while the item is active): the monk's STR/DEX rule, whether or not a die is known. */
 function hasMartialArts(core: CoreStats): boolean {
   const { allMods, classes } = core;
-  return allMods.some(m => str(m.subType) === "martial-arts") ||
+  return allMods.some(m => str(m.subType) === "martial-arts" && isActiveItemMod(m, core.inventory)) ||
     classes.some(c =>
       records(c.classFeatures).some(cf =>
         str(obj(cf.definition).name) === "Martial Arts" &&
@@ -136,7 +136,7 @@ export function martialArtsDie(core: CoreStats): string | null {
   return martialArts(core)?.die ?? null;
 }
 
-/** The one Unarmed Strike row of ACTIONS (STR-based; Martial Arts uses its die and the better of STR/DEX). A homebrew Martial Arts die is user text: the row is wrapped whole. */
+/** The one Unarmed Strike row of ACTIONS (STR-based; a Martial Arts feature or active martial-arts modifier uses the better of STR/DEX even with no die, and a known die gives the damage). A homebrew Martial Arts die is user text: the row is wrapped whole. */
 export function computeUnarmedStrike(core: CoreStats): string {
   const { statMods, profBonus } = core;
   const ma = martialArts(core);

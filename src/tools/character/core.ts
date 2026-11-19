@@ -82,7 +82,7 @@ export function computeCoreStats(char: CharData, index: SourceIndex): CoreStats 
   // matching mod so duplicate picks (Danyr's STR+STR) stack correctly.
   const ABILITY_OPTION_BASE = 3520;
   const playerRaceAbilityPicks: Array<{ componentId: number; abilityIdx: number }> = [];
-  for (const ch of arr<Record<string, unknown>>(obj(char.choices).race)) {
+  for (const ch of records(obj(char.choices).race)) {
     const opt = num(ch.optionValue);
     if (opt < ABILITY_OPTION_BASE || opt > ABILITY_OPTION_BASE + 5) continue;
     playerRaceAbilityPicks.push({
@@ -134,8 +134,9 @@ export function computeCoreStats(char: CharData, index: SourceIndex): CoreStats 
   // and beat a `type:"set"` score even when lower),
   // `type:"set"` item modifiers (Belt of Giant Strength, etc., which win when
   // higher than the calculated score and no override is set), and the
-  // "Other bonus" field (`bonusStats`), which D&D Beyond adds AFTER the cap: Laena 26158232 shows DEX 14 + 2 + 3 + 1 = 20, plus Other +2
-  // = 22. A negative Other bonus lowers a capped score. `bonusStats` is not in
+  // "Other bonus" field (`bonusStats`), which D&D Beyond adds AFTER the cap:
+  // Laena 26158232 shows DEX 14 + 2 + 3 + 1 = 20, plus Other +2 = 22. A
+  // negative Other bonus lowers a capped score. `bonusStats` is not in
   // `char.modifiers`, so it never reaches `scoreBonuses`.
   // Without the cap, characters like Calderax (base 18 + multiple +1 ASIs)
   // display as 21 (+5) while the DDB website shows 20 (+5).

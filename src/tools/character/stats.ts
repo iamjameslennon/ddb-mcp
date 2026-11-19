@@ -214,7 +214,7 @@ function computeSenses(char: CharData, allMods: readonly Mod[], skillBonuses: re
       recordBase(capitalize(m.subType), num(m.value), num(m.componentId));
     }
   }
-  for (const cs of arr<Record<string, unknown>>(char.customSenses)) {
+  for (const cs of records(char.customSenses)) {
     const name = SENSE_ID_NAMES[num(cs.senseId)];
     if (name) recordBase(name, num(cs.value), 0);
   }
@@ -435,7 +435,7 @@ function computeProficiencies(char: CharData, allMods: readonly Mod[], inventory
     }
   }
   // Player-added languages via DDB's "Custom Proficiency" UI live here.
-  for (const cp of arr<Record<string, unknown>>(char.customProficiencies)) {
+  for (const cp of records(char.customProficiencies)) {
     if (num(cp.type) !== CUSTOM_PROF_TYPE_LANGUAGE) continue;
     const name = str(cp.name).trim();
     if (name) customLanguages.push(name);

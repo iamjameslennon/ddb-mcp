@@ -46,7 +46,7 @@ Source: CLAUDE.md, Invariants, "Untrusted text"; history.md security findings (o
 
 ### A manual Override Score beats an item's set score
 Looks like: a score below what an item `set` modifier gives, such as override 15 under an Amulet of Health that sets 19, printing the override. An override above the set score also wins, and another ability's set score is unaffected.
-Source: tool-notes.md, ability scores (owner ruling 2026-11-19, reverses the 2026-11-18 `max()`); carry-over (bz) closed.
+Source: tool-notes.md, ability scores (owner ruling 2026-11-19, reverses the 2026-11-18 `max()`).
 
 ### Official content stays unwrapped
 Looks like: entries with `isHomebrew: false` print plain. Wrapping them would be the bug.
@@ -126,7 +126,7 @@ Source: tool-notes.md (owner decision 2026-11-07; owner ruling 2026-11-09).
 
 ### A bonus-action or reaction spell has figures only when it has an attack, a save or damage
 Looks like: `• Healing Word (spell, 1st-level slot)` bare next to `• Spiritual Weapon (spell, 2nd-level slot)   +8 to hit   1d8+4 force   range 60 ft.`.
-Source: tool-notes.md (owner ruling 2026-11-19, reversing 2026-11-09; carry-over (bj)).
+Source: tool-notes.md (owner ruling 2026-11-19, reversing 2026-11-09).
 
 ### Spells are labelled by how they are cast
 Looks like: CONCENTRATION SPELLS entries and the `(spell, …)` lines in BONUS ACTIONS / REACTIONS name the slot actually used: `[1st-level slot]` for a class spell, the pact slot for a Warlock class spell (`• Hex (spell, 5th-level slot)` at Warlock 9), `[from item]` for an item spell that uses no slot, `[no slot]` for a feature or racial spell that uses none, and with a fixed cast level `[2nd level, no slot]` / `• Hellish Rebuke (spell, 2nd level, no slot)` (item: `6th level, from item`). A cantrip has no concentration label. A spell held twice takes the label of the class entry.

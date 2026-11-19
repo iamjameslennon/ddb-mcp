@@ -29,6 +29,7 @@ describe("helpers", () => {
       cv("5", "  A\n B "), cv(6, "C"), cv("7", "D", "112130694"), cv("8", "   "),
       { typeId: 8, value: 9, valueId: "9", valueTypeId: "1439493548" },
       { typeId: 7, value: "E", valueId: "10", valueTypeId: "1439493548" },
+      cv("0", "stray zero"), cv(0, "stray numeric zero"),
       null, cv("5", "later"),
     ] } as unknown as CharData;
     expect(customItemNames(char)).toEqual(new Map([[5, "A B"], [6, "C"]]));
