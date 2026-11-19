@@ -93,4 +93,17 @@ describe("extractArticleMarkdown", () => {
   it("returns empty string for HTML with no usable root", () => {
     expect(extractArticleMarkdown("")).toBe("");
   });
+  it("collapses runs of blank lines to one (B14)", () => {
+    const html = "<article><h2>Intro</h2><p>One</p><p></p><p>  </p><p>Two</p><ul><li>a</li></ul><p>Three</p></article>";
+    expect(extractArticleMarkdown(html)).toBe("## Intro\n\nOne\n\nTwo\n\n- a\n\nThree");
+  });
+  it("treats whitespace-only lines, non-breaking spaces included, as blank", () => {
+    const html = "<article><p>A</p><div>&nbsp; </div><div>\t</div><p>B</p></article>";
+    expect(extractArticleMarkdown(html)).not.toMatch(/\n{3,}/);
+    expect(extractArticleMarkdown(html)).toMatch(/^A\n\nB$/);
+  });
+  it("keeps a single blank line and single newlines as they are", () => {
+    expect(extractArticleMarkdown("<article><p>A</p><p>B</p></article>")).toBe("A\n\nB");
+    expect(extractArticleMarkdown("<article><p>A<br>B</p></article>")).toBe("A\nB");
+  });
 });

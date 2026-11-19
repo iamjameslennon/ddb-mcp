@@ -395,7 +395,12 @@ export function extractArticleMarkdown(html: string): string {
     return childText;
   };
 
-  return processNode(root as AnyNode).trim();
+  // Adjacent block elements and empty paragraphs leave runs of newlines and lines holding only
+  // whitespace (a non-breaking space included, which \s matches); they would use up max_chars (B14).
+  return processNode(root as AnyNode)
+    .replace(/^[^\S\n]+$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 // ── Reading a book the account doesn't own (F27) ─────────────────────────────

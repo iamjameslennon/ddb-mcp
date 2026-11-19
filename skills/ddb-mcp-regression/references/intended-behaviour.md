@@ -222,7 +222,7 @@ Looks like: a character whose sheet has hand-added defenses (Laena, Idhren 15582
 Source: tool-notes.md, Player-set defenses (F7; `src/tools/character/defenses.ts`).
 
 ### Tables in feature and item text print one row per line
-Looks like: `ddb_character_lookup` "eldritch cannon" on Vi 145415789 prints the Eldritch Cannons table as `Cannon | Activation`, then `Flamethrower | The cannon exhales fire…`, `Force Ballista | …`, `Protector | …`, one row per line, with no runs of blank lines anywhere in the reply. The same holds for D&D Beyond catalog gets (spells, items, features) whose text has a table. `ddb_read_book` is separate: its blank-line runs are known issue (B14).
+Looks like: `ddb_character_lookup` "eldritch cannon" on Vi 145415789 prints the Eldritch Cannons table as `Cannon | Activation`, then `Flamethrower | The cannon exhales fire…`, `Force Ballista | …`, `Protector | …`, one row per line, with no runs of blank lines anywhere in the reply. The same holds for D&D Beyond catalog gets (spells, items, features) whose text has a table. `ddb_read_book` is separate: its blank-line runs are collapsed before `max_chars` is applied, so a padded page shows its text.
 Source: architecture.md, `src/utils.ts` `stripHtml` (2026-11-19 F1).
 
 ### A `ddb_get_rules` query jump starts on a boundary

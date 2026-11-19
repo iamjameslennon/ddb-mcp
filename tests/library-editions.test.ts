@@ -247,6 +247,18 @@ describe("library tools", () => {
     expect(out.split("\n")[1]).toBe("Rules: 2014 · Player's Handbook (2014)");
     expect(libCalls()).toHaveLength(2);
   });
+  it("max_chars counts collapsed text, so text after blank-line padding is still read (B14)", async () => {
+    route([{ name: "Player's Handbook (2014)", relativePath: "/sources/dnd/old-phb", isOwned: true }]);
+    const padding = "<p></p>".repeat(1600); // 3,200 newlines once rendered, so the text sits past max_chars
+    const page = `<html><article><p>Opening</p>${padding}<p>LATER TEXT</p></article></html>`;
+    mocks.sessionFetch.mockImplementation(async (url: unknown) => {
+      if (LIBRARY_RE.test(String(url))) return new Response(buildFixture([{ name: "Player's Handbook (2014)", relativePath: "/sources/dnd/old-phb", isOwned: true }]), { status: 200 });
+      if (String(url).includes("/sources/")) return new Response(page, { status: 200 });
+      return new Response("", { status: 404 });
+    });
+    const out = await readBook("dnd/old-phb", undefined, 3000);
+    expect(out).toContain("LATER TEXT");
+  });
   it("concurrent cold reads in one generation share one library fetch", async () => {
     route([{ name: "Player's Handbook (2014)", relativePath: "/sources/dnd/old-phb", isOwned: true }]);
     await Promise.all([readBook("dnd/old-phb"), readBook("dnd/old-phb"), readBook("dnd/old-phb")]);

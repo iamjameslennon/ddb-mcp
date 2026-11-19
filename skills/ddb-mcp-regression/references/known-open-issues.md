@@ -88,8 +88,3 @@ Shows up as: a homebrew optional class feature or racial trait on an official cl
 
 ### (ay) Item- and background-granted actions are unverified
 Shows up as: an action granted by an item or background printed plain when its source is homebrew; `ddb_character_lookup` on a background-granted action's name finding nothing (the background feature is found by its own name), or on an unequipped item's action finding nothing.
-
-## Small leftovers
-
-### (B14) read_book blank lines
-Shows up as: `ddb_read_book` output with long runs of blank lines that use up `max_chars`.
