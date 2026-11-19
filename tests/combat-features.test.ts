@@ -112,6 +112,43 @@ describe("action features", () => {
     });
   });
 
+  describe("limited use keyed to the proficiency bonus (bd)", () => {
+    const stats = (cha: number) => [10, 10, 10, 10, 10, cha].map((value, i) => ({ id: i + 1, value }));
+    const line = (name: string, lu: Record<string, unknown>, cha = 10, activation = SPECIAL) =>
+      block(sheet([action(name, 1, CLASS_FEATURE, activation, { limitedUse: { numberUsed: 0, resetType: 2, maxUses: 0, operator: 1,
+        statModifierUsesId: null, useProficiencyBonus: true, proficiencyBonusOperator: 1, ...lu } })], "class", { stats: stats(cha), bonusStats: [], overrideStats: [] }), "LIMITED USE");
+
+    it("uses the proficiency bonus as the maximum (Luck Points shape, level 5: +3)", () => {
+      expect(line("Luck Points", {})).toBe("LIMITED USE\n• Luck Points   0 used / 3 max   (Long Rest)");
+    });
+    it("shows what is used", () => {
+      expect(line("Draconic Cry", { numberUsed: 1 }, 10, BONUS)).toContain("• Draconic Cry   1 used / 3 max   (Long Rest)");
+    });
+    it("adds the bonus to a positive base (Chef: Special Food, 4 + PB)", () => {
+      expect(line("Chef: Special Food", { maxUses: 4, resetType: 1 })).toContain("• Chef: Special Food   0 used / 7 max   (Short Rest)");
+    });
+    it("adds it to a stat-based maximum too", () => {
+      expect(line("Odd", { statModifierUsesId: 6 }, 16)).toContain("/ 6 max");
+    });
+    it("prints ? for an unknown proficiency operator", () => {
+      expect(line("Odd", { proficiencyBonusOperator: 2 })).toContain("/ ? max");
+    });
+    it("lists nothing when the flag is false and there is no stat or base", () => {
+      const out = sheet([action("Nothing", 1, CLASS_FEATURE, ACTION, { limitedUse: { maxUses: 0, numberUsed: 0, resetType: 2, useProficiencyBonus: false } })]);
+      expect(out).not.toContain("\nLIMITED USE\n");
+    });
+    it("a homebrew-granted row is wrapped whole, an official one is plain", () => {
+      const out = combat({
+        classes: [fighter({ classFeatures: [feature(900, "Hex Surge", { isHomebrew: true }), feature(901, "Rally")] })],
+        ...actions({ class: [
+          action("Hex Surge", 900, CLASS_FEATURE, SPECIAL, { limitedUse: { maxUses: 0, numberUsed: 0, resetType: 2, useProficiencyBonus: true, proficiencyBonusOperator: 1 } }),
+          action("Rally", 901, CLASS_FEATURE, SPECIAL, { limitedUse: { maxUses: 0, numberUsed: 0, resetType: 2, useProficiencyBonus: true, proficiencyBonusOperator: 1 } }),
+        ] }),
+      });
+      expect(block(out, "LIMITED USE")).toBe(["LIMITED USE", wrapUntrusted("• Hex Surge   0 used / 3 max   (Long Rest)"), "• Rally   0 used / 3 max   (Long Rest)"].join("\n"));
+    });
+  });
+
   it("wraps an action whose granting feature exists only on subclassDefinition.classFeatures (plain shape)", () => {
     const plain = (id: number, name: string, isHomebrew: boolean) => ({ id, entityTypeId: CLASS_FEATURE, name, requiredLevel: 1, isHomebrew });
     const out = combat({

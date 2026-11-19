@@ -503,27 +503,35 @@ const actionLine = (ctx: FeatureLineContext) => ({ action, homebrew }: CharActio
 // ── Limited-use features ─────────────────────────────────────────────────────
 // maxUses=0 with statModifierUsesId means uses = that stat modifier (e.g. CHA for Bardic Inspiration)
 const hasUses = (lu: Record<string, unknown>): boolean =>
-  lu.maxUses !== undefined && (num(lu.maxUses) > 0 || lu.statModifierUsesId != null);
+  lu.maxUses !== undefined && (num(lu.maxUses) > 0 || lu.statModifierUsesId != null || lu.useProficiencyBonus === true);
 
 function buildLimitedUseLines(
   allActions: readonly CharAction[],
   statMods: readonly number[],
+  profBonus: number,
 ): string[] {
   return allActions
     .filter(({ action: a }) => hasUses(obj(a.limitedUse)))
     .map(({ action: a, homebrew }) => {
       const lu = obj(a.limitedUse);
       const reset = RESET_LABELS[num(lu.resetType)] ?? "Rest";
-      // A stat-based maximum is checked first: maxUses is its base, not the whole maximum.
-      // Operator 1 (or absent) adds the modifier, at least once. No other operator is known.
+      // maxUses is the base; a stat modifier and the proficiency bonus are each added when
+      // their operator is 1 (or absent), at least once overall. No other operator is known.
       const statId = lu.statModifierUsesId != null ? num(lu.statModifierUsesId) : null;
-      const maxStr = statId != null
-        ? (lu.operator == null || lu.operator === 1) && statId >= 1 && statId <= 6 && statMods[statId - 1] !== undefined
-          ? String(Math.max(1, num(lu.maxUses) + statMods[statId - 1]))
-          : "?"
-        : num(lu.maxUses) > 0
-          ? String(num(lu.maxUses))
-          : "?";
+      const usesPb = lu.useProficiencyBonus === true;
+      let total = num(lu.maxUses);
+      let unknown = false;
+      if (statId != null) {
+        if ((lu.operator == null || lu.operator === 1) && statId >= 1 && statId <= 6 && statMods[statId - 1] !== undefined) total += statMods[statId - 1];
+        else unknown = true;
+      }
+      if (usesPb) {
+        if (lu.proficiencyBonusOperator == null || lu.proficiencyBonusOperator === 1) total += profBonus;
+        else unknown = true;
+      }
+      const maxStr = unknown ? "?"
+        : statId != null || usesPb ? String(Math.max(1, total))
+        : total > 0 ? String(total) : "?";
       const used = num(lu.numberUsed);
       if (isHitPointPool(a) && maxStr !== "?") {
         return wrapIfHomebrew(`• ${str(a.name)}   ${Math.max(0, Number(maxStr) - used)}/${maxStr} HP   (${reset})`, homebrew);
@@ -598,7 +606,7 @@ export function computeActions(core: CoreStats): Actions {
     ...reactionSpells,
   ];
   const limitedUseFeatures = [
-    ...buildLimitedUseLines(allActions, statMods),
+    ...buildLimitedUseLines(allActions, statMods, core.profBonus),
     ...buildItemChargeLines(inventory, allActions, editions),
   ];
 
