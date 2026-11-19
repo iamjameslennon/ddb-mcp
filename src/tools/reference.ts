@@ -251,6 +251,11 @@ async function loadSpellCompendium(): Promise<SpellStore> {
   // compendium + reference cache) before we hand back stale account state. Also
   // binds the whole parallel build to one generation.
   const snapshot = captureSession();
+  // F4: not signed in, refuse before building, as a fresh logged-out server
+  // does, so the callers fall back (Open5e for spells). A snapshot taken after
+  // ddb_logout is anonymous, and the revoked flag would otherwise turn the
+  // failed build into a SessionChangedError at the assert below.
+  if (snapshot.state.kind !== "authenticated") throw new NoSessionError();
 
   if (spellStore) return spellStore;
 
@@ -1301,6 +1306,9 @@ async function baseListOrUnavailable(cacheKey: string, path: string, label: stri
 async function loadClassFeatures(): Promise<CachedBuild<ClassFeatureEntry>> {
   // Observe on-disk authority before the cache read (see loadSpellCompendium).
   const snapshot = captureSession();
+  // F4: not signed in (after ddb_logout too), refuse before building, as in
+  // loadSpellCompendium. No Open5e path: the caller's no-session reply stands.
+  if (snapshot.state.kind !== "authenticated") throw new NoSessionError();
   const hit = readBuildCache<ClassFeatureEntry>("class-features");
   if (hit) return hit;
 
@@ -1479,6 +1487,8 @@ export async function searchClassFeaturesSection(params: ClassFeatureSearchParam
 
 async function loadRacialTraits(): Promise<CachedBuild<RacialTraitEntry>> {
   const snapshot = captureSession();
+  // F4: as in loadClassFeatures — not signed in, the no-session reply.
+  if (snapshot.state.kind !== "authenticated") throw new NoSessionError();
   const hit = readBuildCache<RacialTraitEntry>("racial-traits");
   if (hit) return hit;
 

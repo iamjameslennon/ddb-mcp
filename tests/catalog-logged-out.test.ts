@@ -23,7 +23,7 @@ const fsMock = vi.hoisted(() => ({
 }));
 vi.mock("fs", () => fsMock);
 
-import { COBALT_URL, GAME_DATA, jsonResponse } from "./fixtures/spell-service.js";
+import { COBALT_URL, GAME_DATA, jsonResponse, serviceMock, spell } from "./fixtures/spell-service.js";
 import { o5FixtureFetch } from "./fixtures/open5e-v2.js";
 
 const o5 = o5FixtureFetch();
@@ -35,7 +35,8 @@ let reference: ReferenceModule;
 const LOGGED_OUT = "Open5e fallback — not logged in; ddb_login shows D&D Beyond's version";
 const UNAVAILABLE = "Open5e fallback — D&D Beyond unavailable";
 
-type Mode = "no-session" | "anonymous-cookies" | "outage";
+/** after-logout: signed in as in "outage", then ddb_logout (revokeSession) with the file gone. */
+type Mode = "no-session" | "anonymous-cookies" | "outage" | "after-logout";
 
 async function setUp(mode: Mode) {
   const session = JSON.stringify({
@@ -54,6 +55,19 @@ async function setUp(mode: Mode) {
   }));
   vi.resetModules();
   reference = await import("../src/tools/reference.js");
+  if (mode === "after-logout") {
+    await (await import("../src/session-state.js")).revokeSession();
+    fsMock.existsSync.mockReturnValue(false);
+  }
+}
+
+/** A tool's reply as the client sees it: its text, or the error it threw. */
+async function reply(run: () => Promise<string>): Promise<string> {
+  try {
+    return await run();
+  } catch (e) {
+    return `threw ${(e as Error).name}: ${(e as Error).message}`;
+  }
 }
 
 afterEach(() => {
@@ -118,5 +132,47 @@ describe("an outage while logged in", () => {
     expect(text).not.toContain("not logged in");
     expect(await reference.searchSpells({ name: "fire" })).toContain(UNAVAILABLE);
     expect(await reference.getItem("Longsword")).toContain(UNAVAILABLE);
+  });
+});
+
+describe("after ddb_logout, the catalog tools fall back like a fresh logged-out server (F4)", () => {
+  it("ddb_get_spell says not logged in", async () => {
+    await setUp("after-logout");
+    const text = await reply(() => reference.getSpell("Fireball"));
+    expect(text).toContain(LOGGED_OUT);
+    expect(text).not.toContain("Session changed");
+  });
+
+  it("ddb_search_spells says not logged in", async () => {
+    await setUp("after-logout");
+    const text = await reply(() => reference.searchSpells({ level: 3, school: "evocation", limit: 5 }));
+    expect(text).toContain(LOGGED_OUT);
+    expect(text).not.toContain("Session changed");
+  });
+
+  it("class features and racial traits reply as with no session", async () => {
+    // Neither has an Open5e path: the reply is the no-session one, not a session change.
+    const features = () => reference.searchClassFeatures({ name: "rage" });
+    const traits = () => reference.searchRacialTraits({ name: "darkvision" });
+    await setUp("no-session");
+    const expected = [await reply(features), await reply(traits)];
+    await setUp("after-logout");
+    const actual = [await reply(features), await reply(traits)];
+    expect(actual).toEqual(expected);
+    for (const text of actual) expect(text).toContain("ddb_login");
+    for (const text of actual) expect(text).not.toContain("Session changed");
+  });
+
+  it("signing back in builds from D&D Beyond again", async () => {
+    await setUp("after-logout");
+    expect(await reply(() => reference.getSpell("Fireball"))).toContain(LOGGED_OUT);
+    // What ddb_login's saveVerifiedSession does: a session file again, then
+    // invalidateSessionCache() (lifts the revoke, new generation).
+    fsMock.existsSync.mockReturnValue(true);
+    vi.stubGlobal("fetch", vi.fn(serviceMock({ spells: { "8": [spell("Fireball", 3)] } })));
+    (await import("../src/session-fetch.js")).invalidateSessionCache();
+    const text = await reference.getSpell("Fireball");
+    expect(text).toContain("Fireball");
+    expect(text).not.toContain("Open5e");
   });
 });

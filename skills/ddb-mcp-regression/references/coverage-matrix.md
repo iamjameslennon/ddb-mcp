@@ -158,7 +158,7 @@ Not applicable: invalid, ambiguous, locked, gate
 - source: spells from one book (an unowned one too) → that book's spells, or a clear "you don't own this book" rather than "No spells found".
 - homebrew: `source: "homebrew"` (homebrew accounts only) → only homebrew entries, each `[homebrew]` and wrapped as untrusted.
 - pagination: a broad search with `limit`/`offset` → consistent pages and total.
-- logged-out: same search → the SRD fallback, labelled `(Open5e fallback — not logged in; ddb_login shows D&D Beyond's version)`, never "D&D Beyond unavailable".
+- logged-out: same search → the SRD fallback, labelled `(Open5e fallback — not logged in; ddb_login shows D&D Beyond's version)`, never "D&D Beyond unavailable", and the same right after `ddb_logout` in one session, never "Session changed".
 
 ## `ddb_get_spell`
 
@@ -172,7 +172,7 @@ Not applicable: invalid, pagination, gate
 - edition: "Sleep, 2014 version" → 2014 text; default gives 2024 (which is concentration).
 - source: a spell from a named book → that book's version, note if editions differ.
 - homebrew: `source: "homebrew"` (homebrew accounts only) → only homebrew results, the full entry wrapped, each `[homebrew]` and wrapped as untrusted.
-- logged-out: "What does Fireball do?" → the SRD fallback, labelled `(Open5e fallback — not logged in; ddb_login shows D&D Beyond's version)`, never "D&D Beyond unavailable".
+- logged-out: "What does Fireball do?" → the SRD fallback, labelled `(Open5e fallback — not logged in; ddb_login shows D&D Beyond's version)`, never "D&D Beyond unavailable", and the same right after `ddb_logout` in one session, never "Session changed".
 
 ## `ddb_search_equipment`
 
@@ -262,7 +262,7 @@ Not applicable: invalid, ambiguous, locked, gate
 - source: features from one book.
 - homebrew: `source: "homebrew"` (homebrew accounts only) → only homebrew entries, each `[homebrew]` and wrapped as untrusted.
 - pagination: `limit`/`offset` → consistent pages.
-- logged-out: same → SRD fallback or clear message.
+- logged-out: same → a clear "log in first" (no SRD fallback), and the same right after `ddb_logout` in one session, never "Session changed".
 
 ## `ddb_search_racial_traits`
 
@@ -275,7 +275,7 @@ Not applicable: invalid, ambiguous, locked, gate
 - source: traits from one book.
 - homebrew: `source: "homebrew"` (homebrew accounts only) → only homebrew entries, each `[homebrew]` and wrapped as untrusted.
 - pagination: `limit`/`offset` → consistent pages.
-- logged-out: same → SRD fallback or clear message.
+- logged-out: same → a clear "log in first" (no SRD fallback), and the same right after `ddb_logout` in one session, never "Session changed".
 
 ## `ddb_search_rules`
 

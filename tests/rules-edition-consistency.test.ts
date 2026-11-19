@@ -10,7 +10,8 @@ const mocks = vi.hoisted(() => ({
   hasValidSession: vi.fn(() => true),
   sessionFetch: vi.fn(),
   beginAuthenticatedSession: vi.fn(),
-  captureSession: vi.fn(() => ({})),
+  // Signed in: the catalog loaders refuse an anonymous snapshot up front (F4).
+  captureSession: vi.fn(() => ({ state: { kind: "authenticated" } })),
   assertSessionCurrent: vi.fn(),
   invalidationHooks: [] as Array<() => void>,
 }));
