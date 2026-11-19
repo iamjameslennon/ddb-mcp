@@ -68,18 +68,29 @@ function buildAbilityScoreDisplay(statTotals: readonly number[], statMods: reado
 }
 
 // ── Saving throws ────────────────────────────────────────────────────────────
-function buildSavingThrows(allMods: readonly Mod[], inventory: readonly InventoryItem[], statMods: readonly number[], profBonus: number): string[] {
+function buildSavingThrows(core: CoreStats): string[] {
+  const { char, classes, allMods, inventory, statMods, profBonus } = core;
   const saveProfSubTypes = new Set(
     allMods.filter(isProficiencyMod).filter(m => isActiveItemMod(m, inventory))
       .filter(m => m.subType.includes("saving-throws"))
       .map(m => m.subType)
   );
   // Global save bonus — `bonus subType:"saving-throws"` applies to every save.
-  // Sources: Stone of Good Luck (Luckstone), Cloak of Protection, Paladin's
-  // Aura of Protection (via grantedModifiers on the aura feature), etc.
-  const globalSaveBonus = allMods
-    .filter(m => isBonusMod(m) && m.subType === "saving-throws")
-    .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
+  // Sources: Stone of Good Luck (Luckstone), Ring of Protection, Cloak of
+  // Protection, Paladin's Aura of Protection (via grantedModifiers on the aura
+  // feature), etc. An item's bonus counts only while the item is active (bc,
+  // owner ruling 2026-11-19); a class- or subclass-bucket one only while the
+  // feature it comes from is visible (the rule save advantages use).
+  const visibleIds = visibleClassFeatureIds(char, classes);
+  const hiddenOptions = hiddenOptionIds(char, visibleIds);
+  let globalSaveBonus = 0;
+  for (const [bucket, list] of Object.entries(obj(char.modifiers))) {
+    for (const m of records<Mod>(list)) {
+      if (!isBonusMod(m) || m.subType !== "saving-throws" || !isActiveItemMod(m, inventory)) continue;
+      if (!isVisibleAction(bucket === "subclass" ? "class" : bucket, m, visibleIds, hiddenOptions)) continue;
+      globalSaveBonus += num(m.value ?? m.fixedValue);
+    }
+  }
   return statKeys.map((key, i) => {
     const isProficient = saveProfSubTypes.has(`${key}-saving-throws`);
     const total = statMods[i] + (isProficient ? profBonus : 0) + globalSaveBonus;
@@ -500,7 +511,7 @@ export function computeStats(core: CoreStats): Stats {
   const skillBonuses = computeSkillBonuses(allMods, inventory, statMods, profBonus, classes);
   return {
     abilityScoreDisplay: buildAbilityScoreDisplay(statTotals, statMods),
-    savingThrows: buildSavingThrows(allMods, inventory, statMods, profBonus),
+    savingThrows: buildSavingThrows(core),
     saveAdvantages: buildSaveAdvantageLines(core),
     skillLines: buildSkillLines(skillBonuses),
     senses: computeSenses(char, allMods, skillBonuses),

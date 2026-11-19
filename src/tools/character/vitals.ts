@@ -96,7 +96,7 @@ function computeSpeed(core: CoreStats): string[] {
   const hiddenOptions = hiddenOptionIds(char, visibleClassFeatureIds(char, core.classes));
   for (const [source, list] of Object.entries(obj(char.modifiers))) {
     if (source !== "class" && source !== "subclass") continue;
-    for (const m of arr<Mod>(list)) {
+    for (const m of records<Mod>(list)) {
       const cid = num(m.componentId);
       if (num(m.componentTypeId) === OPTION_TYPE && cid !== 0) {
         if (hiddenOptions.has(cid)) skippedClassMods.add(m);

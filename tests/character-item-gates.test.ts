@@ -6,7 +6,8 @@
  */
 import { describe, expect, it } from "vitest";
 import { parseCharacterData as parseSheet } from "../src/tools/character.js";
-import { INDEX, withoutNameWrap } from "./fixtures/character-edition-helpers.js";
+import { INDEX, variant, withoutNameWrap } from "./fixtures/character-edition-helpers.js";
+import { FIGHTER_5 } from "./fixtures/character-fixtures.js";
 import { BASE, ITEM, block } from "./fixtures/combat-helpers.js";
 
 const ITEM_ID = 9500;
@@ -129,5 +130,93 @@ describe("item half-proficiency to initiative (G1)", () => {
 
   it.each(ACTIVE)("a half-proficiency to initiative from an item that is %s adds half the proficiency bonus, rounded down", (_n, state) => {
     expect(initOf(gated([joat], state))).toBe(plain + 1); // proficiency bonus +3 at level 5, floor(3/2) = 1
+  });
+});
+
+describe("global save bonus (bc, owner ruling 2026-11-19)", () => {
+  // The SAVING THROWS line as numbers, so the tests do not depend on the fixture's proficiencies.
+  const saves = (data: Record<string, unknown>): Record<string, number> => {
+    const lines = parseSheet(data, "summary", INDEX).split("\n");
+    const line = lines[lines.findIndex(l => l === "SAVING THROWS") + 1] ?? "";
+    return Object.fromEntries([...line.matchAll(/\b(STR|DEX|CON|INT|WIS|CHA) ([+-]\d+)/g)].map(m => [m[1], Number(m[2])]));
+  };
+  const clean = saves(FIGHTER_5);
+  const RING = { id: 9001, entityTypeId: 112130694, name: "Ring of Protection", filterType: "Ring", canAttune: true, magic: true, sources: [{ sourceId: 145 }] };
+  const ring = (state: { equipped?: boolean; isAttuned?: boolean; canAttune?: boolean } = {}) => variant(FIGHTER_5, d => {
+    const { canAttune, ...rest } = state;
+    d.inventory = [...(d.inventory ?? []), {
+      id: 9001, equipped: true, isAttuned: true, quantity: 1, ...rest,
+      definition: { ...RING, canAttune: canAttune ?? true },
+    }];
+    d.modifiers.item = [...(d.modifiers.item ?? []), { type: "bonus", subType: "saving-throws", value: 1, fixedValue: 1, componentId: 9001, componentTypeId: 112130694 }];
+  });
+  const plusOne = (): Record<string, number> => Object.fromEntries(Object.entries(clean).map(([k, v]) => [k, v + 1]));
+
+  it("an equipped, attuned item's save bonus counts on every save", () => {
+    expect(saves(ring())).toEqual(plusOne());
+  });
+
+  it("an unequipped item's save bonus does not count", () => {
+    expect(saves(ring({ equipped: false }))).toEqual(clean);
+  });
+
+  it("an equipped item that needs attunement and is not attuned does not count", () => {
+    expect(saves(ring({ isAttuned: false }))).toEqual(clean);
+  });
+
+  it("an equipped item that needs no attunement counts", () => {
+    expect(saves(ring({ canAttune: false, isAttuned: false }))).toEqual(plusOne());
+  });
+
+  const classMod = (bucket: "class" | "subclass", componentTypeId: number, componentId: number, classFeatures: unknown[], options: unknown[] = []) => variant(FIGHTER_5, d => {
+    d.classes[0].classFeatures = [...(d.classes[0].classFeatures ?? []), ...classFeatures];
+    d.options = { ...(d.options ?? {}), class: [...(d.options?.class ?? []), ...options] };
+    d.modifiers[bucket] = [...(d.modifiers[bucket] ?? []), { type: "bonus", subType: "saving-throws", value: 1, fixedValue: 1, componentId, componentTypeId }];
+  });
+  const cf = (id: number, requiredLevel: number) => ({ definition: { id, entityTypeId: 12168134, name: `F${id}`, requiredLevel } });
+
+  it("a class-bucket save bonus of a feature above the class level is skipped", () => {
+    expect(saves(classMod("class", 12168134, 900, [cf(900, 20)]))).toEqual(clean);
+  });
+
+  it("a class-bucket save bonus of a feature at or below the class level counts", () => {
+    expect(saves(classMod("class", 12168134, 900, [cf(900, 1)]))).toEqual(plusOne());
+  });
+
+  it("a subclass-bucket save bonus follows the class rule", () => {
+    expect(saves(classMod("subclass", 12168134, 900, [cf(900, 20)]))).toEqual(clean);
+    expect(saves(classMod("subclass", 12168134, 900, [cf(900, 1)]))).toEqual(plusOne());
+  });
+
+  it("an option's save bonus follows its parent feature: hidden skips, visible counts", () => {
+    const option = { componentId: 900, componentTypeId: 12168134, definition: { id: 901, entityTypeId: 258900837 } };
+    const mod = { componentTypeId: 258900837, componentId: 901 };
+    const hidden = variant(FIGHTER_5, d => {
+      d.classes[0].classFeatures = [...(d.classes[0].classFeatures ?? []), cf(900, 20)];
+      d.options = { ...(d.options ?? {}), class: [...(d.options?.class ?? []), option] };
+      d.modifiers.class = [...(d.modifiers.class ?? []), { type: "bonus", subType: "saving-throws", value: 1, fixedValue: 1, ...mod }];
+    });
+    expect(saves(hidden)).toEqual(clean);
+    const visible = variant(hidden, d => { d.classes[0].classFeatures[d.classes[0].classFeatures.length - 1] = cf(900, 1); });
+    expect(saves(visible)).toEqual(plusOne());
+  });
+
+  it("a null entry in a modifier list does not throw", () => {
+    const data = variant(FIGHTER_5, d => { d.modifiers.class = [...(d.modifiers.class ?? []), null, { type: "bonus", subType: "saving-throws", value: 1, fixedValue: 1, componentId: 1, componentTypeId: 1 }]; });
+    expect(() => saves(data)).not.toThrow();
+    expect(saves(data)).toEqual(plusOne());
+  });
+
+  it("a non-item modifier (race, feat) still counts", () => {
+    const data = variant(FIGHTER_5, d => {
+      d.modifiers.feat = [...(d.modifiers.feat ?? []), { type: "bonus", subType: "saving-throws", value: 1, fixedValue: 1, componentId: 1, componentTypeId: 1 }];
+    });
+    expect(saves(data)).toEqual(plusOne());
+  });
+
+  it("a proficient save gets the proficiency bonus once, and the global bonus adds on top with the * marker kept", () => {
+    const line = parseSheet(ring(), "summary", INDEX).split("\n").find(l => /\bSTR [+-]\d+\*/.test(l)) ?? "";
+    expect(line).toMatch(/STR [+-]\d+\*/);
+    expect(saves(ring())["STR"]).toBe(clean["STR"] + 1);
   });
 });

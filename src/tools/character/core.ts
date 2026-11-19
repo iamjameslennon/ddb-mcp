@@ -52,7 +52,7 @@ export function computeCoreStats(char: CharData, index: SourceIndex): CoreStats 
   };
 
   const allMods = Object.entries(obj(char.modifiers)).flatMap(([source, list]) => {
-    const mods = arr<Mod>(list);
+    const mods = records<Mod>(list); // a null entry is skipped, not read (bc test)
     return source === "class" || source === "subclass"
       ? mods.filter(isStartingClassSaveProf)
       : mods;
@@ -101,7 +101,7 @@ export function computeCoreStats(char: CharData, index: SourceIndex): CoreStats 
 
   const scoreBonuses: Record<number, number> = {};
   for (const [source, list] of Object.entries(obj(char.modifiers))) {
-    for (const m of arr<Mod>(list)) {
+    for (const m of records<Mod>(list)) {
       if (!isBonusMod(m)) continue;
       if (!m.subType.endsWith("-score")) continue;
       const idx = statKeys.indexOf(m.subType.replace("-score", ""));

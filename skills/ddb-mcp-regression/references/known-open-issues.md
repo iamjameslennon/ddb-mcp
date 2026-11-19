@@ -6,9 +6,6 @@ If you see the same symptom somewhere this list doesn't mention, or it has becom
 
 ## On the character sheet
 
-### (bc) The global save bonus ignores whether the item is equipped
-Shows up as: a save bonus from an item that isn't equipped or attuned still counts (Ethelrede's unequipped Battleaxe +1, Aerin's unequipped Slippers).
-
 ### (be) Some feature dice are omitted
 Shows up as: Martial Arts actions print without their dice: Deflect Missiles (Flemin 112315775, Petit Nuage 40193614), Arms of the Astral Self and some monk Unarmed Strike actions. So do rows whose dice add an ability modifier: Stone's Endurance, the Eldritch Cannon entries and Arms of the Astral Self: Summon (which still prints its save DC). Other feature rows now take their dice from their own text (2014 Second Wind, 2014 Bardic Inspiration), so a missing die on one of those is a new finding. An optional class feature whose text uses `{{scalevalue}}` (Petit Nuage 40193614's Quickened Healing) prints no dice, because the sheet carries no level scale for it.
 
