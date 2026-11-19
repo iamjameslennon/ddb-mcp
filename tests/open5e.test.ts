@@ -15,7 +15,7 @@ import {
   o5GetSpell, o5GetMonster, o5GetEquipment, o5MonsterInEdition,
   o5SearchSpells, o5SearchMonsters, o5SearchItems,
   o5SearchRaces, o5SearchClasses, o5SearchBackgrounds, o5SearchFeats, o5SearchFeatsSection, o5SearchRacesSection,
-  o5SearchRules, o5GetRule, cleanO5Markdown, wordPhraseIndex, o5GetMonsterStats, crText, castingTime, humanize, o5TwinNameFor, o5EquipmentKey, o5EquipmentGroupKey,
+  o5SearchRules, o5GetRule, excerptStart, cleanO5Markdown, wordPhraseIndex, o5GetMonsterStats, crText, castingTime, humanize, o5TwinNameFor, o5EquipmentKey, o5EquipmentGroupKey,
   type O5Record,
 } from "../src/open5e.js";
 import { patchSrd51Rulesets, MISSING_UPSTREAM_TEXT } from "../src/srd51-rules.js";
@@ -156,16 +156,20 @@ describe("Open5e labels", () => {
     expect(g).not.toContain("not found in");
   });
   it("the query landing starts at the query despite leading and interior whitespace (F16)", async () => {
-    const lead = "  ".concat("x ".repeat(150), "\n\n\n   ".repeat(20), "the bell tolls here ", "y ".repeat(300));
+    // The match ends a 1,200-character line, so the excerpt starts at the first word within 200
+    // characters of it (2026-11-19 F2): a folded-to-original index slip of more than two characters
+    // (the 20 whitespace runs before it fold to single spaces, about 60 characters) would move that start.
+    const lead = "  ".concat("x ".repeat(150), "\n\n\n   ".repeat(20), "x ".repeat(600), "the bell tolls here ", "y ".repeat(300));
     const rs = o5Fixture<{ rules: Array<{ name: string; desc: string }> }>("srd-2024", "rulesets" as never);
     const patched = rs.map((r, i) => i === 0 ? { ...r, rules: r.rules.map((s, j) => j === 0 ? { ...s, desc: lead } : s) } : r);
     stubFetch(o5FixtureFetch({ "srd-2024/rulesets": patched }));
     const sectionName = rs[0].rules[0].name;
     const out = (await o5GetRule(sectionName, "2024", 30000, "bell tolls"))!;
     const body = out.slice(out.indexOf("…"));
-    expect(body.startsWith("…\n\n")).toBe(true);
-    expect(body.slice(3, 250)).toContain("bell tolls");
-    expect(body.slice(3).search(/bell tolls/)).toBe(200);
+    expect(body.startsWith("…x ")).toBe(true);
+    const at = body.slice(1).search(/bell tolls/);
+    expect(at).toBeGreaterThanOrEqual(198);
+    expect(at).toBeLessThanOrEqual(200);
   });
   it("a search matches whole words: 'cover' drops Madness's 'discovered' (F16)", async () => {
     // Under the old substring rule this listed Attacking, Cover and Madness (Madness only through "discovered").
@@ -973,6 +977,75 @@ describe("o5GetRule query jump folds like the search", () => {
     expect(out).toContain("\n\n");
     expect(lines.slice(5).join("\n").startsWith("…")).toBe(false);
     expect((await o5GetRule("The Order of Combat", "2024", 4000, "initiative"))!).not.toContain("not found in");
+  });
+});
+
+describe("o5GetRule query excerpts start on a boundary (regression 2026-11-19 F2)", () => {
+  // The report's two calls: both began mid-word ("oint maximum…", "ame time…").
+  it.each(["death saving throw", "critical hits"])("2014 Damage and Healing, query %j: the excerpt starts at a whole line that holds or heads the match", async query => {
+    const full = (await o5GetRule("Damage and Healing", "2014", 1_000_000))!;
+    const out = (await o5GetRule("Damage and Healing", "2014", 2500, query))!;
+    const body = out.split("\n").slice(3).join("\n");
+    expect(body.startsWith("…\n\n")).toBe(true);
+    const firstLine = body.slice(3).split("\n")[0];
+    expect(full.split("\n")).toContain(firstLine);
+    expect(body.slice(0, 2500).toLowerCase()).toContain(query);
+  });
+
+  it("starts at the heading just above the matching paragraph", () => {
+    const text = "Intro.\n\n### Falling Unconscious\nIf damage reduces you to 0 hit points, you make death saving throws.";
+    expect(text.slice(excerptStart(text, text.indexOf("death saving"), 4000))).toMatch(/^### Falling Unconscious\n/);
+  });
+
+  it("starts at the matching paragraph when no heading is just above it", () => {
+    const text = "### A\nFirst paragraph.\n\nSecond paragraph mentions death saving throws.";
+    expect(text.slice(excerptStart(text, text.indexOf("death saving"), 4000))).toBe("Second paragraph mentions death saving throws.");
+  });
+
+  it("in a paragraph too long to show from its start, starts at a word within 200 characters of the match", () => {
+    const text = "### Long\n" + "word ".repeat(400) + "the needle here.";
+    const idx = text.indexOf("needle");
+    const start = excerptStart(text, idx, 2500);
+    expect(idx - start).toBeLessThanOrEqual(200);
+    expect(idx - start).toBeGreaterThan(0);
+    expect(text[start - 1]).toMatch(/\s/);
+    expect(text[start]).toMatch(/\S/);
+  });
+
+  it("a small max_chars still keeps the match in view", () => {
+    const text = "### H\n" + "x".repeat(300) + " the needle.";
+    const idx = text.indexOf("needle");
+    const start = excerptStart(text, idx, 200);
+    expect(idx - start).toBeLessThanOrEqual(100);
+  });
+
+  it("a match at the very start, or on the first line, starts at 0", () => {
+    expect(excerptStart("needle and more", 0, 4000)).toBe(0);
+    expect(excerptStart("a needle", 2, 4000)).toBe(0);
+  });
+
+  it("keeps a long match whole inside max_chars, counting the '…\\n\\n' prefix (adversarial review)", () => {
+    const query = "q".repeat(255) + " end.";
+    const text = "### H\n" + "w ".repeat(123) + query;
+    const idx = text.indexOf(query);
+    const start = excerptStart(text, idx, 500, query.length);
+    expect(idx - start + query.length + 3).toBeLessThanOrEqual(500);
+    expect(text[start - 1]).toMatch(/\s/);
+  });
+
+  it("CRLF rules text still starts at the heading above the match (adversarial review)", async () => {
+    const rs = o5Fixture<{ rules: Array<{ name: string; desc: string }> }>("srd-2024", "rulesets" as never);
+    const desc = "Intro line.\r\n\r\n### Bells\r\n\r\nThe bell tolls at noon.";
+    const patched = rs.map((r, i) => i === 0 ? { ...r, rules: r.rules.map((s, j) => j === 0 ? { ...s, desc } : s) } : r);
+    stubFetch(o5FixtureFetch({ "srd-2024/rulesets": patched }));
+    const out = (await o5GetRule(rs[0].rules[0].name, "2024", 4000, "bell tolls"))!;
+    expect(out).toContain("…\n\n### Bells\n\nThe bell tolls at noon.");
+    expect(out).not.toContain("\r");
+  });
+
+  it("a long paragraph's 200-character window with no whitespace starts at the match itself", () => {
+    const text = "y".repeat(1500) + "needle";
+    expect(excerptStart(text, 1500, 4000)).toBe(1500);
   });
 });
 

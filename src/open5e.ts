@@ -1551,6 +1551,34 @@ function foldedIndexOf(text: string, normalizedQuery: string): number {
   return at === -1 ? -1 : origin[at];
 }
 
+/**
+ * Where a rules excerpt that jumps to the match at `idx` starts, never mid-word:
+ * the heading line just above the match's paragraph (blank lines between
+ * allowed), else the paragraph's own start, while that keeps the match within
+ * half of `maxChars` (at most 1,000 characters) of the start, and the whole
+ * match (`matchLength`) inside `maxChars` after the prefix. A longer lead-in
+ * starts instead at the first word within 200 characters (or that half, if
+ * smaller) before the match, or at the match itself when that window has no
+ * whitespace.
+ */
+export function excerptStart(text: string, idx: number, maxChars: number, matchLength = 0): number {
+  // The whole match, behind the 3-character "…\n\n" prefix, must fit inside maxChars.
+  const budget = Math.max(0, Math.min(1000, Math.floor(maxChars / 2), maxChars - matchLength - 3));
+  const lineStart = idx === 0 ? 0 : text.lastIndexOf("\n", idx - 1) + 1;
+  if (idx - lineStart <= budget) {
+    let prevEnd = lineStart - 1;                     // the "\n" ending the line above
+    while (prevEnd > 0 && text[prevEnd - 1] === "\n") prevEnd--;
+    if (prevEnd > 0) {
+      const prevStart = text.lastIndexOf("\n", prevEnd - 1) + 1;
+      if (/^#{1,6} /.test(text.slice(prevStart, prevEnd)) && idx - prevStart <= budget) return prevStart;
+    }
+    return lineStart;
+  }
+  const from = idx - Math.min(200, budget);
+  const ws = text.slice(from, idx).search(/\s\S/);
+  return ws === -1 ? idx : from + ws + 1;
+}
+
 export async function o5GetRule(
   nameOrSlug: string,
   rulesEdition: RulesEdition,
@@ -1568,7 +1596,8 @@ export async function o5GetRule(
   const { ruleset, section } = match;
   let text = cleanO5Markdown(section
     ? section.desc
-    : [ruleset.desc, ...ruleset.rules.map(s => `### ${s.name}\n${s.desc}`)].filter(Boolean).join("\n\n"));
+    : [ruleset.desc, ...ruleset.rules.map(s => `### ${s.name}\n${s.desc}`)].filter(Boolean).join("\n\n"))
+    .replace(/\r\n?/g, "\n");
 
   // If query provided, start near the first occurrence, matched as the search matches
   const q = query ? normalizeName(query) : "";
@@ -1577,8 +1606,8 @@ export async function o5GetRule(
     const idx = foldedIndexOf(text, q);
     queryMissed = idx === -1;
     if (idx !== -1) {
-      const start = Math.max(0, idx - 200);
-      text = (start > 0 ? "…\n\n" : "") + text.slice(start);
+      const start = excerptStart(text, idx, maxChars, q.length);
+      text = (start === 0 ? "" : text[start - 1] === "\n" ? "…\n\n" : "…") + text.slice(start);
     }
   }
 
