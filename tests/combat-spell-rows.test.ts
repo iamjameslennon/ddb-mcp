@@ -401,7 +401,7 @@ describe("spell rows in ACTIONS", () => {
     expect(spellRows(out)).toHaveLength(1);
   });
 
-  it("keeps the bonus-action spell line unchanged", () => {
+  it("a bonus-action spell with no figures stays bare", () => {
     const out = sheet(cleric(5, [known(HEALING_WORD)]));
     expect(block(out, "BONUS ACTIONS")).toContain("• Healing Word (spell, 1st-level slot)");
   });
@@ -644,5 +644,81 @@ describe("spell slot labels", () => {
     const bonus = block(sheet(o), "BONUS ACTIONS");
     expect(bonus).toContain("• Hex (spell, 5th-level slot)");
     expect(bonus).not.toContain("from item");
+  });
+});
+
+describe("bonus-action and reaction spell figures (bj, owner ruling 2026-11-19)", () => {
+  const act = (activationType: number, name: string, level: number, extra: Record<string, unknown>) =>
+    spellDef(name, level, { activation: { activationTime: 1, activationType }, ...extra });
+  const SPIRITUAL_WEAPON = act(3, "Spiritual Weapon", 2, { attackType: 1, range: ranged(60), modifiers: [{ ...damage("force", "1d8", scaled([2, "1d8"])), usePrimaryStat: true }] });
+  const HELLISH_REBUKE = act(4, "Hellish Rebuke", 1, { saveDcAbilityId: 2, range: ranged(60), modifiers: [damage("fire", "2d10", scaled([1, "1d10"]))] });
+  const HEX = act(3, "Hex", 1, { range: ranged(90), modifiers: [damage("necrotic", "1d6")] });
+  const SANCTUARY = act(3, "Sanctuary", 1, { saveDcAbilityId: 5, range: ranged(30) });
+  const SHILLELAGH = act(3, "Shillelagh", 0, {
+    attackType: 1, range: { origin: "Touch", rangeValue: null, aoeType: null, aoeValue: null },
+    modifiers: [{ ...damage("bludgeoning", "1d8", CANTRIP_SCALE(8)), usePrimaryStat: true }],
+  });
+  const bonus = (o: Record<string, unknown>) => block(sheet(o), "BONUS ACTIONS");
+  const reaction = (o: Record<string, unknown>) => block(sheet(o), "REACTIONS");
+
+  it("Spiritual Weapon prints to-hit, damage with the casting modifier, and range (Cathartic shape)", () => {
+    const o = cleric(5, [known(SPIRITUAL_WEAPON)]);
+    expect(bonus(o)).toContain(`• Spiritual Weapon (spell, 2nd-level slot)   ${signed(nums(o, 5).attack)} to hit   1d8+4 force   range 60 ft.`);
+  });
+
+  it("a reaction save spell prints its DC, damage and range (Hellish Rebuke)", () => {
+    const o = cleric(5, [known(HELLISH_REBUKE)]);
+    expect(reaction(o)).toContain(`• Hellish Rebuke (spell, 1st-level slot)   DC ${nums(o, 5).dc} DEX   2d10 fire   range 60 ft.`);
+  });
+
+  it("a damage-only spell prints its damage and range (Hex)", () => {
+    expect(bonus(cleric(5, [known(HEX)]))).toContain("• Hex (spell, 1st-level slot)   1d6 necrotic   range 90 ft.");
+  });
+
+  it("a save spell without damage prints the DC and range (Sanctuary)", () => {
+    const o = cleric(5, [known(SANCTUARY)]);
+    expect(bonus(o)).toContain(`• Sanctuary (spell, 1st-level slot)   DC ${nums(o, 5).dc} WIS   range 30 ft.`);
+  });
+
+  it("a bonus-action cantrip prints its scaled dice with the modifier (Shillelagh, level 5)", () => {
+    const o = cleric(5, [known(SHILLELAGH)]);
+    expect(bonus(o)).toContain(`• Shillelagh (spell, cantrip)   ${signed(nums(o, 5).attack)} to hit   2d8+4 bludgeoning   touch`);
+  });
+
+  it("an upcast without scaling data names the slot, as ACTIONS rows do", () => {
+    expect(bonus(cleric(5, [known(HEX, { castAtLevel: 3 })]))).toContain("• Hex (spell, 3rd-level slot)   1d6 necrotic (at 3rd-level slot: see spell)   range 90 ft.");
+  });
+
+  it("keeps a spell with no figures bare (Healing Word, Shield, Misty Step)", () => {
+    const o = cleric(5, [known(act(3, "Healing Word", 1, { range: ranged(60) }))]);
+    expect(bonus(o)).toContain("• Healing Word (spell, 1st-level slot)");
+    expect(bonus(o)).not.toMatch(/Healing Word \(spell, 1st-level slot\) /);
+  });
+
+  it("prints damage but no to-hit when the casting ability is unknown", () => {
+    const o = { classes: [cls(1, "Fighter", 5, 0, {}, { canCastSpells: false })], spells: { item: [{ usesSpellSlot: false, castAtLevel: null, definition: SPIRITUAL_WEAPON }] } };
+    const out = bonus(o);
+    expect(out).toContain("Spiritual Weapon");
+    expect(out).toMatch(/Spiritual Weapon[^\n]*1d8 force|Spiritual Weapon[^\n]*spellcasting modifier/);
+    expect(out).not.toMatch(/Spiritual Weapon[^\n]*to hit/);
+  });
+
+  it("a homebrew spell's figures are wrapped whole with its line; an official one stays plain", () => {
+    const brew = { ...HEX, id: 9903, name: "Brew Hex", isHomebrew: true };
+    const o = cleric(5, [known(brew), known({ ...SPIRITUAL_WEAPON, isHomebrew: false })]);
+    const out = sheet(o);
+    const brewLine = "• Brew Hex (spell, 1st-level slot)   1d6 necrotic   range 90 ft.";
+    expect(out).toContain(wrapUntrusted(brewLine));
+    expect(out.split(wrapUntrusted(brewLine)).join("")).not.toContain("untrusted");
+  });
+
+  it("an action spell's ACTIONS row is unchanged", () => {
+    const o = cleric(5, [known(SACRED_FLAME), known(SPIRITUAL_WEAPON)]);
+    expect(rowFor(sheet(o), "Sacred Flame")).toBe(`• ${"Sacred Flame (cantrip)".padEnd(26)} DC ${nums(o, 5).dc} DEX   2d8 radiant   range 60 ft.`);
+  });
+
+  it("the same spell in two lists is still printed once", () => {
+    const o = { ...cleric(5, [known(HEX)]), spells: { item: [{ usesSpellSlot: false, castAtLevel: null, definition: HEX }] } };
+    expect(bonus(o).split("• Hex (").length - 1).toBe(1);
   });
 });

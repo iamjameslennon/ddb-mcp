@@ -15,9 +15,6 @@ Shows up as: a Warlock weapon row (2024 Pact of the Blade, 2014 Hex Warrior) tha
 ### (bi) Warlock multiclass spell rows use the class's own slot row
 Shows up as: on a Warlock multiclass, the slot level in spell rows may differ from the shared multiclass table. No test character is one.
 
-### (bj) Bonus-action and reaction spells print no numbers
-Shows up as: `• Spiritual Weapon (spell, 2nd-level slot)` in BONUS ACTIONS with no to-hit or damage. The website shows them (Cathartic 112305147: `60ft. +8 1d8+4`).
-
 ### (bk) A stack of off-hand weapons moves wholesale
 Shows up as: a flagged off-hand weapon with quantity above 1 appears in BONUS ACTIONS as `×N`. No live case.
 

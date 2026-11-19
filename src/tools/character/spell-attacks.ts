@@ -15,7 +15,7 @@ import { wrapIfHomebrew } from "../../utils.js";
 import { isActiveItemMod } from "./item-gate.js";
 import { num, obj, records, shownHomebrew, signed, statNames, str } from "./helpers.js";
 import { castLevel, slotOrdinal } from "./slots.js";
-import { actionSpells, classSpellcastingAbilityId, spellAttackAndDc, spellBonuses } from "./spells.js";
+import { actionSpells, type ActionSpell, classSpellcastingAbilityId, spellAttackAndDc, spellBonuses } from "./spells.js";
 import type { CoreStats, Mod } from "./types.js";
 
 type Rec = Record<string, unknown>;
@@ -177,7 +177,9 @@ function spellDamage(
       slotNote = true;
     }
     if (!dice) continue;
-    const key = withBonus(dice, flatBonus);
+    // D&D Beyond flags the casting ability's modifier per component (Spiritual Weapon).
+    const bonus = flatBonus + (m.usePrimaryStat === true && abilityMod != null ? abilityMod : 0);
+    const key = withBonus(dice, bonus);
     const type = str(m.subType);
     const group = groups.find(g => g.dice === key);
     if (!group) groups.push({ dice: key, types: type ? [type] : [] });
@@ -216,61 +218,97 @@ function scalingNote(def: Rec): string {
   return "";
 }
 
-/** The ACTIONS spell rows, in the order the spells are gathered (class lists, then `char.spells` buckets). */
-export function computeSpellAttackRows(core: CoreStats): string[] {
-  const { char, classes, statMods, profBonus, totalLevel, editions, inventory } = core;
+type SpellRowCtx = {
+  core: CoreStats;
+  bonuses: ReturnType<typeof spellBonuses>;
+  singleCasterAbility: number;
+  activeMods: Rec[];
+};
+
+function spellRowCtx(core: CoreStats): SpellRowCtx {
   const bonuses = spellBonuses(core);
-  const casterAbilities = classes.map(classSpellcastingAbilityId).filter(id => id > 0);
+  const casterAbilities = core.classes.map(classSpellcastingAbilityId).filter(id => id > 0);
   const singleCasterAbility = casterAbilities.length === 1 ? casterAbilities[0] : 0;
   // Spell damage bonuses from an item count only while the item is active (owner 2026-11-09).
-  const activeMods = core.allMods.map(obj).filter(m => isActiveItemMod(m, inventory));
+  const activeMods = core.allMods.map(obj).filter(m => isActiveItemMod(m, core.inventory));
+  return { core, bonuses, singleCasterAbility, activeMods };
+}
+
+/** The parts of one spell's row (name, level, to-hit or DC, damage, range, note); null when it has no name. */
+function spellRowParts(ctx: SpellRowCtx, { spell, list, bucket }: ActionSpell):
+  { name: string; level: number; hitOrDc: string; damage: string; range: string; note: string } | null {
+  const { core, bonuses, singleCasterAbility, activeMods } = ctx;
+  const { classes, statMods, profBonus, totalLevel, editions } = core;
+  if (spell.definition == null || typeof spell.definition !== "object") return null;
+  const def = obj(spell.definition);
+  const name = editions.named(str(def.name), def);
+  if (!name) return null;
+  const level = num(def.level);
+
+  // Ability: the class list's class; another bucket's own id (0 counts as
+  // null); a spells.class null falls back to the only spellcasting class.
+  const abilityId = list
+    ? (list.classEntry ? classSpellcastingAbilityId(list.classEntry) : 0)
+    : num(spell.spellCastingAbilityId) || (bucket === "class" ? singleCasterAbility : 0);
+  const nums = spellAttackAndDc(abilityId, statMods, profBonus, bonuses);
+
+  const spellSlug = slug(str(def.name));
+  const classSlug = list && level === 0 ? slug(list.className) : "";
+  const flatBonus = activeMods
+    .filter(m => (spellSlug && m.type === spellSlug && m.subType === "bonus-damage")
+      || (classSlug && m.type === "bonus" && m.subType === `${classSlug}-cantrip-damage`))
+    .reduce((sum, m) => sum + modAmount(m, statMods), 0);
+
+  const cast = level === 0 ? 0 : castLevel(spell, level, list != null && list.className === "Warlock", classes);
+  const abilityMod = isAbilityId(abilityId) ? statMods[abilityId - 1] : null;
+  const { damage, weapon, withAbility, notes } = spellDamage(def, level, cast, flatBonus, totalLevel, abilityMod);
+
+  const attackType = num(def.attackType);
+  const saveId = num(def.saveDcAbilityId);
+  // A radius limits the attack to adjacent creatures (melee); without one any
+  // weapon attack will do (True Strike, which can be ranged).
+  const weaponAttack = `${num(obj(def.range).aoeValue) > 0 ? "melee " : ""}weapon attack`;
+  const hitOrDc = weapon
+    ? withAbility
+      ? `${weaponAttack} with ${isAbilityId(abilityId) ? statNames[abilityId - 1] : "spellcasting ability"}`
+      : weaponAttack
+    : nums
+      ? [
+        attackType === 1 || attackType === 2 ? `${signed(nums.attack)} to hit` : "",
+        isAbilityId(saveId) ? `DC ${nums.dc} ${statNames[saveId - 1]}` : "",
+      ].filter(Boolean).join(" / ")
+      : "";
+  return { name, level, hitOrDc, damage, range: spellRange(def, weapon), note: [scalingNote(def), ...notes].filter(Boolean).join("; ") };
+}
+
+/** The ACTIONS spell rows, in the order the spells are gathered (class lists, then `char.spells` buckets). */
+export function computeSpellAttackRows(core: CoreStats): string[] {
+  const ctx = spellRowCtx(core);
   const rows: string[] = [];
-  for (const { spell, list, bucket } of actionSpells(char, classes)) {
-    if (spell.definition == null || typeof spell.definition !== "object") continue;
-    const def = obj(spell.definition);
-    const name = editions.named(str(def.name), def);
-    if (!name || !isActionSpell(def)) continue;
-    const level = num(def.level);
-
-    // Ability: the class list's class; another bucket's own id (0 counts as
-    // null); a spells.class null falls back to the only spellcasting class.
-    const abilityId = list
-      ? (list.classEntry ? classSpellcastingAbilityId(list.classEntry) : 0)
-      : num(spell.spellCastingAbilityId) || (bucket === "class" ? singleCasterAbility : 0);
-    const nums = spellAttackAndDc(abilityId, statMods, profBonus, bonuses);
-
-    const spellSlug = slug(str(def.name));
-    const classSlug = list && level === 0 ? slug(list.className) : "";
-    const flatBonus = activeMods
-      .filter(m => (spellSlug && m.type === spellSlug && m.subType === "bonus-damage")
-        || (classSlug && m.type === "bonus" && m.subType === `${classSlug}-cantrip-damage`))
-      .reduce((sum, m) => sum + modAmount(m, statMods), 0);
-
-    const cast = level === 0 ? 0 : castLevel(spell, level, list != null && list.className === "Warlock", classes);
-    const abilityMod = isAbilityId(abilityId) ? statMods[abilityId - 1] : null;
-    const { damage, weapon, withAbility, notes } = spellDamage(def, level, cast, flatBonus, totalLevel, abilityMod);
-
-    const attackType = num(def.attackType);
-    const saveId = num(def.saveDcAbilityId);
-    // A radius limits the attack to adjacent creatures (melee); without one any
-    // weapon attack will do (True Strike, which can be ranged).
-    const weaponAttack = `${num(obj(def.range).aoeValue) > 0 ? "melee " : ""}weapon attack`;
-    const hitOrDc = weapon
-      ? withAbility
-        ? `${weaponAttack} with ${isAbilityId(abilityId) ? statNames[abilityId - 1] : "spellcasting ability"}`
-        : weaponAttack
-      : nums
-        ? [
-          attackType === 1 || attackType === 2 ? `${signed(nums.attack)} to hit` : "",
-          isAbilityId(saveId) ? `DC ${nums.dc} ${statNames[saveId - 1]}` : "",
-        ].filter(Boolean).join(" / ")
-        : "";
-
+  for (const entry of actionSpells(core.char, core.classes)) {
+    if (entry.spell.definition == null || typeof entry.spell.definition !== "object" || !isActionSpell(obj(entry.spell.definition))) continue;
+    const parts = spellRowParts(ctx, entry);
+    if (!parts) continue;
+    const { name, level, hitOrDc, damage, range, note } = parts;
     const head = `${name} (${level === 0 ? "cantrip" : `${slotOrdinal(level)} level`})`;
-    const body = [hitOrDc, damage, spellRange(def, weapon)].filter(Boolean).join("   ");
-    const note = [scalingNote(def), ...notes].filter(Boolean).join("; ");
+    const body = [hitOrDc, damage, range].filter(Boolean).join("   ");
     const line = `• ${body ? `${head.padEnd(26)} ${body}` : head}${note ? `   (${note})` : ""}`;
-    rows.push(wrapIfHomebrew(line, shownHomebrew(spell, name)));
+    rows.push(wrapIfHomebrew(line, shownHomebrew(entry.spell, name)));
   }
   return rows;
+}
+
+/**
+ * The figures a bonus-action or reaction spell line appends to its label:
+ * to-hit or DC, damage and range, then the note; "" when the rules give it no
+ * to-hit, DC or damage (owner ruling 2026-11-19, reversing 2026-11-09).
+ */
+export function spellFigures(core: CoreStats): (entry: ActionSpell) => string {
+  const ctx = spellRowCtx(core);
+  return entry => {
+    const parts = spellRowParts(ctx, entry);
+    if (!parts || (!parts.hitOrDc && !parts.damage)) return "";
+    const { hitOrDc, damage, range, note } = parts;
+    return `   ${[hitOrDc, damage, range].filter(Boolean).join("   ")}${note ? `   (${note})` : ""}`;
+  };
 }

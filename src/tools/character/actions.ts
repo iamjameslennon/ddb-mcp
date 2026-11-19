@@ -26,7 +26,7 @@ import { resolveBackground } from "./features.js";
 import type { CharacterEditions } from "./editions.js";
 import { actionSpells, type ActionSpell } from "./spells.js";
 import { spellCastLabel } from "./slots.js";
-import { computeSpellAttackRows } from "./spell-attacks.js";
+import { computeSpellAttackRows, spellFigures } from "./spell-attacks.js";
 import { computeUnarmedStrike, computeWeaponAttacks } from "./weapons.js";
 import { MASTERY_NAMES } from "../weapon-mastery.js";
 import { nameFold } from "../../name-match.js";
@@ -348,11 +348,12 @@ export function actionParents(
 const spellActivationType = (s: Record<string, unknown>): number =>
   num(obj(obj(s.definition).activation).activationType);
 
-function formatSpellAction({ spell: s, list, bucket }: ActionSpell, classes: readonly ClassEntry[]): string {
+function formatSpellAction(entry: ActionSpell, classes: readonly ClassEntry[], figures: (e: ActionSpell) => string): string {
+  const { spell: s, list, bucket } = entry;
   const def = obj(s.definition);
   const slotStr = spellCastLabel(s, { isWarlockList: list?.className === "Warlock", bucket }, classes);
   // A homebrew spell's name is other players' text: the whole line is wrapped.
-  return wrapIfHomebrew(`• ${str(def.name)} (spell, ${slotStr})`, shownHomebrew(s, str(def.name)));
+  return wrapIfHomebrew(`• ${str(def.name)} (spell, ${slotStr})${figures(entry)}`, shownHomebrew(s, str(def.name)));
 }
 
 /**
@@ -585,11 +586,12 @@ export function computeActions(core: CoreStats): Actions {
   const { char, classes, statMods, inventory, editions } = core;
   const allActions = getAllActions(char, classes);
   const allCharSpells = actionSpells(char, classes);
+  const figures = spellFigures(core);
   const line = actionLine(featureLineContext(core));
 
   // Spell activationTypes (from rule-data): 1=Action, 2=No Action, 3=Bonus Action, 4=Reaction, 8=Special
-  const bonusActionSpells = allCharSpells.filter(s => spellActivationType(s.spell) === 3).map(s => formatSpellAction(s, classes));
-  const reactionSpells = allCharSpells.filter(s => spellActivationType(s.spell) === 4).map(s => formatSpellAction(s, classes));
+  const bonusActionSpells = allCharSpells.filter(s => spellActivationType(s.spell) === 3).map(s => formatSpellAction(s, classes, figures));
+  const reactionSpells = allCharSpells.filter(s => spellActivationType(s.spell) === 4).map(s => formatSpellAction(s, classes, figures));
 
   // activationType 3 = bonus action in class actions, 4 = reaction
   // activationType 1 = action (weapon-mastery actions are skipped: the weapon rows show mastery)
