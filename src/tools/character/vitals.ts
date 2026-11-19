@@ -109,8 +109,11 @@ function computeSpeed(core: CoreStats): string[] {
     const override = allMods
       .filter(m => isSetMod(m) && subTypes.has(m.subType) && num(m.value ?? m.fixedValue) > 0 && isApplicable(m))
       .reduce((max, m) => Math.max(max, num(m.value ?? m.fixedValue)), 0);
+    // A `speed-{axis}` bonus (Superior Mobility) raises only a speed the character already has;
+    // it never opens a fly/swim/climb/burrow axis. `innate-speed-{axis}` bonuses still grant one.
+    const hasSpeed = axis === "walking" || (override || base) > 0;
     const bonus = allMods
-      .filter(m => isBonusMod(m) && subTypes.has(m.subType) && isApplicable(m))
+      .filter(m => isBonusMod(m) && subTypes.has(m.subType) && isApplicable(m) && (hasSpeed || m.subType !== `speed-${axis}`))
       .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
     return (override || base || fallback) + bonus;
   };

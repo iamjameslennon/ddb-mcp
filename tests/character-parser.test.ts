@@ -1650,6 +1650,50 @@ describe("parseCharacterData — speed bonuses from class/feat modifiers", () =>
     expect(out).toContain("Speed: 25 ft., fly 40 ft.");
   });
 
+  describe("speed bonuses raise only speeds the character has (F6)", () => {
+    const fighter = FIGHTER_5.data as Record<string, unknown>;
+    const build = (speeds: Record<string, number>, classMods: Record<string, unknown>[]): Record<string, unknown> => ({
+      data: {
+        ...fighter,
+        race: { ...(fighter.race as Record<string, unknown>), weightSpeeds: { normal: { walk: 30, fly: 0, swim: 0, climb: 0, burrow: 0, ...speeds } } },
+        modifiers: {
+          ...(fighter.modifiers as Record<string, unknown>),
+          class: [...(((fighter.modifiers as Record<string, unknown[]>).class) ?? []), ...classMods],
+        },
+      },
+    });
+    const speedLine = (out: string): string => /Speed: [^\n]*/.exec(out)?.[0].trimEnd() ?? "";
+    const bonus = (subType: string, v: number): Record<string, unknown> => ({ type: "bonus", subType, fixedValue: v, value: v });
+    const set = (subType: string, v: number): Record<string, unknown> => ({ type: "set", subType, fixedValue: v, value: v });
+
+    it("a speed-climbing/-swimming bonus adds nothing without that speed (Laena shape)", () => {
+      const out = parseCharacterData(
+        build({}, [bonus("speed-walking", 10), bonus("speed-climbing", 10), bonus("speed-swimming", 10)]),
+        "summary",
+      );
+      expect(speedLine(out)).toBe("Speed: 40 ft.");
+    });
+
+    it("the same bonus raises a race speed", () => {
+      expect(parseCharacterData(build({ climb: 30 }, [bonus("speed-climbing", 10)]), "summary")).toContain("climb 40 ft.");
+    });
+
+    it("the same bonus raises a set speed", () => {
+      expect(
+        parseCharacterData(build({}, [set("innate-speed-swimming", 30), bonus("speed-swimming", 10)]), "summary"),
+      ).toContain("swim 40 ft.");
+    });
+
+    it("an innate-speed bonus still grants", () => {
+      expect(parseCharacterData(build({}, [bonus("innate-speed-flying", 30)]), "summary")).toContain("fly 30 ft.");
+    });
+
+    it("a zero set speed doesn't open the axis", () => {
+      const out = parseCharacterData(build({}, [set("innate-speed-flying", 0), bonus("speed-flying", 10)]), "summary");
+      expect(speedLine(out)).toBe("Speed: 30 ft.");
+    });
+  });
+
   it("regression guard: bonus innate-speed-walking still works", () => {
     // Pre-fix path — race-emitted speed bonuses use this subType.
     const out = parseCharacterData(
