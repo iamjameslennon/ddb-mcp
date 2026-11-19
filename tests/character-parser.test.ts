@@ -3283,3 +3283,45 @@ describe("parseCharacterData — OTHER FEATURES and the end of the inventory blo
     expect(lines[i + 1]).toBe("");
   });
 });
+
+describe("bundled items (F11)", () => {
+  const entry = (id: number, name: string, quantity: number, bundleSize: number, def: Record<string, unknown> = {}) => ({
+    equipped: false, quantity, isAttuned: false,
+    definition: { id, name, filterType: "Adventuring Gear", bundleSize, isHomebrew: false, sources: [{ sourceId: 145 }], ...def },
+  });
+  const invLine = (inventory: unknown[]): string => {
+    const out = parseCharacterData({ data: { ...(FIGHTER_5.data as Record<string, unknown>), inventory } }, "inventory", INDEX);
+    return out.split("INVENTORY\n")[1].split("\n")[0].trim();
+  };
+
+  it("one bag reads as one bag (Dunil shape)", () => {
+    const line = invLine([entry(1, "Ball Bearings (bag of 1,000)", 1000, 1000)]);
+    expect(line).toBe("Ball Bearings (bag of 1,000)");
+    expect(line).not.toContain("×");
+  });
+  it("several bags count in bags (Xarius shape)", () => {
+    expect(invLine([entry(1, "Caltrops (bag of 20)", 100, 20)])).toBe("Caltrops (bag of 20) ×5");
+  });
+  it("part of a bag says so (Halfling Rogue shape)", () => {
+    expect(invLine([entry(1, "Ball Bearings (bag of 1,000)", 1, 1000)])).toBe("Ball Bearings (bag of 1,000) — 1 of 1,000");
+  });
+  it("items named per piece keep their count", () => {
+    expect(invLine([entry(1, "Arrows", 20, 20)])).toBe("Arrows ×20");
+    expect(invLine([entry(1, "Crossbow Bolts", 26, 20)])).toBe("Crossbow Bolts ×26");
+  });
+  it("a name whose number isn't the bundle size keeps its count", () => {
+    expect(invLine([entry(1, "Caltrops (bag of 20)", 2, 1)])).toBe("Caltrops (bag of 20) ×2");
+  });
+  it("two copies of one bag merge before counting", () => {
+    expect(invLine([
+      entry(1, "Ball Bearings (bag of 1,000)", 1000, 1000),
+      entry(1, "Ball Bearings (bag of 1,000)", 1000, 1000),
+    ])).toBe("Ball Bearings (bag of 1,000) ×2");
+  });
+  it("a homebrew bundle is rearranged but still wrapped whole", () => {
+    const out = parseCharacterData({ data: { ...(FIGHTER_5.data as Record<string, unknown>), inventory: [
+      entry(9, "Odd Beads (sack of 50)", 100, 50, { isHomebrew: true }),
+    ] } }, "inventory", INDEX);
+    expect(out).toContain(wrapUntrusted("  Odd Beads (sack of 50) [homebrew] ×2"));
+  });
+});

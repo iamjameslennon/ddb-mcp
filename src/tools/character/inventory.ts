@@ -36,11 +36,29 @@ function buildCurrencyLine(char: CharData): string {
     .join(", ") || "none";
 }
 
+// D&D Beyond's `quantity` counts pieces and `definition.bundleSize` is the pieces per bundle (F11), so an item
+// whose name states that size ("Caltrops (bag of 20)", qty 100) counts in bundles. The name may carry a trailing
+// edition/homebrew tag (`named()`), which the pattern steps over; the tag stays where it is.
+const BUNDLE_NAME = /\(\s*(?:[a-z]+\s+)?of\s+([\d,]+)\s*\)(?:\s*\[[^\]]*\])*\s*$/i;
+
+export function bundleEntry(name: string, quantity: number, bundleSize: number): string {
+  const written = BUNDLE_NAME.exec(name)?.[1];
+  const n = written === undefined ? NaN : Number(written.replace(/,/g, ""));
+  if (bundleSize > 1 && n === bundleSize) {
+    if (quantity % n === 0) {
+      const k = quantity / n;
+      return k === 1 ? name : `${name} ×${k}`;
+    }
+    return `${name} — ${quantity} of ${written}`;
+  }
+  return quantity > 1 ? `${name} ×${quantity}` : name;
+}
+
 export function computeInventory(core: CoreStats): Inventory {
   const { char, inventory, editions } = core;
   const equippedNonWeapons: ListEntry[] = [];
-  const carriedItems = new Map<string, number>();
-  const homebrewItems = new Map<string, number>();
+  const carriedItems = new Map<string, { qty: number; bundleSize: number }>();
+  const homebrewItems = new Map<string, { qty: number; bundleSize: number }>();
   const attunedItems: ListEntry[] = [];
   for (const i of inventory) {
     const def = obj(i.definition);
@@ -60,11 +78,12 @@ export function computeInventory(core: CoreStats): Inventory {
       equippedNonWeapons.push({ text: iName, homebrew });
     } else if (filterType !== "Weapon") {
       const items = homebrew ? homebrewItems : carriedItems;
-      items.set(iName, (items.get(iName) ?? 0) + qty);
+      const seen = items.get(iName);
+      items.set(iName, { qty: (seen?.qty ?? 0) + qty, bundleSize: seen?.bundleSize ?? num(def.bundleSize) });
     }
   }
-  const line = (items: Map<string, number>) => [...items.entries()]
-    .map(([n, q]) => q > 1 ? `${n} ×${q}` : n)
+  const line = (items: Map<string, { qty: number; bundleSize: number }>) => [...items.entries()]
+    .map(([n, { qty: q, bundleSize }]) => bundleEntry(n, q, bundleSize))
     .join("; ");
   return {
     equippedNonWeapons,
