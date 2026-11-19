@@ -14,6 +14,7 @@
 import type { SourceIndex } from "../../edition.js";
 import { computeCharacterEditions } from "./editions.js";
 import { arr, records, featureDefinition, isBonusMod, isSetMod, num, modOf, obj, statKeys, statNames } from "./helpers.js";
+import { isActiveItemMod } from "./item-gate.js";
 import { makeResolveTemplates } from "./templates.js";
 import type { CharData, ClassEntry, CoreStats, InventoryItem, Mod } from "./types.js";
 
@@ -56,6 +57,8 @@ export function computeCoreStats(char: CharData, index: SourceIndex): CoreStats 
       ? mods.filter(isStartingClassSaveProf)
       : mods;
   });
+
+  const inventory = records<InventoryItem>(char.inventory);
 
   // ── Ability Scores ─────────────────────────────────────────────────────────
   const baseStats = arr<Record<string, unknown>>(char.stats);
@@ -103,6 +106,8 @@ export function computeCoreStats(char: CharData, index: SourceIndex): CoreStats 
       if (!m.subType.endsWith("-score")) continue;
       const idx = statKeys.indexOf(m.subType.replace("-score", ""));
       if (idx < 0) continue;
+      // An item's score bonus counts only while the item is active (G2, 2026-11-19).
+      if (!isActiveItemMod(m, inventory)) continue;
       if (source === "race" && m.isGranted === false) {
         // Allow through only if the player has a matching race-ability pick
         // (2014 Half-Elf shape). Otherwise this is a declined 2024-style ASI.
@@ -114,7 +119,7 @@ export function computeCoreStats(char: CharData, index: SourceIndex): CoreStats 
 
   const scoreSetValues: Record<number, number> = {};
   for (const m of allMods) {
-    if (isSetMod(m) && m.subType.endsWith("-score")) {
+    if (isSetMod(m) && m.subType.endsWith("-score") && isActiveItemMod(m, inventory)) {
       const idx = statKeys.indexOf(m.subType.replace("-score", ""));
       if (idx >= 0) {
         const setVal = num(m.fixedValue ?? m.value);
@@ -149,7 +154,6 @@ export function computeCoreStats(char: CharData, index: SourceIndex): CoreStats 
   });
   const statMods = statTotals.map(modOf);
 
-  const inventory = records<InventoryItem>(char.inventory);
   const resolveTemplates = makeResolveTemplates({ profBonus, totalLevel, statMods, statTotals });
 
   return {

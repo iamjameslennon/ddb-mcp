@@ -1,0 +1,119 @@
+/**
+ * Proficiency, expertise and ability-score modifiers granted by an inventory
+ * item apply only while the item is active (equipped, and attuned when its
+ * definition requires attunement). G1 (proficiencies) and G2 (ability scores)
+ * of the 2026-11-19 fix wave; the Task 3 speed gate is the model.
+ */
+import { describe, expect, it } from "vitest";
+import { parseCharacterData as parseSheet } from "../src/tools/character.js";
+import { INDEX, withoutNameWrap } from "./fixtures/character-edition-helpers.js";
+import { BASE, ITEM, block } from "./fixtures/combat-helpers.js";
+
+const ITEM_ID = 9500;
+/** An item carrying `mods` on the item bucket, with the given equip/attune state. */
+const gated = (mods: Record<string, unknown>[], state: { equipped: boolean; canAttune?: boolean; isAttuned?: boolean }) => ({
+  inventory: [{
+    id: 77, equipped: state.equipped, isAttuned: state.isAttuned ?? false, quantity: 1,
+    definition: { id: ITEM_ID, entityTypeId: ITEM, name: "Test Trinket", filterType: "Wondrous item", canAttune: state.canAttune ?? false, grantedModifiers: [] },
+  }],
+  modifiers: { ...(BASE.modifiers as object), item: mods.map(m => ({ componentId: ITEM_ID, componentTypeId: ITEM, ...m })) },
+});
+const STATES = {
+  unequipped: { equipped: false },
+  "equipped, needs attunement, not attuned": { equipped: true, canAttune: true, isAttuned: false },
+  "unequipped but attuned": { equipped: false, canAttune: true, isAttuned: true },
+} as const;
+const ACTIVE = [
+  ["equipped", { equipped: true }],
+  ["equipped and attuned", { equipped: true, canAttune: true, isAttuned: true }],
+] as const;
+
+const sheet = (overrides: Record<string, unknown>, section: "combat" | "full" = "full"): string =>
+  withoutNameWrap(parseSheet({ data: { ...BASE, classSpells: [], spells: {}, ...overrides } }, section, INDEX));
+
+describe("item proficiency modifiers (G1)", () => {
+  const pistol = {
+    id: 9, equipped: true, quantity: 1,
+    definition: {
+      id: 9009, entityTypeId: ITEM, name: "Pistol", type: "Pistol", filterType: "Weapon", categoryId: 2, attackType: 2, range: 60, longRange: 240,
+      damage: { diceString: "1d10" }, damageType: "Piercing", properties: [{ name: "Ammunition (Firearms)" }], grantedModifiers: [],
+    },
+  };
+  const firearms = { type: "proficiency", subType: "firearms", entityTypeId: 660121713, friendlySubtypeName: "Firearms" };
+  const withPistol = (state: Parameters<typeof gated>[1]) => {
+    const g = gated([firearms], state);
+    return { ...g, inventory: [...g.inventory, pistol] };
+  };
+  const pistolHit = (o: Record<string, unknown>): string | undefined =>
+    /([+-]\d+) to hit/.exec(block(sheet(o, "combat"), "ACTIONS").split("\n").find(l => l.startsWith("• Pistol")) ?? "")?.[1];
+  const weaponsLine = (out: string) => out.split("\n").find(l => l.startsWith("  Weapons:")) ?? "";
+
+  it.each(Object.entries(STATES))("a firearms proficiency from an item that is %s gives no proficiency on the attack and is not listed", (_n, state) => {
+    const o = withPistol(state);
+    const plain = { inventory: [pistol] };
+    expect(pistolHit(o)).toBe(pistolHit(plain));
+    expect(weaponsLine(sheet(o))).not.toContain("Firearms");
+  });
+
+  it.each(ACTIVE)("a firearms proficiency from an item that is %s applies and is listed", (_n, state) => {
+    const o = withPistol(state);
+    const plain = { inventory: [pistol] };
+    expect(Number(pistolHit(o))).toBeGreaterThan(Number(pistolHit(plain)));
+    expect(weaponsLine(sheet(o))).toContain("Firearms");
+  });
+
+  it.each(Object.entries(STATES))("a skill proficiency, expertise and saving-throw proficiency from an item that is %s is ignored", (_n, state) => {
+    const mods = [
+      { type: "proficiency", subType: "stealth" },
+      { type: "expertise", subType: "athletics" },
+      { type: "proficiency", subType: "wisdom-saving-throws" },
+      { type: "half-proficiency", subType: "ability-checks" },
+    ];
+    expect(sheet({ ...gated(mods, state) })).toBe(sheet({ inventory: gated(mods, state).inventory }));
+  });
+
+  it("an active item's skill proficiency, expertise and saving-throw proficiency apply", () => {
+    const mods = [
+      { type: "proficiency", subType: "stealth" },
+      { type: "expertise", subType: "athletics" },
+      { type: "proficiency", subType: "wisdom-saving-throws" },
+    ];
+    const out = sheet(gated(mods, { equipped: true }));
+    expect(out).toMatch(/Stealth \(DEX\)\s+[+-]\d+ \*/);
+    expect(out).toMatch(/Athletics \(STR\)\s+[+-]\d+ \*\*/);
+    expect(out).toMatch(/WIS [+-]\d+\*/);
+  });
+});
+
+describe("item ability-score modifiers (G2)", () => {
+  const strOf = (out: string): number => Number(/STR (\d+) \(/.exec(out)?.[1]);
+  const conOf = (out: string): number => Number(/CON (\d+) \(/.exec(out)?.[1]);
+  const belt = { type: "set", subType: "strength-score", fixedValue: 21, value: 21 };
+  const ring = { type: "bonus", subType: "strength-score", fixedValue: 2 };
+  const base = strOf(sheet({ inventory: [] }));
+
+  it("the baseline STR is below 19, so the tests can tell", () => {
+    expect(base).toBeLessThan(19);
+  });
+
+  it.each(Object.entries(STATES))("a set strength-score from an item that is %s leaves the base score", (_n, state) => {
+    expect(strOf(sheet(gated([belt], state)))).toBe(base);
+  });
+
+  it.each(Object.entries(STATES))("a bonus strength-score from an item that is %s leaves the base score", (_n, state) => {
+    expect(strOf(sheet(gated([ring], state)))).toBe(base);
+  });
+
+  it("an equipped and attuned Belt sets STR to 21", () => {
+    expect(strOf(sheet(gated([belt], { equipped: true, canAttune: true, isAttuned: true })))).toBe(21);
+  });
+
+  it("an equipped item's bonus strength-score adds", () => {
+    expect(strOf(sheet(gated([ring], { equipped: true })))).toBe(base + 2);
+  });
+
+  it("an equipped and attuned Amulet of Health (set constitution-score 19) still gives CON 19", () => {
+    const amulet = { type: "set", subType: "constitution-score", fixedValue: 19, value: 19 };
+    expect(conOf(sheet(gated([amulet], { equipped: true, canAttune: true, isAttuned: true })))).toBe(19);
+  });
+});

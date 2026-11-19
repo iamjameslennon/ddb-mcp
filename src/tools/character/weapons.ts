@@ -138,7 +138,7 @@ export function computeWeaponAttacks(core: CoreStats): { attacks: string[]; offH
   const dexMod = statMods[1];
 
   const weaponProfSlugs = new Set(
-    allMods.filter(m => isProficiencyMod(m) && !isConditionalMod(m)).map(m => str(m.subType))
+    allMods.filter(m => isProficiencyMod(m) && !isConditionalMod(m) && isActiveItemMod(m, inventory)).map(m => str(m.subType))
   );
   const pactIds = flaggedItemIds(core.char, PACT_WEAPON_VALUE_TYPE);
   const bonuses = weaponModifierBonuses(core);

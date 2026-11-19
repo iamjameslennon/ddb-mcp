@@ -10,7 +10,7 @@
  */
 
 import { arr, records, capitalize, knownAndCustomLines, hasRemarkableAthlete, isBonusMod, isConditionalMod, isExpertiseMod, isHalfProficiencyMod, isLanguageMod, isProficiencyMod, isSenseMod, isSetBaseMod, isSetMod, num, obj, signed, statKeys, statNames, str, weaponWordOrder } from "./helpers.js";
-import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
+import type { CharData, ClassEntry, CoreStats, InventoryItem, Mod } from "./types.js";
 import { bucketAnyHomebrew, entityKey, grantingEntities, grantingEntityNames, hiddenOptionIds, isVisibleAction, visibleClassFeatureIds } from "./actions.js";
 import { isActiveItemMod } from "./item-gate.js";
 import { wrapUntrusted } from "../../utils.js";
@@ -68,9 +68,9 @@ function buildAbilityScoreDisplay(statTotals: readonly number[], statMods: reado
 }
 
 // ── Saving throws ────────────────────────────────────────────────────────────
-function buildSavingThrows(allMods: readonly Mod[], statMods: readonly number[], profBonus: number): string[] {
+function buildSavingThrows(allMods: readonly Mod[], inventory: readonly InventoryItem[], statMods: readonly number[], profBonus: number): string[] {
   const saveProfSubTypes = new Set(
-    allMods.filter(isProficiencyMod)
+    allMods.filter(isProficiencyMod).filter(m => isActiveItemMod(m, inventory))
       .filter(m => m.subType.includes("saving-throws"))
       .map(m => m.subType)
   );
@@ -95,23 +95,26 @@ const RA_STAT_INDICES = new Set([0, 1, 2]);
 
 function computeSkillBonuses(
   allMods: readonly Mod[],
+  inventory: readonly InventoryItem[],
   statMods: readonly number[],
   profBonus: number,
   classes: ReadonlyArray<ClassEntry>,
 ): SkillBonus[] {
+  // Proficiency, expertise and half-proficiency from an item count only while it is active (G1, 2026-11-19).
+  const active = (m: Mod): boolean => isActiveItemMod(m, inventory);
   const skillProfSubTypes = new Set(
-    allMods.filter(isProficiencyMod).map(m => m.subType)
+    allMods.filter(isProficiencyMod).filter(active).map(m => m.subType)
   );
   const skillExpertiseSubTypes = new Set(
-    allMods.filter(isExpertiseMod).map(m => m.subType)
+    allMods.filter(isExpertiseMod).filter(active).map(m => m.subType)
   );
   // half-proficiency (e.g. Bard's Jack of All Trades applies to all ability
   // checks; floor(prof/2)).
   const hasJackOfAllTrades = allMods.some(
-    m => isHalfProficiencyMod(m) && m.subType === "ability-checks"
+    m => isHalfProficiencyMod(m) && active(m) && m.subType === "ability-checks"
   );
   const skillHalfProfSubTypes = new Set(
-    allMods.filter(isHalfProficiencyMod)
+    allMods.filter(isHalfProficiencyMod).filter(active)
       .filter(m => m.subType !== "ability-checks")
       .map(m => m.subType)
   );
@@ -349,7 +352,7 @@ const TOOL_ENTITY_TYPE = 2103445194;
 /** Printed after a proficiency whose every grant has a restriction (owner ruling R1, 2026-11-18). */
 export const CONDITIONAL_PROFICIENCY_NOTE = "(conditional, not applied)";
 
-function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficiencies {
+function computeProficiencies(char: CharData, allMods: readonly Mod[], inventory: readonly InventoryItem[]): Proficiencies {
   const armorProfMap: Record<string, string> = {
     "light-armor": "Light Armor", "medium-armor": "Medium Armor",
     "heavy-armor": "Heavy Armor", "shields": "Shields",
@@ -382,12 +385,13 @@ function computeProficiencies(char: CharData, allMods: readonly Mod[]): Proficie
   const tCustomTools = track(customTools);
   for (const m of allMods) {
     const cond = isConditionalMod(m);
+    const sub = str(m.subType);
     const add = (t: ProfList, name: string) => {
       if (!cond) { t.list.push(name); t.plain.add(sub); } else if (!t.cond.has(sub)) t.cond.set(sub, name);
     };
-    const sub = str(m.subType);
     if (isProfPlaceholder(sub)) continue;
     if (isProficiencyMod(m)) {
+      if (!isActiveItemMod(m, inventory)) continue; // an inactive item grants no proficiency (G1, 2026-11-19)
       if (armorProfMap[sub]) add(tArmor, armorProfMap[sub]);
       else if (weaponProfMap[sub]) add(tWeapons, weaponProfMap[sub]);
       else if (sub.includes("saving-throws") || sub.includes("-skill") ||
@@ -492,15 +496,15 @@ export function buildSaveAdvantageLines(core: CoreStats): string[] {
 
 // ── Public API ──────────────────────────────────────────────────────────────
 export function computeStats(core: CoreStats): Stats {
-  const { char, allMods, statMods, statTotals, profBonus, classes } = core;
-  const skillBonuses = computeSkillBonuses(allMods, statMods, profBonus, classes);
+  const { char, allMods, statMods, statTotals, profBonus, classes, inventory } = core;
+  const skillBonuses = computeSkillBonuses(allMods, inventory, statMods, profBonus, classes);
   return {
     abilityScoreDisplay: buildAbilityScoreDisplay(statTotals, statMods),
-    savingThrows: buildSavingThrows(allMods, statMods, profBonus),
+    savingThrows: buildSavingThrows(allMods, inventory, statMods, profBonus),
     saveAdvantages: buildSaveAdvantageLines(core),
     skillLines: buildSkillLines(skillBonuses),
     senses: computeSenses(char, allMods, skillBonuses),
-    proficiencies: computeProficiencies(char, allMods),
+    proficiencies: computeProficiencies(char, allMods, inventory),
   };
 }
 
