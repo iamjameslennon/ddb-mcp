@@ -68,6 +68,10 @@ Source: CLAUDE.md, last invariant; tool-notes C6 (owner ruling 2026-11-10).
 Looks like: logged out, or when D&D Beyond can't answer, replies come from the Open5e SRD and say so. `ddb_search_rules` and `ddb_get_rules` always read the SRD from Open5e; conditions are bundled with the server (SRD 5.1 and 5.2.1). If either SRD document fails to load, the whole call fails, so a one-document outage can read as "not found" (carry-over (q), open by design).
 Source: CLAUDE.md, Invariants, "Open5e responses are distrusted"; history.md (q) (owner decision).
 
+### 2014 Damage and Healing is complete
+Looks like: `ddb_get_rules` with `rules_edition: "2014"` and `Damage and Healing` returns Hit Points (its own text only), Damage Rolls, a real Critical Hits (not a copy of Damage Rolls), Damage Types, Resistance and Vulnerability, Healing, Dropping to 0 Hit Points, Instant Death, Falling Unconscious, Death Saving Throws, Stabilizing a Creature, Monsters and Death, Knocking a Creature Out and Temporary Hit Points. `Death Saving Throws` also resolves by section name, and `ddb_search_rules` for "death saving throw" under 2014 lists the chapter. 2024 is never patched.
+Source: owner ruling R3 (F3) and owner decision 2026-11-19 (embedded-copy trim); src/srd51-rules.ts.
+
 ### Nameless entries keep an empty slot
 Looks like: a list with an empty entry where a character has an item or feature with no name, rather than the entry being dropped (carry-over (y), open by design).
 Source: CLAUDE.md, Open work 4, (y).

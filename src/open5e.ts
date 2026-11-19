@@ -25,6 +25,7 @@ import { paginateResults, renderSection, narrowingHint, MONSTER_SEARCH_LIMIT, fo
 import { EDITION_RENAMES, OPEN5E_ARMOUR_RENAMES, OPEN5E_EQUIPMENT_RENAMES, type RenameKind } from "./edition-renames.js";
 import { nameFold, matchesAtWordStart } from "./name-match.js";
 import { prerequisiteMatches } from "./tools/prerequisite.js";
+import { patchSrd51Rulesets } from "./srd51-rules.js";
 
 // 1-hour cache — Open5e data doesn't change often
 const open5eCache = new TtlCache<unknown>(60 * 60_000, 100);
@@ -1417,12 +1418,18 @@ const ruleSlug = (key: string): string => key.slice(key.indexOf("_") + 1);
 const otherEdition = (e: RulesEdition): RulesEdition => (e === "2024" ? "2014" : "2024");
 
 /** One document's rulesets, a missing `desc` as "" and sections in index order. */
-const rulesetsOf = async (edition: RulesEdition): Promise<O5Ruleset[]> =>
-  (await loadO5Document<O5Ruleset>("rulesets", edition)).map(r => ({
+const rulesetsOf = async (edition: RulesEdition): Promise<O5Ruleset[]> => {
+  const loaded = (await loadO5Document<O5Ruleset>("rulesets", edition)).map(r => ({
     ...r,
     desc: r.desc ?? "",
-    rules: (r.rules ?? []).map(s => ({ ...s, desc: s.desc ?? "" })).sort((a, b) => a.index - b.index),
+    rules: (r.rules ?? []).map(s => ({ ...s, desc: s.desc ?? "" })),
   }));
+  // SRD 5.1's Damage and Healing is broken upstream (F3): patched while it stays broken, 2014 only.
+  return (edition === "2014" ? patchSrd51Rulesets(loaded) : loaded).map(r => ({
+    ...r,
+    rules: [...r.rules].sort((a, b) => a.index - b.index),
+  }));
+};
 
 /** The query as a slug: normalized, spaces → "-". */
 const slugOf = (query: string): string => normalizeName(query).replace(/ /g, "-");

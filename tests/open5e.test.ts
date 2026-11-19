@@ -18,6 +18,7 @@ import {
   o5SearchRules, o5GetRule, cleanO5Markdown, wordPhraseIndex, o5GetMonsterStats, crText, castingTime, humanize, o5TwinNameFor, o5EquipmentKey, o5EquipmentGroupKey,
   type O5Record,
 } from "../src/open5e.js";
+import { patchSrd51Rulesets, MISSING_UPSTREAM_TEXT } from "../src/srd51-rules.js";
 import { getMonsterStats } from "../src/tools/monster.js";
 import { rateEncounter } from "../src/tools/encounter.js";
 
@@ -143,12 +144,14 @@ describe("Open5e labels", () => {
     expect(out).not.toContain("HalfCover");
   });
   it("search matches the cleaned text a get lands on (F15, F16)", async () => {
-    // The srd:flame-strike links (cleaned to "flame strike") match three sections, and Damage Types'
-    // italic "_flame strike_" a fourth: one chapter.
+    // Damage Rolls' srd:flame-strike link (cleaned to "flame strike") and Damage Types' italic
+    // "_flame strike_" match: one chapter. Hit Points (which embedded a copy of Damage Rolls) and
+    // Critical Hits (a duplicate of Damage Rolls) matched only through that copied text before the
+    // 2014 patch (F3); their own text never mentions the spell.
     const f = (await o5SearchRules("flame strike", "2014")).split("\n");
     expect(f[0]).toBe("Rules: sections from SRD 5.1 (2014).");
     expect(f[1]).toBe('Found 1 rules chapter(s) matching "flame strike" (SRD only):');
-    expect(f[2]).toBe("• **Damage and Healing** [2014] (slug: `damage-and-healing`) — Hit Points, Damage Rolls, Critical Hits, Damage Types");
+    expect(f[2]).toBe("• **Damage and Healing** [2014] (slug: `damage-and-healing`) — Damage Rolls, Damage Types");
     const g = (await o5GetRule("Damage and Healing", "2014", 30000, "flame strike"))!;
     expect(g).not.toContain("not found in");
   });
@@ -1641,5 +1644,110 @@ describe("Open5e request timeout", () => {
   it("other fetch errors keep their own message", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("boom"); }));
     await expect(o5GetRule("Combat", "2024")).rejects.toThrow("boom");
+  });
+});
+
+describe("2014 Damage and Healing patch (F3)", () => {
+  const CH = "### Critical Hits\nWhen you score a critical hit, you get to roll extra dice";
+  const damageAndHealing = async (max = 20000) => (await o5GetRule("Damage and Healing", "2014", max))!;
+  const sec = (key: string, name: string, desc: string, index: number) => ({ key, name, desc, index });
+
+  it("prints the real Critical Hits text", async () => {
+    const out = await damageAndHealing();
+    expect(out).toContain(CH);
+    expect(out.split("Each weapon, spell, and harmful monster ability specifies the damage it deals").length - 1).toBe(1);
+  });
+  it("includes the death-save sections", async () => {
+    const out = await damageAndHealing();
+    expect(out).toContain("### Death Saving Throws\nWhenever you start your turn with 0 hit points, you must make a special saving throw");
+    expect(out).toContain("### Temporary Hit Points\nSome spells and special abilities confer temporary hit points");
+  });
+  it("the report's exact call reaches the death-save text", async () => {
+    const out = (await o5GetRule("Damage and Healing", "2014", 6500, "death saving throw"))!;
+    expect(out).not.toContain("not found");
+    expect(out).toContain("Whenever you start your turn with 0 hit points");
+  });
+  it("finds a section by name in 2014", async () => {
+    const out = (await o5GetRule("Death Saving Throws", "2014"))!;
+    expect(out).toContain("## Death Saving Throws");
+    expect(out).toContain("*Part of Damage and Healing*");
+    expect(out).toContain("Rules: 2014 · SRD 5.1");
+    expect(out).not.toContain("no matching 2014 rules section");
+  });
+  it("the search finds death saves in 2014", async () => {
+    const out = await o5SearchRules("death saving throw", "2014");
+    expect(out).toMatch(/\*\*Damage and Healing\*\* \[2014\].*Death Saving Throws/);
+  });
+  it("the Hit Points section prints only its own text (owner decision 2026-11-19)", async () => {
+    const hp = (await damageAndHealing()).split("### Hit Points\n")[1].split("### Damage Rolls\n")[0];
+    expect(hp).toContain("Hit points represent a combination");
+    expect(hp).not.toContain("## Damage Rolls");
+    expect(hp).not.toContain("Each weapon, spell");
+    expect(hp.trimEnd().endsWith("until the creature drops to 0 hit points.")).toBe(true);
+  });
+  it("upstream text wins once fixed", () => {
+    const fixedCrit = sec("srd_damage-and-healing_critical-hits", "Critical Hits", "Real crit text.", 3);
+    const [a] = patchSrd51Rulesets([{ key: "srd_damage-and-healing", rules: [sec("srd_damage-and-healing_damage-rolls", "Damage Rolls", "Rolls.", 2), fixedCrit] }]);
+    expect(a.rules.find(r => r.name === "Critical Hits")!.desc).toBe("Real crit text.");
+    const byKey = patchSrd51Rulesets([{ key: "srd_damage-and-healing", rules: [sec("srd_damage-and-healing_healing", "Healing", "Up.", 7)] }])[0];
+    expect(byKey.rules.filter(r => r.name === "Healing")).toHaveLength(1);
+    expect(byKey.rules.find(r => r.name === "Healing")!.desc).toBe("Up.");
+    const byName = patchSrd51Rulesets([{ key: "srd_damage-and-healing", rules: [sec("srd_dh_other", "healing", "Up.", 7)] }])[0];
+    expect(byName.rules.filter(r => r.name.toLowerCase() === "healing")).toHaveLength(1);
+    expect(byName.rules.some(r => r.key === "srd_damage-and-healing_healing")).toBe(false);
+  });
+  it("only the Damage and Healing ruleset gets sections appended, and the input is not mutated", () => {
+    const input = [{ key: "srd_other", rules: [sec("srd_other_a", "A", "x", 1)] }];
+    const out = patchSrd51Rulesets(input);
+    expect(out[0].rules).toHaveLength(1);
+    const dh = [{ key: "srd_damage-and-healing", rules: [sec("srd_damage-and-healing_hit-points", "Hit Points", "own", 1)] }];
+    const patched = patchSrd51Rulesets(dh);
+    expect(dh[0].rules).toHaveLength(1);
+    expect(patched[0].rules.map(r => r.index)).toEqual([1, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+  });
+  it("a section duplicating another, with no vendored text, says its text is missing", () => {
+    const [r] = patchSrd51Rulesets([{ key: "srd_x", rules: [sec("srd_x_a", "A", "same", 1), sec("srd_x_b", "B", "same", 2)] }]);
+    expect(r.rules[0].desc).toBe("same");
+    expect(r.rules[1].desc).toBe(MISSING_UPSTREAM_TEXT);
+  });
+  it("2024 rulesets are not patched", async () => {
+    type Rs = { key: string; rules: Array<{ key: string; name: string; desc: string; index: number }> };
+    const rs = o5Fixture<Rs>("srd-2024", "rulesets" as never);
+    const [first] = rs;
+    const rules = [
+      { ...first.rules[0], desc: "same", index: 1 },
+      { ...first.rules[0], key: first.key + "_dup", name: "Dup", desc: "same", index: 2 },
+      { ...first.rules[0], key: first.key + "_tail", name: "Tail", desc: `own\n\n## ${first.rules[0].name}\n\nsame`, index: 3 },
+    ];
+    stubFetch(o5FixtureFetch({ "srd-2024/rulesets": [{ ...first, rules }, ...rs.slice(1)] }));
+    const out = (await o5GetRule(first.key.split("_").pop()!, "2024", 5000))!;
+    expect(out).not.toContain("is missing");
+    expect(out).toContain(`### Dup\nsame`);
+    expect(out).toContain(`### Tail\nown\n\n## ${first.rules[0].name}\n\nsame`);
+  });
+
+  describe("embedded-tail trim (owner decision 2026-11-19)", () => {
+    const run = (rules: ReturnType<typeof sec>[]) => patchSrd51Rulesets([{ key: "srd_x", rules }])[0].rules;
+    it("cuts a tail that is '## <other section>' plus that section's exact desc", () => {
+      const r = run([sec("k1", "Own", "Mine.\n\n## Other\n\nOther text.\n", 1), sec("k2", "Other", "Other text.", 2)]);
+      expect(r[0].desc).toBe("Mine.");
+      expect(r[1].desc).toBe("Other text.");
+    });
+    it("trims before the duplicate step, so the two rules cannot interfere", () => {
+      const r = run([
+        sec("k1", "Own", "Mine.\n\n## Rolls\n\nRoll text.", 1),
+        sec("k2", "Rolls", "Roll text.", 2),
+        sec("k3", "Crit", "Roll text.", 3),
+      ]);
+      expect(r.map(s => s.desc)).toEqual(["Mine.", "Roll text.", MISSING_UPSTREAM_TEXT]);
+    });
+    it("leaves a section that only mentions another section's name", () => {
+      const d = "Mine, see Other for more. The Other rules apply.";
+      expect(run([sec("k1", "Own", d, 1), sec("k2", "Other", "Other text.", 2)])[0].desc).toBe(d);
+    });
+    it("leaves a section whose tail differs from the named section's desc", () => {
+      const d = "Mine.\n\n## Other\n\nDifferent text.";
+      expect(run([sec("k1", "Own", d, 1), sec("k2", "Other", "Other text.", 2)])[0].desc).toBe(d);
+    });
   });
 });
