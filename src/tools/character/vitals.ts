@@ -10,6 +10,7 @@
  */
 
 import { arr, records, featureDefinition, hasRemarkableAthlete, isBonusMod, isHalfProficiencyMod, isSetMod, num, obj, signed, str } from "./helpers.js";
+import { OPTION_TYPE, hiddenOptionIds, visibleClassFeatureIds } from "./actions.js";
 import { isActiveItemMod } from "./item-gate.js";
 import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
 
@@ -71,7 +72,10 @@ function computeSpeed(core: CoreStats): string[] {
   // too. Discriminator: the modifier's componentId must match the id of a
   // feature actually present in classFeatures/subclassFeatures. Hand-built
   // fixtures don't set componentId at all (cid=0) — those bypass the filter
-  // unchanged.
+  // unchanged. An option's modifiers (componentTypeId OPTION_TYPE, componentId
+  // the option's definition id) are judged by their option instead: skipped
+  // exactly when the option's parent class feature is not present
+  // (hiddenOptionIds), else applied.
   const grantedClassFeatureIds = new Set<number>();
   for (const c of arr<Record<string, unknown>>(char.classes)) {
     for (const cf of records(c.classFeatures)) {
@@ -89,10 +93,15 @@ function computeSpeed(core: CoreStats): string[] {
   // must be skipped. Other sources (race, feat, item, background, condition)
   // never get filtered.
   const skippedClassMods = new Set<Mod>();
+  const hiddenOptions = hiddenOptionIds(char, visibleClassFeatureIds(char, core.classes));
   for (const [source, list] of Object.entries(obj(char.modifiers))) {
     if (source !== "class" && source !== "subclass") continue;
     for (const m of arr<Mod>(list)) {
       const cid = num(m.componentId);
+      if (num(m.componentTypeId) === OPTION_TYPE && cid !== 0) {
+        if (hiddenOptions.has(cid)) skippedClassMods.add(m);
+        continue;
+      }
       if (cid !== 0 && !grantedClassFeatureIds.has(cid)) skippedClassMods.add(m);
     }
   }
@@ -103,7 +112,7 @@ function computeSpeed(core: CoreStats): string[] {
   //   - `speed-{axis}` — class/feat/subclass axis-specific bonus (e.g. Scout's Superior Mobility, Ranger's Roving)
   //   - `speed` (no axis suffix) — generic walking-speed bonus (e.g. Barbarian Fast Movement, Mobile feat, Longstrider)
   // `set` mods override the base axis speed; `bonus` mods stack on top.
-  const speedCalc = (axis: "walking" | "flying" | "swimming" | "climbing" | "burrowing", base: number, fallback = 0): number => {
+  const speedCalc = (axis: "walking" | "flying" | "swimming" | "climbing" | "burrowing", base: number, fallback = 0, walkSpeed = 0): number => {
     const subTypes = new Set([`innate-speed-${axis}`, `speed-${axis}`]);
     // The bare "speed" subType is a walking-default bonus only; never applies to fly/swim/climb/burrow.
     if (axis === "walking") subTypes.add("speed");
@@ -120,7 +129,12 @@ function computeSpeed(core: CoreStats): string[] {
     // (race, set, or an innate-speed bonus); it never opens a fly/swim/climb/burrow axis on its own.
     const hasSpeed = axis === "walking" || (override || base) > 0 || bonusOf(m => m.subType === `innate-speed-${axis}`) > 0;
     const bonus = bonusOf(m => subTypes.has(str(m.subType)) && (hasSpeed || m.subType !== `speed-${axis}`));
-    return (override || base || fallback) + bonus;
+    const result = (override || base || fallback) + bonus;
+    // A null-valued `set` ("equal to your walking speed": Roving, Slippers of Spider Climbing) on a
+    // non-walking axis raises it to the walking speed, never lowers it. The restriction text is not read.
+    const followsWalking = axis !== "walking"
+      && allMods.some(m => isSetMod(m) && m.subType === `innate-speed-${axis}` && (m.value ?? m.fixedValue) == null && applies(m));
+    return followsWalking ? Math.max(result, walkSpeed) : result;
   };
   // Monk Unarmored Movement uses "unarmored-movement" rather than "innate-speed-walking".
   // Per PHB: only applies "while you are not wearing armor or wielding a
@@ -137,10 +151,10 @@ function computeSpeed(core: CoreStats): string[] {
         .filter(m => isBonusMod(m) && m.subType === "unarmored-movement" && isApplicable(m))
         .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
   const walkSpeed = speedCalc("walking", num(weightSpeeds.walk), 30) + unarmoredMoveBonus;
-  const flySpeed = speedCalc("flying", num(weightSpeeds.fly));
-  const swimSpeed = speedCalc("swimming", num(weightSpeeds.swim));
-  const climbSpeed = speedCalc("climbing", num(weightSpeeds.climb));
-  const burrowSpeed = speedCalc("burrowing", num(weightSpeeds.burrow));
+  const flySpeed = speedCalc("flying", num(weightSpeeds.fly), 0, walkSpeed);
+  const swimSpeed = speedCalc("swimming", num(weightSpeeds.swim), 0, walkSpeed);
+  const climbSpeed = speedCalc("climbing", num(weightSpeeds.climb), 0, walkSpeed);
+  const burrowSpeed = speedCalc("burrowing", num(weightSpeeds.burrow), 0, walkSpeed);
   const parts: string[] = [`${walkSpeed} ft.`];
   if (flySpeed > 0) parts.push(`fly ${flySpeed} ft.`);
   if (swimSpeed > 0) parts.push(`swim ${swimSpeed} ft.`);

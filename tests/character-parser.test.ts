@@ -3385,3 +3385,69 @@ describe("bundled items (F11)", () => {
     expect(out).toContain(wrapUntrusted("  Odd Beads (sack of 50) [homebrew] ×2"));
   });
 });
+
+// ── (by) null-valued set speed = walking speed; an option's modifiers follow its parent feature ──
+describe("parseCharacterData — null set speed and option modifiers (by)", () => {
+  const ROVING = { componentId: 1306484, componentTypeId: 258900837, isGranted: true };
+  const roving = (parentVisible: boolean) => variant(FIGHTER_5, d => {
+    d.race.weightSpeeds = { normal: { walk: 30 } };
+    d.classes[0].classFeatures = parentVisible ? [{ definition: { id: 3035679, entityTypeId: 12168134, name: "Deft Explorer", requiredLevel: 1 } }] : [];
+    d.options = { class: [{ componentId: 3035679, componentTypeId: 12168134, definition: { id: 1306484, entityTypeId: 258900837, name: "Roving (6th Level)" } }] };
+    d.modifiers.class = [
+      { type: "bonus", subType: "speed-walking", value: 5, fixedValue: 5, ...ROVING },
+      { type: "set", subType: "innate-speed-climbing", value: null, fixedValue: null, ...ROVING },
+      { type: "set", subType: "innate-speed-swimming", value: null, fixedValue: null, ...ROVING },
+    ];
+  });
+  const withMods = (speeds: Record<string, number>, mods: Record<string, unknown>[], bucket = "race") => variant(FIGHTER_5, d => {
+    d.race.weightSpeeds = { normal: { walk: 30, ...speeds } };
+    d.modifiers = { ...d.modifiers, [bucket]: mods };
+  });
+  const nullSet = (axis: string) => ({ type: "set", subType: `innate-speed-${axis}`, value: null, fixedValue: null });
+  const speedLine = (c: Record<string, unknown>) => /Speed: (.*)$/m.exec(parseCharacterData(c, "summary", INDEX))![1];
+
+  it("an option's modifiers apply when its parent feature is present (Roving, optional features on)", () => {
+    expect(speedLine(roving(true))).toBe("35 ft., swim 35 ft., climb 35 ft.");
+  });
+  it("an option's modifiers are dropped when its parent feature is absent (Ehsu shape)", () => {
+    expect(speedLine(roving(false))).toBe("30 ft.");
+  });
+  it("a null set speed equals the walking speed, including bonuses", () => {
+    const c = variant(withMods({}, [nullSet("climbing")]), d => {
+      d.modifiers.feat = [{ type: "bonus", subType: "speed", value: 10, fixedValue: 10 }];
+    });
+    expect(speedLine(c)).toBe("40 ft., climb 40 ft.");
+  });
+  it("a null set speed never lowers a speed the character already has", () => {
+    expect(speedLine(withMods({ climb: 45 }, [nullSet("climbing")]))).toBe("30 ft., climb 45 ft.");
+  });
+  it("a null set speed on the walking axis does nothing", () => {
+    expect(speedLine(withMods({}, [nullSet("walking")]))).toBe("30 ft.");
+  });
+  it("a zero set speed still does not open the axis", () => {
+    expect(speedLine(withMods({}, [{ type: "set", subType: "innate-speed-flying", value: 0, fixedValue: 0 }]))).toBe("30 ft.");
+  });
+  describe("Slippers shape", () => {
+    const slippers = (extra: Record<string, unknown>) => variant(FIGHTER_5, d => {
+      d.race.weightSpeeds = { normal: { walk: 30 } };
+      d.modifiers.item = [{
+        ...nullSet("climbing"), componentId: 4755, componentTypeId: 112130694,
+        restriction: "Climbing Speed Equal to Walking Speed, Non-Slippery Surfaces Only",
+      }];
+      d.inventory.push({ equipped: false, isAttuned: false, definition: { id: 4755, entityTypeId: 112130694, name: "Slippers of Spider Climbing", canAttune: true }, ...extra });
+    });
+    it("grants only while the item is active", () => {
+      expect(speedLine(slippers({}))).toBe("30 ft.");
+      expect(speedLine(slippers({ equipped: true }))).toBe("30 ft.");
+      expect(speedLine(slippers({ equipped: true, isAttuned: true }))).toBe("30 ft., climb 30 ft.");
+    });
+    it("never prints the restriction text", () => {
+      const out = parseCharacterData(slippers({ equipped: true, isAttuned: true }), "full", INDEX);
+      expect(out).not.toContain("Non-Slippery");
+    });
+  });
+  it("a class feature's own modifier keeps the old rule", () => {
+    const c = withMods({}, [{ ...nullSet("climbing"), componentId: 999999, componentTypeId: 12168134 }], "class");
+    expect(speedLine(c)).toBe("30 ft.");
+  });
+});

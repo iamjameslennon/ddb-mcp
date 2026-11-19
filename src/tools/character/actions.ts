@@ -189,7 +189,7 @@ interface CharAction { action: Record<string, unknown>; homebrew: boolean }
 
 /** entityTypeId of a class feature (and of the componentTypeId of an action it grants). */
 export const CLASS_FEATURE_TYPE = 12168134;
-const OPTION_TYPE = 258900837;
+export const OPTION_TYPE = 258900837;
 
 /**
  * Ids of the class features the character has: each class's features whose
