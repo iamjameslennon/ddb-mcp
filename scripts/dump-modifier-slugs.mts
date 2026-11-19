@@ -61,7 +61,7 @@ const damageAdjustment = sorted([
 ]);
 // Custom defenses carry rule-data ids: damageAdjustments (type 1 resistance, 2 immunity,
 // 3 vulnerability) and conditions (the 15 standard conditions). Sorted by id.
-const damageAdjustmentsById = ((data.damageAdjustments as Array<{ id: number; name: string; type: number }> | undefined) ?? [])
+const damageAdjustmentsById = ((data.damageAdjustments as Array<{ id: number; name: string; slug: string; type: number }> | undefined) ?? [])
   .filter(e => [1, 2, 3].includes(e.type)).sort((a, b) => a.id - b.id);
 const conditionsById = ((data.conditions as Array<{ definition: { id: number; name: string } }> | undefined) ?? [])
   .map(c => c.definition).sort((a, b) => a.id - b.id);
@@ -100,8 +100,8 @@ ${block(damageAdjustment)}
 ]);
 
 /** Rule-data damageAdjustments by id: \`type\` 1 resistance, 2 immunity, 3 vulnerability. */
-export const DAMAGE_ADJUSTMENTS_BY_ID: Readonly<Record<number, { name: string; type: 1 | 2 | 3 }>> = {
-${damageAdjustmentsById.map(e => `  ${e.id}: { name: ${JSON.stringify(e.name)}, type: ${e.type} },`).join("\n")}
+export const DAMAGE_ADJUSTMENTS_BY_ID: Readonly<Record<number, { name: string; slug: string; type: 1 | 2 | 3 }>> = {
+${damageAdjustmentsById.map(e => `  ${e.id}: { name: ${JSON.stringify(e.name)}, slug: ${JSON.stringify(e.slug)}, type: ${e.type} },`).join("\n")}
 };
 
 /** Rule-data conditions by id (condition immunities). */

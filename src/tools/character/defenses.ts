@@ -5,7 +5,7 @@
  * Phase 5b of the character.ts refactor — see docs/character-refactor.md.
  */
 
-import { arr, capitalize, isImmunityMod, isResistanceMod, isVulnerabilityMod, knownAndCustomLines, str } from "./helpers.js";
+import { arr, capitalize, isImmunityMod, isResistanceMod, isVulnerabilityMod, knownAndCustomLines, records, str } from "./helpers.js";
 import { CONDITION_NAMES_BY_ID, DAMAGE_ADJUSTMENTS_BY_ID, DAMAGE_ADJUSTMENT_SLUGS } from "./modifier-slugs.js";
 import type { CoreStats, Mod } from "./types.js";
 
@@ -61,19 +61,28 @@ export const PLAYER_SET_NOTE = "(player-set)";
  * immunity. An unknown id or type prints nothing. `source` is player-written and never
  * printed. A name a modifier already grants stays plain and prints once.
  */
-function addPlayerSet(char: Record<string, unknown>, lists: { 1: DefenseList; 2: DefenseList; 3: DefenseList }): void {
-  for (const e of arr<Record<string, unknown>>(char.customDefenseAdjustments)) {
+function addPlayerSet(
+  char: Record<string, unknown>,
+  lists: { 1: DefenseList; 2: DefenseList; 3: DefenseList },
+  granted: { 1: ReadonlySet<string>; 2: ReadonlySet<string>; 3: ReadonlySet<string> },
+): void {
+  for (const e of records(char.customDefenseAdjustments)) {
+    const id = e.adjustmentId;
     let name: string | undefined;
-    let list: DefenseList | undefined;
-    if (e.type === 2 && typeof e.adjustmentId === "number" && Object.hasOwn(DAMAGE_ADJUSTMENTS_BY_ID, e.adjustmentId)) {
-      const adj = DAMAGE_ADJUSTMENTS_BY_ID[e.adjustmentId]!;
-      name = adj.name;
-      list = lists[adj.type];
-    } else if (e.type === 1 && typeof e.adjustmentId === "number" && Object.hasOwn(CONDITION_NAMES_BY_ID, e.adjustmentId)) {
-      name = CONDITION_NAMES_BY_ID[e.adjustmentId];
-      list = lists[2];
+    let kind: 1 | 2 | 3 | undefined;
+    let slug = "";
+    if (e.type === 2 && typeof id === "number" && Object.hasOwn(DAMAGE_ADJUSTMENTS_BY_ID, id)) {
+      const adj = DAMAGE_ADJUSTMENTS_BY_ID[id]!;
+      ({ name, slug } = adj);
+      kind = adj.type;
+    } else if (e.type === 1 && typeof id === "number" && Object.hasOwn(CONDITION_NAMES_BY_ID, id)) {
+      name = CONDITION_NAMES_BY_ID[id];
+      slug = slugOf(name!);
+      kind = 2;
     }
-    if (name === undefined || !list || list.known.includes(name)) continue;
+    // Same defense already granted by a modifier of this kind: identity is the subType slug.
+    if (name === undefined || kind === undefined || granted[kind].has(slug)) continue;
+    const list = lists[kind];
     const marked = `${name} ${PLAYER_SET_NOTE}`;
     if (!list.known.includes(marked)) list.known.push(marked);
   }
@@ -81,10 +90,15 @@ function addPlayerSet(char: Record<string, unknown>, lists: { 1: DefenseList; 2:
 
 export function computeDefenses(core: CoreStats): Defenses {
   const { char, allMods } = core;
-  const resistances = defenseList(allMods.filter(isResistanceMod));
-  const immunities = defenseList(allMods.filter(isImmunityMod));
-  const vulnerabilities = defenseList(allMods.filter(isVulnerabilityMod));
-  addPlayerSet(char, { 1: resistances, 2: immunities, 3: vulnerabilities });
+  const res = allMods.filter(isResistanceMod);
+  const imm = allMods.filter(isImmunityMod);
+  const vul = allMods.filter(isVulnerabilityMod);
+  const resistances = defenseList(res);
+  const immunities = defenseList(imm);
+  const vulnerabilities = defenseList(vul);
+  addPlayerSet(char, { 1: resistances, 2: immunities, 3: vulnerabilities }, {
+    1: new Set(res.map(m => m.subType)), 2: new Set(imm.map(m => m.subType)), 3: new Set(vul.map(m => m.subType)),
+  });
   return {
     resistances,
     immunities,

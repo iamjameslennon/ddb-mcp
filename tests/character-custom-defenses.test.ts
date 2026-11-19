@@ -14,8 +14,8 @@ const sleep = { type: "immunity", subType: "magical-sleep", friendlySubtypeName:
 
 describe("player-set defenses (F7)", () => {
   it("the generated tables hold the ids live data uses", () => {
-    expect(DAMAGE_ADJUSTMENTS_BY_ID[22]).toEqual({ name: "Poison", type: 2 });
-    expect(DAMAGE_ADJUSTMENTS_BY_ID[51]).toEqual({ name: "Ranged Attacks", type: 1 });
+    expect(DAMAGE_ADJUSTMENTS_BY_ID[22]).toEqual({ name: "Poison", slug: "poison", type: 2 });
+    expect(DAMAGE_ADJUSTMENTS_BY_ID[51]).toMatchObject({ name: "Ranged Attacks", type: 1 });
     expect(CONDITION_NAMES_BY_ID[5]).toBe("Frightened");
   });
 
@@ -39,10 +39,49 @@ describe("player-set defenses (F7)", () => {
   it("skips an unknown id or type", () => {
     const out = sheet([{ adjustmentId: 9999, type: 2, source: null }, { adjustmentId: 5, type: 7, source: null }]);
     expect(line(out, "Immunities")).toBe("  Immunities: (none)");
+    expect(out).not.toContain("(player-set)");
   });
 
   it("a custom entry already granted by a modifier prints once, plain", () => {
     const out = sheet([{ adjustmentId: 22, type: 2, source: null }], { type: "immunity", subType: "poison", friendlySubtypeName: "Poison" });
     expect(line(out, "Immunities")).toBe("  Immunities: Poison");
+  });
+
+  it("survives malformed entries and still lists the valid one, in every section", () => {
+    const custom = [null, 5, "x", { adjustmentId: 22, type: 2 }] as unknown as Custom[];
+    expect(line(sheet(custom), "Immunities")).toBe("  Immunities: Poison (player-set)");
+    const c = variant(FIGHTER_5, d => { d.customDefenseAdjustments = custom; });
+    expect(() => parseCharacterData(c, "summary", INDEX)).not.toThrow();
+  });
+
+  it("a name whose printed form differs from its slug still dedupes (Ruidium, apostrophe)", () => {
+    const ruid = sheet([{ adjustmentId: 66, type: 2, source: null }], { type: "resistance", subType: "psychic-granted-by-ruidium-armor" });
+    expect(line(ruid, "Resistances")).toBe("  Resistances: Psychic-granted-by-ruidium-armor");
+    const slug = DAMAGE_ADJUSTMENTS_BY_ID[14]!.slug;
+    const apos = sheet([{ adjustmentId: 14, type: 2, source: null }], { type: "resistance", subType: slug });
+    expect(apos.match(/\(player-set\)/g)).toBeNull();
+  });
+
+  it("a vulnerability-typed adjustment lands on Vulnerabilities", () => {
+    expect(DAMAGE_ADJUSTMENTS_BY_ID[33]!.type).toBe(3);
+    expect(line(sheet([{ adjustmentId: 33, type: 2, source: null }]), "Vulnerabilities")).toBe("  Vulnerabilities: Bludgeoning (player-set)");
+  });
+
+  it("a damage immunity does not suppress a condition of a similar name, and vice versa", () => {
+    const poisoned = Object.entries(CONDITION_NAMES_BY_ID).find(([, n]) => n === "Poisoned")![0];
+    const b = sheet([{ adjustmentId: Number(poisoned), type: 1, source: null }], { type: "immunity", subType: "poison", friendlySubtypeName: "Poison" });
+    expect(line(b, "Immunities")).toBe("  Immunities: Poison, Poisoned (player-set)");
+    const c = sheet([{ adjustmentId: 22, type: 2, source: null }], { type: "immunity", subType: "poisoned" });
+    expect(line(c, "Immunities")).toBe("  Immunities: Poisoned, Poison (player-set)");
+  });
+
+  it("a condition immunity already granted by a modifier prints once, plain", () => {
+    const out = sheet([{ adjustmentId: 5, type: 1, source: null }], { type: "immunity", subType: "frightened", friendlySubtypeName: "Frightened" });
+    expect(line(out, "Immunities")).toBe("  Immunities: Frightened");
+  });
+
+  it("two identical custom entries print once", () => {
+    const e = { adjustmentId: 22, type: 2, source: null };
+    expect(line(sheet([e, e]), "Immunities")).toBe("  Immunities: Poison (player-set)");
   });
 });
