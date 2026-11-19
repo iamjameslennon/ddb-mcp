@@ -84,10 +84,15 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
  * `route.fetch({ maxRedirects: 0 })` per hop, and checks each `Location`
  * before requesting it: a foreign hop is aborted and its host never contacted.
  * Chrome sends no `Origin` on a GET navigation, so that includes a GET a
- * foreign frame started (a `target=_top` link): the walk then sends the
- * cookies Chrome would withhold cross-site (SameSite=Strict, partitioned) and
- * no Sec-Fetch-Site. The saved session holds only Lax and None cookies, which
- * Chrome sends on a cross-site top-level GET anyway (carry-over (bx)(5)).
+ * foreign frame started (a `target=_top` link). route.fetch would send every
+ * cookie of the context's jar, SameSite=Strict and partitioned ones too, so
+ * the walk sends only what Chrome's own `cookie` header on the paused request
+ * allowed (walkCookieHeader): Lax and None cookies always, a Strict or
+ * partitioned one only if Chrome sent that same name=value (carry-over
+ * (bx)(5), owner ruling 2026-11-19). This trusts that the route handler's
+ * `cookie` header is Chrome's SameSite-filtered one (true on Chrome 157 and
+ * Playwright 1.65.1); with no such header no Strict or partitioned cookie is
+ * sent. The walk still sends no Sec-Fetch-Site.
  *
  * route.fetch takes the context's cookies but enforces no SameSite and sends
  * no Sec-Fetch-* headers, so a non-GET navigation (a foreign frame's form POST
@@ -129,16 +134,24 @@ async function followAllowedRedirects(route: Route): Promise<void> {
   const req = route.request();
   const deadline = Date.now() + NAVIGATION_TIMEOUT_MS;
   let url = req.url();
-  // Each hop takes its cookies from the context's jar, never a header carried
-  // over from another hop or host.
+  // Read once, outside the try around route.fetch: a throw (a closed page)
+  // aborts via guardRoute's catch and never falls back to Chrome's request.
+  const context = req.frame().page().context();
+  // What Chrome itself allowed to send on this navigation (its SameSite rules).
+  const chromeCookie = req.headers()["cookie"];
+  // Each hop takes its cookies from the context's jar for that hop's URL,
+  // filtered by walkCookieHeader, never a header carried over from another hop
+  // or host. `cookie` is always set (even ""): Playwright refills the jar only
+  // when the header is absent.
   const headers = withoutHeaders(req.headers(), ["cookie", "host"]);
 
   for (let redirects = 0; ; redirects++) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) return route.abort("timedout");
+    const cookie = walkCookieHeader(await context.cookies(url), chromeCookie);
     let response: Awaited<ReturnType<Route["fetch"]>>;
     try {
-      response = await route.fetch({ url, method: "GET", headers, maxRedirects: 0, timeout: remaining });
+      response = await route.fetch({ url, method: "GET", headers: { ...headers, cookie }, maxRedirects: 0, timeout: remaining });
     } catch (err) {
       // The deadline fails the navigation, as goto's own timeout would.
       if (Date.now() >= deadline || (err instanceof Error && err.name === "TimeoutError")) return route.abort("timedout");
@@ -174,6 +187,24 @@ async function followAllowedRedirects(route: Route): Promise<void> {
     }
     url = next;
   }
+}
+
+/**
+ * The `Cookie` header for one walked hop: every Lax or None non-partitioned
+ * cookie of the jar (a cookie without sameSite counts as Lax), plus a Strict
+ * or partitioned one only when the same `name=value` is in Chrome's own cookie
+ * header for the first request. No Chrome header means no such cookie (fail
+ * closed). Returns "" when nothing is allowed, never undefined.
+ */
+export function walkCookieHeader(
+  jar: ReadonlyArray<{ name: string; value: string; sameSite?: string; partitionKey?: string }>,
+  chromeCookieHeader: string | undefined,
+): string {
+  const chromeSent = new Set((chromeCookieHeader ?? "").split(";").map((c) => c.trim()).filter(Boolean));
+  return jar
+    .filter((c) => (c.sameSite !== "Strict" && !c.partitionKey) || chromeSent.has(`${c.name}=${c.value}`))
+    .map((c) => `${c.name}=${c.value}`)
+    .join("; ");
 }
 
 /**
