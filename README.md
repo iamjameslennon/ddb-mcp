@@ -1,6 +1,6 @@
 # D&D Beyond MCP Server
 
-A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that gives Claude direct access to your D&D Beyond account — characters, campaigns, sourcebooks, spells, monsters, rules, encounter planning, treasure generation, and more.
+A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that gives Claude (or ChatGPT) direct access to your D&D Beyond account — characters, campaigns, sourcebooks, spells, monsters, rules, encounter planning, treasure generation, and more.
 
 > **What's new** — see the [latest release notes](https://github.com/iamjameslennon/ddb-mcp/releases).
 
@@ -237,7 +237,7 @@ In these searches, entries that aren't 2014 or 2024 content are tagged `[homebre
 ## Prerequisites
 
 - [Node.js](https://nodejs.org) 22 or later
-- [Claude Code](https://claude.ai/claude-code) CLI
+- An MCP client: [Claude Desktop](https://claude.ai/download), [Claude Code](https://claude.ai/claude-code), or the [ChatGPT desktop app](https://openai.com/chatgpt/download/)
 
 ---
 
@@ -245,7 +245,7 @@ In these searches, entries that aren't 2014 or 2024 content are tagged `[homebre
 
 > 🆕 **New to all this?** If you're on a Mac starting from scratch (no Homebrew, no Node, no Claude Desktop), follow the [step-by-step beginner tutorial](INSTALL-MACOS.md) instead — it covers everything below plus how to install the prerequisites.
 
-Add this to your MCP client's config — no separate install step needed.
+Add this to your MCP client's config — no separate install step needed. (ChatGPT uses a TOML file instead; see [ChatGPT](#chatgpt-desktop-app).)
 
 ```json
 {
@@ -307,15 +307,15 @@ Then use `"command": "ddb-mcp"` (no args) in your client config. The browser is 
 
 ## Connecting to your MCP client
 
-This server was built and tested with Claude — it will work with any MCP-compatible client, but response quality for D&D-specific reasoning will vary depending on the model used.
-
-All clients below use the same JSON config from the [Installation](#installation) section. Merge it into your client's config file (paths below) — see the merge warning there if the file isn't empty — then restart the client.
+This server was built and tested with Claude, and also works in the ChatGPT desktop app. It speaks standard MCP over stdio, so other local MCP clients should work too, but only Claude and ChatGPT are documented here.
 
 ### Claude Desktop (recommended)
 
+Merge the JSON config from the [Installation](#installation) section into this file (see the merge warning there if the file isn't empty), then quit and reopen Claude Desktop:
+
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-- **Linux**: `~/.config/Claude/claude_desktop_config.json` (community builds only — Claude Desktop has no official Linux release; use [Claude Code](#claude-code) or [Cursor](#cursor) instead)
+- **Linux**: `~/.config/Claude/claude_desktop_config.json` (community builds only — Claude Desktop has no official Linux release; use [Claude Code](#claude-code) instead)
 
 ### Claude Code
 
@@ -331,21 +331,29 @@ Or if you installed globally:
 claude mcp add dndbeyond ddb-mcp
 ```
 
-### Cursor
+### ChatGPT (desktop app)
 
-`~/.cursor/mcp.json`
+The ChatGPT desktop app runs local MCP servers through the same configuration as Codex, `~/.codex/config.toml` (`%USERPROFILE%\.codex\config.toml` on Windows). This file is TOML, not JSON. Add:
 
-### Windsurf
+```toml
+[mcp_servers.dndbeyond]
+command = "npx"
+args = ["-y", "@iamjameslennon/ddb-mcp"]
+startup_timeout_sec = 60
+tool_timeout_sec = 240
+```
 
-`~/.codeium/windsurf/mcp_config.json`
+Or, with the Codex CLI installed, add the entry from the command line, then add the two timeout lines to it by hand:
 
-### LM Studio
+```bash
+codex mcp add dndbeyond -- npx -y @iamjameslennon/ddb-mcp
+```
 
-MCP support was added in LM Studio 0.3.x. Configure through the UI under **Settings → MCP Servers** using the same JSON shape as above. Steps may vary between versions — see [lmstudio.ai/docs](https://lmstudio.ai/docs) for current instructions.
+Then quit and reopen the ChatGPT app.
 
-### Open WebUI
+> ⚠️ **Keep the timeouts.** Without them, ChatGPT gives a server 10 s to start and each tool call 60 s. The first `npx` launch can take longer than 10 s, and `ddb_login` waits up to 3 minutes for you to finish signing in, so the defaults cut both off.
 
-MCP servers are configured through the admin panel under **Settings → Tools**. See [docs.openwebui.com](https://docs.openwebui.com) for current instructions — the UI changes frequently between releases.
+ChatGPT on the web can't reach a server running on your computer; use the desktop app.
 
 ---
 
@@ -531,7 +539,7 @@ Key things `ddb_get_character` handles correctly:
 npm update -g @iamjameslennon/ddb-mcp
 ```
 
-Then restart your MCP client and run `/mcp` to reconnect the server.
+Then restart your MCP client (in Claude Code, run `/mcp` to reconnect the server). With the `npx` config, quitting and reopening the client is enough to pick up a new release, unless you pinned a version.
 
 ---
 
