@@ -84,6 +84,7 @@ SPELL SLOTS
 ATTUNEMENT (0/3): none
 
 CURRENCY: none
+
 No notes or backstory have been recorded for this character."
 `;
 
@@ -273,6 +274,7 @@ SPELLS
 ATTUNEMENT (0/3): none
 
 CURRENCY: none
+
 No notes or backstory have been recorded for this character."
 `;
 
@@ -338,7 +340,7 @@ CONDITIONS: (none)
 FEATS (1)
 • Great Weapon Master: On a critical hit or kill, make a bonus attack.
 
-OTHER FEATURES (stored as feats in API but NOT player-chosen feats)
+OTHER FEATURES
 • Action Surge
 
 CLASS FEATURES
@@ -357,6 +359,7 @@ REACTIONS
 ATTUNEMENT (0/3): none
 
 CURRENCY: 15gp, 20sp
+
 No notes or backstory have been recorded for this character."
 `;
 
@@ -495,5 +498,6 @@ REACTIONS
 ATTUNEMENT (0/3): none
 
 CURRENCY: 10gp
+
 No notes or backstory have been recorded for this character."
 `;

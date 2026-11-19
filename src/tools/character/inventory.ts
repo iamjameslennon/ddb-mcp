@@ -91,5 +91,6 @@ export function formatInventoryBlock(inv: Inventory): string[] {
     attunementLine(inv.attunedItems),
     ``,
     `CURRENCY: ${inv.currencyLine}`,
+    ``,
   ];
 }

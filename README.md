@@ -448,7 +448,7 @@ CONDITIONS: (none)
 FEATS (1)
 • Magic Initiate (Wizard): Two Cantrips. You learn two cantrips of your choice...
 
-OTHER FEATURES (stored as feats in API but NOT player-chosen feats)
+OTHER FEATURES
 • Dark Bargain [third-party]
 • Circle Magic (Intelligence)
 

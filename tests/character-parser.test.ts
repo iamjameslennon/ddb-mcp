@@ -3231,3 +3231,55 @@ describe("parseCharacterData — defense names read as D&D Beyond writes them (F
     expect(immunitiesLine(out)).toBe("  Immunities: Magical-sleep");
   });
 });
+
+describe("parseCharacterData — OTHER FEATURES and the end of the inventory block (F10)", () => {
+  const disguised = (name: string) => ({ definition: { name, categories: [{ tagName: "__DISGUISE_FEAT" }] } });
+  const withBits = (feats: unknown[], classFeatures: unknown[], level = 5): Record<string, unknown> => {
+    const c = JSON.parse(JSON.stringify(FIGHTER_5)) as { data: Record<string, unknown> };
+    c.data.feats = feats;
+    const cls = (c.data.classes as Array<Record<string, unknown>>)[0];
+    cls.level = level;
+    cls.classFeatures = classFeatures;
+    return c;
+  };
+  const wm = (requiredLevel: number, id = 9001) => ({ definition: { id, name: "Weapon Mastery", requiredLevel } });
+
+  it("titles disguised feats OTHER FEATURES", () => {
+    const out = parseCharacterData(withBits([disguised("Dark Bargain")], []), "features");
+    expect(out.split("\n")).toContain("OTHER FEATURES");
+    expect(out).not.toContain("stored as feats");
+  });
+
+  it("drops a disguised feat that is also a shown class feature (Bobby shape)", () => {
+    const out = parseCharacterData(withBits([disguised("Weapon Mastery"), disguised("Dark Bargain")], [wm(1)]), "features");
+    const other = out.slice(out.indexOf("OTHER FEATURES"), out.indexOf("CLASS FEATURES"));
+    expect(other).not.toContain("• Weapon Mastery");
+    expect(other).toContain("• Dark Bargain");
+    expect(out).toContain("• Weapon Mastery (Fighter 1)");
+    const only = parseCharacterData(withBits([disguised("Weapon Mastery")], [wm(1)]), "features");
+    expect(only).not.toContain("OTHER FEATURES");
+    expect(only).toContain("• Weapon Mastery (Fighter 1)");
+  });
+
+  it("keeps it when the class feature is above the character's level", () => {
+    const out = parseCharacterData(withBits([disguised("Weapon Mastery")], [wm(9)]), "features");
+    expect(out).toContain("OTHER FEATURES\n• Weapon Mastery");
+    expect(out).not.toContain("Weapon Mastery (Fighter");
+  });
+
+  it("still drops it when the class feature line carries chosen options", () => {
+    const c = withBits([disguised("Weapon Mastery")], [wm(1, 9001)]);
+    const data = c.data as Record<string, unknown>;
+    data.options = { class: [{ componentId: 9001, componentTypeId: 12168134, definition: { id: 77, name: "Longsword" } }] };
+    const out = parseCharacterData(c, "features");
+    expect(out).not.toContain("OTHER FEATURES");
+    expect(out).toContain("• Weapon Mastery (Fighter 1): Longsword");
+  });
+
+  it("full separates CURRENCY from the notes line", () => {
+    const lines = parseCharacterData(FIGHTER_5, "full").split("\n");
+    const i = lines.findIndex(l => l.startsWith("CURRENCY:"));
+    expect(i).toBeGreaterThan(-1);
+    expect(lines[i + 1]).toBe("");
+  });
+});

@@ -33,7 +33,10 @@ export interface Features {
 }
 
 // ── Feats ────────────────────────────────────────────────────────────────────
-function buildFeatLines(char: CharData, resolveTemplates: TemplateResolver, editions: CharacterEditions): {
+function buildFeatLines(
+  char: CharData, resolveTemplates: TemplateResolver, editions: CharacterEditions,
+  shownClassFeatureNames: ReadonlySet<string>,
+): {
   featLines: string[]; disguisedFeatLines: string[]; realFeatCount: number;
 } {
   // DDB stores some non-feat entries in the feats array.
@@ -50,31 +53,41 @@ function buildFeatLines(char: CharData, resolveTemplates: TemplateResolver, edit
     const line = `• ${editions.named(str(def.name), def)}${snippet ? `: ${snippet}${snippet.length >= 120 ? "…" : ""}` : ""}`;
     return wrapIfHomebrew(line, isHomebrewEntry(f));
   });
-  const disguisedFeatLines = disguisedFeats.map(f => {
-    const def = obj(f.definition);
-    return wrapIfHomebrew(`• ${editions.named(str(def.name), f.definition)}`, isHomebrewEntry(f));
-  });
+  // A disguised feat that repeats a shown class feature (Weapon Mastery) is a duplicate; realFeatCount
+  // and the Rules: counts still include it (spec decision 4).
+  const disguisedFeatLines = disguisedFeats
+    .filter(f => !shownClassFeatureNames.has(str(obj(f.definition).name)))
+    .map(f => wrapIfHomebrew(`• ${editions.named(str(obj(f.definition).name), f.definition)}`, isHomebrewEntry(f)));
   return { featLines, disguisedFeatLines, realFeatCount: realFeats.length };
 }
 
 // ── Class features ───────────────────────────────────────────────────────────
-function buildClassFeatureLines(classes: readonly ClassEntry[], options: ChosenOptions): string[] {
-  const lines: string[] = [];
-  const seen = new Set<string>();
+/** Class features the sheet shows: the level gate, shared by the lines and the name set. */
+function shownClassFeatures(classes: readonly ClassEntry[]): Array<{ c: ClassEntry; cf: Mod; def: Record<string, unknown>; base: string }> {
+  const out: Array<{ c: ClassEntry; cf: Mod; def: Record<string, unknown>; base: string }> = [];
   for (const c of classes) {
     const charLevel = num(c.level);
     const classDef = obj(c.definition);
-    for (const cf of records(c.classFeatures)) {
+    for (const cf of records<Mod>(c.classFeatures)) {
       const def = obj(cf.definition);
-      const base = `• ${str(def.name)} (${str(classDef.name)} ${num(def.requiredLevel || 1)})`;
-      if (num(def.requiredLevel || 0) <= charLevel && !seen.has(base)) {
-        seen.add(base);
-        // Chosen options print on their parent's line (owner ruling R1).
-        const chosen = options.get(num(def.id)) ?? [];
-        const line = chosen.length ? `${base}: ${chosen.map(o => o.name).join(", ")}` : base;
-        lines.push(wrapIfHomebrew(line, isHomebrewClassFeature(cf, c) || chosen.some(o => o.homebrew)));
+      if (num(def.requiredLevel || 0) <= charLevel) {
+        out.push({ c, cf, def, base: `• ${str(def.name)} (${str(classDef.name)} ${num(def.requiredLevel || 1)})` });
       }
     }
+  }
+  return out;
+}
+
+function buildClassFeatureLines(classes: readonly ClassEntry[], options: ChosenOptions): string[] {
+  const lines: string[] = [];
+  const seen = new Set<string>();
+  for (const { c, cf, def, base } of shownClassFeatures(classes)) {
+    if (seen.has(base)) continue;
+    seen.add(base);
+    // Chosen options print on their parent's line (owner ruling R1).
+    const chosen = options.get(num(def.id)) ?? [];
+    const line = chosen.length ? `${base}: ${chosen.map(o => o.name).join(", ")}` : base;
+    lines.push(wrapIfHomebrew(line, isHomebrewClassFeature(cf, c) || chosen.some(o => o.homebrew)));
   }
   return lines;
 }
@@ -146,7 +159,8 @@ function buildBackgroundFeature(char: CharData, resolveTemplates: TemplateResolv
 // ── Public API ───────────────────────────────────────────────────────────────
 export function computeFeatures(core: CoreStats, options: ChosenOptions): Features {
   const { char, classes, totalLevel, resolveTemplates, editions } = core;
-  const { featLines, disguisedFeatLines, realFeatCount } = buildFeatLines(char, resolveTemplates, editions);
+  const shownNames = new Set(shownClassFeatures(classes).map(s => str(s.def.name)));
+  const { featLines, disguisedFeatLines, realFeatCount } = buildFeatLines(char, resolveTemplates, editions, shownNames);
   return {
     featLines,
     disguisedFeatLines,
@@ -163,7 +177,7 @@ export function formatFeaturesBlock(f: Features): string[] {
     ...(f.featLines.length ? f.featLines : ["  (none)"]),
     ``,
     ...(f.disguisedFeatLines.length ? [
-      `OTHER FEATURES (stored as feats in API but NOT player-chosen feats)`,
+      `OTHER FEATURES`,
       ...f.disguisedFeatLines,
       ``,
     ] : []),
