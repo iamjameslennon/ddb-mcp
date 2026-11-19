@@ -1088,6 +1088,11 @@ export const VESTIGIAL_RACES = [
   ]),
   displayRace(900302, "Old Folk", true, [displayTrait(900321, "Extra Language", { RACIALTRAIT: 0 })]),
   displayRace(900303, "Unmarked Folk", undefined, [displayTrait(900331, "Extra Language", { RACIALTRAIT: 0 })]),
+  // The filter is flag-based, not name-based: an oddly named RACIALTRAIT 0 trait goes, a "Languages" trait with RACIALTRAIT 1 stays.
+  displayRace(900304, "Flag Folk", false, [
+    displayTrait(900341, "Mystery Perk", { RACIALTRAIT: 0 }),
+    displayTrait(900342, "Languages", { RACIALTRAIT: 1 }),
+  ]),
 ];
 // Optional repeat of the skipped 2024 "Languages" trait, plus a genuinely optional one.
 export const VESTIGIAL_OPTIONAL = {

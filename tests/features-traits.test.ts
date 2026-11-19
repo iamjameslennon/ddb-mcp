@@ -324,6 +324,10 @@ describe("racial traits", () => {
     it("keeps a legacy race's Extra Language", () => {
       expect(names("Old Folk")).toContain("Extra Language");
     });
+    it("filters by the flag, not the name (T6)", () => {
+      expect(names("Flag Folk")).not.toContain("Mystery Perk");
+      expect(names("Flag Folk")).toContain("Languages");
+    });
     it("keeps traits with no displayConfiguration", () => {
       expect(names("Modern Folk")).toContain("Plain Trait");
     });

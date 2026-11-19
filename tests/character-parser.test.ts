@@ -3276,6 +3276,19 @@ describe("parseCharacterData — OTHER FEATURES and the end of the inventory blo
     expect(out).toContain("• Weapon Mastery (Fighter 1): Longsword");
   });
 
+  it("a nameless disguised feat is kept when some shown class feature is also nameless (F5)", () => {
+    const nameless = { definition: { id: 9002, name: "", requiredLevel: 1 } };
+    const out = parseCharacterData(withBits([disguised("")], [nameless]), "features");
+    expect(out).toContain("OTHER FEATURES");
+  });
+
+  it("the Rules: count still includes a disguised feat dropped as a duplicate (T3)", () => {
+    const feat = { definition: { name: "Weapon Mastery", categories: [{ tagName: "__DISGUISE_FEAT" }], sources: [{ sourceId: 2 }] } };
+    const out = parseCharacterData(withBits([feat], [wm(1)]), "features", INDEX);
+    expect(out).not.toContain("OTHER FEATURES");
+    expect(out).toContain("  Rules: 2024 · 2014 content: Weapon Mastery (feat)");
+  });
+
   it("full separates CURRENCY from the notes line", () => {
     const lines = parseCharacterData(FIGHTER_5, "full").split("\n");
     const i = lines.findIndex(l => l.startsWith("CURRENCY:"));

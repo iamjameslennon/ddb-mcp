@@ -54,7 +54,7 @@ function buildFeatLines(
     return wrapIfHomebrew(line, isHomebrewEntry(f));
   });
   // A disguised feat that repeats a shown class feature (Weapon Mastery) is a duplicate; realFeatCount
-  // and the Rules: counts still include it (spec decision 4).
+  // and the Rules: counts still include it (owner ruling 2026-11-06 on B4, history.md).
   const disguisedFeatLines = disguisedFeats
     .filter(f => !shownClassFeatureNames.has(str(obj(f.definition).name)))
     .map(f => wrapIfHomebrew(`• ${editions.named(str(obj(f.definition).name), f.definition)}`, isHomebrewEntry(f)));
@@ -78,10 +78,10 @@ function shownClassFeatures(classes: readonly ClassEntry[]): Array<{ c: ClassEnt
   return out;
 }
 
-function buildClassFeatureLines(classes: readonly ClassEntry[], options: ChosenOptions): string[] {
+function buildClassFeatureLines(shown: ReturnType<typeof shownClassFeatures>, options: ChosenOptions): string[] {
   const lines: string[] = [];
   const seen = new Set<string>();
-  for (const { c, cf, def, base } of shownClassFeatures(classes)) {
+  for (const { c, cf, def, base } of shown) {
     if (seen.has(base)) continue;
     seen.add(base);
     // Chosen options print on their parent's line (owner ruling R1).
@@ -159,13 +159,15 @@ function buildBackgroundFeature(char: CharData, resolveTemplates: TemplateResolv
 // ── Public API ───────────────────────────────────────────────────────────────
 export function computeFeatures(core: CoreStats, options: ChosenOptions): Features {
   const { char, classes, totalLevel, resolveTemplates, editions } = core;
-  const shownNames = new Set(shownClassFeatures(classes).map(s => str(s.def.name)));
+  const shown = shownClassFeatures(classes);
+  // "" stays out of the set: a nameless disguised feat is not a duplicate of a nameless class feature (carry-over (y)).
+  const shownNames = new Set(shown.map(s => str(s.def.name)).filter(n => n !== ""));
   const { featLines, disguisedFeatLines, realFeatCount } = buildFeatLines(char, resolveTemplates, editions, shownNames);
   return {
     featLines,
     disguisedFeatLines,
     realFeatCount,
-    classFeatureLines: buildClassFeatureLines(classes, options),
+    classFeatureLines: buildClassFeatureLines(shown, options),
     racialTraitLines: buildRacialTraitLines(char, totalLevel),
     background: buildBackgroundFeature(char, resolveTemplates),
   };

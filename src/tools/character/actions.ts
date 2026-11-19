@@ -491,7 +491,11 @@ export const RESET_LABELS: Readonly<Record<number, string>> = { 1: "Short Rest",
  */
 const actionLine = (ctx: FeatureLineContext) => ({ action, homebrew }: CharAction): string => {
   const base = actionDice(action) || snippetDice(action, ctx);
-  const dice = base ? `${base}${slotScaling(action)}` : "";
+  // The per-slot dice go before the assumed-add note, which closes the whole expression.
+  const noted = base.endsWith(` ${ASSUMED_ADD_NOTE}`);
+  const dice = !base ? "" : noted
+    ? `${base.slice(0, -(ASSUMED_ADD_NOTE.length + 1))}${slotScaling(action)} ${ASSUMED_ADD_NOTE}`
+    : `${base}${slotScaling(action)}`;
   const dc = snippetSaveDc(action, ctx);
   return wrapIfHomebrew(`• ${str(action.name)}${dice ? `   ${dice}` : ""}${dc != null ? `   DC ${dc}` : ""}`, homebrew);
 };
@@ -522,7 +526,7 @@ function buildLimitedUseLines(
           : "?";
       const used = num(lu.numberUsed);
       if (isHitPointPool(a) && maxStr !== "?") {
-        return wrapIfHomebrew(`• ${str(a.name)}   ${Number(maxStr) - used}/${maxStr} HP   (${reset})`, homebrew);
+        return wrapIfHomebrew(`• ${str(a.name)}   ${Math.max(0, Number(maxStr) - used)}/${maxStr} HP   (${reset})`, homebrew);
       }
       return wrapIfHomebrew(`• ${str(a.name)}   ${used} used / ${maxStr} max   (${reset})`, homebrew);
     });

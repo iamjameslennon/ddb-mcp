@@ -372,6 +372,44 @@ describe("slot-scaled dice, reset labels and hit-point pools (R2 F5, F8)", () =>
     expect(block(out, "LIMITED USE")).toContain("• Healer   1 used / 3 max   (Long Rest)");
   });
 
+  it("a hit-point pool never reads below 0 when numberUsed exceeds the maximum (M1)", () => {
+    const snippet = "<p>The cannon has the following:</p><p><strong>Hit Points:</strong></p>";
+    const out = run([action("Eldritch Cannon: Flamethrower", 4, CLASS_FEATURE, ACTION, { ...lu(50, 55, 4), snippet })]);
+    expect(block(out, "LIMITED USE")).toContain("• Eldritch Cannon: Flamethrower   0/50 HP   (Special)");
+    expect(out).not.toContain("-5/50");
+  });
+
+  it("wraps a homebrew hit-point pool line whole (T2)", () => {
+    const snippet = "<p><strong>Hit Points:</strong></p>";
+    const out = combat({
+      classes: [fighter({ classFeatures: [feature(4, "Eldritch Cannon", { isHomebrew: true })] })],
+      ...actions({ class: [action("Eldritch Cannon: Flamethrower", 4, CLASS_FEATURE, ACTION, { ...lu(50, 12, 4), snippet })] }),
+    });
+    expect(block(out, "LIMITED USE")).toContain(wrapUntrusted("• Eldritch Cannon: Flamethrower   38/50 HP   (Special)"));
+  });
+
+  it("an action with an unknown reset type reads Rest (T2)", () => {
+    const out = run([action("Odd Action", 3, CLASS_FEATURE, ACTION, lu(2, 1, 9))]);
+    expect(block(out, "LIMITED USE")).toContain("• Odd Action   1 used / 2 max   (Rest)");
+  });
+
+  it("an item's numeric resetType 3 reads Dawn (T2)", () => {
+    const item = {
+      equipped: true, isAttuned: false, quantity: 1, limitedUse: { maxUses: 3, numberUsed: 0, resetType: 3 },
+      definition: { id: 78, entityTypeId: 112130694, name: "Dawn Rod", filterType: "Rod", sources: [], limitedUse: null },
+    };
+    expect(block(run([], { inventory: [item] }), "LIMITED USE")).toContain("• Dawn Rod [edition not stated]   0 used / 3 max   (Dawn)");
+  });
+
+  it("puts the per-slot dice before the assumed-add note (F2)", () => {
+    const c = computeCoreStats({ ...BASE, inventory: [], classSpells: [], spells: {} } as unknown as CharData, INDEX);
+    const snippet = "<p>deal 1d6 {{classlevel}} {{proficiency}} damage, plus another 1d8 per level of the spell slot expended.</p>";
+    const out = run([action("Eldritch Smite", 1, CLASS_FEATURE, SPECIAL, { snippet })]);
+    const total = num(FIGHTER.level) + c.profBonus;
+    const row = block(out, "OTHER").split("\n").find(l => l.startsWith("• Eldritch Smite"));
+    expect(row).toBe(`• Eldritch Smite   1d6 + ${total} + 1d8 per slot level (assumed the values add)`);
+  });
+
   it("an item's numeric resetType 4 reads Special", () => {
     const item = {
       equipped: true, isAttuned: false, quantity: 1, limitedUse: { maxUses: 3, numberUsed: 0, resetType: 4 },
