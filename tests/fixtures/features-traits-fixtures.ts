@@ -1063,3 +1063,39 @@ export const EDITION_RACES = [
   editionRace(900201, 900200, "Goblin", { isLegacy: true, sources: src(15), racialTraits: [trait(900202, "Fury of the Small", src(15))] }),
   editionRace(900203, 900200, "Goblin", { sources: src(85), racialTraits: [trait(900204, "Fury of the Small", src(85))] }),
 ];
+
+// ── Vestigial-trait fixtures (F9) ────────────────────────────────────────────
+// Separate from RACES so the shared fixture's expectations stay unchanged. Ids are synthetic.
+const displayTrait = (id: number, name: string, displayConfiguration?: Record<string, number>) => ({
+  definition: {
+    id, name, description: `<p>${name} description</p>`, snippet: `${name} snippet`, displayOrder: 1, requiredLevel: null,
+    sources: src(145), ...(displayConfiguration ? { displayConfiguration } : {}),
+  },
+});
+const displayRace = (entityRaceId: number, fullName: string, isLegacy: boolean | undefined, racialTraits: unknown[]) => ({
+  entityRaceId, entityRaceTypeId: 900300, fullName, baseName: fullName, baseRaceName: fullName,
+  description: `<p>${fullName} description</p>`, isHomebrew: false, ...(isLegacy === undefined ? {} : { isLegacy }),
+  isSubRace: false, size: null, sources: src(145), racialTraits,
+});
+
+// synthetic
+export const VESTIGIAL_RACES = [
+  displayRace(900301, "Modern Folk", false, [
+    displayTrait(900311, "Ability Score Increases", { RACIALTRAIT: 0, ABILITYSCORE: 1 }),
+    displayTrait(900312, "Languages", { RACIALTRAIT: 0, LANGUAGE: 1 }),
+    displayTrait(900313, "Darkvision", { RACIALTRAIT: 1 }),
+    displayTrait(900314, "Plain Trait"), // no displayConfiguration
+  ]),
+  displayRace(900302, "Old Folk", true, [displayTrait(900321, "Extra Language", { RACIALTRAIT: 0 })]),
+  displayRace(900303, "Unmarked Folk", undefined, [displayTrait(900331, "Extra Language", { RACIALTRAIT: 0 })]),
+];
+// Optional repeat of the skipped 2024 "Languages" trait, plus a genuinely optional one.
+export const VESTIGIAL_OPTIONAL = {
+  "900300:900301": {
+    definitionData: [
+      { id: 900312, name: "Languages", description: "<p>Languages description</p>", snippet: "Languages snippet", sources: src(145) },
+      { id: 900315, name: "Optional Thing", description: "<p>x</p>", snippet: "x", sources: src(145) },
+    ],
+    accessTypes: {},
+  },
+};

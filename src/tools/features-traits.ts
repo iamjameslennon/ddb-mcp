@@ -356,6 +356,10 @@ export function buildRacialTraits(
       const f = isRec(rawTrait) ? named(rawTrait.definition) : null;
       if (!f) continue;
       ids.add(f.id);
+      // 2024 species keep vestigial "Ability Score Increases"/"Languages" traits that D&D Beyond
+      // flags RACIALTRAIT: 0 (not shown as racial traits). Legacy "Extra Language" is also 0 but real.
+      const display = isRec(rawTrait) && isRec(rawTrait.definition) ? rawTrait.definition.displayConfiguration : undefined;
+      if (race.isLegacy === false && isRec(display) && display.RACIALTRAIT === 0) continue;
       push(`s:${key}:${f.id}`, entryFor(race, f, "standard", optionalText(f), false, sourcesOf(race.sources)));
     }
   }

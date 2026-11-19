@@ -19,6 +19,8 @@ import {
   SUBCLASSES_BY_CLASS_ID,
   OPTIONAL_FEATURES_BY_CLASS_ID,
   RACES,
+  VESTIGIAL_RACES,
+  VESTIGIAL_OPTIONAL,
   OPTIONAL_TRAITS_BY_RACE_KEY,
 } from "./fixtures/features-traits-fixtures.js";
 
@@ -306,6 +308,34 @@ describe("racial traits", () => {
   const optByKey = new Map(Object.entries(OPTIONAL_TRAITS_BY_RACE_KEY).map(([k, v]) => [k, v as OptionalCollection]));
   const all = buildRacialTraits(RACES, optByKey);
   const label = (e: RacialTraitEntry) => formatRacialTraitLine(e, e.isHomebrew ? "[homebrew]" : "[2024]");
+
+  describe("vestigial 2024 traits (F9)", () => {
+    const vest = buildRacialTraits(
+      VESTIGIAL_RACES,
+      new Map(Object.entries(VESTIGIAL_OPTIONAL).map(([k, v]) => [k, v as OptionalCollection])),
+    );
+    const names = (species: string) => vest.filter((e) => e.speciesName === species).map((e) => e.name);
+
+    it("drops 2024 traits D&D Beyond doesn't display as racial traits", () => {
+      expect(names("Modern Folk")).not.toContain("Ability Score Increases");
+      expect(names("Modern Folk")).not.toContain("Languages");
+      expect(names("Modern Folk")).toContain("Darkvision");
+    });
+    it("keeps a legacy race's Extra Language", () => {
+      expect(names("Old Folk")).toContain("Extra Language");
+    });
+    it("keeps traits with no displayConfiguration", () => {
+      expect(names("Modern Folk")).toContain("Plain Trait");
+    });
+    it("keeps RACIALTRAIT 0 traits when isLegacy is missing", () => {
+      expect(names("Unmarked Folk")).toContain("Extra Language");
+    });
+    it("keeps a skipped trait's id in standardIds so its optional repeat stays dropped", () => {
+      expect(names("Modern Folk")).not.toContain("Languages");
+      expect(vest.some((e) => e.id === 900312)).toBe(false);
+      expect(vest.find((e) => e.id === 900315)?.kind).toBe("optional");
+    });
+  });
 
   it("builds raceKey from type and race ids", () => {
     expect(raceKeyOf({ entityRaceTypeId: 5, entityRaceId: 7 })).toBe("5:7");
