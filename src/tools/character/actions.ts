@@ -20,7 +20,7 @@
  */
 
 import { wrapIfHomebrew } from "../../utils.js";
-import { arr, featureDefinition, isHomebrewClassFeature, isHomebrewEntry, num, obj, records, shownHomebrew, str, stripHtml } from "./helpers.js";
+import { arr, customItemNames, featureDefinition, itemDisplayName, isHomebrewClassFeature, isHomebrewEntry, num, obj, records, shownHomebrew, str, stripHtml } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, InventoryItem, Mod } from "./types.js";
 import { resolveBackground } from "./features.js";
 import type { CharacterEditions } from "./editions.js";
@@ -552,6 +552,7 @@ function buildItemChargeLines(
   inventory: readonly InventoryItem[],
   allActions: readonly CharAction[],
   editions: CharacterEditions,
+  customNames: ReadonlyMap<number, string>,
 ): string[] {
   const actionKeys = new Set(
     allActions.filter(({ action: a }) => hasUses(obj(a.limitedUse))).map(({ action: a }) => entityKey(a.componentId, a.componentTypeId)),
@@ -563,7 +564,8 @@ function buildItemChargeLines(
     if (!(num(lu.maxUses) > 0)) return [];
     // A consumable is already listed, with its count, under INVENTORY.
     if (lu.resetType === "Consumable") return [];
-    const name = editions.named(str(def.name).trim(), def);
+    const custom = customNames.get(num(i.id));
+    const name = editions.named(itemDisplayName(str(def.name).trim(), custom), def);
     if (name === "") return [];
     // A degenerate key (no definition id or entity type) never matches an action.
     if (num(def.id) && num(def.entityTypeId) && actionKeys.has(entityKey(def.id, def.entityTypeId))) return [];
@@ -574,7 +576,7 @@ function buildItemChargeLines(
       : typeof lu.resetType === "number" && RESET_LABELS[lu.resetType]
         ? RESET_LABELS[lu.resetType]
         : description || type || "Rest";
-    return [wrapIfHomebrew(`• ${name}   ${num(lu.numberUsed)} used / ${num(lu.maxUses)} max   (${reset})`, shownHomebrew(i, name))];
+    return [wrapIfHomebrew(`• ${name}   ${num(lu.numberUsed)} used / ${num(lu.maxUses)} max   (${reset})`, shownHomebrew(i, name) || custom !== undefined)];
   });
 }
 
@@ -607,7 +609,7 @@ export function computeActions(core: CoreStats): Actions {
   ];
   const limitedUseFeatures = [
     ...buildLimitedUseLines(allActions, statMods, core.profBonus),
-    ...buildItemChargeLines(inventory, allActions, editions),
+    ...buildItemChargeLines(inventory, allActions, editions, customItemNames(char)),
   ];
 
   const { attacks: weaponAttacks, offHand: offHandAttacks } = computeWeaponAttacks(core);

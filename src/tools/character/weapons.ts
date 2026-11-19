@@ -12,7 +12,7 @@
 
 import { wrapIfHomebrew } from "../../utils.js";
 import { MASTERY_NAMES } from "../weapon-mastery.js";
-import { arr, records, isBonusMod, isConditionalMod, isHomebrewClassFeature, isHomebrewEntry, isProficiencyMod, num, obj, signed, str, weaponWordOrder } from "./helpers.js";
+import { arr, customItemNames, itemDisplayName, records, isBonusMod, isConditionalMod, isHomebrewClassFeature, isHomebrewEntry, isProficiencyMod, num, obj, signed, str, weaponWordOrder } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats } from "./types.js";
 import { hiddenOptionIds, isVisibleAction, visibleClassFeatureIds } from "./actions.js";
 import { isActiveItemMod } from "./item-gate.js";
@@ -178,16 +178,18 @@ export function computeWeaponAttacks(core: CoreStats): { attacks: string[]; offH
 
   // Lines are built after consolidation, so the ×N prefix is padded with the name.
   const weaponInventoryMap = new Map<string, { label: string; rest: string; qty: number; homebrew: boolean; offHand: boolean }>();
+  const customNames = customItemNames(core.char);
   for (const i of inventory) {
     const def = weaponDefinition(obj(i.definition));
     if (!def) continue;
     if (i.equipped !== true) continue; // only show equipped weapons in ACTIONS
+    const custom = customNames.get(num(i.id));
 
     const wName = str(def.name).trim();
     // "Crossbow, Light" reads "Light Crossbow", as in the proficiency list (owner ruling 2026-11-06),
     // but only when the name is the base weapon type: a magic or named variant ("Mace, +1",
     // "Crossbow, Light, +1") keeps D&D Beyond's name (owner ruling 2026-11-07).
-    const wLabel = editions.named(wName === str(def.type).trim() ? weaponWordOrder(wName) : wName, def);
+    const wLabel = editions.named(itemDisplayName(wName === str(def.type).trim() ? weaponWordOrder(wName) : wName, custom), def);
     const dmg = obj(def.damage);
     const dmgDice = str(dmg.diceString);
     const attackType = num(def.attackType); // 1=melee, 2=ranged
@@ -278,7 +280,7 @@ export function computeWeaponAttacks(core: CoreStats): { attacks: string[]; offH
     // Even a nameless one: the line also prints its damage type, properties
     // and mastery, which can carry text (owner ruling; unlike shownHomebrew's
     // name-only lines).
-    const homebrew = isHomebrewEntry(i);
+    const homebrew = isHomebrewEntry(i) || custom !== undefined;
     const key = `${Number(homebrew)}|${Number(offHand)}|${Number(pactIds.has(num(i.id)))}|${wLabel}${dmgDice}`;
     const existing = weaponInventoryMap.get(key);
     if (existing) {

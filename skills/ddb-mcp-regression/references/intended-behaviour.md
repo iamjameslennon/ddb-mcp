@@ -232,3 +232,7 @@ Source: architecture.md, `src/utils.ts` `stripHtml` (2026-11-19 F1).
 ### A `ddb_get_rules` query jump starts on a boundary
 Looks like: `ddb_get_rules({name:"Damage and Healing", rules_edition:"2014", query:"death saving throw"})` starts its text `…`, a blank line, then `### Death Saving Throws`; `query:"critical hits"` starts at `### Critical Hits`. An excerpt starts at a heading or a paragraph's start, or, inside a very long paragraph, at a whole word behind `…`; never in the middle of a word.
 Source: tool-notes.md, `ddb_search_rules` / `ddb_get_rules` (`excerptStart`, 2026-11-19 F2).
+
+### A renamed item prints its custom name with the stock name, wrapped
+Looks like: Ezra's renamed Dagger, +1 reads `Drake's Tooth Dagger (Dagger, +1)` in ACTIONS between the untrusted tags, and a renamed Sack reads `Sack (Clothes)` under `INVENTORY (homebrew)` (the custom name already holds the stock name, so it shows alone). Xarius's `xDagger*` shows the same way on the site. An unrenamed official item stays plain.
+Source: tool-notes.md, Custom item names (owner-facing plan decision 2026-11-19).

@@ -17,7 +17,7 @@ import { getSourceIndex, LOGGED_OUT_CHARACTER_INDEX_WAIT_MS } from "../../game-c
 import { matchesAtWordStart, matchesLooseName, nameFold } from "../../name-match.js";
 import { loadCharacterForParse, withNotice } from "../character.js";
 import { computeCharacterEditions, type CharacterEditions } from "./editions.js";
-import { featureDefinition, isHomebrewClassFeature, isHomebrewEntry, isSubclassFeature, records } from "./helpers.js";
+import { customItemNames, featureDefinition, itemDisplayName, isHomebrewClassFeature, isHomebrewEntry, isSubclassFeature, records } from "./helpers.js";
 import { resolveBackground } from "./features.js";
 import { actionParents, chosenClassOptions, type EntityKind } from "./actions.js";
 import type { CharData, ClassEntry } from "./types.js";
@@ -367,14 +367,17 @@ function searchDefinitions(
 
   // ── Equipped Items ────────────────────────────────────────────────────────
   // Item names are trimmed, as on the sheet (owner ruling 2026-11-06).
+  const customNames = customItemNames(char as CharData);
   for (const item of records(char.inventory)) {
     if (!item.equipped) continue;
-    const name = str(obj(item.definition).name).trim();
-    if (name && matchesDefinitionQuery(name, query)) {
+    const stock = str(obj(item.definition).name).trim();
+    const custom = customNames.get(num(item.id));
+    const name = itemDisplayName(stock, custom);
+    if (stock && (matchesDefinitionQuery(stock, query) || (custom !== undefined && matchesDefinitionQuery(custom, query)))) {
       const info = editions.info(item.definition);
       results.push({
         type: "Item", name, info, text: formatItemResult(item, name, info.ruleset),
-        untrusted: isHomebrewEntry(item),
+        untrusted: isHomebrewEntry(item) || custom !== undefined,
         customItem: obj(item.definition).isCustomItem === true,
       });
     }

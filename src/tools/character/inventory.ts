@@ -17,7 +17,7 @@
 
 import { wrapIfHomebrew, wrapUntrusted } from "../../utils.js";
 import { weaponDefinition } from "./weapons.js";
-import { num, obj, shownHomebrew, str } from "./helpers.js";
+import { customItemNames, itemDisplayName, num, obj, shownHomebrew, str } from "./helpers.js";
 import type { CharData, CoreStats, ListEntry } from "./types.js";
 
 export interface Inventory {
@@ -60,15 +60,18 @@ export function computeInventory(core: CoreStats): Inventory {
   const carriedItems = new Map<string, { qty: number; bundleSize: number }>();
   const homebrewItems = new Map<string, { qty: number; bundleSize: number }>();
   const attunedItems: ListEntry[] = [];
+  const names = customItemNames(char);
   for (const i of inventory) {
     const def = obj(i.definition);
-    const iName = editions.named(str(def.name).trim(), def);
+    // A renamed item shows `<custom> (<stock>)`; the custom name is player text, so the entry is wrapped.
+    const custom = names.get(num(i.id));
+    const iName = editions.named(itemDisplayName(str(def.name).trim(), custom), def);
     const filterType = str(def.filterType);
     // An equipped item that attacks (a Weapon, or a staff with a weapon behaviour) shows in ACTIONS, not here.
     // Armor with a weapon behaviour keeps its EQUIPPED line (AC) and also gets its ACTIONS row (owner decision 2026-11-17).
     const attacksFromActions = i.equipped === true && filterType !== "Armor" && weaponDefinition(def) !== null;
     const qty = num(i.quantity) || 1;
-    const homebrew = shownHomebrew(i, iName);
+    const homebrew = shownHomebrew(i, iName) || (custom !== undefined && iName !== "");
     if (i.isAttuned) attunedItems.push({ text: iName, homebrew });
     if (attacksFromActions) continue;
     if (i.equipped && filterType === "Armor") {

@@ -6,9 +6,6 @@ If you see the same symptom somewhere this list doesn't mention, or it has becom
 
 ## On the character sheet
 
-### (ba) Custom item names are not applied
-Shows up as: an item the player renamed (for example "Drake's Tooth Dagger") prints under its stock name. 6 of the 56 test characters have one.
-
 ### (bc) The global save bonus ignores whether the item is equipped
 Shows up as: a save bonus from an item that isn't equipped or attuned still counts (Ethelrede's unequipped Battleaxe +1, Aerin's unequipped Slippers).
 

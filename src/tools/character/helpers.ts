@@ -6,7 +6,7 @@
  */
 
 import { stripHtml as stripHtmlDecoded, wrapUntrusted } from "../../utils.js";
-import type { ListEntry, Mod, ProficiencyMod, ExpertiseMod, HalfProficiencyMod, BonusMod, SetMod, SetBaseMod, SenseMod, ResistanceMod, ImmunityMod, VulnerabilityMod, LanguageMod } from "./types.js";
+import type { CharData, ListEntry, Mod, ProficiencyMod, ExpertiseMod, HalfProficiencyMod, BonusMod, SetMod, SetBaseMod, SenseMod, ResistanceMod, ImmunityMod, VulnerabilityMod, LanguageMod } from "./types.js";
 
 export const str = (v: unknown): string => (v != null ? String(v) : "");
 export const num = (v: unknown): number => (typeof v === "number" ? v : 0);
@@ -211,3 +211,42 @@ export const statNames = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
 export const statKeys = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"];
 
 export { levenshteinDistance } from "../../name-match.js";
+
+/** `characterValues` typeId of a player's custom name for an entity. */
+export const CUSTOM_NAME_VALUE_TYPE = 8;
+/** `valueTypeId` of an inventory entry (the entity a custom item name belongs to). */
+export const INVENTORY_ENTRY_TYPE = 1439493548;
+
+const integerId = (v: unknown): number => {
+  if (typeof v === "number") return v;
+  const s = str(v).trim();
+  return typeof v === "string" && /^\d+$/.test(s) ? Number(s) : NaN;
+};
+
+/**
+ * The player's custom item names, keyed by inventory entry id: `characterValues`
+ * entries of typeId 8 for an inventory entry (valueTypeId 1439493548, string or
+ * number) whose `valueId` is an integer and `value` a non-empty string once
+ * whitespace is collapsed. First entry wins. The name is player-authored text.
+ */
+export function customItemNames(char: CharData): Map<number, string> {
+  const names = new Map<number, string>();
+  for (const e of records(char.characterValues)) {
+    if (e.typeId !== CUSTOM_NAME_VALUE_TYPE || typeof e.value !== "string") continue;
+    if (integerId(e.valueTypeId) !== INVENTORY_ENTRY_TYPE) continue;
+    const id = integerId(e.valueId);
+    const name = e.value.replace(/\s+/g, " ").trim();
+    if (!Number.isInteger(id) || name === "" || names.has(id)) continue;
+    names.set(id, name);
+  }
+  return names;
+}
+
+/**
+ * An item's display name: `<custom> (<stock>)`, so the stock name stays visible,
+ * unless the custom name already contains the stock name (case-insensitively).
+ */
+export function itemDisplayName(stock: string, custom: string | undefined): string {
+  if (custom === undefined || stock === "") return stock;
+  return custom.toLowerCase().includes(stock.toLowerCase()) ? custom : `${custom} (${stock})`;
+}
