@@ -17,7 +17,7 @@ import { getSourceIndex, LOGGED_OUT_CHARACTER_INDEX_WAIT_MS } from "../../game-c
 import { containsFolded, matchesAtWordStart, matchesLooseName, nameFold } from "../../name-match.js";
 import { loadCharacterForParse, withNotice } from "../character.js";
 import { computeCharacterEditions, type CharacterEditions } from "./editions.js";
-import { customItemNames, featureDefinition, itemDisplayName, isHomebrewClassFeature, isHomebrewEntry, isSubclassFeature, records } from "./helpers.js";
+import { customItemNames, featureDefinition, itemNameParts, isHomebrewClassFeature, isHomebrewEntry, isSubclassFeature, records } from "./helpers.js";
 import { resolveBackground } from "./features.js";
 import { actionParents } from "./actions.js";
 import { chosenClassOptions, type EntityKind } from "./granting.js";
@@ -375,8 +375,7 @@ function searchDefinitions(
   for (const item of records(char.inventory)) {
     if (!item.equipped) continue;
     const stock = str(obj(item.definition).name).trim();
-    const custom = customNames.get(num(item.id));
-    const name = itemDisplayName(stock, custom);
+    const { name, custom } = itemNameParts(item, stock, customNames);
     if (stock && (match(stock, query) || (custom !== undefined && match(custom, query)))) {
       const info = editions.info(item.definition);
       results.push({

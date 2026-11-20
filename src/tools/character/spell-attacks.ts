@@ -13,7 +13,7 @@
 
 import { wrapIfHomebrew } from "../../utils.js";
 import { isActiveItemMod } from "./item-gate.js";
-import { num, obj, records, shownHomebrew, signed, slugOf, statNames, str } from "./helpers.js";
+import { isRecord, num, obj, records, shownHomebrew, signed, slugOf, statNames, str } from "./helpers.js";
 import { castLevel, slotOrdinal } from "./slots.js";
 import { actionSpells, type ActionSpell, classSpellcastingAbilityId, spellAttackAndDc, spellBonuses } from "./spells.js";
 import type { CoreStats, Mod } from "./types.js";
@@ -280,34 +280,32 @@ function spellRowParts(ctx: SpellRowCtx, { spell, list, bucket }: ActionSpell):
   return { name, level, hitOrDc, damage, range: spellRange(def, weapon), note: [scalingNote(def), ...notes].filter(Boolean).join("; ") };
 }
 
-/** The ACTIONS spell rows, in the order the spells are gathered (class lists, then `char.spells` buckets). */
-export function computeSpellAttackRows(core: CoreStats): string[] {
+/**
+ * The ACTIONS spell rows, in the order the spells are gathered (class lists, then
+ * `char.spells` buckets), and the figures a bonus-action or reaction spell line
+ * appends to its label: to-hit or DC, damage and range, then the note; "" when
+ * the rules give it no to-hit, DC or damage (owner ruling 2026-11-19, reversing
+ * 2026-11-09). One context serves both (deferred minor 2026-11-19, Task 11).
+ */
+export function computeSpellRows(core: CoreStats): { attackRows: string[]; figures: (entry: ActionSpell) => string } {
   const ctx = spellRowCtx(core);
-  const rows: string[] = [];
+  const attackRows: string[] = [];
   for (const entry of actionSpells(core.char, core.classes)) {
-    if (entry.spell.definition == null || typeof entry.spell.definition !== "object" || !isActionSpell(obj(entry.spell.definition))) continue;
+    const def = entry.spell.definition;
+    if (!isRecord(def) || !isActionSpell(def)) continue;
     const parts = spellRowParts(ctx, entry);
     if (!parts) continue;
     const { name, level, hitOrDc, damage, range, note } = parts;
     const head = `${name} (${level === 0 ? "cantrip" : `${slotOrdinal(level)} level`})`;
     const body = [hitOrDc, damage, range].filter(Boolean).join("   ");
     const line = `• ${body ? `${head.padEnd(26)} ${body}` : head}${note ? `   (${note})` : ""}`;
-    rows.push(wrapIfHomebrew(line, shownHomebrew(entry.spell, name)));
+    attackRows.push(wrapIfHomebrew(line, shownHomebrew(entry.spell, name)));
   }
-  return rows;
-}
-
-/**
- * The figures a bonus-action or reaction spell line appends to its label:
- * to-hit or DC, damage and range, then the note; "" when the rules give it no
- * to-hit, DC or damage (owner ruling 2026-11-19, reversing 2026-11-09).
- */
-export function spellFigures(core: CoreStats): (entry: ActionSpell) => string {
-  const ctx = spellRowCtx(core);
-  return entry => {
+  const figures = (entry: ActionSpell): string => {
     const parts = spellRowParts(ctx, entry);
     if (!parts || (!parts.hitOrDc && !parts.damage)) return "";
     const { hitOrDc, damage, range, note } = parts;
     return `   ${[hitOrDc, damage, range].filter(Boolean).join("   ")}${note ? `   (${note})` : ""}`;
   };
+  return { attackRows, figures };
 }

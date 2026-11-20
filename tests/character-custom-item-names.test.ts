@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { parseCharacterData } from "../src/tools/character.js";
 import { formatCharacterLookup } from "../src/tools/character/definition.js";
-import { customItemNames, itemDisplayName } from "../src/tools/character/helpers.js";
+import { customItemNames, itemDisplayName, itemNameParts } from "../src/tools/character/helpers.js";
 import type { CharData } from "../src/tools/character/types.js";
 import { wrapUntrusted } from "../src/utils.js";
 import { FIGHTER_5 } from "./fixtures/character-fixtures.js";
@@ -33,6 +33,12 @@ describe("helpers", () => {
       null, cv("5", "later"),
     ] } as unknown as CharData;
     expect(customItemNames(char)).toEqual(new Map([[5, "A B"], [6, "C"]]));
+  });
+  it("itemNameParts reads the entry's custom name by its id and builds the display name", () => {
+    const names = new Map([[7, "Whisper"]]);
+    expect(itemNameParts({ id: 7 }, "Dagger, +1", names)).toEqual({ name: "Whisper (Dagger, +1)", custom: "Whisper" });
+    expect(itemNameParts({ id: 8 }, "Dagger, +1", names)).toEqual({ name: "Dagger, +1", custom: undefined });
+    expect(itemNameParts(null, "Dagger", names)).toEqual({ name: "Dagger", custom: undefined });
   });
   it("itemDisplayName appends the stock name unless the custom name already contains it", () => {
     expect(itemDisplayName("Dagger, +1", "Drake's Tooth Dagger")).toBe("Drake's Tooth Dagger (Dagger, +1)");

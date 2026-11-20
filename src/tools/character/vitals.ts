@@ -113,7 +113,8 @@ function computeSpeed(core: CoreStats): string[] {
   //   - `speed-{axis}` — class/feat/subclass axis-specific bonus (e.g. Scout's Superior Mobility, Ranger's Roving)
   //   - `speed` (no axis suffix) — generic walking-speed bonus (e.g. Barbarian Fast Movement, Mobile feat, Longstrider)
   // `set` mods override the base axis speed; `bonus` mods stack on top.
-  const speedCalc = (axis: "walking" | "flying" | "swimming" | "climbing" | "burrowing", base: number, fallback = 0, walkSpeed = 0): number => {
+  // `walkSpeed` is passed for the non-walking axes only: a null-valued `set` there follows it.
+  const speedCalc = (axis: "walking" | "flying" | "swimming" | "climbing" | "burrowing", base: number, fallback = 0, walkSpeed?: number): number => {
     const subTypes = new Set([`innate-speed-${axis}`, `speed-${axis}`]);
     // The bare "speed" subType is a walking-default bonus only; never applies to fly/swim/climb/burrow.
     if (axis === "walking") subTypes.add("speed");
@@ -133,7 +134,7 @@ function computeSpeed(core: CoreStats): string[] {
     const result = (override || base || fallback) + bonus;
     // A null-valued `set` ("equal to your walking speed": Roving, Slippers of Spider Climbing) on a
     // non-walking axis raises it to the walking speed, never lowers it. The restriction text is not read.
-    const followsWalking = axis !== "walking"
+    const followsWalking = walkSpeed !== undefined && axis !== "walking"
       && allMods.some(m => isSetMod(m) && m.subType === `innate-speed-${axis}` && (m.value ?? m.fixedValue) == null && applies(m));
     return followsWalking ? Math.max(result, walkSpeed) : result;
   };

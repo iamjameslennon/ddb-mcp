@@ -17,7 +17,7 @@
 
 import { wrapIfHomebrew, wrapUntrusted } from "../../utils.js";
 import { weaponDefinition } from "./weapons.js";
-import { customItemNames, itemDisplayName, num, obj, shownHomebrew, str } from "./helpers.js";
+import { customItemNames, itemNameParts, num, obj, shownHomebrew, str } from "./helpers.js";
 import type { CharData, CoreStats, ListEntry } from "./types.js";
 
 export interface Inventory {
@@ -64,8 +64,9 @@ export function computeInventory(core: CoreStats): Inventory {
   for (const i of inventory) {
     const def = obj(i.definition);
     // A renamed item shows `<custom> (<stock>)`; the custom name is player text, so the entry is wrapped.
-    const custom = names.get(num(i.id));
-    const iName = editions.named(itemDisplayName(str(def.name).trim(), custom), def);
+    const parts = itemNameParts(i, str(def.name).trim(), names);
+    const custom = parts.custom;
+    const iName = editions.named(parts.name, def);
     const filterType = str(def.filterType);
     // An equipped item that attacks (a Weapon, or a staff with a weapon behaviour) shows in ACTIONS, not here.
     // Armor with a weapon behaviour keeps its EQUIPPED line (AC) and also gets its ACTIONS row (owner decision 2026-11-17).

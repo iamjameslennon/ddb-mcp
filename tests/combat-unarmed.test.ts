@@ -135,7 +135,7 @@ describe("Unarmed Strike row", () => {
     expect(row(combat(overrides))).toEqual([`• ${"Unarmed Strike".padEnd(16)} +${2 + core.profBonus} to hit   3 bludgeoning   reach 5 ft.`]);
   });
 
-  it.each([0, null])("a Martial Arts feature with requiredLevel %j counts as level 1, with or without a die", required => {
+  it.each([0, null])("a Martial Arts feature with requiredLevel %j counts on a level-5 monk, with or without a die", required => {
     expect(row(combat(monk("wrapper", 8, 16, { requiredLevel: required })))[0]).toContain("1d6+3 bludgeoning");
     expect(row(combat(monk("none", 8, 16, { requiredLevel: required })))[0]).toContain(" 4 bludgeoning");
   });

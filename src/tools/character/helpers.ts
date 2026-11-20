@@ -262,3 +262,15 @@ export function itemDisplayName(stock: string, custom: string | undefined): stri
   if (custom === undefined || stock === "") return stock;
   return custom.toLowerCase().includes(stock.toLowerCase()) ? custom : `${custom} (${stock})`;
 }
+
+/**
+ * One inventory entry's name as the sheet prints it, from its `stock` name and the
+ * player's custom names (`customItemNames`): `name` is `itemDisplayName`, and
+ * `custom` the player's name when the entry was renamed (player text, so its
+ * line is wrapped). Shared by EQUIPPED / INVENTORY, weapon rows, item charge
+ * lines and ddb_character_lookup (deferred minor 2026-11-19, Task 8).
+ */
+export function itemNameParts(item: unknown, stock: string, names: ReadonlyMap<number, string>): { name: string; custom: string | undefined } {
+  const custom = names.get(num(obj(item).id));
+  return { name: itemDisplayName(stock, custom), custom };
+}

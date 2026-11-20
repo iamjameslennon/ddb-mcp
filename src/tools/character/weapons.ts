@@ -12,7 +12,7 @@
 
 import { wrapIfHomebrew } from "../../utils.js";
 import { MASTERY_NAMES } from "../weapon-mastery.js";
-import { arr, customItemNames, itemDisplayName, records, isBonusMod, isConditionalMod, isHomebrewClassFeature, isHomebrewEntry, isProficiencyMod, num, obj, signed, slugOf, str, weaponWordOrder } from "./helpers.js";
+import { arr, customItemNames, itemNameParts, records, isBonusMod, isConditionalMod, isHomebrewClassFeature, isHomebrewEntry, isProficiencyMod, num, obj, signed, slugOf, str, weaponWordOrder } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats } from "./types.js";
 import { allOptions, hiddenOptionIds, isVisibleAction, visibleClassFeatureIds } from "./granting.js";
 import { isActiveItemMod } from "./item-gate.js";
@@ -103,33 +103,37 @@ export function hasTwoWeaponFightingStyle(char: CharData, classes: readonly Clas
 }
 
 /**
- * The Martial Arts die: the `levelScale.dice.diceString` of a `Martial Arts`
- * class feature at or below its class level, read from the classFeatures
- * wrapper (the definition carries no levelScale). Null without one.
+ * Each `Martial Arts` class feature at or below its class level, with its class:
+ * a missing `requiredLevel` counts as 1 and an explicit 0 as 0 (one level rule
+ * for the die and the STR/DEX rule; deferred minor 2026-11-19, Task 7).
+ */
+function martialArtsFeatures(classes: readonly ClassEntry[]): Array<{ cf: Record<string, unknown>; c: ClassEntry }> {
+  return classes.flatMap(c => records(c.classFeatures)
+    .filter(cf => {
+      const required = obj(cf.definition).requiredLevel;
+      return str(obj(cf.definition).name) === "Martial Arts" && (required == null ? 1 : num(required)) <= num(c.level);
+    })
+    .map(cf => ({ cf, c })));
+}
+
+/**
+ * The Martial Arts die: the `levelScale.dice.diceString` of the first such
+ * feature that has one, read from the classFeatures wrapper (the definition
+ * carries no levelScale). Null when none has a die; a feature without one
+ * still gives the STR/DEX rule (`hasMartialArts`), just no die.
  */
 function martialArts(core: CoreStats): { die: string; homebrew: boolean } | null {
-  for (const c of core.classes) {
-    for (const cf of records(c.classFeatures)) {
-      if (str(obj(cf.definition).name) !== "Martial Arts") continue;
-      const required = obj(cf.definition).requiredLevel;
-      if ((required == null ? 1 : num(required)) > num(c.level)) continue;
-      const die = str(obj(obj(cf.levelScale).dice).diceString);
-      if (die) return { die, homebrew: isHomebrewClassFeature(cf, c) };
-    }
+  for (const { cf, c } of martialArtsFeatures(core.classes)) {
+    const die = str(obj(obj(cf.levelScale).dice).diceString);
+    if (die) return { die, homebrew: isHomebrewClassFeature(cf, c) };
   }
   return null;
 }
 
 /** A Martial Arts feature at or below its class level, or a martial-arts modifier (an item's only while the item is active): the monk's STR/DEX rule, whether or not a die is known. */
 function hasMartialArts(core: CoreStats): boolean {
-  const { allMods, classes } = core;
-  return allMods.some(m => str(m.subType) === "martial-arts" && isActiveItemMod(m, core.inventory)) ||
-    classes.some(c =>
-      records(c.classFeatures).some(cf =>
-        str(obj(cf.definition).name) === "Martial Arts" &&
-        num(obj(cf.definition).requiredLevel || 1) <= num(c.level)
-      )
-    );
+  return core.allMods.some(m => str(m.subType) === "martial-arts" && isActiveItemMod(m, core.inventory))
+    || martialArtsFeatures(core.classes).length > 0;
 }
 
 export function martialArtsDie(core: CoreStats): string | null {
@@ -182,13 +186,13 @@ export function computeWeaponAttacks(core: CoreStats): { attacks: string[]; offH
     const def = weaponDefinition(obj(i.definition));
     if (!def) continue;
     if (i.equipped !== true) continue; // only show equipped weapons in ACTIONS
-    const custom = customNames.get(num(i.id));
-
     const wName = str(def.name).trim();
     // "Crossbow, Light" reads "Light Crossbow", as in the proficiency list (owner ruling 2026-11-06),
     // but only when the name is the base weapon type: a magic or named variant ("Mace, +1",
     // "Crossbow, Light, +1") keeps D&D Beyond's name (owner ruling 2026-11-07).
-    const wLabel = editions.named(itemDisplayName(wName === str(def.type).trim() ? weaponWordOrder(wName) : wName, custom), def);
+    const parts = itemNameParts(i, wName === str(def.type).trim() ? weaponWordOrder(wName) : wName, customNames);
+    const custom = parts.custom;
+    const wLabel = editions.named(parts.name, def);
     const dmg = obj(def.damage);
     const dmgDice = str(dmg.diceString);
     const attackType = num(def.attackType); // 1=melee, 2=ranged

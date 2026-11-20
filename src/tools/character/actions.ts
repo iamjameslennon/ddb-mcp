@@ -20,7 +20,7 @@
  */
 
 import { wrapIfHomebrew } from "../../utils.js";
-import { arr, customItemNames, featureDefinition, itemDisplayName, isRecord, num, obj, records, shownHomebrew, str, stripHtml } from "./helpers.js";
+import { arr, customItemNames, featureDefinition, itemNameParts, isRecord, num, obj, records, shownHomebrew, str, stripHtml } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats, InventoryItem } from "./types.js";
 import {
   allOptions, baseEntities, bucketAnyHomebrew, CLASS_FEATURE_TYPE, entityKey, type EntityKind,
@@ -29,7 +29,7 @@ import {
 import type { CharacterEditions } from "./editions.js";
 import { actionSpells, type ActionSpell } from "./spells.js";
 import { spellCastLabel } from "./slots.js";
-import { computeSpellAttackRows, spellFigures } from "./spell-attacks.js";
+import { computeSpellRows } from "./spell-attacks.js";
 import { computeUnarmedStrike, computeWeaponAttacks } from "./weapons.js";
 import { MASTERY_NAMES } from "../weapon-mastery.js";
 import { nameFold } from "../../name-match.js";
@@ -284,6 +284,9 @@ const actionLine = (ctx: FeatureLineContext) => ({ action, homebrew }: CharActio
 const hasUses = (lu: Record<string, unknown>): boolean =>
   lu.maxUses !== undefined && (num(lu.maxUses) > 0 || lu.statModifierUsesId != null || lu.useProficiencyBonus === true);
 
+/** A limited-use operator that adds: 1, or absent. No other operator is known. */
+const isAdd = (op: unknown): boolean => op == null || op === 1;
+
 function buildLimitedUseLines(
   allActions: readonly CharAction[],
   statMods: readonly number[],
@@ -301,11 +304,11 @@ function buildLimitedUseLines(
       let total = num(lu.maxUses);
       let unknown = false;
       if (statId != null) {
-        if ((lu.operator == null || lu.operator === 1) && statId >= 1 && statId <= 6 && statMods[statId - 1] !== undefined) total += statMods[statId - 1];
+        if (isAdd(lu.operator) && statId >= 1 && statId <= 6 && statMods[statId - 1] !== undefined) total += statMods[statId - 1];
         else unknown = true;
       }
       if (usesPb) {
-        if (lu.proficiencyBonusOperator == null || lu.proficiencyBonusOperator === 1) total += profBonus;
+        if (isAdd(lu.proficiencyBonusOperator)) total += profBonus;
         else unknown = true;
       }
       const maxStr = unknown ? "?"
@@ -343,8 +346,9 @@ function buildItemChargeLines(
     if (!(num(lu.maxUses) > 0)) return [];
     // A consumable is already listed, with its count, under INVENTORY.
     if (lu.resetType === "Consumable") return [];
-    const custom = customNames.get(num(i.id));
-    const name = editions.named(itemDisplayName(str(def.name).trim(), custom), def);
+    const parts = itemNameParts(i, str(def.name).trim(), customNames);
+    const custom = parts.custom;
+    const name = editions.named(parts.name, def);
     if (name === "") return [];
     // A degenerate key (no definition id or entity type) never matches an action.
     if (num(def.id) && num(def.entityTypeId) && actionKeys.has(entityKey(def.id, def.entityTypeId))) return [];
@@ -364,7 +368,7 @@ export function computeActions(core: CoreStats): Actions {
   const { char, classes, statMods, inventory, editions } = core;
   const allActions = getAllActions(char, classes);
   const allCharSpells = actionSpells(char, classes);
-  const figures = spellFigures(core);
+  const { attackRows: spellAttacks, figures } = computeSpellRows(core);
   const line = actionLine(featureLineContext(core));
 
   // Spell activationTypes (from rule-data): 1=Action, 2=No Action, 3=Bonus Action, 4=Reaction, 8=Special
@@ -396,7 +400,7 @@ export function computeActions(core: CoreStats): Actions {
   return {
     weaponAttacks,
     unarmedStrike: [computeUnarmedStrike(core)],
-    spellAttacks: computeSpellAttackRows(core),
+    spellAttacks,
     actionFeatures,
     offHandAttacks,
     bonusActions,
