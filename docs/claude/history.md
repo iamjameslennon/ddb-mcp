@@ -79,6 +79,31 @@ First run (HEAD `45ee0b3` vs 2.10.2, about 13 s): 56/56 characters, 0 crashes, 0
 
 Pilot (2026-11-11, in Claude Code against the fresh build, narrowed scope: batch 1 with one section type per character, the test campaign's party, 5 matrix tools and the 5 gate refusals; no spot-check, real download or logged-out pass): every gate refused with nothing done, and the replies sampled were consistent, labelled and wrapped. Findings: **F1 🟠 confirmed**, carried weapons that aren't equipped appear nowhere on the sheet (INVENTORY skips all weapons, ACTIONS lists equipped ones only; Ethelrede 112314883, Astarion 107164636, Bobby 133053421); F2 ⚪ suspected `Immunities: Magical-sleep` (Mori Yosei 39714283); F3 ⚪ suspected "HalfCover" in the SRD Cover text; improvement: "dragon" in `ddb_rate_encounter` counts a third-party monster named "Dragon". Known (B14) read_book blank lines seen. Skill fixes from the pilot: free-account books named (the library marks giveaways "Owned"); `combat` contains `summary`; `ddb_get_character_raw` allowed as evidence on public characters; matrix "ambiguous" examples use "Red Dragon"; intended-behaviour entries for equipped weapons in ACTIONS and exact-name encounter matches. F1–F3 are open, for the owner.
 
+### Carry-overs 2026-11-20
+
+Two items, no plan file (both small): carry-over (bs) and the ability-check bonus parked by the 2026-11-19 round. TDD, then adversarial reviews by Codex (three rounds on (bs), one on the gate), every claim checked against the code before acting.
+
+**Closed:**
+
+- **Ability-check bonus** (parked 2026-11-19) `c90375f`: `bonus ability-checks` follows the (bc) rule: an item's only while active (`isActiveItemMod`), a class- or subclass-bucket one only while its feature is visible (`isVisibleAction`). One helper, `activeGlobalBonus(core, subType)` in `stats.ts`, now serves the save and the ability-check bonus (it also folds the bucket loop the 2026-11-19 Task 10 minor pointed at for saves). Measured: no corpus change (whole corpus vs a HEAD `dbd55bc` build: 56 of 56 parsed, 0 crashes, 0 inconsistencies, 0 new anomalies; the only differences are the always-prepared harness noise on the eight characters listed under "Carry-overs 2026-11-19"; no skill, passive or save line changed). The only corpus instance, Xarius's Luckstone, is equipped and attuned.
+- **(bs)** `7f57f5e`: after `ddb_logout` the browser tools work signed out. Root cause: `assertSessionCurrent` throws whenever the revoke flag is up, even for the anonymous snapshot every capture returns after a logout (the F4 cause of 2026-11-18, which F4 fixed for spells at the call site). Fix, following F4 in leaving `assertSessionCurrent` and its 44 call sites unchanged: a new primitive `assertSessionUnchanged` (`session-state.ts`) that refuses a moved generation, or an authenticated snapshot while revoked, but lets an anonymous post-logout snapshot stand until a sign-in moves the generation; the browser paths use it. Live check (the built server over stdio, a dummy session in a temporary `HOME`, never the owner's): after `ddb_logout`, `ddb_navigate` to `/sources/dnd/free-rules`, `ddb_get_page` and an `ddb_interact` screenshot (a 1280×800 PNG) all succeed; the same script on the HEAD build answers `Session changed; the previous credentials were revoked.` to all three.
+
+**Codex review findings and outcomes:**
+
+- (bs) round 1, important, confirmed: my first version let a call use the old signed-in context if `ddb_logout` landed after `getContext` handed it out and before the tool captured its own snapshot (that fresh snapshot is revoked-anonymous, so the new check passed; the old check had refused only through the revoke flag). Fixed: `getBoundContext` returns the shared context with the snapshot it belongs to, `server.ts` passes it to `navigate`, `interact` and `getCurrentPageContent`, and they check it before any page action. The same window for an account swap (not a logout) predates this change; the binding closes it too.
+- (bs) round 1, minor, confirmed: the screenshot branch had no session check after the capture. Fixed (see round 2).
+- (bs) round 2, important, confirmed: the entry check ran before the `getPage()` and guard-setup awaits, so a change during them could still start a load, click, fill or read. Fixed: re-checked immediately before the first page operation; the end checks stay. A change landing during the page operation itself is caught by the end checks, which can refuse the result but not undo a request already sent.
+- (bs) round 2, minor, confirmed: a rejected screenshot stayed on disk if its removal failed. Fixed: captured to memory, checked, then written; nothing is written on a session change.
+- (bs) round 2, noted, not a change here: after a revoke whose file deletion failed, the file stays on disk and a restarted process reads it again (the revoke flag is process-local). Pre-existing and documented: `ddb_logout` reports the failed deletion.
+- (bs) round 3, low, confirmed: a session change during the setup awaits could surface as "No page is loaded", a foreign-page refusal or "Invalid URL" instead of `SessionChangedError`. Fixed: the re-check now runs straight after the awaits, before any page-state check. Round 3 confirmed the round-2 findings closed.
+- (bs) round 3, low, deferred (minor, for a later round): a page operation (`goto`, click, fill, `evaluate`, screenshot) that rejects because the session change closed the context mid-flight reports Playwright's error, not `SessionChangedError`. Nothing is returned either way; pre-existing for any session change mid-operation.
+- Gate, minor, confirmed: the race bucket was untested; a race-bucket case was added. No drift in the save bonus.
+
+**Parked (not carry-over codes yet; both pre-existing, out of this round's scope, no corpus impact checked):**
+
+- Per-skill `bonus <skill>` modifiers (`computeSkillBonuses`' `flatBonus`) are not gated on the item or the feature visibility rule.
+- Initiative `bonus initiative` modifiers (`computeInitiative`, `vitals.ts`) are not gated on the item.
+
 ### Carry-overs 2026-11-19
 
 Plan: `docs/superpowers/plans/2026-11-19-carry-overs.md` (plan commit `ea2457e`, off main `0644748`; branch `carry-overs-2026-11-19`, not pushed). It closes twelve open carry-overs under the owner rulings below. Executed task by task, each with a Claude task review and external adversarial reviews.
@@ -117,7 +142,7 @@ Plan: `docs/superpowers/plans/2026-11-19-carry-overs.md` (plan commit `ea2457e`,
 
 **Correction to (bc)'s examples:** the 2026-11-09 entry named Ethelrede's unequipped Battleaxe +1 and Aerin's unequipped Slippers as global save bonuses. They are not `bonus saving-throws` modifiers: the only corpus save bonuses are Calderax's Ring of Protection and Xarius's Stone of Good Luck, both on equipped, attuned items. No corpus character changed.
 
-**Parked (not a carry-over code yet):** the same ungated read for `bonus ability-checks` (`globalAbilityCheckBonus`). It has no corpus impact.
+**Parked (not a carry-over code yet):** the same ungated read for `bonus ability-checks` (`globalAbilityCheckBonus`). It has no corpus impact. **Closed 2026-11-20** (see "Carry-overs 2026-11-20").
 
 **Reviews.** Each task had a Claude task review (Sonnet; Opus for Task 12, the cookie handling in the redirect guard) plus external adversarial reviews: `freellmapi/auto:reviewers` on every task, Codex on batches (Tasks 1-5, 6-9, 10-12) and on Task 8. Zen (Free usage limit reached, Task 1) and Cursor (usage limit, batch A) were unavailable after that. Free-model claims were checked against the code before acting. The false or out-of-range ones:
 
@@ -497,7 +522,7 @@ F29/F30 were added by the owner as "Task 10b" and are not in the plan's F1–F28
 
 - **(br)** pact or hex weapons using CHA (2024 Pact of the Blade, 2014 Hex Warrior) are not applied to weapon rows. No test character has one, so no data shape is verified.
 - **(bb) wider evidence:** the 2026-11-11 run found always-prepared subclass spells missing on all 8 subclass casters checked, and Bless missing from `concentration`. Flagged for re-prioritising; a fix needs its own plan.
-- **(bs)** after `ddb_logout`, `ddb_navigate`, `ddb_interact` and `ddb_get_page` refuse with "Session changed" until the next `ddb_login` (pre-existing, found in the Task 10b fix round; the shared browser is now seeded from the `captureSession()` snapshot).
+- **(bs)** ~~after `ddb_logout`, `ddb_navigate`, `ddb_interact` and `ddb_get_page` refuse with "Session changed" until the next `ddb_login` (pre-existing, found in the Task 10b fix round; the shared browser is now seeded from the `captureSession()` snapshot).~~ **Closed 2026-11-20** (`7f57f5e`, see "Carry-overs 2026-11-20").
 - **(bt)** ~~an equipped magic item stack loses its `×N` in EQUIPPED, and no test checks that a homebrew item in EQUIPPED is wrapped (the corpus has 0 equipped magic stacks with quantity above 1).~~ **Closed 2026-11-19** (`8428fbe`)
 - **(bu)** the monster "closest match" line can be left out when the matching twin is locked and another entry is shown (the closest flag is judged over all candidates), and short names count as close under the plan's R3 formula (Lich/Lion, Ogre/Ooze).
 - **(bv)** `ddb_character_lookup`'s loose rule still matches some short words loosely ("bless" → Eldritch Blast, "rage" → Mage Armor, "cure" → Hexblade's Curse). Mitigated, not removed, by the exact-first ordering of the final fix wave.
