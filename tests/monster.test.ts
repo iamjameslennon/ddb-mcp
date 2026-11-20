@@ -4144,8 +4144,15 @@ describe("getMonster closest hit (R3)", () => {
     unownedIds.add(LOCKED_OWLBEAR.id as number);
     ANY_WORD = { owlbear: [OWLBEER] };
     const out = await getMonster("Owlbear");
+    // The matching creature's own locked block (Open5e is mocked empty), never Owlbeer's.
+    expect(out.startsWith("# Owlbear\n")).toBe(true);
+    expect(out).toContain("Full stat block requires ownership");
     expect(out).not.toContain("OWLBEER BLOCK");
     expect(out).not.toContain("showing the closest match");
+    // Control: without the locked Owlbear, the same candidate list does reach Owlbeer, announced.
+    extraMonsters = [OWLBEER];
+    clearMonsterCache();
+    expect(await getMonster("Owlbear")).toContain('No monster is named "Owlbear"; showing the closest match, Owlbeer.');
   });
 });
 

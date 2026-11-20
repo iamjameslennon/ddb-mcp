@@ -181,7 +181,7 @@ Looks like: EQUIPPED holds equipped armour with `(AC n)` and equipped items that
 Source: history.md, Regression remediation 2026-11-11 (owner ruling R2, 2026-11-11).
 
 ### `ddb_get_monster` takes a fuzzy hit only when it is close
-Looks like: a close top hit is used and says so on its own line (`No monster is named "Owlbare"; showing the closest match, Owlbear.`); a distant one gives `Monster "…" not found. Closest matches from D&D Beyond:` with the near-match lines and no stat block. A query of 4 letters or fewer is close only within one edit, a swapped pair counting as one: "Lihc" shows the Lich with the closest line, but a short name two edits from another (Lich/Lion, Ogre/Ooze) is never taken for it.
+Looks like: a close top hit is used and says so on its own line (`No monster is named "Owlbare"; showing the closest match, Owlbear.`); a distant one gives `Monster "…" not found. Closest matches from D&D Beyond:` with the near-match lines and no stat block. A query of 4 letters or fewer (counted after dropping apostrophes and hyphens) is close only within one edit, a swapped pair counting as one: "Lihc" shows the Lich with the closest line, but a short name two edits from another (Lich/Lion, Ogre/Ooze) is never taken for it.
 Source: history.md, Regression remediation 2026-11-11 (owner ruling R3, 2026-11-11), amended by Ready carry-overs 2026-11-20 (owner ruling 2026-11-20).
 
 ### `br-2024` redirects to `phb-2024` outside equipment
