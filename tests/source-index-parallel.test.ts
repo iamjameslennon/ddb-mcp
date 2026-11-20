@@ -54,7 +54,7 @@ describe("the index starts before the load resolves", () => {
     ["getItem", async () => (await import("../src/tools/reference.js")).getItem("Longsword")],
     ["searchOwnedEntries (class features)", async () => (await import("../src/tools/reference.js")).searchClassFeatures({ name: "rage" })],
     ["parseCharacter", async () => (await import("../src/tools/character.js")).parseCharacter("12345678")],
-    ["getDefinition", async () => (await import("../src/tools/character.js")).getDefinition("12345678", "sword")],
+    ["getDefinition", async () => (await import("../src/tools/character/definition.js")).getDefinition("12345678", "sword")],
     ["getParty", async () => (await import("../src/tools/party.js")).getParty("999")],
   ];
 
@@ -81,7 +81,7 @@ describe("a failed load withdraws the index it started (minors C #4)", () => {
     ["getItem", async () => (await import("../src/tools/reference.js")).getItem("Longsword")],
     ["searchOwnedEntries (class features)", async () => (await import("../src/tools/reference.js")).searchClassFeatures({ name: "rage" })],
     ["parseCharacter", async () => (await import("../src/tools/character.js")).parseCharacter("12345678")],
-    ["getDefinition", async () => (await import("../src/tools/character.js")).getDefinition("12345678", "sword")],
+    ["getDefinition", async () => (await import("../src/tools/character/definition.js")).getDefinition("12345678", "sword")],
     ["getParty", async () => (await import("../src/tools/party.js")).getParty("999")],
   ];
 
@@ -100,7 +100,7 @@ describe("a failed load withdraws the index it started (minors C #4)", () => {
 describe("a character call caps its logged-out index wait", () => {
   const sites: Array<[string, () => Promise<unknown>, boolean]> = [
     ["parseCharacter", async () => (await import("../src/tools/character.js")).parseCharacter("12345678"), true],
-    ["getDefinition", async () => (await import("../src/tools/character.js")).getDefinition("12345678", "sword"), true],
+    ["getDefinition", async () => (await import("../src/tools/character/definition.js")).getDefinition("12345678", "sword"), true],
     // getParty needs a login, so it keeps the plain wait.
     ["getParty", async () => (await import("../src/tools/party.js")).getParty("999"), false],
     ["searchRaces", async () => (await import("../src/tools/reference.js")).searchRaces({ name: "elf" }), false],

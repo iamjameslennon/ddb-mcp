@@ -6,7 +6,8 @@ import { getBrowser, getBoundContext, closeBrowser, beginLoginSession, endLoginS
 import { login, LOGIN_TIMEOUT_MS, LOGIN_PROGRESS_INTERVAL_MS } from "./auth.js";
 import { safeErrorLine } from "./utils.js";
 import { revokeSession } from "./session-state.js";
-import { getCharacterRaw, downloadCharacter, listCharacters, parseCharacter, findCharacterByName, characterNameError, getDefinition, clearCharacterCache } from "./tools/character.js";
+import { getCharacterRaw, downloadCharacter, listCharacters, parseCharacter, findCharacterByName, characterNameError, clearCharacterCache } from "./tools/character.js";
+import { getDefinition } from "./tools/character/definition.js";
 import { clearSubclassSpellCache } from "./tools/subclass-spells.js";
 import { getCampaign, listMyCampaigns, invalidateCampaignCache } from "./tools/campaign.js";
 import { getParty } from "./tools/party.js";

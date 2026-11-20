@@ -1,4 +1,7 @@
-import { normalizeName } from "./edition.js";
+/** Lowercase, curly apostrophes folded to "'", whitespace collapsed, trimmed. Re-exported by edition.ts. */
+export function normalizeName(name: string): string {
+  return name.toLowerCase().replace(/[‘’]/g, "'").replace(/\s+/g, " ").trim();
+}
 
 /**
  * A monster or item name as Open5e folds it: hyphens become spaces, straight and curly

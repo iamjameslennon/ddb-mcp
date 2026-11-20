@@ -308,7 +308,7 @@ describe("parseCharacter with subclass always-prepared spells", () => {
 
   it("ddb_character_lookup finds a merged spell", async () => {
     serve({ "1": lifeCleric() }, lifeList);
-    const out = await character.getDefinition("1", "Spiritual Weapon");
+    const out = await (await import("../src/tools/character/definition.js")).getDefinition("1", "Spiritual Weapon");
     expect(out).toContain("Spiritual Weapon");
     expect(out).not.toMatch(/^No definition found/);
   });

@@ -2,11 +2,10 @@
  * Carry-over (bm): the granting-entity and visibility code moved out of
  * actions.ts into granting.ts, the duplicated slug helpers folded into
  * helpers.slugOf, and the levelSpellSlots row read into slots.levelSlotRow.
- * These tests pin the shared helpers' behaviour and keep src/tools/character/
- * free of value-import cycles (the move removed actions.ts ↔ weapons.ts).
- * Two older cycles elsewhere in src/ are parked in history.md ("Carry-overs
- * 2026-11-20"): edition.ts ↔ name-match.ts and tools/character.ts ↔
- * character/definition.ts.
+ * These tests pin the shared helpers' behaviour and keep src/ free of
+ * value-import cycles (the move removed actions.ts ↔ weapons.ts; the two
+ * older ones, edition.ts ↔ name-match.ts and tools/character.ts ↔
+ * character/definition.ts, went on 2026-11-20, "Ready carry-overs 2026-11-20").
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
@@ -18,6 +17,7 @@ import { SKILLS } from "../src/tools/character/stats.js";
 import type { ClassEntry } from "../src/tools/character/types.js";
 
 const CHARACTER = fileURLToPath(new URL("../src/tools/character", import.meta.url));
+const SRC = fileURLToPath(new URL("../src", import.meta.url));
 
 describe("slugOf", () => {
   it("lowercases and joins runs of other characters with one dash, trimmed at both ends", () => {
@@ -94,8 +94,8 @@ describe("valueImports (the cycle check's parser)", () => {
 });
 
 describe("module boundaries", () => {
-  /** Value-import edges from each src/tools/character/ file (a relative import leaving the folder is listed but never walked). */
-  function importGraph(): Map<string, string[]> {
+  /** Value-import edges from each .ts file under `root` (a relative import leaving it is listed but never walked). */
+  function importGraph(root = CHARACTER): Map<string, string[]> {
     const files: string[] = [];
     const walk = (dir: string): void => {
       for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -103,21 +103,22 @@ describe("module boundaries", () => {
         else if (e.name.endsWith(".ts")) files.push(join(dir, e.name));
       }
     };
-    walk(CHARACTER);
+    walk(root);
     return new Map(files.map(f => [
       f,
       valueImports(readFileSync(f, "utf8")).map(spec => resolve(dirname(f), spec.replace(/\.js$/, ".ts"))),
     ]));
   }
 
-  it("has no value-import cycle in src/tools/character/", () => {
-    const graph = importGraph();
+  /** Every value-import cycle under `root`, as "a.ts -> b.ts -> a.ts" paths relative to it. */
+  function cyclesUnder(root: string): string[] {
+    const graph = importGraph(root);
     const done = new Set<string>();
     const path: string[] = [];
     const cycles: string[] = [];
     const visit = (f: string): void => {
       if (path.includes(f)) {
-        cycles.push([...path.slice(path.indexOf(f)), f].map(p => relative(CHARACTER, p)).join(" -> "));
+        cycles.push([...path.slice(path.indexOf(f)), f].map(p => relative(root, p)).join(" -> "));
         return;
       }
       if (done.has(f) || !graph.has(f)) return;
@@ -127,7 +128,24 @@ describe("module boundaries", () => {
       done.add(f);
     };
     for (const f of graph.keys()) visit(f);
-    expect(cycles).toEqual([]);
+    return cycles;
+  }
+
+  it("has no value-import cycle in src/tools/character/", () => {
+    expect(cyclesUnder(CHARACTER)).toEqual([]);
+  });
+
+  it("has no value-import cycle anywhere in src/", () => {
+    expect(cyclesUnder(SRC)).toEqual([]);
+  });
+
+  it("sees the src/ graph: name-match.ts imports nothing relative; definition.ts imports character.ts, not the reverse", () => {
+    const graph = importGraph(SRC);
+    const deps = (f: string) => (graph.get(join(SRC, f)) ?? []).map(p => relative(SRC, p));
+    expect(deps("name-match.ts")).toEqual([]);
+    expect(deps("edition.ts")).toContain("name-match.ts");
+    expect(deps("tools/character/definition.ts")).toContain("tools/character.ts");
+    expect(deps("tools/character.ts")).not.toContain("tools/character/definition.ts");
   });
 
   it("sees the graph: actions.ts imports granting.ts and weapons.ts, weapons.ts doesn't import actions.ts", () => {

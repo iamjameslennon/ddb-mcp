@@ -11,7 +11,7 @@
 
 import { stripHtml } from "./utils.js";
 import { EDITION_RENAMES, type RenameKind } from "./edition-renames.js";
-import { matchesAtWordStart } from "./name-match.js";
+import { matchesAtWordStart, normalizeName } from "./name-match.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -218,10 +218,9 @@ function classifyWithSource(
 
 // ── Twin names ────────────────────────────────────────────────────────────────
 
-/** Lowercase, curly apostrophes folded to "'", whitespace collapsed, trimmed. */
-export function normalizeName(name: string): string {
-  return name.toLowerCase().replace(/[‘’]/g, "'").replace(/\s+/g, " ").trim();
-}
+// normalizeName lives in name-match.ts (which imports nothing from here, so the two
+// modules form no import cycle) and is re-exported for edition.ts's callers.
+export { normalizeName } from "./name-match.js";
 
 /**
  * A twin-name function. `spell` maps the normalized form of either side of a

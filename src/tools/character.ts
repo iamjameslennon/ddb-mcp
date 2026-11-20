@@ -30,7 +30,6 @@ import { mergeAlwaysPreparedSpells } from "./character/always-prepared.js";
 // can keep importing from `./tools/character.js`. New code should prefer the
 // per-domain modules under `./character/`.
 export { parseCharacterData } from "./character/parse.js";
-export { getDefinition } from "./character/definition.js";
 
 // Cache character JSON to avoid redundant API calls within a session.
 // TTL is configurable via DDB_CHARACTER_CACHE_TTL (seconds); default 60 s.

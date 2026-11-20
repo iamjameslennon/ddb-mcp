@@ -84,7 +84,7 @@ describe("parseCharacter (ddb_get_character), logged out", () => {
 
 describe("getDefinition (ddb_character_lookup), logged out", () => {
   it("returns at 2 s with snapshot labels while the config hangs, and the next call is live", async () => {
-    const { getDefinition } = await import("../src/tools/character.js");
+    const { getDefinition } = await import("../src/tools/character/definition.js");
     let done = false;
     const first = getDefinition("12345678", "great weapon").then(v => { done = true; return v; });
     await vi.advanceTimersByTimeAsync(1_999);
