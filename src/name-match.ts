@@ -81,13 +81,39 @@ export function matchesLooseName(name: string, query: string): boolean {
 }
 
 /**
+ * Optimal string alignment distance: Levenshtein, plus a swap of two adjacent characters
+ * costing one edit ("lihc" → "lich" is 1, where Levenshtein counts 2).
+ */
+export function osaDistance(a: string, b: string): number {
+  const d: number[][] = Array.from({ length: a.length + 1 }, (_, i) =>
+    Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  );
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  }
+  return d[a.length][b.length];
+}
+
+/** Queries of at most this many folded characters must be within one edit (osaDistance) to be close. */
+const SHORT_QUERY_MAX = 4;
+
+/**
  * Whether a name is close enough to a query to take D&D Beyond's fuzzy top hit for it
- * (ddb_get_monster, owner ruling R3): within a few edits (at least 2, a third of the query's
- * length), or a typo/word-order match by matchesLooseName.
+ * (ddb_get_monster, owner ruling R3, amended 2026-11-20 for queries of 4 characters or
+ * fewer): within a few edits (at least 2, a third of the query's length), or a typo/word-order
+ * match by matchesLooseName. A short query is close only within one edit, a swap of two
+ * adjacent letters counting as one ("Lihc" → Lich), so Lich/Lion and Ogre/Ooze are not.
  */
 export function isCloseName(name: string, query: string): boolean {
   const q = nameFold(query);
   if (q === "") return false;
-  return levenshteinDistance(nameFold(name), q) <= Math.max(2, Math.floor(q.length / 3))
-    || matchesLooseName(name, query);
+  const n = nameFold(name);
+  const near = q.length <= SHORT_QUERY_MAX
+    ? osaDistance(n, q) <= 1
+    : levenshteinDistance(n, q) <= Math.max(2, Math.floor(q.length / 3));
+  return near || matchesLooseName(name, query);
 }

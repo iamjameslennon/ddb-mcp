@@ -31,9 +31,6 @@ Shows up as: one save-advantage line, wrapped as untrusted, that combines an off
 ### (bp) `ddb_get_monster` can miss a monster in a crowded name
 Shows up as: `ddb_get_monster` says not found, or picks a different creature, for a name that `ddb_search_monsters` lists.
 
-### (bu) The closest-match line can be skipped, and short names count as close
-Shows up as: `ddb_get_monster` showing a different entry without its `showing the closest match` line when the matching twin is locked; or a short name taken as a close match for another (Lich/Lion, Ogre/Ooze).
-
 ### (bw) Open5e stat blocks use 2014 defense labels for SRD 5.2 creatures
 Shows up as: a `ddb_get_monster` stat block from the Open5e SRD fallback, for a 2024 (SRD 5.2) creature, printing its defense lines (damage resistances, immunities, vulnerabilities, condition immunities) under 2014 wording or labels. The D&D Beyond path is not affected.
 

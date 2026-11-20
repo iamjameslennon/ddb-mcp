@@ -181,8 +181,8 @@ Looks like: EQUIPPED holds equipped armour with `(AC n)` and equipped items that
 Source: history.md, Regression remediation 2026-11-11 (owner ruling R2, 2026-11-11).
 
 ### `ddb_get_monster` takes a fuzzy hit only when it is close
-Looks like: a close top hit is used and says so on its own line (`No monster is named "Owlbare"; showing the closest match, Owlbear.`); a distant one gives `Monster "…" not found. Closest matches from D&D Beyond:` with the near-match lines and no stat block.
-Source: history.md, Regression remediation 2026-11-11 (owner ruling R3, 2026-11-11).
+Looks like: a close top hit is used and says so on its own line (`No monster is named "Owlbare"; showing the closest match, Owlbear.`); a distant one gives `Monster "…" not found. Closest matches from D&D Beyond:` with the near-match lines and no stat block. A query of 4 letters or fewer is close only within one edit, a swapped pair counting as one: "Lihc" shows the Lich with the closest line, but a short name two edits from another (Lich/Lion, Ogre/Ooze) is never taken for it.
+Source: history.md, Regression remediation 2026-11-11 (owner ruling R3, 2026-11-11), amended by Ready carry-overs 2026-11-20 (owner ruling 2026-11-20).
 
 ### `br-2024` redirects to `phb-2024` outside equipment
 Looks like: `source: "br-2024"` for spells, feats, species, classes, backgrounds, class features and racial traits replies with a redirect to `phb-2024`, because D&D Beyond tags none of those entries with source 148 (2024 class features carry only 145). Equipment is unchanged (items do carry 148), and so are monsters. A search or get that matches nothing on D&D Beyond or in the SRD says "… on D&D Beyond or in the SRD." ("(SRD only)." only when D&D Beyond was unreachable; `ddb_search_monsters` too), and a missing spell or item says it may be misspelled or in a book the account doesn't own, never which.

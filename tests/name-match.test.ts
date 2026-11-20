@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nameFold, matchesAtWordStart, matchesLooseName, levenshteinDistance, isCloseName, containsFolded } from "../src/name-match.js";
+import { nameFold, matchesAtWordStart, matchesLooseName, levenshteinDistance, isCloseName, containsFolded, osaDistance } from "../src/name-match.js";
 
 describe("nameFold", () => {
   it("folds hyphens, apostrophes and case the way Open5e does", () => {
@@ -60,6 +60,16 @@ describe("isCloseName", () => {
     ["Adult Red Dragon", "red dragon adult", true],
     ["Living Unseen Servant", "Glorbulon the Unseen Squid-King", false],
     ["Unseen Servant", "Glorbulon the Unseen Squid-King", false],
+    // (bu), owner ruling 2026-11-20: 4 characters or fewer, one edit (a swap counts as one).
+    ["Lich", "Lihc", true],
+    ["Ogre", "Orge", true],
+    ["Lich", "Lich", true],
+    ["Lion", "Lich", false],
+    ["Lich", "Lion", false],
+    ["Ooze", "Ogre", false],
+    ["Ogre", "Ooze", false],
+    ["Imp", "Ape", false],
+    ["Imp", "Imps", true],
   ])("isCloseName(%j, %j) is %s", (name, query, expected) => {
     expect(isCloseName(name, query)).toBe(expected);
   });
@@ -75,5 +85,19 @@ describe("containsFolded", () => {
     ["x", "  ", false],
   ])("containsFolded(%j, %j) is %s", (name, query, expected) => {
     expect(containsFolded(name, query)).toBe(expected);
+  });
+});
+
+describe("osaDistance", () => {
+  it.each([
+    ["lich", "lihc", 1],
+    ["ogre", "orge", 1],
+    ["lion", "lich", 2],
+    ["abc", "abc", 0],
+    ["", "ab", 2],
+    ["ab", "", 2],
+    ["ca", "abc", 3],
+  ])("osaDistance(%j, %j) is %i", (a, b, expected) => {
+    expect(osaDistance(a, b)).toBe(expected);
   });
 });

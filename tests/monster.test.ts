@@ -4117,6 +4117,36 @@ describe("getMonster closest hit (R3)", () => {
     expect(out).toContain("THIRD PARTY DRAGON");
     expect(out).not.toContain("closest match");
   });
+
+  // (bu), owner ruling 2026-11-20: a query of 4 characters or fewer is close only within one edit.
+  it("a short query two edits from a name is not found: \"Lich\" never shows a Lion", () => withFuzzy(
+    { lich: [monster({ id: 8_300_008, name: "Lion", sourceId: 147, sources: sources(147), actionsDescription: "<p>LION BLOCK</p>" })] }, async () => {
+      const out = await getMonster("Lich");
+      expect(out.startsWith(`Monster "Lich" not found. Closest matches from D&D Beyond:\n${NEAR_MATCH_RULES_LINE}`)).toBe(true);
+      expect(out).toContain("- **Lion**");
+      expect(out).not.toContain("LION BLOCK");
+    }));
+
+  it("a short typo one swap away is still close: \"Lihc\" shows the Lich with its closest line", () => withFuzzy(
+    { lihc: [monster({ id: 8_300_009, name: "Lich", sourceId: 147, sources: sources(147), actionsDescription: "<p>LICH BLOCK</p>" })] }, async () => {
+      extraMonsters = [monster({ id: 8_300_009, name: "Lich", sourceId: 147, sources: sources(147), actionsDescription: "<p>LICH BLOCK</p>" })];
+      const out = await getMonster("Lihc");
+      expect(out).toContain('No monster is named "Lihc"; showing the closest match, Lich.');
+      expect(out).toContain("LICH BLOCK");
+    }));
+
+  // (bu) part 1: the closest flag is judged over all candidates. A locked match keeps the
+  // lookup on its own group, so another creature is never shown without the closest line.
+  it("a locked exact match never gives way to another close creature", async () => {
+    const LOCKED_OWLBEAR = monster({ id: 8_300_010, name: "Owlbear", sourceId: 147, sources: sources(147), armorClass: 0, averageHitPoints: 0 });
+    const OWLBEER = monster({ id: 8_300_011, name: "Owlbeer", sourceId: 147, sources: sources(147), actionsDescription: "<p>OWLBEER BLOCK</p>" });
+    extraMonsters = [LOCKED_OWLBEAR, OWLBEER];
+    unownedIds.add(LOCKED_OWLBEAR.id as number);
+    ANY_WORD = { owlbear: [OWLBEER] };
+    const out = await getMonster("Owlbear");
+    expect(out).not.toContain("OWLBEER BLOCK");
+    expect(out).not.toContain("showing the closest match");
+  });
 });
 
 describe("damage adjustments and condition immunities (F7)", () => {
