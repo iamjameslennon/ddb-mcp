@@ -206,6 +206,7 @@ describe("navigate refuses scraped content across a session transition", () => {
       setSessionFile(sessionJson("SECRET_A"));
       sf.hasValidSession();
       await expect(run(op, makeFailing(op, () => setSessionFile(sessionJson("SECRET_B"))))).rejects.toThrow(sf.SessionChangedError);
+      if (op === "screenshot") expect(fsMock.writeFileSync).not.toHaveBeenCalled();
     });
 
     it.each(OPS)("%s rejecting with no session change keeps Playwright's own error", async op => {

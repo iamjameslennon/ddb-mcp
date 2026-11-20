@@ -279,10 +279,14 @@ export function assertSafeSelector(selector: string): void {
 }
 
 /**
- * Runs a browser tool's page work under `snapshot`. A rejection (Playwright's
- * "Target page, context or browser has been closed" when a session change
- * closed the context mid-operation) is reported as the session change when the
- * session moved, and rethrown unchanged otherwise ((bs) round 3, 2026-11-20).
+ * Runs a browser tool's page work under `snapshot`. Any rejection (typically
+ * Playwright's "Target page, context or browser has been closed" when a session
+ * change closed the context mid-operation) is reported as the session change
+ * when the session moved, and rethrown unchanged otherwise ((bs) round 3,
+ * 2026-11-20). That includes this module's own refusals: when the session also
+ * moved, an off-allowlist refusal reads as the session change. Nothing is
+ * returned either way, and the session change has closed the shared context, so
+ * no page stays loaded (the router review's masking point, accepted as wording).
  */
 async function withSessionCheck<T>(snapshot: SessionSnapshot, run: () => Promise<T>): Promise<T> {
   try {
