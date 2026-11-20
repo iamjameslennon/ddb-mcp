@@ -177,12 +177,23 @@ function setSessionFile(content: string | null): void {
   fsMock.readFileSync.mockReturnValue(content);
 }
 
-/** A cobalt JWT; `ttl` under 60 s is never cached by session-fetch, so every lookup runs an exchange. */
-function makeJwt(userId: string, ttl = 3600): string {
+/**
+ * The default token's expiry, fixed when the file loads, so one account's token
+ * is the same string however often it is built. Built from each call's
+ * Date.now(), the token a mock minted and the one an assertion rebuilds differed
+ * whenever the clock crossed a second in between (a CI flake, 2026-11-20).
+ */
+const JWT_EXP = Math.floor(Date.now() / 1000) + 3600;
+
+/**
+ * A cobalt JWT expiring at JWT_EXP, or `ttl` seconds from now. A `ttl` under
+ * 60 s is never cached by session-fetch, so every lookup runs an exchange.
+ */
+function makeJwt(userId: string, ttl?: number): string {
   const header = Buffer.from(JSON.stringify({ alg: "none" })).toString("base64url");
   const payload = Buffer.from(JSON.stringify({
     "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier": userId,
-    exp: Math.floor(Date.now() / 1000) + ttl,
+    exp: ttl === undefined ? JWT_EXP : Math.floor(Date.now() / 1000) + ttl,
   })).toString("base64url");
   return `${header}.${payload}.sig`;
 }
@@ -477,6 +488,20 @@ describe("parseCharacter with subclass always-prepared spells", () => {
 });
 
 describe("always-prepared lists and the session", () => {
+  it("the test helper builds one account's token as the same string whatever the clock says", () => {
+    // These tests identify an account by comparing the Authorization header with
+    // makeJwt(id), rebuilt later. A token minted in one second and rebuilt in the
+    // next must still match, or a slow run reads account A as anonymous.
+    const before = makeJwt("99");
+    const now = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 1_500);
+    try {
+      expect(makeJwt("99")).toBe(before);
+      expect(makeJwt("77")).not.toBe(before);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it("logged in, the lists go out with the account's token, bound to the character's session", async () => {
     setSessionFile(sessionJson("SECRET_A"));
     serve({ "1": lifeCleric() }, lifeList);
