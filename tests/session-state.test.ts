@@ -456,6 +456,48 @@ describe("revokeSession", () => {
   });
 });
 
+describe("assertSessionUnchanged (carry-over (bs): consumers that also work signed out)", () => {
+  it("an anonymous snapshot taken while revoked stays current until the generation moves", async () => {
+    setSessionFile(sessionJson());
+    state.captureSession();
+    await state.revokeSession();
+    const snap = state.captureSession();
+    expect(snap.state.kind).toBe("anonymous");
+    expect(() => state.assertSessionCurrent(snap)).toThrow(state.SessionChangedError); // unchanged
+    expect(() => state.assertSessionUnchanged(snap)).not.toThrow();
+
+    // A sign-in clears the revoke and moves the generation.
+    state.clearRevoked();
+    state.invalidateSessionState();
+    expect(() => state.assertSessionUnchanged(snap)).toThrow(state.SessionChangedError);
+  });
+
+  it("an authenticated snapshot from before the revoke is refused", async () => {
+    setSessionFile(sessionJson());
+    const before = state.captureSession();
+    expect(before.state.kind).toBe("authenticated");
+    await state.revokeSession();
+    expect(() => state.assertSessionUnchanged(before)).toThrow(state.SessionChangedError);
+  });
+
+  it("an authenticated snapshot is refused while the revoke flag is up, even at the current generation", async () => {
+    setSessionFile(sessionJson());
+    const snap = state.captureSession();
+    expect(() => state.assertSessionUnchanged(snap)).not.toThrow();
+    await state.revokeSession();
+    // Defence in depth: no real snapshot is both authenticated and of a revoked generation.
+    const forged = { ...snap, generation: state.captureSession().generation };
+    expect(() => state.assertSessionUnchanged(forged)).toThrow(state.SessionChangedError);
+  });
+
+  it("an account change (file replaced) is refused like assertSessionCurrent", () => {
+    setSessionFile(sessionJson());
+    const snap = state.captureSession();
+    setSessionFile(sessionJson([makeCookie({ value: "OTHER" })]));
+    expect(() => state.assertSessionUnchanged(snap)).toThrow(state.SessionChangedError);
+  });
+});
+
 describe("rethrowSessionChange", () => {
   it("rethrows a SessionChangedError itself or anywhere in the cause chain, and nothing else", async () => {
     const { rethrowSessionChange, SessionChangedError } = await loadState();

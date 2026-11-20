@@ -372,18 +372,20 @@ Not applicable: invalid, ambiguous, locked, source, homebrew, pagination, gate
 
 ## `ddb_navigate`
 
-Scenarios: normal, invalid
-Not applicable: not-found, ambiguous, locked, edition, source, homebrew, pagination, gate, logged-out
+Scenarios: normal, invalid, logged-out
+Not applicable: not-found, ambiguous, locked, edition, source, homebrew, pagination, gate
 
 - normal: open a public test character sheet or a compendium page (read-only) → page text, wrapped as untrusted.
 - invalid: an off-site URL (e.g. https://example.com) → refused by the allowlist.
+- logged-out: right after `ddb_logout` in one session, open a public compendium page → the page as a signed-out visitor sees it, never "Session changed".
 
 ## `ddb_get_page`
 
-Scenarios: normal
-Not applicable: invalid, not-found, ambiguous, locked, edition, source, homebrew, pagination, gate, logged-out
+Scenarios: normal, logged-out
+Not applicable: invalid, not-found, ambiguous, locked, edition, source, homebrew, pagination, gate
 
 - normal: after `ddb_navigate` → the current page's text, wrapped as untrusted.
+- logged-out: after the logged-out `ddb_navigate` above → that page's text, never "Session changed".
 
 ## `ddb_interact`
 

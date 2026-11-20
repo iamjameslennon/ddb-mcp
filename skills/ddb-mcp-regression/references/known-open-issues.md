@@ -45,9 +45,6 @@ Shows up as: `ddb_search_racial_traits` listing a legacy trait that dndbeyond.co
 
 ## Browser tools
 
-### (bs) Browser tools refuse after `ddb_logout` until the next login
-Shows up as: `ddb_navigate`, `ddb_interact` or `ddb_get_page` answering "Session changed" after a `ddb_logout`, until `ddb_login` runs again.
-
 ### (bx) Redirect-guard residuals
 Shows up as (none of these is a new finding): a `ddb_navigate` to a URL that D&D Beyond redirects loading the final page twice (visible only in network logs); a form POST (or a navigation carrying a foreign `Origin` header) following its redirects natively; a GET navigation started from another site (a `target=_top` link) being walked by the guard, which sends no `Sec-Fetch-Site`; a popup opened by a page reaching any host on its first load; `ddb_navigate` showing a bot-check page where a plain Chrome works, because a walked page load goes through Node's HTTP client (a check keyed on the TLS fingerprint); a SameSite=Strict or partitioned cookie that a same-site chain rotates or sets mid-chain not being sent on later walked hops (fails closed; no Strict cookies today); when that client can't connect at all (a mandatory proxy, say), the load falls back to Chrome's own request, whose redirects Chrome then follows natively. A new finding is `ddb_navigate`'s own GET (or a D&D Beyond link it follows) requesting a non-D&D Beyond host through a redirect, or `ddb_navigate`, `ddb_interact` or `ddb_get_page` returning content from or acting on a page off the allowlist.
 

@@ -15,6 +15,9 @@ const LEAKY_MESSAGE =
   "Browser logs:\n" +
   "<launching> /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=/x\n";
 
+// The context and the snapshot getBoundContext hands back together (carry-over (bs)).
+const BOUND = vi.hoisted(() => ({ context: { bound: "context" }, snapshot: { generation: 7, state: { kind: "anonymous" } } }));
+
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   interact: vi.fn(),
@@ -38,6 +41,7 @@ vi.mock("../src/browser.js", async (orig) => {
     ...real,
     getBrowser: vi.fn(async () => ({})),
     getContext: vi.fn(async () => ({})),
+    getBoundContext: vi.fn(async () => ({ context: BOUND.context, snapshot: BOUND.snapshot })),
     closeBrowser: mocks.closeBrowser,
   };
 });
@@ -123,5 +127,25 @@ describe("browser tool errors print only the safe first line (F8)", () => {
     expectNoPlaywrightLog(textOf(result));
     expect(loggedText()).toContain("ddb_close_browser error: Timeout 30000ms exceeded.");
     expectNoPlaywrightLog(loggedText());
+  });
+});
+
+describe("browser tools bind the call to the context's own snapshot (carry-over (bs))", () => {
+  it("ddb_navigate passes getBoundContext's snapshot", async () => {
+    mocks.navigate.mockResolvedValue("ok");
+    await call("ddb_navigate", { url: "https://www.dndbeyond.com/monsters" });
+    expect(mocks.navigate).toHaveBeenCalledWith(BOUND.context, "https://www.dndbeyond.com/monsters", BOUND.snapshot);
+  });
+
+  it("ddb_interact passes getBoundContext's snapshot", async () => {
+    mocks.interact.mockResolvedValue("ok");
+    await call("ddb_interact", { action: "screenshot", selector: "body" });
+    expect(mocks.interact).toHaveBeenCalledWith(BOUND.context, "screenshot", "body", undefined, BOUND.snapshot);
+  });
+
+  it("ddb_get_page passes getBoundContext's snapshot", async () => {
+    mocks.getCurrentPageContent.mockResolvedValue("ok");
+    await call("ddb_get_page", {});
+    expect(mocks.getCurrentPageContent).toHaveBeenCalledWith(BOUND.context, BOUND.snapshot);
   });
 });

@@ -5,7 +5,7 @@ import { createRequire } from "module";
 import { dirname, join } from "path";
 import {
   invalidateSessionCache, tightenSessionPermissions, SESSION_DIR, SESSION_PATH,
-  onSessionInvalidated, captureSession, assertSessionCurrent, SessionChangedError,
+  onSessionInvalidated, captureSession, assertSessionUnchanged, SessionChangedError,
   decodeCobaltToken, MalformedCobaltTokenError,
 } from "./session-fetch.js";
 import { sanitizeSessionStorage, writeSessionFile, type PlaywrightCookie, type SessionSnapshot } from "./session-state.js";
@@ -180,12 +180,24 @@ export async function getBrowser(headless = true): Promise<Browser> {
 }
 
 export async function getContext(browser: Browser): Promise<BrowserContext> {
+  return (await getBoundContext(browser)).context;
+}
+
+/**
+ * The shared context together with the snapshot it belongs to: the one it was
+ * created under, or (reused) one of the same generation. The browser tools
+ * pass this snapshot to navigate/interact/getCurrentPageContent, so a session
+ * change after this returns (a ddb_logout, say) refuses the call before any
+ * page action, instead of the call taking a fresh signed-out snapshot and
+ * using the old signed-in context with it (carry-over (bs), Codex review).
+ */
+export async function getBoundContext(browser: Browser): Promise<{ context: BrowserContext; snapshot: SessionSnapshot }> {
   // Refresh on-disk authority first: a pending logout/replacement fires the
   // invalidation hook, which detaches contextInstance so we never hand back a
   // context bound to the revoked account.
   const snapshot = captureSession();
   if (contextInstance && contextGeneration === snapshot.generation) {
-    return contextInstance;
+    return { context: contextInstance, snapshot };
   }
   // A leftover context from an older generation (defensive — the hook nulls it).
   if (contextInstance) {
@@ -203,16 +215,17 @@ export async function getContext(browser: Browser): Promise<BrowserContext> {
 
   // Bind the pending creation to its opening generation: if the account changed
   // while newContext() was in flight, abandon this context rather than install
-  // it under the new generation.
+  // it under the new generation. assertSessionUnchanged: after ddb_logout the
+  // snapshot is anonymous and the context signed out, which is fine (bs).
   try {
-    assertSessionCurrent(snapshot);
+    assertSessionUnchanged(snapshot);
   } catch (e) {
     await created.close().catch(() => { /* best-effort */ });
     throw e;
   }
   contextInstance = created;
   contextGeneration = snapshot.generation;
-  return created;
+  return { context: created, snapshot };
 }
 
 /** A second ddb_login while one is running. */

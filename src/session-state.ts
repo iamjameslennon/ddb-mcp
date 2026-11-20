@@ -472,6 +472,22 @@ export function assertSessionCurrent(snapshot: SessionSnapshot): void {
 }
 
 /**
+ * assertSessionCurrent for consumers that also work signed out (the browser
+ * tools; carry-over (bs)). Throws SessionChangedError if the generation moved
+ * since `snapshot`, or if `snapshot` is authenticated and a revoke is in
+ * effect. Unlike assertSessionCurrent, an anonymous snapshot taken after
+ * ddb_logout stays current until the next sign-in moves the generation: it
+ * carries no credentials (refreshAuthority answers `revoked` while the flag is
+ * up), so work bound to it is signed-out work, as on a fresh logged-out server.
+ */
+export function assertSessionUnchanged(snapshot: SessionSnapshot): void {
+  refreshAuthority();
+  if (snapshot.generation !== currentGeneration || (revoked && snapshot.state.kind === "authenticated")) {
+    throw new SessionChangedError();
+  }
+}
+
+/**
  * Register a callback that runs on every session invalidation. The callback
  * should synchronously detach/clear in-memory state; if it returns a promise,
  * that promise is treated as tracked asynchronous cleanup and awaited by

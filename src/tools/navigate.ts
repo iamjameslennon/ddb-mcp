@@ -1,9 +1,11 @@
 import { BrowserContext, Page, Route } from "playwright";
-import { mkdirSync } from "fs";
+import { mkdirSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { dirname, join } from "path";
 import { getPage } from "../browser.js";
-import { captureSession, assertSessionCurrent } from "../session-fetch.js";
+// assertSessionUnchanged, not assertSessionCurrent: the browser tools also work
+// signed out, including after ddb_logout (carry-over (bs)).
+import { captureSession, assertSessionUnchanged, type SessionSnapshot } from "../session-fetch.js";
 import { wrapUntrusted } from "../utils.js";
 
 // Hosts the browser tools are allowed to navigate to. The wildcard form
@@ -275,12 +277,21 @@ export function assertSafeSelector(selector: string): void {
   }
 }
 
-export async function navigate(context: BrowserContext, url: string): Promise<string> {
-  // Bind this authenticated browser action to the current generation so a
-  // logout/replacement mid-navigation refuses to return account-derived content.
-  const snapshot = captureSession();
+/**
+ * `snapshot` is the one the context belongs to (getBoundContext; the server
+ * always passes it). It is checked before any page action as well as before
+ * returning, so a session change since the context was handed out refuses the
+ * call (carry-over (bs)). Without it, the call takes a fresh snapshot.
+ */
+export async function navigate(context: BrowserContext, url: string, snapshot: SessionSnapshot = captureSession()): Promise<string> {
+  // Bind this browser action to the context's generation so a
+  // logout/replacement before or mid-navigation refuses to return account-derived content.
+  assertSessionUnchanged(snapshot);
   const page = await getPage(context);
   await ensureNavigationGuard(context);
+  // Re-check after those awaits, before anything else: a session change during
+  // them stops the load before it starts, and is the error reported.
+  assertSessionUnchanged(snapshot);
 
   // Only allow D&D Beyond URLs — validate the actual hostname.
   let validatedUrl: URL;
@@ -337,7 +348,7 @@ export async function navigate(context: BrowserContext, url: string): Promise<st
   const truncated = content.length > 8000 ? content.slice(0, 8000) + "\n\n[Content truncated — use ddb_read_book or a more specific URL to get full content]" : content;
 
   // Refresh authority before returning account-derived scraped content.
-  assertSessionCurrent(snapshot);
+  assertSessionUnchanged(snapshot);
 
   // Wrap scraped content in delimiters so callers can clearly separate
   // trusted tool output from untrusted page content (potential prompt-
@@ -350,12 +361,17 @@ export async function interact(
   context: BrowserContext,
   action: "click" | "fill" | "screenshot",
   selector: string,
-  value?: string
+  value?: string,
+  snapshot: SessionSnapshot = captureSession(),
 ): Promise<string> {
   assertSafeSelector(selector);
-  const snapshot = captureSession();
+  // See navigate(): the context's own snapshot, checked before any page action.
+  assertSessionUnchanged(snapshot);
   const page = await getPage(context);
   await ensureNavigationGuard(context);
+  // Re-check after the awaits above, before anything else: no click, fill or
+  // capture under a session that changed while the page and guard were set up.
+  assertSessionUnchanged(snapshot);
   // Never fill, click, wait on or capture a page that isn't an allowlisted
   // DDB page (a foreign page could take a typed value anywhere).
   assertActionablePage(page);
@@ -382,7 +398,7 @@ export async function interact(
         );
       }
       // Refresh authority before reporting an authenticated action complete.
-      assertSessionCurrent(snapshot);
+      assertSessionUnchanged(snapshot);
       return `Clicked element: ${selector}`;
     }
 
@@ -390,7 +406,7 @@ export async function interact(
       if (value === undefined) throw new Error("'value' is required for fill action.");
       await page.locator(selector).first().fill(value);
       await page.waitForTimeout(500);
-      assertSessionCurrent(snapshot);
+      assertSessionUnchanged(snapshot);
       return `Filled '${selector}'.`;
     }
 
@@ -406,7 +422,11 @@ export async function interact(
           `Ensure ~/Downloads exists and is writable.`
         );
       }
-      await page.screenshot({ path: screenshotPath, fullPage: false });
+      // Capture to memory and write only after the session check: a session
+      // change during the capture leaves no image of the previous account's page.
+      const image = await page.screenshot({ fullPage: false });
+      assertSessionUnchanged(snapshot);
+      writeFileSync(screenshotPath, image);
       return `Screenshot saved to: ${screenshotPath}`;
     }
 
@@ -415,10 +435,13 @@ export async function interact(
   }
 }
 
-export async function getCurrentPageContent(context: BrowserContext): Promise<string> {
-  const snapshot = captureSession();
+export async function getCurrentPageContent(context: BrowserContext, snapshot: SessionSnapshot = captureSession()): Promise<string> {
+  // See navigate(): the context's own snapshot, checked before any page action.
+  assertSessionUnchanged(snapshot);
   const page = await getPage(context);
   await ensureNavigationGuard(context);
+  // Re-check after the awaits above, before anything else (and before reading the page).
+  assertSessionUnchanged(snapshot);
   const url = page.url();
   if (url === "about:blank") {
     throw new Error("No page is loaded yet — call ddb_navigate first.");
@@ -441,7 +464,7 @@ export async function getCurrentPageContent(context: BrowserContext): Promise<st
 
   const truncated = content.length > 8000 ? content.slice(0, 8000) + "\n[truncated]" : content;
   // Refresh authority before returning account-derived scraped content.
-  assertSessionCurrent(snapshot);
+  assertSessionUnchanged(snapshot);
   // See note in navigate() — wrap scraped content so untrusted page text is
   // visibly separated from trusted tool output.
   return `Current URL: ${url}\n\n${wrapUntrusted(truncated)}`;

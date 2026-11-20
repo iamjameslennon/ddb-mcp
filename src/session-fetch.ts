@@ -53,6 +53,7 @@ export {
   onSessionInvalidated,
   captureSession,
   assertSessionCurrent,
+  assertSessionUnchanged,
   type SessionSnapshot,
 } from "./session-state.js";
 

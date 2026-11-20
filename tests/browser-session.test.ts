@@ -406,12 +406,51 @@ describe("fix round 1: the shared context is seeded from a captureSession() snap
     expect(sessionFileExists).toBe(true);
 
     const shared = makeBrowser();
-    // While revoked, getContext() still refuses afterwards (SessionChangedError,
-    // unchanged); what matters here is that the context never held the cookies.
-    await expect(browser.getContext(shared as never)).rejects.toThrow(sf.SessionChangedError);
+    // While revoked, getContext() hands back a signed-out context (carry-over
+    // (bs)); what matters here is that the context never holds the cookies.
+    await expect(browser.getContext(shared as never)).resolves.toBeDefined();
     const options = shared.newContext.mock.calls[0][0] as Record<string, unknown>;
     expect(options).not.toHaveProperty("storageState");
     expect(JSON.stringify(options)).not.toContain("REVOKED_SECRET");
+  });
+
+  it("(bs) after a clean logout getContext() gives a signed-out context, reused until the next sign-in", async () => {
+    fsMock.rmSync.mockImplementation(() => {});
+    setSessionFile(sessionJson("SECRET_A"));
+    observeTransition();
+    await state.revokeSession();
+    setSessionFile(null);
+
+    const shared = makeBrowser();
+    const first = await browser.getContext(shared as never);
+    expect(shared.newContext.mock.calls[0][0]).not.toHaveProperty("storageState");
+    expect(await browser.getContext(shared as never)).toBe(first);
+
+    // A sign-in (as saveVerifiedSession publishes it) moves the generation: a fresh context, seeded.
+    setSessionFile(sessionJson("SECRET_B"));
+    sf.invalidateSessionCache();
+    const after = await browser.getContext(shared as never);
+    expect(after).not.toBe(first);
+    expect(JSON.stringify(shared.newContext.mock.calls[1][0])).toContain("SECRET_B");
+  });
+
+  it("(bs) a sign-in landing while the signed-out context is being created abandons it", async () => {
+    fsMock.rmSync.mockImplementation(() => {});
+    setSessionFile(sessionJson("SECRET_A"));
+    observeTransition();
+    await state.revokeSession();
+    setSessionFile(null);
+
+    const shared = makeBrowser();
+    const pendingCtx = makeContext();
+    let release!: () => void;
+    shared.newContext = vi.fn(() => new Promise<FakeContext>((r) => { release = () => r(pendingCtx); }));
+    const p = browser.getContext(shared as never).catch((e) => e);
+    setSessionFile(sessionJson("SECRET_B"));
+    sf.invalidateSessionCache();
+    release();
+    expect(await p).toBeInstanceOf(sf.SessionChangedError);
+    expect(pendingCtx._closed).toBe(true);
   });
 
   it("seeds no storage state when there is no session", async () => {

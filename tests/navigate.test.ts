@@ -166,6 +166,165 @@ describe("navigate refuses scraped content across a session transition", () => {
 
     await expect(nav.getCurrentPageContent(context)).rejects.toThrow(sf.SessionChangedError);
   });
+
+  // Carry-over (bs): after ddb_logout the browser tools work signed out, as on
+  // a fresh logged-out server, instead of refusing until the next ddb_login.
+  describe("after ddb_logout (bs)", () => {
+    async function logout(): Promise<void> {
+      setSessionFile(sessionJson("SECRET_A"));
+      sf.hasValidSession();
+      const ss = await import("../src/session-state.js");
+      await ss.revokeSession();
+      setSessionFile(null);
+    }
+    const URL_1 = "https://www.dndbeyond.com/monsters/16762-aboleth";
+
+    it("navigate() returns the page", async () => {
+      await logout();
+      const out = await nav.navigate(makeFake(URL_1, () => {}), URL_1);
+      expect(out).toContain("SECRET_SCRAPE");
+    });
+
+    it("getCurrentPageContent() returns the page", async () => {
+      await logout();
+      const out = await nav.getCurrentPageContent(makeFake(URL_1, () => {}));
+      expect(out).toContain("SECRET_SCRAPE");
+    });
+
+    it("interact() fills a field", async () => {
+      await logout();
+      const fake = makeFake(URL_1, () => {}) as unknown as { pages: () => Array<Record<string, unknown>> };
+      const page = fake.pages()[0];
+      const loc = { filter: () => loc, first: () => loc, fill: async () => {}, waitFor: async () => {}, click: async () => {} };
+      page.locator = () => loc;
+      await expect(nav.interact(fake as never, "fill", 'input[name="search"]', "goblin")).resolves.toMatch(/Filled/);
+    });
+
+    // Codex review: the context was obtained signed in, then ddb_logout landed
+    // before the tool ran. Bound to the context's own snapshot, the call refuses
+    // before any page action, not only at the end.
+    describe("a logout between getting the signed-in context and using it", () => {
+      async function signedInThenLogout() {
+        setSessionFile(sessionJson("SECRET_A"));
+        sf.hasValidSession();
+        const bound = sf.captureSession();
+        expect(bound.state.kind).toBe("authenticated");
+        const ss = await import("../src/session-state.js");
+        await ss.revokeSession();
+        setSessionFile(null);
+        let touched = 0;
+        const context = makeFake(URL_1, () => { touched++; });
+        const page = (context as unknown as { pages: () => Array<Record<string, unknown>> }).pages()[0];
+        page.goto = async () => { touched++; };
+        page.screenshot = async () => { touched++; };
+        return { bound, context, touched: () => touched };
+      }
+
+      it("navigate() refuses without loading the page", async () => {
+        const { bound, context, touched } = await signedInThenLogout();
+        await expect(nav.navigate(context, URL_1, bound)).rejects.toThrow(sf.SessionChangedError);
+        expect(touched()).toBe(0);
+      });
+
+      it("getCurrentPageContent() refuses without reading the page", async () => {
+        const { bound, context, touched } = await signedInThenLogout();
+        await expect(nav.getCurrentPageContent(context, bound)).rejects.toThrow(sf.SessionChangedError);
+        expect(touched()).toBe(0);
+      });
+
+      it("interact() refuses a screenshot without taking it", async () => {
+        const { bound, context, touched } = await signedInThenLogout();
+        await expect(nav.interact(context, "screenshot", "body", undefined, bound)).rejects.toThrow(sf.SessionChangedError);
+        expect(touched()).toBe(0);
+      });
+    });
+
+    it("a session change during a screenshot refuses it and writes no file (Codex review)", async () => {
+      setSessionFile(sessionJson("SECRET_A"));
+      sf.hasValidSession();
+      const context = makeFake(URL_1, () => {});
+      const page = (context as unknown as { pages: () => Array<Record<string, unknown>> }).pages()[0];
+      page.screenshot = async () => { setSessionFile(sessionJson("SECRET_B")); return Buffer.from("png"); };
+      await expect(nav.interact(context, "screenshot", "body")).rejects.toThrow(sf.SessionChangedError);
+      expect(fsMock.writeFileSync).not.toHaveBeenCalled();
+    });
+
+    it("a screenshot with no session change is written to ~/Downloads", async () => {
+      await logout();
+      const context = makeFake(URL_1, () => {});
+      const page = (context as unknown as { pages: () => Array<Record<string, unknown>> }).pages()[0];
+      page.screenshot = async (opts?: { path?: string }) => { expect(opts?.path).toBeUndefined(); return Buffer.from("png"); };
+      const out = await nav.interact(context, "screenshot", "body");
+      expect(out).toMatch(/^Screenshot saved to: .*ddb-screenshot-\d+\.png$/);
+      expect(fsMock.writeFileSync).toHaveBeenCalledWith(expect.stringMatching(/Downloads.*ddb-screenshot-\d+\.png$/), Buffer.from("png"));
+    });
+
+    // Codex review round 2: a session change during getPage()/the guard setup,
+    // after the entry check, must still stop the first page operation.
+    describe("a session change while the page and guard are being set up", () => {
+      function swapDuringGuard() {
+        setSessionFile(sessionJson("SECRET_A"));
+        sf.hasValidSession();
+        const bound = sf.captureSession();
+        let touched = 0;
+        const context = makeFake(URL_1, () => { touched++; }) as unknown as Record<string, unknown> & { pages: () => Array<Record<string, unknown>> };
+        context.route = async () => { setSessionFile(sessionJson("SECRET_B")); };
+        const page = context.pages()[0];
+        page.goto = async () => { touched++; };
+        const loc = { filter: () => loc, first: () => loc, fill: async () => { touched++; }, waitFor: async () => {}, click: async () => { touched++; } };
+        page.locator = () => loc;
+        page.screenshot = async () => { touched++; return Buffer.from("png"); };
+        return { bound, context: context as never, touched: () => touched };
+      }
+
+      it("navigate() never starts the load", async () => {
+        const { bound, context, touched } = swapDuringGuard();
+        await expect(nav.navigate(context, URL_1, bound)).rejects.toThrow(sf.SessionChangedError);
+        expect(touched()).toBe(0);
+      });
+
+      it("interact() never fills", async () => {
+        const { bound, context, touched } = swapDuringGuard();
+        await expect(nav.interact(context, "fill", 'input[name="search"]', "goblin", bound)).rejects.toThrow(sf.SessionChangedError);
+        expect(touched()).toBe(0);
+      });
+
+      it("interact() never clicks", async () => {
+        const { bound, context, touched } = swapDuringGuard();
+        await expect(nav.interact(context, "click", "button", undefined, bound)).rejects.toThrow(sf.SessionChangedError);
+        expect(touched()).toBe(0);
+      });
+
+      it("the session change wins over page-state errors (Codex review round 3)", async () => {
+        for (const run of [
+          (c: never, b: never) => nav.getCurrentPageContent(c, b),
+          (c: never, b: never) => nav.interact(c, "screenshot", "body", undefined, b),
+        ]) {
+          const { bound, context } = swapDuringGuard();
+          ((context as unknown as { pages: () => Array<Record<string, unknown>> }).pages()[0]).url = () => "about:blank";
+          await expect(run(context, bound as never)).rejects.toThrow(sf.SessionChangedError);
+        }
+        const { bound, context } = swapDuringGuard();
+        await expect(nav.navigate(context, "not a url", bound)).rejects.toThrow(sf.SessionChangedError);
+      });
+
+      it("getCurrentPageContent() never reads the page", async () => {
+        const { bound, context, touched } = swapDuringGuard();
+        await expect(nav.getCurrentPageContent(context, bound)).rejects.toThrow(sf.SessionChangedError);
+        expect(touched()).toBe(0);
+      });
+    });
+
+    it("a sign-in landing mid-navigate still refuses the signed-out scrape", async () => {
+      await logout();
+      const context = makeFake(URL_1, () => {
+        // ddb_login saves a session: the revoke is cleared and the generation moves.
+        setSessionFile(sessionJson("SECRET_B"));
+        sf.invalidateSessionCache();
+      });
+      await expect(nav.navigate(context, URL_1)).rejects.toThrow(sf.SessionChangedError);
+    });
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

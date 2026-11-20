@@ -71,6 +71,7 @@ This module is the single authority on which account is active. It sits below ev
 - `captureSession()` re-reads the session file on **every** call. That re-read, not a watcher, is how a deleted, replaced or corrupt file gets noticed at the next protected operation.
 - Any change advances an opaque, process-local **generation**. That aborts in-flight work, drops cached state and fires every `onSessionInvalidated()` callback.
 - Every credential access binds to a `SessionSnapshot` and re-checks authority before dispatch.
+- `assertSessionCurrent()` also refuses while a `ddb_logout` revoke is in effect, even an anonymous snapshot. Consumers that also work signed out use `assertSessionUnchanged()` instead (only the browser tools, which act under the snapshot `getBoundContext()` returns with the shared context; carry-over (bs)).
 - A file that parses but isn't a storage state counts as `anonymous`/`malformed`.
 - On read, non-`dndbeyond.com` cookies are scrubbed and the file is rewritten atomically. Stale `session.json.<pid>.tmp` files from dead writers are swept.
 - `revokeSession()` (behind `ddb_logout`, local-only):

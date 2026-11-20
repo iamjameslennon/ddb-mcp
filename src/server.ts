@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
-import { getBrowser, getContext, closeBrowser, beginLoginSession, endLoginSession } from "./browser.js";
+import { getBrowser, getBoundContext, closeBrowser, beginLoginSession, endLoginSession } from "./browser.js";
 import { login, LOGIN_TIMEOUT_MS, LOGIN_PROGRESS_INTERVAL_MS } from "./auth.js";
 import { safeErrorLine } from "./utils.js";
 import { revokeSession } from "./session-state.js";
@@ -43,11 +43,11 @@ const SOURCE_PARAM = z.string().optional().describe("Book: slug (phb-2024), shor
 const READ_ONLY_NET: ToolAnnotations = { readOnlyHint: true, openWorldHint: true };
 const READ_ONLY_LOCAL: ToolAnnotations = { readOnlyHint: true, openWorldHint: false };
 
-// Lazy-initialized shared browser context (headless by default)
+// Lazy-initialized shared browser context (headless by default), with the
+// session snapshot it belongs to: the browser tools act under that snapshot.
 async function getSharedContext() {
   const browser = await getBrowser();
-  const context = await getContext(browser);
-  return context;
+  return getBoundContext(browser);
 }
 
 
@@ -482,8 +482,8 @@ server.tool(
   READ_ONLY_NET,
   async ({ url }) => {
     try {
-      const context = await getSharedContext();
-      const content = await navigate(context, url);
+      const { context, snapshot } = await getSharedContext();
+      const content = await navigate(context, url, snapshot);
       return { content: [{ type: "text", text: content }] };
     } catch (err) {
       const msg = safeErrorLine(err);
@@ -535,8 +535,8 @@ server.tool(
       };
     }
     try {
-      const context = await getSharedContext();
-      const result = await interact(context, action, selector, value);
+      const { context, snapshot } = await getSharedContext();
+      const result = await interact(context, action, selector, value, snapshot);
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const msg = safeErrorLine(err);
@@ -554,8 +554,8 @@ server.tool(
   READ_ONLY_NET,
   async () => {
     try {
-      const context = await getSharedContext();
-      const content = await getCurrentPageContent(context);
+      const { context, snapshot } = await getSharedContext();
+      const content = await getCurrentPageContent(context, snapshot);
       return { content: [{ type: "text", text: content }] };
     } catch (err) {
       const msg = safeErrorLine(err);
