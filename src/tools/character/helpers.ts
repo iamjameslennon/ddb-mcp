@@ -14,6 +14,18 @@ export const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
 /** The object entries of an array field: a null or non-object entry (malformed data) is dropped. */
 export const records = <T = Record<string, unknown>>(v: unknown): T[] =>
   arr<unknown>(v).filter(e => e != null && typeof e === "object" && !Array.isArray(e)) as T[];
+/** Whether a value is a plain object record (not null, not an array). */
+export const isRecord = (v: unknown): v is Record<string, unknown> =>
+  v != null && typeof v === "object" && !Array.isArray(v);
+/**
+ * The slug a display name stands for, as D&D Beyond spells subTypes: lowercase,
+ * runs of other characters as one "-", none at either end. With
+ * `dropApostrophes`, apostrophes (' and ’) are removed first, so "Thieves' Tools"
+ * and "Navigator's Tools" give `thieves-tools` and `navigators-tools`.
+ */
+export const slugOf = (name: string, dropApostrophes = false): string =>
+  (dropApostrophes ? name.toLowerCase().replace(/['’]/g, "") : name.toLowerCase())
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 export const obj = (v: unknown): Record<string, unknown> =>
   v != null && typeof v === "object" && !Array.isArray(v)
     ? (v as Record<string, unknown>) : {};

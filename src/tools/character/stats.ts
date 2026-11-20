@@ -9,9 +9,9 @@
  * pass could lift these into structured data, but that's a separate concern.
  */
 
-import { arr, records, capitalize, knownAndCustomLines, hasRemarkableAthlete, isBonusMod, isConditionalMod, isExpertiseMod, isHalfProficiencyMod, isLanguageMod, isProficiencyMod, isSenseMod, isSetBaseMod, isSetMod, num, obj, signed, statKeys, statNames, str, weaponWordOrder } from "./helpers.js";
+import { arr, records, capitalize, knownAndCustomLines, hasRemarkableAthlete, isBonusMod, isConditionalMod, isExpertiseMod, isHalfProficiencyMod, isLanguageMod, isProficiencyMod, isSenseMod, isSetBaseMod, isSetMod, num, obj, signed, slugOf, statKeys, statNames, str, weaponWordOrder } from "./helpers.js";
 import type { CharData, CoreStats, InventoryItem, Mod } from "./types.js";
-import { bucketAnyHomebrew, entityKey, grantingEntities, grantingEntityNames, hiddenOptionIds, isVisibleAction, visibleClassFeatureIds } from "./actions.js";
+import { bucketAnyHomebrew, entityKey, grantingEntities, grantingEntityNames, hiddenOptionIds, isVisibleAction, visibleClassFeatureIds } from "./granting.js";
 import { isActiveItemMod } from "./item-gate.js";
 import { wrapUntrusted } from "../../utils.js";
 import { LANGUAGE_SLUGS, PROFICIENCY_SLUGS } from "./modifier-slugs.js";
@@ -49,7 +49,7 @@ export interface Stats {
 }
 
 // 18 standard skills, with the index of the ability stat they key off of.
-const SKILLS: ReadonlyArray<readonly [string, number]> = [
+export const SKILLS: ReadonlyArray<readonly [string, number]> = [
   ["Acrobatics", 1], ["Animal Handling", 4], ["Arcana", 3], ["Athletics", 0],
   ["Deception", 5], ["History", 3], ["Insight", 4], ["Intimidation", 5],
   ["Investigation", 3], ["Medicine", 4], ["Nature", 3], ["Perception", 4],
@@ -149,7 +149,7 @@ function computeSkillBonuses(core: CoreStats): SkillBonus[] {
   // (`activeGlobalBonus`). Source: Stone of Good Luck (Luckstone).
   const globalAbilityCheckBonus = activeGlobalBonus(core, "ability-checks");
   return SKILLS.map(([skillName, statIdx]) => {
-    const slug = skillName.toLowerCase().replace(/ /g, "-").replace(/'/g, "");
+    const slug = slugOf(skillName, true);
     const isProficient = skillProfSubTypes.has(slug);
     const isExpertise = skillExpertiseSubTypes.has(slug);
     const isJoatHalf = !isProficient && (skillHalfProfSubTypes.has(slug) || hasJackOfAllTrades);
@@ -348,10 +348,6 @@ const LANGUAGE_NAMES_BY_ID: Record<number, string> = {
   165: "Skin Cant", 166: "Communication Spores", 167: "Archosauric",
 };
 
-/** The slug a display name stands for: lowercase, apostrophes dropped, other runs of non-alphanumerics as "-". */
-const slugOf = (name: string): string =>
-  name.toLowerCase().replace(/['’]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-
 /**
  * D&D Beyond's display name for a known proficiency/language slug: the modifier's
  * `friendlySubtypeName`, only when it is a string that is the slug spelled out
@@ -359,7 +355,7 @@ const slugOf = (name: string): string =>
  */
 function friendlyName(m: Mod, sub: string): string {
   const name = m.friendlySubtypeName;
-  return typeof name === "string" && slugOf(name) === sub ? name.trim() : "";
+  return typeof name === "string" && slugOf(name, true) === sub ? name.trim() : "";
 }
 
 // entityTypeId on a proficiency modifier says what the subType names (live ids):
@@ -415,7 +411,7 @@ function computeProficiencies(char: CharData, allMods: readonly Mod[], inventory
       if (armorProfMap[sub]) add(tArmor, armorProfMap[sub]);
       else if (weaponProfMap[sub]) add(tWeapons, weaponProfMap[sub]);
       else if (sub.includes("saving-throws") || sub.includes("-skill") ||
-               SKILLS.some(([n]) => n.toLowerCase().replace(/ /g, "-").replace(/'/g, "") === sub)) {
+               SKILLS.some(([n]) => slugOf(n, true) === sub)) {
         // skill/save prof — handled elsewhere
       } else if (!sub.includes("-score") && sub.length > 0 &&
                  !statKeys.some(k => sub.startsWith(k))) {

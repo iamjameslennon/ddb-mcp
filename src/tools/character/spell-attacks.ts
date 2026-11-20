@@ -13,7 +13,7 @@
 
 import { wrapIfHomebrew } from "../../utils.js";
 import { isActiveItemMod } from "./item-gate.js";
-import { num, obj, records, shownHomebrew, signed, statNames, str } from "./helpers.js";
+import { num, obj, records, shownHomebrew, signed, slugOf, statNames, str } from "./helpers.js";
 import { castLevel, slotOrdinal } from "./slots.js";
 import { actionSpells, type ActionSpell, classSpellcastingAbilityId, spellAttackAndDc, spellBonuses } from "./spells.js";
 import type { CoreStats, Mod } from "./types.js";
@@ -25,7 +25,6 @@ export { castLevel, lowestSharedSlot, pactSlotLevel } from "./slots.js";
 
 const higherLevels = (r: Rec): Rec[] => records(obj(r.atHigherLevels).higherLevelDefinitions);
 const diceString = (d: unknown): string => str(obj(d).diceString).trim();
-const slug = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 /**
  * A cantrip damage modifier's dice at `totalLevel`: its `die`, replaced by the
  * dice of the highest typeId-15 `higherLevelDefinitions` entry whose level is
@@ -252,8 +251,8 @@ function spellRowParts(ctx: SpellRowCtx, { spell, list, bucket }: ActionSpell):
     : num(spell.spellCastingAbilityId) || (bucket === "class" ? singleCasterAbility : 0);
   const nums = spellAttackAndDc(abilityId, statMods, profBonus, bonuses);
 
-  const spellSlug = slug(str(def.name));
-  const classSlug = list && level === 0 ? slug(list.className) : "";
+  const spellSlug = slugOf(str(def.name));
+  const classSlug = list && level === 0 ? slugOf(list.className) : "";
   const flatBonus = activeMods
     .filter(m => (spellSlug && m.type === spellSlug && m.subType === "bonus-damage")
       || (classSlug && m.type === "bonus" && m.subType === `${classSlug}-cantrip-damage`))

@@ -10,7 +10,7 @@
  */
 
 import { arr, records, featureDefinition, hasRemarkableAthlete, isBonusMod, isHalfProficiencyMod, isSetMod, num, obj, signed, str } from "./helpers.js";
-import { OPTION_TYPE, hiddenOptionIds, visibleClassFeatureIds } from "./actions.js";
+import { OPTION_TYPE, hiddenOptionIds, visibleClassFeatureIds } from "./granting.js";
 import { isActiveItemMod } from "./item-gate.js";
 import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
 

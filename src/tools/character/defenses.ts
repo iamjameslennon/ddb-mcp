@@ -5,7 +5,7 @@
  * Phase 5b of the character.ts refactor — see docs/character-refactor.md.
  */
 
-import { capitalize, isImmunityMod, isResistanceMod, isVulnerabilityMod, knownAndCustomLines, records, str } from "./helpers.js";
+import { capitalize, isImmunityMod, isResistanceMod, isVulnerabilityMod, knownAndCustomLines, records, slugOf, str } from "./helpers.js";
 import { CONDITION_NAMES_BY_ID, DAMAGE_ADJUSTMENTS_BY_ID, DAMAGE_ADJUSTMENT_SLUGS } from "./modifier-slugs.js";
 import type { CoreStats, Mod } from "./types.js";
 
@@ -21,9 +21,6 @@ export interface Defenses {
   vulnerabilities: DefenseList;
   conditions: string[];
 }
-
-/** The slug a display name stands for: lowercase, other runs of non-alphanumerics as "-". */
-const slugOf = (name: string): string => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 /**
  * D&D Beyond's wording for a known defense (`friendlySubtypeName`, "Magical Sleep" for

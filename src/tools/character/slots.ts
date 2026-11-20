@@ -14,7 +14,8 @@ type Rec = Record<string, unknown>;
 const SLOT_ORDINAL = ["", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th"];
 export const slotOrdinal = (lvl: number): string => SLOT_ORDINAL[lvl] ?? `${lvl}th`;
 
-const levelRow = (cls: ClassEntry): unknown[] => {
+/** The class's `levelSpellSlots` row at its level (`row[slotLevel - 1]` is the slot count); [] when the table or row is missing. */
+export const levelSlotRow = (cls: ClassEntry): unknown[] => {
   const table = obj(obj(cls.definition).spellRules).levelSpellSlots;
   const row = Array.isArray(table) ? table[num(cls.level)] : undefined;
   return Array.isArray(row) ? row : [];
@@ -29,7 +30,7 @@ const isWarlock = (cls: ClassEntry): boolean => str(obj(cls.definition).name) ==
 /** A Warlock's pact slot level: the highest slot level with slots in its levelSpellSlots row. 0 for any other class. */
 export function pactSlotLevel(cls: ClassEntry): number {
   if (!isWarlock(cls)) return 0;
-  const row = levelRow(cls);
+  const row = levelSlotRow(cls);
   for (let i = row.length - 1; i >= 0; i--) if (num(row[i]) > 0) return i + 1;
   return 0;
 }
@@ -44,7 +45,7 @@ export function lowestSharedSlot(classes: readonly ClassEntry[], spellLevel: num
   for (const cls of classes) {
     if (isWarlock(cls)) continue;
     if (obj(cls.definition).canCastSpells !== true && obj(cls.subclassDefinition).canCastSpells !== true) continue;
-    const row = levelRow(cls);
+    const row = levelSlotRow(cls);
     for (let slot = Math.max(spellLevel, 1); slot <= row.length; slot++) {
       if (num(row[slot - 1]) > 0) {
         if (!lowest || slot < lowest) lowest = slot;

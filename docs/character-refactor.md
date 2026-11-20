@@ -58,7 +58,7 @@ diff /tmp/before.txt /tmp/after.txt                    # manual, required
 src/tools/character.ts                 ← public API only (network/IO, character cache; ~380 lines)
 src/tools/character/
   types.ts                             ← CharData, Mod (+ typed mod interfaces, follow-up A), ClassEntry, InventoryItem, CoreStats, ParseSection
-  helpers.ts                           ← str/num/arr/obj/signed/modOf/capitalize/hasTag/stripHtml, mod guards (isBonusMod…), homebrew predicates (isHomebrewEntry, featureDefinition, isHomebrewClassFeature, shownHomebrew), records (object entries of an array field), splitListLines (a list's homebrew entries on their own wrapped line), statNames/statKeys, levenshteinDistance
+  helpers.ts                           ← str/num/arr/obj/signed/modOf/capitalize/hasTag/stripHtml, mod guards (isBonusMod…), homebrew predicates (isHomebrewEntry, featureDefinition, isHomebrewClassFeature, shownHomebrew), records (object entries of an array field), isRecord, slugOf (the one subType slug rule; `dropApostrophes` for proficiency, language and skill names), splitListLines (a list's homebrew entries on their own wrapped line), statNames/statKeys, levenshteinDistance
   templates.ts                         ← makeResolveTemplates(profBonus, totalLevel)
   core.ts                              ← computeCoreStats(char, index) → CoreStats (index: SourceIndex, for editions)
   editions.ts                          ← computeCharacterEditions: main edition, `Rules:` line, inline-tag helpers (rules-edition phase 5)
@@ -69,10 +69,12 @@ src/tools/character/
   defenses.ts                          ← Resistances/Immunities/Conditions + formatDefensesBlock
   features.ts                          ← Feats/ClassFeatures/RacialTraits/Background + block
   weapons.ts                           ← computeWeaponAttacks: weapon attack rolls (martial arts, finesse, magic), the dual-wield off-hand rows; computeUnarmedStrike
-  actions.ts                           ← Actions/Bonus/Reactions/Other/LimitedUse (incl. item charges) + formatCombatBlock; grantingEntities/withOptions/bucketAnyHomebrew link each action to the entity that grants it; action visibility (visibleClassFeatureIds/isVisibleAction) and feature dice (actionDice)
+  granting.ts                          ← grantingEntities/withOptions/bucketAnyHomebrew link each action or modifier to the entity that grants it (grantingEntityNames, baseEntities, allOptions); class-feature and option visibility (visibleClassFeatureIds/hiddenOptionIds/chosenClassOptions/isVisibleAction). Pure. Split out of actions.ts by carry-over (bm), which removed the actions.ts ↔ weapons.ts import cycle; tests/character-module-boundaries.test.ts keeps this folder free of value-import cycles
+  actions.ts                           ← Actions/Bonus/Reactions/Other/LimitedUse (incl. item charges) + formatCombatBlock; getAllActions applies granting.ts's visibility and homebrew rules; feature dice (actionDice); actionParents (for ddb_character_lookup)
   spell-attacks.ts                     ← computeSpellAttackRows: the ACTIONS spell rows (to-hit/DC, damage at the cast level, range); to-hit and DC shared with spells.ts (spellAttackAndDc/spellBonuses)
   item-gate.ts                         ← isActiveItemMod: an item modifier applies only while its item is equipped (and attuned when required); used by spell attack/DC and damage bonuses and save advantages
   spells.ts                            ← computeSpells: Spellcasting/Slots/Spells/Concentration + formatSpellsBlock / formatConcentrationBlock; shownSpellDefinitions; classSpellcastingAbilityId/spellAttackAndDc/spellBonuses (shared with spell-attacks.ts); actionSpells
+  slots.ts                             ← slot labels and cast levels (spellCastLabel, castLevel, pactSlotLevel, lowestSharedSlot) and levelSlotRow, the one read of a class's levelSpellSlots row (also used by the SPELL SLOTS block)
   inventory.ts                         ← Equipped/Carried/Attunement/Currency + block
   notes.ts                             ← Traits/Backstory/Allies + formatNotesBlock
   parse.ts                             ← parseCharacterData(raw, sections, index = peekSourceIndex()) orchestrator (~110 lines)

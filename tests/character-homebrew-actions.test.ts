@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { wrapUntrusted } from "../src/utils.js";
-import { grantingEntities } from "../src/tools/character/actions.js";
+import { grantingEntities } from "../src/tools/character/granting.js";
 import { S } from "./fixtures/character-edition-helpers.js";
 import { CLASS_FEATURE, RACIAL_TRAIT, FEAT, OPTION, RACE_OPTION, BACKGROUND, ITEM, BASE, FIGHTER, combat, block, BONUS, REACTION, action, limited, actions, feature, fighter } from "./fixtures/combat-helpers.js";
 

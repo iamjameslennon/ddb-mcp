@@ -12,9 +12,9 @@
 
 import { wrapIfHomebrew } from "../../utils.js";
 import { MASTERY_NAMES } from "../weapon-mastery.js";
-import { arr, customItemNames, itemDisplayName, records, isBonusMod, isConditionalMod, isHomebrewClassFeature, isHomebrewEntry, isProficiencyMod, num, obj, signed, str, weaponWordOrder } from "./helpers.js";
+import { arr, customItemNames, itemDisplayName, records, isBonusMod, isConditionalMod, isHomebrewClassFeature, isHomebrewEntry, isProficiencyMod, num, obj, signed, slugOf, str, weaponWordOrder } from "./helpers.js";
 import type { CharData, ClassEntry, CoreStats } from "./types.js";
-import { hiddenOptionIds, isVisibleAction, visibleClassFeatureIds } from "./actions.js";
+import { allOptions, hiddenOptionIds, isVisibleAction, visibleClassFeatureIds } from "./granting.js";
 import { isActiveItemMod } from "./item-gate.js";
 
 /** `characterValues` typeId of the off-hand weapon flag. */
@@ -99,7 +99,7 @@ export function hasTwoWeaponFightingStyle(char: CharData, classes: readonly Clas
   const named = (r: unknown): boolean => str(obj(obj(r).definition).name) === "Two-Weapon Fighting";
   const hidden = hiddenOptionIds(char, visibleClassFeatureIds(char, classes));
   const chosen = (r: unknown): boolean => named(r) && !hidden.has(num(obj(obj(r).definition).id));
-  return Object.values(obj(char.options)).some(list => arr<unknown>(list).some(chosen)) || arr<unknown>(char.feats).some(named);
+  return allOptions(char).some(chosen) || arr<unknown>(char.feats).some(named);
 }
 
 /**
@@ -168,7 +168,6 @@ export function computeWeaponAttacks(core: CoreStats): { attacks: string[]; offH
   // Weapon Mastery (2024): one `weapon-mastery` modifier per mastered weapon,
   // subType `<mastery>-<weapon type>` ("sap-spear", "topple-maul"). A magic
   // weapon matches by its base type (Sun Blade → longsword).
-  const slug = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, "-");
   const masteredSubTypes = new Set(
     allMods.filter(m => m.type === "weapon-mastery").map(m => str(m.subType))
   );
@@ -264,8 +263,8 @@ export function computeWeaponAttacks(core: CoreStats): { attacks: string[]; offH
     // A mastery shows only when the character has mastered this weapon.
     // D&D Beyond writes "Crossbow, Heavy" as the type but "push-heavy-crossbow" as the subType, so both orders match.
     const typeName = str(def.type) || wName;
-    const typeSlugs = [slug(typeName), slug(weaponWordOrder(typeName))];
-    const mastered = (name: string): boolean => typeSlugs.some(t => masteredSubTypes.has(`${slug(name)}-${t}`));
+    const typeSlugs = [slugOf(typeName), slugOf(weaponWordOrder(typeName))];
+    const mastered = (name: string): boolean => typeSlugs.some(t => masteredSubTypes.has(`${slugOf(name)}-${t}`));
     const shownProps = [
       ...props.filter(p => !MASTERY_NAMES.has(p) || mastered(p)),
       ...(grantsFinesse && !props.includes("Finesse") ? ["Finesse"] : []),

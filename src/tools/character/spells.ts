@@ -18,7 +18,7 @@ import { isConcentrationSpell } from "../reference.js";
 import { wrapIfHomebrew } from "../../utils.js";
 import { isBonusMod, isHomebrewEntry, num, obj, records, shownHomebrew, signed, splitListLines, statNames, str } from "./helpers.js";
 import { isActiveItemMod } from "./item-gate.js";
-import { slotOrdinal, spellCastLabel } from "./slots.js";
+import { levelSlotRow, slotOrdinal, spellCastLabel } from "./slots.js";
 import type { CharData, ClassEntry, CoreStats, ListEntry } from "./types.js";
 import type { CharacterEditions } from "./editions.js";
 
@@ -131,13 +131,10 @@ function buildSlotLines(char: CharData, classes: readonly ClassEntry[]): string[
     const classCasts = obj(c.definition).canCastSpells === true;
     const subclassCasts = obj(c.subclassDefinition).canCastSpells === true;
     if (!classCasts && !subclassCasts) continue;
-    const spellRules = obj(obj(c.definition).spellRules);
-    const rawTable = spellRules.levelSpellSlots;
-    const table: number[][] = Array.isArray(rawTable) ? rawTable as number[][] : [];
-    const lvl = num(c.level);
-    const row = table[lvl] ?? [];
+    const row = levelSlotRow(c);
     for (let i = 0; i < row.length; i++) {
-      if (row[i] > 0) slotMax[i + 1] = (slotMax[i + 1] ?? 0) + row[i];
+      const slots = num(row[i]);
+      if (slots > 0) slotMax[i + 1] = (slotMax[i + 1] ?? 0) + slots;
     }
   }
   return Object.entries(slotMax)

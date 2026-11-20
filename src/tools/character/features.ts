@@ -13,7 +13,7 @@ import { records, hasTag, isHomebrewClassFeature, isHomebrewEntry, num, obj, str
 import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
 import type { TemplateResolver } from "./templates.js";
 import type { CharacterEditions } from "./editions.js";
-import type { ChosenOptions } from "./actions.js";
+import type { ChosenOptions } from "./granting.js";
 
 export interface BackgroundFeature {
   name: string;        // empty string when there's no background feature to show

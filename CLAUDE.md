@@ -104,7 +104,7 @@ Full detail: [docs/claude/architecture.md](docs/claude/architecture.md).
 | `src/tools/monster-service.ts` | Monster-service fetch layer, asker/session binding, the full monster list scan and its cache (8-way, 60 s deadline, 24 h / 5 min TTL) |
 | `src/tools/monster-search.ts`, `src/name-match.ts` | `ddb_search_monsters`: word-start/twin name rule (`matchesAtWordStart`), near matches, the 50 / `list_all` rule, incomplete-scan notes |
 | `src/tools/subclass-spells.ts` | Subclass always-prepared spell lists (F4): fetch under the character's snapshot, 10 s deadline, `gen<n>:` cache; merged by `loadCharacterForParse` via `character/always-prepared.ts` |
-| `src/tools/character.ts` + `src/tools/character/*` | Character fetch/cache and the per-domain sheet parser (`parse.ts`, `editions.ts`, `definition.ts`, `actions.ts` + `spell-attacks.ts` for the combat block, `item-gate.ts`, …) |
+| `src/tools/character.ts` + `src/tools/character/*` | Character fetch/cache and the per-domain sheet parser (`parse.ts`, `editions.ts`, `definition.ts`, `actions.ts` + `spell-attacks.ts` for the combat block, `granting.ts` (granting entities and action visibility), `item-gate.ts`, …) |
 | `src/tools/campaign.ts`, `library.ts`, `search.ts` | Campaigns/party, library + book reading (cheerio, no browser), `ddb_search_site` |
 | `src/tools/conditions.ts` | Vendored conditions: SRD 5.1 (2014) and SRD 5.2.1 (2024), with CC-BY-4.0 attribution |
 | `src/tools/encounter.ts`, `treasure.ts` | Encounter rating (2024 XDMG / 2014 DMG), treasure (2024 tables only) |
