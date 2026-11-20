@@ -85,7 +85,7 @@ Spec [docs/superpowers/specs/2026-11-20-ready-carry-overs-design.md](../superpow
 
 **Closed:**
 
-- **Per-skill and initiative bonuses** (parked 2026-11-20) TASK1SHA: `bonus <skill>` and `bonus initiative` modifiers follow the (bc) rule, item gate and feature visibility rule. One walk, `activeBucketMods(core)` in the new `active-mods.ts`, now serves the global save and ability-check bonuses, per-skill and initiative bonuses and the save-advantage lines (it also closes the 2026-11-19 Task 10 minor "two near-identical bucket loops… an `activeBucketMods` helper"). Measured: no corpus change (the 56 × 8 HEAD outputs of `regress-all-characters.mts` byte-identical before and after the change).
+- **Per-skill and initiative bonuses** (parked 2026-11-20) `8480d45`: `bonus <skill>` and `bonus initiative` modifiers follow the (bc) rule, item gate and feature visibility rule. One walk, `activeBucketMods(core)` in the new `active-mods.ts`, now serves the global save and ability-check bonuses, per-skill and initiative bonuses and the save-advantage lines (it also closes the 2026-11-19 Task 10 minor "two near-identical bucket loops… an `activeBucketMods` helper"). Measured: no corpus change (the 56 × 8 HEAD outputs of `regress-all-characters.mts` byte-identical before and after the change).
 
 ### Carry-overs 2026-11-20
 
