@@ -97,6 +97,11 @@ describe("extractArticleMarkdown", () => {
     const html = "<article><h2>Intro</h2><p>One</p><p></p><p>  </p><p>Two</p><ul><li>a</li></ul><p>Three</p></article>";
     expect(extractArticleMarkdown(html)).toBe("## Intro\n\nOne\n\nTwo\n\n- a\n\nThree");
   });
+  it("collapses CRLF and U+2028 runs between blocks like plain newlines (deferred minor 2026-11-19)", () => {
+    expect(extractArticleMarkdown("<article><p>A</p>\r\n\r\n\r\n<p>B</p></article>")).toBe("A\n\nB");
+    expect(extractArticleMarkdown("<article><p>A\r\n\r\n\r\nB</p></article>")).toBe("A\n\nB");
+    expect(extractArticleMarkdown("<article><p>A</p>\u2028\u2028\u2028<p>B</p></article>")).toBe("A\n\nB");
+  });
   it("treats whitespace-only lines, non-breaking spaces included, as blank", () => {
     const html = "<article><p>A</p><div>&nbsp; </div><div>\t</div><p>B</p></article>";
     expect(extractArticleMarkdown(html)).not.toMatch(/\n{3,}/);

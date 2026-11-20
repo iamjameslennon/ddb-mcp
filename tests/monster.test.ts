@@ -2589,6 +2589,15 @@ describe("getMonsterStats: session changes surface, lookup failures are logged",
     await expect(searchMonsters({ name: "Zombie", source: "homebrew" })).rejects.toBe(changed);
   });
 
+  it("ddb_search_site 'all' shows the monster section's session change as its own message section (deferred minor 2026-11-19)", async () => {
+    throwOnMonsterSearch(new SessionChangedError(), { sessionChanges: true });
+    for (const fn of Object.values(refSections)) fn.mockResolvedValue({ header: null, body: "No things found.", footer: null, hidden: 0, noMatch: true });
+    const out = await search("goblin", "all", "2024");
+    const monsters = out.slice(out.indexOf("## Monsters"));
+    expect(monsters.startsWith(`## Monsters\n\n_${new SessionChangedError().message}_`)).toBe(true);
+    expect(o5SearchMonstersSection).not.toHaveBeenCalled();
+  });
+
   it("a plain outage still falls back to Open5e as unavailable", async () => {
     throwOnMonsterSearch(new Error("socket hang up"));
     await searchMonsters({ name: "Goblin" });

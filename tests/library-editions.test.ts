@@ -247,17 +247,24 @@ describe("library tools", () => {
     expect(out.split("\n")[1]).toBe("Rules: 2014 · Player's Handbook (2014)");
     expect(libCalls()).toHaveLength(2);
   });
+  // B14: max_chars and the query jump both read the collapsed text.
+  const OLD_PHB = { name: "Player's Handbook (2014)", relativePath: "/sources/dnd/old-phb", isOwned: true };
+  const PADDING = "<p></p>".repeat(1600); // 3,200 newlines once rendered, so what follows sits past max_chars
+  const servePage = (page: string) => mocks.sessionFetch.mockImplementation(async (url: unknown) => {
+    if (LIBRARY_RE.test(String(url))) return new Response(buildFixture([OLD_PHB]), { status: 200 });
+    if (String(url).includes("/sources/")) return new Response(page, { status: 200 });
+    return new Response("", { status: 404 });
+  });
   it("max_chars counts collapsed text, so text after blank-line padding is still read (B14)", async () => {
-    route([{ name: "Player's Handbook (2014)", relativePath: "/sources/dnd/old-phb", isOwned: true }]);
-    const padding = "<p></p>".repeat(1600); // 3,200 newlines once rendered, so the text sits past max_chars
-    const page = `<html><article><p>Opening</p>${padding}<p>LATER TEXT</p></article></html>`;
-    mocks.sessionFetch.mockImplementation(async (url: unknown) => {
-      if (LIBRARY_RE.test(String(url))) return new Response(buildFixture([{ name: "Player's Handbook (2014)", relativePath: "/sources/dnd/old-phb", isOwned: true }]), { status: 200 });
-      if (String(url).includes("/sources/")) return new Response(page, { status: 200 });
-      return new Response("", { status: 404 });
-    });
+    servePage(`<html><article><p>Opening</p>${PADDING}<p>LATER TEXT</p></article></html>`);
     const out = await readBook("dnd/old-phb", undefined, 3000);
     expect(out).toContain("LATER TEXT");
+  });
+  it("a query jumps to its heading in the collapsed text, past blank-line padding (deferred minor 2026-11-19)", async () => {
+    servePage(`<html><article><p>Opening</p>${PADDING}<h2>Target Section</h2>${PADDING}<p>TARGET TEXT</p><h2>Next</h2><p>AFTER</p></article></html>`);
+    const out = await readBook("dnd/old-phb", undefined, 40, "target");
+    expect(out).toContain("## Target Section\n\nTARGET TEXT");
+    expect(out).not.toContain("Opening");
   });
   it("concurrent cold reads in one generation share one library fetch", async () => {
     route([{ name: "Player's Handbook (2014)", relativePath: "/sources/dnd/old-phb", isOwned: true }]);

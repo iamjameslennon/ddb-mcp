@@ -6,9 +6,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // each authenticated fetch is tagged with the account it was issued under.
 const S = vi.hoisted(() => ({ gen: 1, lastSeen: 1, hooks: [] as Array<() => void> }));
 
-vi.mock("../src/session-fetch.js", () => {
+vi.mock("../src/session-fetch.js", async () => {
   const sessionFetch = vi.fn();
+  // The real error class and rethrow rule, so a session change in these tests is
+  // never silently swallowed (deferred minor 2026-11-19: a no-op mock was a trap).
+  const { SessionChangedError, rethrowSessionChange } = await vi.importActual<typeof import("../src/session-state.js")>("../src/session-state.js");
   return {
+    SessionChangedError,
     hasValidSession: vi.fn(() => true),
     sessionFetch,
     beginAuthenticatedSession: vi.fn(async () => {
@@ -20,7 +24,7 @@ vi.mock("../src/session-fetch.js", () => {
       return { gen: S.gen };
     }),
     assertSessionCurrent: vi.fn(),
-    rethrowSessionChange: vi.fn(),
+    rethrowSessionChange,
     onSessionInvalidated: vi.fn((cb: () => void) => { S.hooks.push(cb); }),
     anonymousFetch: vi.fn(),
   };
