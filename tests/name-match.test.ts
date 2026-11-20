@@ -70,6 +70,10 @@ describe("isCloseName", () => {
     ["Ogre", "Ooze", false],
     ["Imp", "Ape", false],
     ["Imp", "Imps", true],
+    // Within one edit of the whole name, not of one of its words (final review, 2026-11-20).
+    ["Giant Rat", "Bat", false],
+    ["Swarm of Bats", "Rats", false],
+    ["Ogre Zombie", "Ogre", true],
   ])("isCloseName(%j, %j) is %s", (name, query, expected) => {
     expect(isCloseName(name, query)).toBe(expected);
   });

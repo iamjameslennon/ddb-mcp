@@ -108,15 +108,15 @@ const SHORT_QUERY_MAX = 4;
  * Whether a name is close enough to a query to take D&D Beyond's fuzzy top hit for it
  * (ddb_get_monster, owner ruling R3, amended 2026-11-20 for queries of 4 characters or
  * fewer): within a few edits (at least 2, a third of the query's length), or a typo/word-order
- * match by matchesLooseName. A short query is close only within one edit, a swap of two
- * adjacent letters counting as one ("Lihc" → Lich), so Lich/Lion and Ogre/Ooze are not.
+ * match by matchesLooseName. A short query is close only within one edit of the whole name,
+ * a swap of two adjacent letters counting as one ("Lihc" → Lich), or when the name contains
+ * it; never by one of the name's words, so Lich/Lion, Ogre/Ooze and Bat/Giant Rat are not.
  */
 export function isCloseName(name: string, query: string): boolean {
   const q = nameFold(query);
   if (q === "") return false;
   const n = nameFold(name);
-  const near = q.length <= SHORT_QUERY_MAX
-    ? osaDistance(n, q) <= 1
-    : levenshteinDistance(n, q) <= Math.max(2, Math.floor(q.length / 3));
-  return near || matchesLooseName(name, query);
+  if (q.length <= SHORT_QUERY_MAX) return osaDistance(n, q) <= 1 || n.includes(q);
+  return levenshteinDistance(n, q) <= Math.max(2, Math.floor(q.length / 3))
+    || matchesLooseName(name, query);
 }
