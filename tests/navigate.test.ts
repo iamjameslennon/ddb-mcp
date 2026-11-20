@@ -167,6 +167,57 @@ describe("navigate refuses scraped content across a session transition", () => {
     await expect(nav.getCurrentPageContent(context)).rejects.toThrow(sf.SessionChangedError);
   });
 
+  // (bs) round 3: a page operation that rejects because a session change closed the
+  // context mid-flight reports the session change, not Playwright's own error.
+  describe("a page operation cut off mid-flight", () => {
+    const CLOSED = "Target page, context or browser has been closed";
+    type Op = "goto" | "evaluate" | "click" | "fill" | "screenshot";
+    /** A fake whose `op` runs `during()` (a session flip, or nothing) and then rejects as Playwright does. */
+    function makeFailing(op: Op, during: () => void) {
+      const fail = async (): Promise<never> => { during(); throw new Error(CLOSED); };
+      const ok = async () => {};
+      const locator = {
+        filter: () => locator, first: () => locator,
+        waitFor: ok,
+        click: op === "click" ? fail : ok,
+        fill: op === "fill" ? fail : ok,
+      };
+      const page = {
+        url: () => "https://www.dndbeyond.com/characters/1",
+        goto: op === "goto" ? fail : ok,
+        waitForLoadState: ok,
+        evaluate: op === "evaluate" ? fail : async () => "TEXT",
+        waitForTimeout: ok,
+        screenshot: op === "screenshot" ? fail : async () => Buffer.from(""),
+        locator: () => locator,
+      };
+      const context = { pages: () => [page], newPage: async () => page, route: async () => {} };
+      return context as unknown as Parameters<typeof nav.navigate>[0];
+    }
+    const run = (op: Op, context: Parameters<typeof nav.navigate>[0]) =>
+      op === "goto" ? nav.navigate(context, "https://www.dndbeyond.com/characters/1")
+        : op === "evaluate" ? nav.getCurrentPageContent(context)
+          : op === "click" ? nav.interact(context, "click", "button")
+            : op === "fill" ? nav.interact(context, "fill", 'input[name="search"]', "goblin")
+              : nav.interact(context, "screenshot", "body");
+    const OPS: Op[] = ["goto", "evaluate", "click", "fill", "screenshot"];
+
+    it.each(OPS)("%s rejecting after a session change throws SessionChangedError", async op => {
+      setSessionFile(sessionJson("SECRET_A"));
+      sf.hasValidSession();
+      await expect(run(op, makeFailing(op, () => setSessionFile(sessionJson("SECRET_B"))))).rejects.toThrow(sf.SessionChangedError);
+    });
+
+    it.each(OPS)("%s rejecting with no session change keeps Playwright's own error", async op => {
+      setSessionFile(sessionJson("SECRET_A"));
+      sf.hasValidSession();
+      const err = await run(op, makeFailing(op, () => {})).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(sf.SessionChangedError);
+      expect((err as Error).message).toBe(CLOSED);
+    });
+  });
+
   // Carry-over (bs): after ddb_logout the browser tools work signed out, as on
   // a fresh logged-out server, instead of refusing until the next ddb_login.
   describe("after ddb_logout (bs)", () => {

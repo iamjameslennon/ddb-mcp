@@ -470,7 +470,7 @@ describe("guardRoute: a cross-site-initiated GET is walked without the cookies C
     expect(calls.fetched.map(f => f.headers?.cookie)).toEqual(["Lax1=a; Strict1=b; None1=c", "Lax1=a; Strict1=b; None1=c"]);
   });
 
-  it("a tool goto (no Referer, Chrome sent every cookie) keeps the Strict cookie", async () => {
+  it("a request whose Chrome cookie header carries every cookie keeps the Strict and partitioned ones", async () => {
     const { route, calls } = makeRoute({
       url: A,
       headers: { cookie: "Lax1=a; Strict1=b; None1=c; Part1=d", "user-agent": "UA" },

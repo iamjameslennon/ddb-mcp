@@ -93,8 +93,9 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
  * partitioned one only if Chrome sent that same name=value (carry-over
  * (bx)(5), owner ruling 2026-11-19). This trusts that the route handler's
  * `cookie` header is Chrome's SameSite-filtered one (true on Chrome 157 and
- * Playwright 1.65.1); with no such header no Strict or partitioned cookie is
- * sent. The walk still sends no Sec-Fetch-Site.
+ * Playwright 1.65.1); with no such header the walk still sends the Lax and
+ * None cookies, but no Strict or partitioned one. The walk still sends no
+ * Sec-Fetch-Site.
  *
  * route.fetch takes the context's cookies but enforces no SameSite and sends
  * no Sec-Fetch-* headers, so a non-GET navigation (a foreign frame's form POST
@@ -278,6 +279,21 @@ export function assertSafeSelector(selector: string): void {
 }
 
 /**
+ * Runs a browser tool's page work under `snapshot`. A rejection (Playwright's
+ * "Target page, context or browser has been closed" when a session change
+ * closed the context mid-operation) is reported as the session change when the
+ * session moved, and rethrown unchanged otherwise ((bs) round 3, 2026-11-20).
+ */
+async function withSessionCheck<T>(snapshot: SessionSnapshot, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    assertSessionUnchanged(snapshot);
+    throw err;
+  }
+}
+
+/**
  * `snapshot` is the one the context belongs to (getBoundContext; the server
  * always passes it). It is checked before any page action as well as before
  * returning, so a session change since the context was handed out refuses the
@@ -287,74 +303,76 @@ export async function navigate(context: BrowserContext, url: string, snapshot: S
   // Bind this browser action to the context's generation so a
   // logout/replacement before or mid-navigation refuses to return account-derived content.
   assertSessionUnchanged(snapshot);
-  const page = await getPage(context);
-  await ensureNavigationGuard(context);
-  // Re-check after those awaits, before anything else: a session change during
-  // them stops the load before it starts, and is the error reported.
-  assertSessionUnchanged(snapshot);
+  return withSessionCheck(snapshot, async () => {
+    const page = await getPage(context);
+    await ensureNavigationGuard(context);
+    // Re-check after those awaits, before anything else: a session change during
+    // them stops the load before it starts, and is the error reported.
+    assertSessionUnchanged(snapshot);
 
-  // Only allow D&D Beyond URLs — validate the actual hostname.
-  let validatedUrl: URL;
-  try {
-    validatedUrl = new URL(url);
-  } catch {
-    throw new Error("Invalid URL.");
-  }
-  if (validatedUrl.protocol !== "https:" || !ALLOWED_NAVIGATE_HOSTS.has(validatedUrl.hostname)) {
-    throw new Error("Only https://www.dndbeyond.com/ URLs are supported.");
-  }
+    // Only allow D&D Beyond URLs — validate the actual hostname.
+    let validatedUrl: URL;
+    try {
+      validatedUrl = new URL(url);
+    } catch {
+      throw new Error("Invalid URL.");
+    }
+    if (validatedUrl.protocol !== "https:" || !ALLOWED_NAVIGATE_HOSTS.has(validatedUrl.hostname)) {
+      throw new Error("Only https://www.dndbeyond.com/ URLs are supported.");
+    }
 
-  // "load" is the success signal: a page that has loaded is a success even if
-  // D&D Beyond keeps a connection open (analytics, polling) and networkidle
-  // never comes. The networkidle wait below is best-effort only.
-  try {
-    await page.goto(url, { waitUntil: "load", timeout: NAVIGATION_TIMEOUT_MS });
-  } catch (err) {
-    // A load that fails or times out after a redirect off-site must not leave
-    // the shared page on the foreign site.
-    await leaveForeignPage(page);
-    throw err;
-  }
-  await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
+    // "load" is the success signal: a page that has loaded is a success even if
+    // D&D Beyond keeps a connection open (analytics, polling) and networkidle
+    // never comes. The networkidle wait below is best-effort only.
+    try {
+      await page.goto(url, { waitUntil: "load", timeout: NAVIGATION_TIMEOUT_MS });
+    } catch (err) {
+      // A load that fails or times out after a redirect off-site must not leave
+      // the shared page on the foreign site.
+      await leaveForeignPage(page);
+      throw err;
+    }
+    await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
 
-  // The route guard checks the redirect hops it fetches, but the browser's
-  // repeat request for a chain's final URL, and the hops of a navigation it
-  // leaves to Chrome, are hops no handler sees (carry-over (bx)). Re-check
-  // where the page actually ended up, as getCurrentPageContent does, and
-  // leave the foreign page before refusing.
-  const finalUrl = page.url();
-  if (!isAllowedPageUrl(finalUrl)) {
-    await leaveForeignPage(page);
-    throw new Error(
-      `Navigation ended on ${foreignPageLabel(finalUrl)}, outside the dndbeyond.com allowlist — refusing to return its content. ` +
-      `Use ddb_navigate with a D&D Beyond page URL.`
-    );
-  }
+    // The route guard checks the redirect hops it fetches, but the browser's
+    // repeat request for a chain's final URL, and the hops of a navigation it
+    // leaves to Chrome, are hops no handler sees (carry-over (bx)). Re-check
+    // where the page actually ended up, as getCurrentPageContent does, and
+    // leave the foreign page before refusing.
+    const finalUrl = page.url();
+    if (!isAllowedPageUrl(finalUrl)) {
+      await leaveForeignPage(page);
+      throw new Error(
+        `Navigation ended on ${foreignPageLabel(finalUrl)}, outside the dndbeyond.com allowlist — refusing to return its content. ` +
+        `Use ddb_navigate with a D&D Beyond page URL.`
+      );
+    }
 
-  // Extract page text content and convert to readable markdown-ish format
-  const content = await page.evaluate(() => {
-    // Remove scripts and styles
-    document.querySelectorAll("script, style, nav, footer, .ad-container, .advertisement").forEach((el) =>
-      el.remove()
-    );
+    // Extract page text content and convert to readable markdown-ish format
+    const content = await page.evaluate(() => {
+      // Remove scripts and styles
+      document.querySelectorAll("script, style, nav, footer, .ad-container, .advertisement").forEach((el) =>
+        el.remove()
+      );
 
-    // Try to get the main content area
-    const main =
-      document.querySelector("main, article, .main-content, .page-content, #content") ?? document.body;
+      // Try to get the main content area
+      const main =
+        document.querySelector("main, article, .main-content, .page-content, #content") ?? document.body;
 
-    return (main as HTMLElement).innerText;
+      return (main as HTMLElement).innerText;
+    });
+
+    const truncated = content.length > 8000 ? content.slice(0, 8000) + "\n\n[Content truncated — use ddb_read_book or a more specific URL to get full content]" : content;
+
+    // Refresh authority before returning account-derived scraped content.
+    assertSessionUnchanged(snapshot);
+
+    // Wrap scraped content in delimiters so callers can clearly separate
+    // trusted tool output from untrusted page content (potential prompt-
+    // injection surface). The page may contain user-authored text from DMs,
+    // forum posts, or campaign notes.
+    return `URL: ${url}\n\n${wrapUntrusted(truncated)}`;
   });
-
-  const truncated = content.length > 8000 ? content.slice(0, 8000) + "\n\n[Content truncated — use ddb_read_book or a more specific URL to get full content]" : content;
-
-  // Refresh authority before returning account-derived scraped content.
-  assertSessionUnchanged(snapshot);
-
-  // Wrap scraped content in delimiters so callers can clearly separate
-  // trusted tool output from untrusted page content (potential prompt-
-  // injection surface). The page may contain user-authored text from DMs,
-  // forum posts, or campaign notes.
-  return `URL: ${url}\n\n${wrapUntrusted(truncated)}`;
 }
 
 export async function interact(
@@ -367,105 +385,109 @@ export async function interact(
   assertSafeSelector(selector);
   // See navigate(): the context's own snapshot, checked before any page action.
   assertSessionUnchanged(snapshot);
-  const page = await getPage(context);
-  await ensureNavigationGuard(context);
-  // Re-check after the awaits above, before anything else: no click, fill or
-  // capture under a session that changed while the page and guard were set up.
-  assertSessionUnchanged(snapshot);
-  // Never fill, click, wait on or capture a page that isn't an allowlisted
-  // DDB page (a foreign page could take a typed value anywhere).
-  assertActionablePage(page);
+  return withSessionCheck(snapshot, async () => {
+    const page = await getPage(context);
+    await ensureNavigationGuard(context);
+    // Re-check after the awaits above, before anything else: no click, fill or
+    // capture under a session that changed while the page and guard were set up.
+    assertSessionUnchanged(snapshot);
+    // Never fill, click, wait on or capture a page that isn't an allowlisted
+    // DDB page (a foreign page could take a typed value anywhere).
+    assertActionablePage(page);
 
-  switch (action) {
-    case "click": {
-      // Filter to visible elements before .first() — prevents matching hidden
-      // nav dropdown links that appear earlier in the DOM than the intended target.
-      const locator = page.locator(selector).filter({ visible: true }).first();
-      await locator.waitFor({ state: "visible", timeout: 10000 });
-      await locator.click();
-      await page.waitForTimeout(1000);
-      // Defense in depth alongside the navigation guard: if the click somehow
-      // landed the page off-allowlist (e.g. the blocked navigation committed
-      // an error page carrying the target URL), say so instead of letting a
-      // follow-up ddb_get_page scrape a cross-origin page.
-      const afterClickUrl = page.url();
-      if (!isAllowedPageUrl(afterClickUrl)) {
-        await leaveForeignPage(page);
-        throw new Error(
-          `Click triggered a navigation away from dndbeyond.com (to ${foreignPageLabel(afterClickUrl)}) — ` +
-          `it was blocked and no cross-origin content will be returned. ` +
-          `Use ddb_navigate to load a D&D Beyond page.`
-        );
+    switch (action) {
+      case "click": {
+        // Filter to visible elements before .first() — prevents matching hidden
+        // nav dropdown links that appear earlier in the DOM than the intended target.
+        const locator = page.locator(selector).filter({ visible: true }).first();
+        await locator.waitFor({ state: "visible", timeout: 10000 });
+        await locator.click();
+        await page.waitForTimeout(1000);
+        // Defense in depth alongside the navigation guard: if the click somehow
+        // landed the page off-allowlist (e.g. the blocked navigation committed
+        // an error page carrying the target URL), say so instead of letting a
+        // follow-up ddb_get_page scrape a cross-origin page.
+        const afterClickUrl = page.url();
+        if (!isAllowedPageUrl(afterClickUrl)) {
+          await leaveForeignPage(page);
+          throw new Error(
+            `Click triggered a navigation away from dndbeyond.com (to ${foreignPageLabel(afterClickUrl)}) — ` +
+            `it was blocked and no cross-origin content will be returned. ` +
+            `Use ddb_navigate to load a D&D Beyond page.`
+          );
+        }
+        // Refresh authority before reporting an authenticated action complete.
+        assertSessionUnchanged(snapshot);
+        return `Clicked element: ${selector}`;
       }
-      // Refresh authority before reporting an authenticated action complete.
-      assertSessionUnchanged(snapshot);
-      return `Clicked element: ${selector}`;
-    }
 
-    case "fill": {
-      if (value === undefined) throw new Error("'value' is required for fill action.");
-      await page.locator(selector).first().fill(value);
-      await page.waitForTimeout(500);
-      assertSessionUnchanged(snapshot);
-      return `Filled '${selector}'.`;
-    }
-
-    case "screenshot": {
-      const screenshotPath = join(homedir(), "Downloads", `ddb-screenshot-${Date.now()}.png`);
-      // ~/Downloads isn't guaranteed to exist on minimal Linux profiles.
-      try {
-        mkdirSync(dirname(screenshotPath), { recursive: true });
-      } catch (e) {
-        const code = (e as NodeJS.ErrnoException).code;
-        throw new Error(
-          `Cannot create ${dirname(screenshotPath)} (${code ?? "unknown"}). ` +
-          `Ensure ~/Downloads exists and is writable.`
-        );
+      case "fill": {
+        if (value === undefined) throw new Error("'value' is required for fill action.");
+        await page.locator(selector).first().fill(value);
+        await page.waitForTimeout(500);
+        assertSessionUnchanged(snapshot);
+        return `Filled '${selector}'.`;
       }
-      // Capture to memory and write only after the session check: a session
-      // change during the capture leaves no image of the previous account's page.
-      const image = await page.screenshot({ fullPage: false });
-      assertSessionUnchanged(snapshot);
-      writeFileSync(screenshotPath, image);
-      return `Screenshot saved to: ${screenshotPath}`;
-    }
 
-    default:
-      throw new Error(`Unknown action: ${action}. Use 'click', 'fill', or 'screenshot'.`);
-  }
+      case "screenshot": {
+        const screenshotPath = join(homedir(), "Downloads", `ddb-screenshot-${Date.now()}.png`);
+        // ~/Downloads isn't guaranteed to exist on minimal Linux profiles.
+        try {
+          mkdirSync(dirname(screenshotPath), { recursive: true });
+        } catch (e) {
+          const code = (e as NodeJS.ErrnoException).code;
+          throw new Error(
+            `Cannot create ${dirname(screenshotPath)} (${code ?? "unknown"}). ` +
+            `Ensure ~/Downloads exists and is writable.`
+          );
+        }
+        // Capture to memory and write only after the session check: a session
+        // change during the capture leaves no image of the previous account's page.
+        const image = await page.screenshot({ fullPage: false });
+        assertSessionUnchanged(snapshot);
+        writeFileSync(screenshotPath, image);
+        return `Screenshot saved to: ${screenshotPath}`;
+      }
+
+      default:
+        throw new Error(`Unknown action: ${action}. Use 'click', 'fill', or 'screenshot'.`);
+    }
+  });
 }
 
 export async function getCurrentPageContent(context: BrowserContext, snapshot: SessionSnapshot = captureSession()): Promise<string> {
   // See navigate(): the context's own snapshot, checked before any page action.
   assertSessionUnchanged(snapshot);
-  const page = await getPage(context);
-  await ensureNavigationGuard(context);
-  // Re-check after the awaits above, before anything else (and before reading the page).
-  assertSessionUnchanged(snapshot);
-  const url = page.url();
-  if (url === "about:blank") {
-    throw new Error("No page is loaded yet — call ddb_navigate first.");
-  }
-  // The page can only leave the allowlist through paths the guard doesn't
-  // cover (e.g. a data: URL navigation, which never hits the network layer).
-  // Refuse to scrape anything that isn't an allowlisted DDB page.
-  if (!isAllowedPageUrl(url)) {
-    throw new Error(
-      `Current page (${foreignPageLabel(url)}) is outside the dndbeyond.com allowlist — refusing to return its content. ` +
-      `Use ddb_navigate to load a D&D Beyond page.`
-    );
-  }
-  const content = await page.evaluate(() => {
-    document.querySelectorAll("script, style, nav, footer, .ad-container").forEach((el) => el.remove());
-    const main =
-      document.querySelector("main, article, .main-content, .page-content") ?? document.body;
-    return (main as HTMLElement).innerText;
-  });
+  return withSessionCheck(snapshot, async () => {
+    const page = await getPage(context);
+    await ensureNavigationGuard(context);
+    // Re-check after the awaits above, before anything else (and before reading the page).
+    assertSessionUnchanged(snapshot);
+    const url = page.url();
+    if (url === "about:blank") {
+      throw new Error("No page is loaded yet — call ddb_navigate first.");
+    }
+    // The page can only leave the allowlist through paths the guard doesn't
+    // cover (e.g. a data: URL navigation, which never hits the network layer).
+    // Refuse to scrape anything that isn't an allowlisted DDB page.
+    if (!isAllowedPageUrl(url)) {
+      throw new Error(
+        `Current page (${foreignPageLabel(url)}) is outside the dndbeyond.com allowlist — refusing to return its content. ` +
+        `Use ddb_navigate to load a D&D Beyond page.`
+      );
+    }
+    const content = await page.evaluate(() => {
+      document.querySelectorAll("script, style, nav, footer, .ad-container").forEach((el) => el.remove());
+      const main =
+        document.querySelector("main, article, .main-content, .page-content") ?? document.body;
+      return (main as HTMLElement).innerText;
+    });
 
-  const truncated = content.length > 8000 ? content.slice(0, 8000) + "\n[truncated]" : content;
-  // Refresh authority before returning account-derived scraped content.
-  assertSessionUnchanged(snapshot);
-  // See note in navigate() — wrap scraped content so untrusted page text is
-  // visibly separated from trusted tool output.
-  return `Current URL: ${url}\n\n${wrapUntrusted(truncated)}`;
+    const truncated = content.length > 8000 ? content.slice(0, 8000) + "\n[truncated]" : content;
+    // Refresh authority before returning account-derived scraped content.
+    assertSessionUnchanged(snapshot);
+    // See note in navigate() — wrap scraped content so untrusted page text is
+    // visibly separated from trusted tool output.
+    return `Current URL: ${url}\n\n${wrapUntrusted(truncated)}`;
+  });
 }
