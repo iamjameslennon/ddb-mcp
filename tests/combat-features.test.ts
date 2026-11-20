@@ -4,12 +4,12 @@
  */
 import { describe, expect, it } from "vitest";
 import { wrapUntrusted } from "../src/utils.js";
-import { featureLineContext, isMasteryAction, snippetDice, snippetSaveDc } from "../src/tools/character/actions.js";
+import { actionParents, featureLineContext, isMasteryAction, snippetDice, snippetSaveDc } from "../src/tools/character/actions.js";
 import { computeCoreStats } from "../src/tools/character/core.js";
 import { num } from "../src/tools/character/helpers.js";
-import type { CharData } from "../src/tools/character/types.js";
+import type { CharData, ClassEntry } from "../src/tools/character/types.js";
 import { INDEX } from "./fixtures/character-edition-helpers.js";
-import { BASE, CLASS_FEATURE, FIGHTER, combat, block, ACTION, BONUS, REACTION, SPECIAL, action, limited, actions, feature, fighter } from "./fixtures/combat-helpers.js";
+import { BASE, CLASS_FEATURE, FIGHTER, ITEM, combat, block, ACTION, BONUS, REACTION, SPECIAL, action, limited, actions, feature, fighter } from "./fixtures/combat-helpers.js";
 
 const FEATS = [feature(1, "Channel Divinity"), feature(2, "Bard"), feature(3, "Rogue"), feature(4, "Monk"), feature(5, "Second")];
 const sheet = (list: unknown[], bucket = "class", extra: Record<string, unknown> = {}) =>
@@ -132,6 +132,41 @@ describe("action features", () => {
     });
     it("prints ? for an unknown proficiency operator", () => {
       expect(line("Odd", { proficiencyBonusOperator: 2 })).toContain("/ ? max");
+    });
+    // Deferred minors (2026-11-19 Task 6).
+    it("prints ? for an unknown stat operator alongside the proficiency bonus", () => {
+      expect(line("Odd", { statModifierUsesId: 6, operator: 2 }, 16)).toContain("/ ? max");
+    });
+    it("prints ? for a positive base with an unknown proficiency operator", () => {
+      expect(line("Odd", { maxUses: 4, proficiencyBonusOperator: 2 })).toContain("/ ? max");
+    });
+    it.each([[1, 2], [9, 4], [13, 5], [17, 6]])("at level %i the maximum is the proficiency bonus, %i", (level, pb) => {
+      const out = combat({
+        classes: [fighter({ classFeatures: FEATS, level })],
+        ...actions({ class: [action("Luck Points", 1, CLASS_FEATURE, SPECIAL, { limitedUse: { numberUsed: 0, resetType: 2, maxUses: 0, useProficiencyBonus: true, proficiencyBonusOperator: 1 } })] }),
+      });
+      expect(block(out, "LIMITED USE")).toBe(`LIMITED USE\n• Luck Points   0 used / ${pb} max   (Long Rest)`);
+    });
+    it("an item's own charge line defers to a proficiency-keyed action the item grants", () => {
+      const wand = { id: 70, equipped: true, isAttuned: false, quantity: 1, limitedUse: { maxUses: 7, numberUsed: 0, resetType: 2 },
+        definition: { id: 5000, entityTypeId: ITEM, name: "Wand of Sparks", filterType: "Wand", magic: true, sources: [{ sourceId: 145 }] } };
+      const out = combat({
+        classes: [fighter({ classFeatures: FEATS })],
+        inventory: [wand],
+        ...actions({ item: [action("Spark Bolt", 5000, ITEM, SPECIAL, { limitedUse: { numberUsed: 0, resetType: 2, maxUses: 0, useProficiencyBonus: true, proficiencyBonusOperator: 1 } })] }),
+      });
+      const lu = block(out, "LIMITED USE");
+      expect(lu).toContain("• Spark Bolt   0 used / 3 max   (Long Rest)");
+      expect(lu).not.toContain("Wand of Sparks");
+    });
+    it("a proficiency-keyed action the combat block doesn't show is still a lookup parent (LIMITED USE lists it)", () => {
+      const data = { ...BASE, classes: [fighter({ classFeatures: FEATS })], inventory: [], classSpells: [], spells: {},
+        ...actions({ class: [action("Turn the Tide", 1, CLASS_FEATURE, 0, { limitedUse: { numberUsed: 0, resetType: 2, maxUses: 0, useProficiencyBonus: true, proficiencyBonusOperator: 1 } })] }) };
+      const parents = actionParents(data as unknown as CharData, (data.classes ?? []) as unknown as ClassEntry[]);
+      expect(parents.map(p => [p.action, p.parent])).toContainEqual(["Turn the Tide", "Channel Divinity"]);
+      // Without the proficiency flag (no uses) the same hidden action is no parent.
+      const plain = { ...data, ...actions({ class: [action("Turn the Tide", 1, CLASS_FEATURE, 0, { limitedUse: { numberUsed: 0, resetType: 2, maxUses: 0, useProficiencyBonus: false } })] }) };
+      expect(actionParents(plain as unknown as CharData, (plain.classes ?? []) as unknown as ClassEntry[]).map(p => p.action)).not.toContain("Turn the Tide");
     });
     it("lists nothing when the flag is false and there is no stat or base", () => {
       const out = sheet([action("Nothing", 1, CLASS_FEATURE, ACTION, { limitedUse: { maxUses: 0, numberUsed: 0, resetType: 2, useProficiencyBonus: false } })]);

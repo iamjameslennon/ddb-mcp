@@ -652,7 +652,7 @@ describe("bonus-action and reaction spell figures (bj, owner ruling 2026-11-19)"
     spellDef(name, level, { activation: { activationTime: 1, activationType }, ...extra });
   const SPIRITUAL_WEAPON = act(3, "Spiritual Weapon", 2, { attackType: 1, range: ranged(60), modifiers: [{ ...damage("force", "1d8", scaled([2, "1d8"])), usePrimaryStat: true }] });
   const HELLISH_REBUKE = act(4, "Hellish Rebuke", 1, { saveDcAbilityId: 2, range: ranged(60), modifiers: [damage("fire", "2d10", scaled([1, "1d10"]))] });
-  const HEX = act(3, "Hex", 1, { range: ranged(90), modifiers: [damage("necrotic", "1d6")] });
+  const HEX_FIGURES = act(3, "Hex", 1, { range: ranged(90), modifiers: [damage("necrotic", "1d6")] });
   const SANCTUARY = act(3, "Sanctuary", 1, { saveDcAbilityId: 5, range: ranged(30) });
   const SHILLELAGH = act(3, "Shillelagh", 0, {
     attackType: 1, range: { origin: "Touch", rangeValue: null, aoeType: null, aoeValue: null },
@@ -672,7 +672,7 @@ describe("bonus-action and reaction spell figures (bj, owner ruling 2026-11-19)"
   });
 
   it("a damage-only spell prints its damage and range (Hex)", () => {
-    expect(bonus(cleric(5, [known(HEX)]))).toContain("• Hex (spell, 1st-level slot)   1d6 necrotic   range 90 ft.");
+    expect(bonus(cleric(5, [known(HEX_FIGURES)]))).toContain("• Hex (spell, 1st-level slot)   1d6 necrotic   range 90 ft.");
   });
 
   it("a save spell without damage prints the DC and range (Sanctuary)", () => {
@@ -686,7 +686,7 @@ describe("bonus-action and reaction spell figures (bj, owner ruling 2026-11-19)"
   });
 
   it("an upcast without scaling data names the slot, as ACTIONS rows do", () => {
-    expect(bonus(cleric(5, [known(HEX, { castAtLevel: 3 })]))).toContain("• Hex (spell, 3rd-level slot)   1d6 necrotic (at 3rd-level slot: see spell)   range 90 ft.");
+    expect(bonus(cleric(5, [known(HEX_FIGURES, { castAtLevel: 3 })]))).toContain("• Hex (spell, 3rd-level slot)   1d6 necrotic (at 3rd-level slot: see spell)   range 90 ft.");
   });
 
   it("keeps a spell with no figures bare (Healing Word, Shield, Misty Step)", () => {
@@ -698,18 +698,21 @@ describe("bonus-action and reaction spell figures (bj, owner ruling 2026-11-19)"
   it("prints damage but no to-hit when the casting ability is unknown", () => {
     const o = { classes: [cls(1, "Fighter", 5, 0, {}, { canCastSpells: false })], spells: { item: [{ usesSpellSlot: false, castAtLevel: null, definition: SPIRITUAL_WEAPON }] } };
     const out = bonus(o);
-    expect(out).toContain("Spiritual Weapon");
-    expect(out).toMatch(/Spiritual Weapon[^\n]*1d8 force|Spiritual Weapon[^\n]*spellcasting modifier/);
-    expect(out).not.toMatch(/Spiritual Weapon[^\n]*to hit/);
+    const line = out.split("\n").find(l => l.startsWith("• Spiritual Weapon")) ?? "";
+    expect(line).toMatch(/   1d8 force   range 60 ft\.$/);
+    expect(line).not.toMatch(/to hit/);
   });
 
   it("a homebrew spell's figures are wrapped whole with its line; an official one stays plain", () => {
-    const brew = { ...HEX, id: 9903, name: "Brew Hex", isHomebrew: true };
+    const brew = { ...HEX_FIGURES, id: 9903, name: "Brew Hex", isHomebrew: true };
     const o = cleric(5, [known(brew), known({ ...SPIRITUAL_WEAPON, isHomebrew: false })]);
     const out = sheet(o);
     const brewLine = "• Brew Hex (spell, 1st-level slot)   1d6 necrotic   range 90 ft.";
     expect(out).toContain(wrapUntrusted(brewLine));
     expect(out.split(wrapUntrusted(brewLine)).join("")).not.toContain("untrusted");
+    const official = out.split("\n").findIndex(l => l.startsWith("• Spiritual Weapon (spell, 2nd-level slot)   "));
+    expect(official).toBeGreaterThan(-1);
+    expect(out.split("\n")[official - 1]).not.toBe("<untrusted_dndbeyond_content>");
   });
 
   it("an action spell's ACTIONS row is unchanged", () => {
@@ -718,7 +721,43 @@ describe("bonus-action and reaction spell figures (bj, owner ruling 2026-11-19)"
   });
 
   it("the same spell in two lists is still printed once", () => {
-    const o = { ...cleric(5, [known(HEX)]), spells: { item: [{ usesSpellSlot: false, castAtLevel: null, definition: HEX }] } };
+    const o = { ...cleric(5, [known(HEX_FIGURES)]), spells: { item: [{ usesSpellSlot: false, castAtLevel: null, definition: HEX_FIGURES }] } };
     expect(bonus(o).split("• Hex (").length - 1).toBe(1);
   });
+  // Deferred minors (2026-11-19 Task 11).
+  it("Spiritual Weapon stays out of ACTIONS", () => {
+    expect(rowFor(sheet(cleric(5, [known(SPIRITUAL_WEAPON)])), "Spiritual Weapon")).toBeUndefined();
+  });
+
+  it("an action spell's usePrimaryStat damage adds the casting modifier in its ACTIONS row", () => {
+    const spiritStrike = act(1, "Spirit Strike", 1, { attackType: 2, range: ranged(60), modifiers: [{ ...damage("force", "1d8"), usePrimaryStat: true }] });
+    const o = cleric(5, [known(spiritStrike)]);
+    expect(rowFor(sheet(o), "Spirit Strike")).toBe(`• ${"Spirit Strike (1st level)".padEnd(26)} ${signed(nums(o, 5).attack)} to hit   1d8+4 force   range 60 ft.`);
+  });
+
+  it("a negative casting modifier subtracts (Spiritual Weapon at WIS 8)", () => {
+    const o = { ...cleric(5, [known(SPIRITUAL_WEAPON)]), stats: stats({ wis: 8 }) };
+    expect(bonus(o)).toContain(`• Spiritual Weapon (spell, 2nd-level slot)   ${signed(nums(o, 5).attack)} to hit   1d8-1 force   range 60 ft.`);
+  });
+
+  it("a healing modifier is no damage: a healing bonus-action spell stays bare (Healing Word with its healing modifier)", () => {
+    const healingWord = act(3, "Healing Word", 1, { range: ranged(60), modifiers: [{ type: "bonus", subType: "hit-points", die: { diceCount: 2, diceValue: 4, diceString: "2d4" }, usePrimaryStat: true, restriction: "" }] });
+    const o = cleric(5, [known(healingWord)]);
+    expect(bonus(o).split("\n")).toContain("• Healing Word (spell, 1st-level slot)");
+  });
+
+  it("Shield (reaction) and Misty Step (bonus action) have no figures and stay bare", () => {
+    const o = cleric(5, [known(act(4, "Shield", 1, { range: { origin: "Self", rangeValue: null, aoeType: null, aoeValue: null } })), known(act(3, "Misty Step", 2, { range: { origin: "Self", rangeValue: null, aoeType: null, aoeValue: null } }))]);
+    expect(reaction(o).split("\n")).toContain("• Shield (spell, 1st-level slot)");
+    expect(bonus(o).split("\n")).toContain("• Misty Step (spell, 2nd-level slot)");
+  });
+
+  it("a bonus-action cantrip that rides a weapon attack prints the weapon-attack figures", () => {
+    const rider = act(3, "Rider Strike", 0, {
+      attackType: 1, asPartOfWeaponAttack: true, range: { origin: "Self", rangeValue: null, aoeType: null, aoeValue: null }, scaleType: "characterlevel",
+      modifiers: [{ ...damage("radiant", null, scaled([5, "1d6"], [11, "2d6"], [17, "3d6"])), usePrimaryStat: true }],
+    });
+    expect(bonus(cleric(5, [known(rider)]))).toContain("• Rider Strike (spell, cantrip)   weapon attack with WIS   weapon damage + 1d6 radiant");
+  });
+
 });

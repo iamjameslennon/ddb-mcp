@@ -201,23 +201,29 @@ describe("global save bonus (bc, owner ruling 2026-11-19)", () => {
     expect(saves(visible)).toEqual(plusOne());
   });
 
-  it("a null entry in a modifier list does not throw", () => {
-    const data = variant(FIGHTER_5, d => { d.modifiers.class = [...(d.modifiers.class ?? []), null, { type: "bonus", subType: "saving-throws", value: 1, fixedValue: 1, componentId: 1, componentTypeId: 1 }]; });
+  it.each(["class", "subclass", "race", "feat", "item"] as const)("a null entry in the %s bucket does not throw", bucket => {
+    const data = variant(FIGHTER_5, d => { d.modifiers[bucket] = [...(d.modifiers[bucket] ?? []), null, { type: "bonus", subType: "saving-throws", value: 1, fixedValue: 1, componentId: 1, componentTypeId: 1 }]; });
     expect(() => saves(data)).not.toThrow();
     expect(saves(data)).toEqual(plusOne());
   });
 
-  it("a non-item modifier (race, feat) still counts", () => {
-    const data = variant(FIGHTER_5, d => {
-      d.modifiers.feat = [...(d.modifiers.feat ?? []), { type: "bonus", subType: "saving-throws", value: 1, fixedValue: 1, componentId: 1, componentTypeId: 1 }];
-    });
-    expect(saves(data)).toEqual(plusOne());
+  it("a race or feat modifier counts even when its ids name a class feature above the class level (the visibility rule is for class buckets only)", () => {
+    for (const bucket of ["race", "feat"] as const) {
+      const data = variant(FIGHTER_5, d => {
+        d.classes[0].classFeatures = [...(d.classes[0].classFeatures ?? []), { definition: { id: 900, entityTypeId: 12168134, name: "F900", requiredLevel: 20 } }];
+        d.modifiers[bucket] = [...(d.modifiers[bucket] ?? []), { type: "bonus", subType: "saving-throws", value: 1, fixedValue: 1, componentId: 900, componentTypeId: 12168134 }];
+      });
+      expect(saves(data), bucket).toEqual(plusOne());
+    }
   });
 
   it("a proficient save gets the proficiency bonus once, and the global bonus adds on top with the * marker kept", () => {
     const line = parseSheet(ring(), "summary", INDEX).split("\n").find(l => /\bSTR [+-]\d+\*/.test(l)) ?? "";
     expect(line).toMatch(/STR [+-]\d+\*/);
-    expect(saves(ring())["STR"]).toBe(clean["STR"] + 1);
+    const str = (FIGHTER_5 as { data: { stats: { id: number; value: number }[] } }).data.stats.find(st => st.id === 1)!.value;
+    const strMod = Math.floor((str - 10) / 2);
+    expect(clean["STR"]).toBe(strMod + 3); // proficiency bonus +3 at level 5, added once
+    expect(saves(ring())["STR"]).toBe(strMod + 3 + 1);
   });
 });
 

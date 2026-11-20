@@ -116,13 +116,28 @@ describe("Unarmed Strike row", () => {
     expect(row(combat(overrides))).toEqual([`• ${"Unarmed Strike".padEnd(16)} +${3 + core.profBonus} to hit   4 bludgeoning   reach 5 ft.`]);
   });
 
-  it("invents no Martial Arts die without a level scale", () => {
-    expect(row(combat(monk("none", 8, 16)))[0]).not.toMatch(/\dd\d/);
+  it("invents no Martial Arts die without a level scale: the damage is 1 + the better modifier, with no die", () => {
+    const out = row(combat(monk("none", 8, 16)))[0];
+    expect(out).not.toMatch(/\d+d\d+/);
+    expect(out).toMatch(/ 4 bludgeoning /);
   });
 
-  it("a martial-arts modifier counts as Martial Arts too", () => {
+  it("a martial-arts modifier counts as Martial Arts too, for to-hit and damage", () => {
     const overrides = { stats: stats(8, 16), modifiers: { ...(BASE.modifiers as object), class: [{ type: "bonus", subType: "martial-arts", componentId: 0 }] } };
-    expect(row(combat(overrides))[0]).toContain("4 bludgeoning");
+    const core = coreOf(overrides);
+    expect(row(combat(overrides))).toEqual([`• ${"Unarmed Strike".padEnd(16)} +${3 + core.profBonus} to hit   4 bludgeoning   reach 5 ft.`]);
+  });
+
+  // Deferred minors (2026-11-19 Task 7).
+  it("with STR equal to DEX and no die, the row reads that shared modifier", () => {
+    const overrides = monk("none", 14, 14);
+    const core = coreOf(overrides);
+    expect(row(combat(overrides))).toEqual([`• ${"Unarmed Strike".padEnd(16)} +${2 + core.profBonus} to hit   3 bludgeoning   reach 5 ft.`]);
+  });
+
+  it.each([0, null])("a Martial Arts feature with requiredLevel %j counts as level 1, with or without a die", required => {
+    expect(row(combat(monk("wrapper", 8, 16, { requiredLevel: required })))[0]).toContain("1d6+3 bludgeoning");
+    expect(row(combat(monk("none", 8, 16, { requiredLevel: required })))[0]).toContain(" 4 bludgeoning");
   });
 
   it("an item's martial-arts modifier counts only while the item is equipped (and attuned when it needs attunement)", () => {

@@ -1301,6 +1301,16 @@ describe("parseCharacterData — Other bonus (bonusStats) applies after the 20 c
     expect(parseCharacterData(char, "summary")).toContain("CON 19 (+4)");
   });
 
+  it("an override ignores both the Other bonus and a set score on the same ability (deferred minor 2026-11-19)", () => {
+    const char = build({ base: [10, 12, 14, 10, 13, 8], override: { 3: 15 }, other: { 3: 2 }, mods: [{ src: "item", type: "set", stat: 3, val: 19 }] });
+    expect(parseCharacterData(char, "summary")).toContain("CON 15 (+2)");
+  });
+
+  it("an override of 0 is taken as set, not as absent (pins today's reading; deferred minor 2026-11-19)", () => {
+    const char = build({ base: [10, 12, 14, 10, 13, 8], override: { 3: 0 } });
+    expect(parseCharacterData(char, "summary")).toContain("CON 0 (-5)");
+  });
+
   it("an Other bonus below the cap adds in full", () => {
     const char = build({ base: [10, 14, 14, 10, 13, 8], other: { 2: 2 } });
     expect(parseCharacterData(char, "summary")).toContain("DEX 16 (+3)");
@@ -3091,6 +3101,29 @@ describe("parseCharacterData — inventory separator, EQUIPPED magic items, name
     expect(out).toContain(wrapUntrusted("  My Charm"));
   });
 
+  it("a player-made stack in EQUIPPED is wrapped with its ×N; an official item beside it stays plain (deferred minor 2026-11-19)", () => {
+    const out = inv([
+      entry(1, "My Charm", "Other", { isCustomItem: true, magic: true }, { equipped: true, quantity: 2 }),
+      entry(2, "Ring of Warmth", "Ring", { magic: true }, { equipped: true }),
+    ]);
+    expect(out).toContain(wrapUntrusted("  My Charm ×2"));
+    expect(out).toContain("\n  Ring of Warmth\n");
+    expect(out).not.toContain(wrapUntrusted("  Ring of Warmth"));
+  });
+
+  it("two inventory entries of one definition stay two EQUIPPED lines (deferred minor 2026-11-19)", () => {
+    const out = inv([
+      entry(1, "Ring of Warmth", "Ring", { magic: true }, { equipped: true }),
+      { ...entry(2, "Ring of Warmth", "Ring", { magic: true }, { equipped: true }), definition: { ...entry(1, "Ring of Warmth", "Ring", { magic: true }).definition } },
+    ]);
+    expect(out.split("EQUIPPED\n")[1].split("\n\n")[0]).toBe("  Ring of Warmth\n  Ring of Warmth");
+  });
+
+  it("an equipped magic armor stack prints its AC and no ×N (deferred minor 2026-11-19)", () => {
+    const out = inv([entry(1, "Plate Armor +1", "Armor", { magic: true, armorClass: 18 }, { equipped: true, quantity: 2 })]);
+    expect(out.split("EQUIPPED\n")[1].split("\n\n")[0]).toBe("  Plate Armor +1 (AC 18)");
+  });
+
   it("the attunement line names every attuned item, weapons included, and the weapon keeps its ACTIONS row", () => {
     expect(mixed()).toContain("ATTUNEMENT (2/3): Staff of the Woodlands; Longsword, +1");
     const combat = parseCharacterData({ data: { ...(FIGHTER_5.data as Record<string, unknown>), inventory: [
@@ -3423,6 +3456,21 @@ describe("parseCharacterData — null set speed and option modifiers (by)", () =
   });
   it("a null set speed on the walking axis does nothing", () => {
     expect(speedLine(withMods({}, [nullSet("walking")]))).toBe("30 ft.");
+  });
+  // Deferred minors (2026-11-19 Task 9).
+  it("a null set and a numeric set on one axis: the higher of the numeric set and the walking speed", () => {
+    const set = (v: number) => ({ type: "set", subType: "innate-speed-climbing", value: v, fixedValue: v });
+    expect(speedLine(withMods({}, [nullSet("climbing"), set(40)]))).toBe("30 ft., climb 40 ft.");
+    expect(speedLine(withMods({}, [nullSet("climbing"), set(20)]))).toBe("30 ft., climb 30 ft.");
+  });
+  it("a null set and an innate-speed bonus on one axis: never below the walking speed", () => {
+    const bonus = { type: "bonus", subType: "innate-speed-climbing", value: 10, fixedValue: 10 };
+    expect(speedLine(withMods({}, [nullSet("climbing"), bonus]))).toBe("30 ft., climb 30 ft.");
+    expect(speedLine(withMods({ climb: 25 }, [nullSet("climbing"), bonus]))).toBe("30 ft., climb 35 ft.");
+  });
+  it("a walking speed raised by a set flows to a following axis", () => {
+    const setWalk = { type: "set", subType: "innate-speed-walking", value: 40, fixedValue: 40 };
+    expect(speedLine(withMods({}, [setWalk, nullSet("climbing")]))).toBe("40 ft., climb 40 ft.");
   });
   it("a zero set speed still does not open the axis", () => {
     expect(speedLine(withMods({}, [{ type: "set", subType: "innate-speed-flying", value: 0, fixedValue: 0 }]))).toBe("30 ft.");
