@@ -36,32 +36,71 @@ describe("formatCharacterLookup", () => {
     expect(out).toContain("4. [Spell] Wall of Fire [edition not stated] (Level 4 Evocation)");
   });
 
-  it("a query that matched four entries still prints the Found 4 matches list, loose matches included", () => {
+  it("a query four names contain prints the Found 4 matches list", () => {
     const sp = (id: number, name: string) => ({ definition: { id, name, level: 0, school: "Evocation", sources: S(2) } });
     const char = variant(FIGHTER_5, d => { d.spells = { race: [
-      sp(1, "Eldritch Blast"), sp(2, "Eldritch Blast Focus"), sp(3, "Eldritch Blasts"), sp(4, "Blast Eldritch"),
+      sp(1, "Eldritch Blast"), sp(2, "Eldritch Blast Focus"), sp(3, "Eldritch Blasts"), sp(4, "Greater Eldritch Blast"),
       sp(5, "Eldritch Knight"), sp(6, "Fire Bolt"),
     ] }; }).data as Record<string, unknown>;
     const out = formatCharacterLookup(char, "eldritch blast", INDEX);
     expect(out.startsWith('Found 4 matches for "eldritch blast". Be more specific, or here are the matches:\n\n')).toBe(true);
-    for (const n of ["Eldritch Blast [2014]", "Eldritch Blast Focus", "Eldritch Blasts", "Blast Eldritch"]) expect(out).toContain(n);
+    for (const n of ["Eldritch Blast [2014]", "Eldritch Blast Focus", "Eldritch Blasts", "Greater Eldritch Blast"]) expect(out).toContain(n);
     expect(out).not.toContain("Eldritch Knight");
     expect(out).not.toContain("Fire Bolt");
   });
 
-  it("an exact name match comes first; the rest keep their order (exact-first, carry-over (bv))", () => {
+  // ── The typo rule is a fallback (carry-over (bv), owner ruling 2026-11-20) ──
+  describe("typo and word-order matches only when no name contains the query", () => {
     const sp = (id: number, name: string) => ({ definition: { id, name, level: 1, school: "Evocation", sources: S(2) } });
-    const two = variant(FIGHTER_5, d => { d.spells = { race: [sp(1, "Eldritch Blast"), sp(2, "Bless")] }; }).data as Record<string, unknown>;
+    const spells = (...names: string[]) =>
+      variant(FIGHTER_5, d => { d.spells = { race: names.map((n, i) => sp(i + 1, n)) }; }).data as Record<string, unknown>;
+
+    it("\"bless\" finds Bless alone, not Eldritch Blast", () => {
+      const out = formatCharacterLookup(spells("Eldritch Blast", "Bless"), "bless", INDEX);
+      expect(out.startsWith("[Spell]\nBless (Level 1 Evocation)\n")).toBe(true);
+      expect(out).not.toContain("Eldritch Blast");
+    });
+
+    it("\"rage\" finds Rage alone, not Mage Armor", () => {
+      const out = formatCharacterLookup(spells("Mage Armor", "Rage"), "rage", INDEX);
+      expect(out.startsWith("[Spell]\nRage (")).toBe(true);
+      expect(out).not.toContain("Mage Armor");
+    });
+
+    it("a typo still finds the entry when no name contains it", () => {
+      expect(formatCharacterLookup(spells("Eldritch Blast"), "eldrich blast", INDEX).startsWith("[Spell]\nEldritch Blast (")).toBe(true);
+    });
+
+    it("a word-order query still finds the entry when no name contains it", () => {
+      expect(formatCharacterLookup(spells("Eldritch Blast"), "blast eldritch", INDEX).startsWith("[Spell]\nEldritch Blast (")).toBe(true);
+    });
+
+    it("a word-order variant is dropped when another name contains the query", () => {
+      const out = formatCharacterLookup(spells("Eldritch Blast", "Blast Eldritch"), "eldritch blast", INDEX);
+      expect(out.startsWith("[Spell]\nEldritch Blast (")).toBe(true);
+      expect(out).not.toContain("Blast Eldritch");
+    });
+
+    it("a substring hit hides a meant typo: \"Trace\" typed for Trance finds Pass without Trace (the recorded loss)", () => {
+      const out = formatCharacterLookup(spells("Trance", "Pass without Trace"), "Trace", INDEX);
+      expect(out.startsWith("[Spell]\nPass without Trace (")).toBe(true);
+      expect(out).not.toContain("Trance (");
+    });
+  });
+
+  it("an exact name match comes first; the rest keep their order (exact-first)", () => {
+    const sp = (id: number, name: string) => ({ definition: { id, name, level: 1, school: "Evocation", sources: S(2) } });
+    const two = variant(FIGHTER_5, d => { d.spells = { race: [sp(1, "Blessed Strikes"), sp(2, "Bless")] }; }).data as Record<string, unknown>;
     const out = formatCharacterLookup(two, "bless", INDEX);
     expect(out.startsWith("[Spell]\nBless (Level 1 Evocation)\n")).toBe(true);
-    expect(out.indexOf("Eldritch Blast")).toBeGreaterThan(out.indexOf("Bless ("));
+    expect(out.indexOf("Blessed Strikes")).toBeGreaterThan(out.indexOf("Bless ("));
     const five = variant(FIGHTER_5, d => { d.spells = { race: [
       sp(1, "Eldritch Blast"), sp(2, "Blessed Strikes"), sp(3, "BLESS"), sp(4, "Blast Bless"), sp(5, "Bless’"),
     ] }; }).data as Record<string, unknown>;
     const list = formatCharacterLookup(five, "Bless", INDEX);
-    expect(list.startsWith('Found 5 matches for "Bless". Be more specific, or here are the matches:\n\n')).toBe(true);
+    expect(list.startsWith('Found 4 matches for "Bless". Be more specific, or here are the matches:\n\n')).toBe(true);
     expect(list.split("\n").slice(2).map(l => l.replace(/ \[2014\].*$/, ""))).toEqual([
-      "1. [Spell] BLESS", "2. [Spell] Bless’", "3. [Spell] Eldritch Blast", "4. [Spell] Blessed Strikes", "5. [Spell] Blast Bless",
+      "1. [Spell] BLESS", "2. [Spell] Bless’", "3. [Spell] Blessed Strikes", "4. [Spell] Blast Bless",
     ]);
   });
 
@@ -343,6 +382,19 @@ describe("formatCharacterLookup", () => {
     expect(formatCharacterLookup(char, "Reactive-Spell", INDEX)).toContain("Found through");
     // An entry's own name still matches loosely ("heeler" → Healer).
     expect(formatCharacterLookup(char, "heeler", INDEX).split("\n")[0]).toBe("[Feat]");
+  });
+
+  it("a through-action hit counts as a name containing the query: no loose entry hit joins it ((bv), owner ruling 2026-11-20)", () => {
+    const char = variant(FIGHTER_5, d => {
+      d.feats = [healer];
+      d.actions = { feat: [act("Battle Medic", 1789152, FEAT_TYPE)] };
+      // "Bottle Medic" is within the typo rule's distance of "battle medic", but contains neither word.
+      d.spells = { race: [{ definition: { id: 77, name: "Bottle Medic", level: 1, school: "Evocation", sources: S(2) } }] };
+    }).data as Record<string, unknown>;
+    const out = formatCharacterLookup(char, "battle medic", INDEX);
+    expect(out.split("\n").slice(0, 4)).toEqual(
+      ["[Feat]", "Healer", "Rules: 2024 · Player's Handbook (2024)", "Found through the action \"Battle Medic\", which this entry grants."]);
+    expect(out).not.toContain("Bottle Medic");
   });
 
   it("an action name matches at a word start: \"age\" misses \"Piercer: Reroll Damage\" (fix round, owner decision 2026-11-17)", () => {

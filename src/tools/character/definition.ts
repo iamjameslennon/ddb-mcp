@@ -14,7 +14,7 @@
 import { stripHtml as stripHtmlFull, wrapIfHomebrew } from "../../utils.js";
 import { classifyEdition, CUSTOM_ITEM_RULES_LINE, editionTag, entrySourceIds, rulesLine, type EditionInfo, type EditionMarkers, type SourceIndex } from "../../edition.js";
 import { getSourceIndex, LOGGED_OUT_CHARACTER_INDEX_WAIT_MS } from "../../game-config.js";
-import { matchesAtWordStart, matchesLooseName, nameFold } from "../../name-match.js";
+import { containsFolded, matchesAtWordStart, matchesLooseName, nameFold } from "../../name-match.js";
 import { loadCharacterForParse, withNotice } from "../character.js";
 import { computeCharacterEditions, type CharacterEditions } from "./editions.js";
 import { customItemNames, featureDefinition, itemDisplayName, isHomebrewClassFeature, isHomebrewEntry, isSubclassFeature, records } from "./helpers.js";
@@ -26,13 +26,14 @@ import { castingTimeText } from "../casting-time.js";
 import { withoutMasteryParagraph } from "../weapon-mastery.js";
 import { ddbPrerequisiteText, type DdbPrerequisite } from "../prerequisite.js";
 
-const matchesDefinitionQuery = matchesLooseName;
+/** How an entry name is matched against the query: `containsFolded` first, `matchesLooseName` as the fallback. */
+type NameMatcher = (name: string, query: string) => boolean;
 
 /**
  * An action name matches only when the folded query starts at a word of it
  * (`matchesAtWordStart`, ddb_search_monsters' rule; fix round, owner decisions
- * 2026-11-17), so "age" doesn't reach "Piercer: Reroll Damage". The loose rule
- * (carry-over (bv)) stays for entry names.
+ * 2026-11-17), so "age" doesn't reach "Piercer: Reroll Damage". Entry names
+ * take the typo rule only as a fallback (formatCharacterLookup).
  */
 const matchesActionQuery = (action: string, query: string): boolean => matchesAtWordStart(action, query);
 
@@ -164,13 +165,15 @@ const viaLine = (action: string): string => `Found through the action "${action}
 /**
  * `viaActions: false` searches entry names only; otherwise an action whose
  * name matches also finds the entry that grants it (actionParents, F1).
+ * `match` decides entry names (default `containsFolded`); action names always
+ * use `matchesActionQuery`.
  */
 function searchDefinitions(
   char: Record<string, unknown>,
   query: string,
   editions: CharacterEditions,
   index: SourceIndex,
-  { viaActions = true }: { viaActions?: boolean } = {},
+  { viaActions = true, match = containsFolded }: { viaActions?: boolean; match?: NameMatcher } = {},
 ): DefinitionHit[] {
   const results: DefinitionHit[] = [];
 
@@ -193,7 +196,7 @@ function searchDefinitions(
   ];
   for (const spell of allSpells) {
     const name = str(obj(spell.definition).name || spell.name);
-    if (name && matchesDefinitionQuery(name, query)) {
+    if (name && match(name, query)) {
       // A homebrew spell (including one listed under classSpells[].classSpells,
       // the 2024 format) can come from another player's shared collection.
       results.push({
@@ -206,7 +209,7 @@ function searchDefinitions(
   // ── Feats ─────────────────────────────────────────────────────────────────
   for (const feat of records(char.feats)) {
     const name = str(obj(feat.definition).name);
-    if (name && matchesDefinitionQuery(name, query)) {
+    if (name && match(name, query)) {
       results.push({
         type: "Feat", name, info: editions.info(feat.definition), text: formatFeatResult(feat),
         untrusted: isHomebrewEntry(feat),
@@ -235,7 +238,7 @@ function searchDefinitions(
       const d = obj(cf.definition);
       const name = str(d.name);
       const requiredLevel = num(d.requiredLevel || 1);
-      if (requiredLevel <= charLevel && name && matchesDefinitionQuery(name, query) && !seen.has(name)) {
+      if (requiredLevel <= charLevel && name && match(name, query) && !seen.has(name)) {
         seen.add(name);
         // A subclass feature (helpers.ts isSubclassFeature, F9) takes the subclass's book.
         const sub = isSubclassFeature(cf, cls);
@@ -260,7 +263,7 @@ function searchDefinitions(
       if (classFeatureIds.has(num(d.id))) continue;
       const name = str(d.name);
       const requiredLevel = num(d.requiredLevel || 1);
-      if (requiredLevel <= charLevel && name && matchesDefinitionQuery(name, query) && !seen.has(name)) {
+      if (requiredLevel <= charLevel && name && match(name, query) && !seen.has(name)) {
         seen.add(name);
         results.push({
           type: "Subclass Feature",
@@ -318,7 +321,7 @@ function searchDefinitions(
     const className = owner.viaSubclass && subName ? `${str(classDef.name)} / ${subName}` : str(classDef.name);
     const fallback = owner.viaSubclass ? editions.info(obj(owner.cls.subclassDefinition)) : classifyEdition(classDef as EditionMarkers, index);
     for (const o of options) {
-      if (!matchesDefinitionQuery(o.name, query)) continue;
+      if (!match(o.name, query)) continue;
       const head = owner.parentName ? `${o.name} (${owner.parentName}, ${className})` : `${o.name} (${className})`;
       results.push({
         type: "Class Option",
@@ -336,7 +339,7 @@ function searchDefinitions(
   for (const trait of records(race.racialTraits)) {
     const def = obj(trait.definition);
     const name = str(def.name);
-    if (name && matchesDefinitionQuery(name, query)) {
+    if (name && match(name, query)) {
       results.push({
         type: "Racial Trait", name, info: editions.info(char.race), text: formatRacialTraitResult(trait, raceName),
         untrusted: isHomebrewEntry(trait, race),
@@ -354,7 +357,7 @@ function searchDefinitions(
   // A feature that is a feat is the feat's own entry (found above), as on the
   // sheet, which leaves it out of BACKGROUND FEATURE.
   const bgFeatureIsFeat = bgDef.featureIsFeat === true;
-  if (bgFeatureName && !bgFeatureIsFeat && matchesDefinitionQuery(bgFeatureName, query)) {
+  if (bgFeatureName && !bgFeatureIsFeat && match(bgFeatureName, query)) {
     const bgName = str(bgDef.name || stockBgDef.name);
     const bgDesc = stripHtmlFull(str(bgDef.featureDescription));
     results.push({
@@ -374,7 +377,7 @@ function searchDefinitions(
     const stock = str(obj(item.definition).name).trim();
     const custom = customNames.get(num(item.id));
     const name = itemDisplayName(stock, custom);
-    if (stock && (matchesDefinitionQuery(stock, query) || (custom !== undefined && matchesDefinitionQuery(custom, query)))) {
+    if (stock && (match(stock, query) || (custom !== undefined && match(custom, query)))) {
       const info = editions.info(item.definition);
       results.push({
         type: "Item", name, info, text: formatItemResult(item, name, info.ruleset),
@@ -390,7 +393,7 @@ function searchDefinitions(
   if (viaActions) {
     for (const { action, parent, kind, homebrew } of actionParents(char as CharData, classEntries as unknown as ClassEntry[])) {
       if (HIT_TYPES[kind].length === 0 || !matchesActionQuery(action, query)) continue;
-      for (const hit of searchDefinitions(char, parent, editions, index, { viaActions: false })) {
+      for (const hit of searchDefinitions(char, parent, editions, index, { viaActions: false, match: containsFolded })) {
         // Only the granting entry's own kind: an item named like a racial trait grants nothing.
         if (!HIT_TYPES[kind].includes(hit.type) || nameFold(hit.name) !== nameFold(parent)) continue;
         if (results.some(r => r.type === hit.type && r.name === hit.name)) continue;
@@ -419,13 +422,16 @@ export async function getDefinition(
 /** Pure: the formatted lookup reply for a character, labelled with each hit's ruleset. */
 export function formatCharacterLookup(char: Record<string, unknown>, query: string, index: SourceIndex): string {
   const editions = computeCharacterEditions(char as CharData, index);
-  return formatDefinitionHits(searchDefinitions(char, query, editions, index), query);
+  // The typo and word-order rule only when no name (entry or action) contains the
+  // query, so "bless" doesn't also list Eldritch Blast (carry-over (bv), owner ruling 2026-11-20).
+  const strict = searchDefinitions(char, query, editions, index, { match: containsFolded });
+  const hits = strict.length ? strict : searchDefinitions(char, query, editions, index, { match: matchesLooseName });
+  return formatDefinitionHits(hits, query);
 }
 
 /**
- * Hits whose folded name equals the folded query first ("bless" lists Bless before
- * Eldritch Blast, which the loose rule also matches: carry-over (bv)); the rest, and the
- * exact ones among themselves, keep their order.
+ * Hits whose folded name equals the folded query first ("Bless" lists Bless before
+ * Blessed Strikes); the rest, and the exact ones among themselves, keep their order.
  */
 function exactFirst(hits: DefinitionHit[], query: string): DefinitionHit[] {
   const q = nameFold(query);

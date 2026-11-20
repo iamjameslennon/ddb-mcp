@@ -371,9 +371,9 @@ describe("class and subclass features under a homebrew class or subclass (R4)", 
     expect(formatCharacterLookup(d, "class owned", INDEX)).toBe(
       "[Class Feature]\nClass Owned (Rogue, Level 3)\nRules: 2014 · Player's Handbook (2014)\n\nClass Owned text.");
     expect(formatCharacterLookup(d, "stray listed", INDEX)).toMatch(/^\[Subclass Feature\]\n<untrusted_dndbeyond_content>\nStray Listed \(Rogue \/ Shadow Trickster, Level 3\)/);
-    // The loose rule also lists Stray Listed after it; the exact hit comes first.
-    expect(formatCharacterLookup(d, "stray unlisted", INDEX).startsWith(
-      "[Class Feature]\nStray Unlisted (Rogue, Level 3)\nRules: 2014 · Player's Handbook (2014)\n\nStray Unlisted text.\n\n===")).toBe(true);
+    // A name contains the query, so the typo rule doesn't add Stray Listed ((bv), owner ruling 2026-11-20).
+    expect(formatCharacterLookup(d, "stray unlisted", INDEX)).toBe(
+      "[Class Feature]\nStray Unlisted (Rogue, Level 3)\nRules: 2014 · Player's Handbook (2014)\n\nStray Unlisted text.");
   });
 
   it("under a homebrew class, every feature is wrapped", () => {

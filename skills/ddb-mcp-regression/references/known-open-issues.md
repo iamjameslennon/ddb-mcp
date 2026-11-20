@@ -26,9 +26,6 @@ Shows up as: one save-advantage line, wrapped as untrusted, that combines an off
 
 ## Character lookup
 
-### (bv) Some short words still match loosely
-Shows up as: `ddb_character_lookup` listing an unrelated entry next to the right one ("bless" → Eldritch Blast, "rage" → Mage Armor, "cure" → Hexblade's Curse). An exact name match is listed first, so this is noise, not a wrong answer; a wrong entry listed *first* is a new finding. This doesn't apply to the action names a lookup also searches (an entry found through its action): those match only where the query starts a word, without typo tolerance ("age" doesn't reach "…Damage").
-
 ## Monsters
 
 ### (bp) `ddb_get_monster` can miss a monster in a crowded name

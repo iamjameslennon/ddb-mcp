@@ -46,6 +46,16 @@ export function levenshteinDistance(a: string, b: string): number {
   return matrix[a.length][b.length];
 }
 
+/**
+ * True when the folded query (nameFold) is non-empty and the folded name contains it: the
+ * substring half of matchesLooseName. ddb_character_lookup tries this first and falls back
+ * to matchesLooseName only when no name passes it (carry-over (bv), owner ruling 2026-11-20).
+ */
+export function containsFolded(name: string, query: string): boolean {
+  const q = nameFold(query);
+  return q !== "" && nameFold(name).includes(q);
+}
+
 const LOOSE_STOPWORDS = new Set(["of", "the", "a", "an"]);
 
 /**

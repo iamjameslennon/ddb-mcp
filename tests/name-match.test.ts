@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nameFold, matchesAtWordStart, matchesLooseName, levenshteinDistance, isCloseName } from "../src/name-match.js";
+import { nameFold, matchesAtWordStart, matchesLooseName, levenshteinDistance, isCloseName, containsFolded } from "../src/name-match.js";
 
 describe("nameFold", () => {
   it("folds hyphens, apostrophes and case the way Open5e does", () => {
@@ -62,5 +62,18 @@ describe("isCloseName", () => {
     ["Unseen Servant", "Glorbulon the Unseen Squid-King", false],
   ])("isCloseName(%j, %j) is %s", (name, query, expected) => {
     expect(isCloseName(name, query)).toBe(expected);
+  });
+});
+
+describe("containsFolded", () => {
+  it.each([
+    ["Eldritch Blast", "eldritch", true],
+    ["Eldritch Blast", "bless", false],
+    ["Will-o'-Wisp", "will o wisp", true],
+    ["Stone’s Endurance", "stones endurance", true],
+    ["x", "", false],
+    ["x", "  ", false],
+  ])("containsFolded(%j, %j) is %s", (name, query, expected) => {
+    expect(containsFolded(name, query)).toBe(expected);
   });
 });
