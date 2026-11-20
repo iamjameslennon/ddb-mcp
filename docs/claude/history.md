@@ -79,6 +79,14 @@ First run (HEAD `45ee0b3` vs 2.10.2, about 13 s): 56/56 characters, 0 crashes, 0
 
 Pilot (2026-11-11, in Claude Code against the fresh build, narrowed scope: batch 1 with one section type per character, the test campaign's party, 5 matrix tools and the 5 gate refusals; no spot-check, real download or logged-out pass): every gate refused with nothing done, and the replies sampled were consistent, labelled and wrapped. Findings: **F1 🟠 confirmed**, carried weapons that aren't equipped appear nowhere on the sheet (INVENTORY skips all weapons, ACTIONS lists equipped ones only; Ethelrede 112314883, Astarion 107164636, Bobby 133053421); F2 ⚪ suspected `Immunities: Magical-sleep` (Mori Yosei 39714283); F3 ⚪ suspected "HalfCover" in the SRD Cover text; improvement: "dragon" in `ddb_rate_encounter` counts a third-party monster named "Dragon". Known (B14) read_book blank lines seen. Skill fixes from the pilot: free-account books named (the library marks giveaways "Owned"); `combat` contains `summary`; `ddb_get_character_raw` allowed as evidence on public characters; matrix "ambiguous" examples use "Red Dragon"; intended-behaviour entries for equipped weapons in ACTIONS and exact-name encounter matches. F1–F3 are open, for the owner.
 
+### Ready carry-overs 2026-11-20
+
+Spec [docs/superpowers/specs/2026-11-20-ready-carry-overs-design.md](../superpowers/specs/2026-11-20-ready-carry-overs-design.md) (owner-approved 2026-11-20), plan `docs/superpowers/plans/2026-11-20-ready-carry-overs.md`. Every open item that needs no book-owning account, new test character or website check. Run inline, TDD, then adversarial reviews by opencode (Zen DeepSeek), Codex, Cursor (grok-4.7-medium) and `freellmapi/auto:reviewers` (owner request 2026-11-20).
+
+**Closed:**
+
+- **Per-skill and initiative bonuses** (parked 2026-11-20) TASK1SHA: `bonus <skill>` and `bonus initiative` modifiers follow the (bc) rule, item gate and feature visibility rule. One walk, `activeBucketMods(core)` in the new `active-mods.ts`, now serves the global save and ability-check bonuses, per-skill and initiative bonuses and the save-advantage lines (it also closes the 2026-11-19 Task 10 minor "two near-identical bucket loops… an `activeBucketMods` helper"). Measured: no corpus change (the 56 × 8 HEAD outputs of `regress-all-characters.mts` byte-identical before and after the change).
+
 ### Carry-overs 2026-11-20
 
 Two items, no plan file (both small): carry-over (bs) and the ability-check bonus parked by the 2026-11-19 round. TDD, then adversarial reviews by Codex (three rounds on (bs), one on the gate), every claim checked against the code before acting.
@@ -99,10 +107,7 @@ Two items, no plan file (both small): carry-over (bs) and the ability-check bonu
 - (bs) round 3, low, deferred (minor, for a later round): a page operation (`goto`, click, fill, `evaluate`, screenshot) that rejects because the session change closed the context mid-flight reports Playwright's error, not `SessionChangedError`. Nothing is returned either way; pre-existing for any session change mid-operation.
 - Gate, minor, confirmed: the race bucket was untested; a race-bucket case was added. No drift in the save bonus.
 
-**Parked (not carry-over codes yet; both pre-existing, out of this round's scope, no corpus impact checked):**
-
-- Per-skill `bonus <skill>` modifiers (`computeSkillBonuses`' `flatBonus`) are not gated on the item or the feature visibility rule.
-- Initiative `bonus initiative` modifiers (`computeInitiative`, `vitals.ts`) are not gated on the item.
+**Parked (not carry-over codes yet; both pre-existing, out of this round's scope, no corpus impact checked):** both closed by "Ready carry-overs 2026-11-20" (per-skill and initiative bonuses).
 
 **(bm), added the same day** (no plan file; a refactor, so the existing suites plus the whole corpus are the safety net, then adversarial reviews):
 

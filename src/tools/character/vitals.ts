@@ -12,6 +12,7 @@
 import { arr, records, featureDefinition, hasRemarkableAthlete, isBonusMod, isHalfProficiencyMod, isSetMod, num, obj, signed, str } from "./helpers.js";
 import { OPTION_TYPE, hiddenOptionIds, visibleClassFeatureIds } from "./granting.js";
 import { isActiveItemMod } from "./item-gate.js";
+import { activeBucketMods } from "./active-mods.js";
 import type { CharData, ClassEntry, CoreStats, Mod } from "./types.js";
 
 export interface HitPoints { current: number; max: number; temp: number }
@@ -167,7 +168,9 @@ function computeSpeed(core: CoreStats): string[] {
 function computeInitiative(core: CoreStats): number {
   const { allMods, statMods, classes, profBonus } = core;
   const dexMod = statMods[1];
-  const initiativeBonus = allMods
+  // Only while the source is active: an item's while equipped (and attuned), a
+  // class or subclass feature's while visible (the (bc) rule; parked 2026-11-20).
+  const initiativeBonus = activeBucketMods(core).map(({ mod }) => mod)
     .filter(m => isBonusMod(m) && m.subType === "initiative")
     .reduce((s: number, m: Mod) => {
       // bonusTypes [1] means the bonus value is the proficiency bonus, not a fixed number

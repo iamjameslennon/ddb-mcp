@@ -298,3 +298,106 @@ describe("global ability-check bonus (parked 2026-11-19, the (bc) rule applied t
     }
   });
 });
+
+describe("per-skill and initiative bonuses (parked 2026-11-20, the (bc) rule)", () => {
+  // Skill bonuses, passives and initiative as numbers, so the tests do not depend on the fixture's proficiencies.
+  const checks = (data: Record<string, unknown>): Record<string, number> => {
+    const sheet = parseSheet(data, "full", INDEX);
+    const skills = [...sheet.matchAll(/^ {2}([A-Z][A-Za-z' ]+?) \((?:STR|DEX|CON|INT|WIS|CHA)\)\s+([+-]\d+)/gm)].map(m => [m[1], Number(m[2])]);
+    const passives = [...sheet.matchAll(/Passive (Perception|Investigation|Insight): (\d+)/g)].map(m => [`Passive ${m[1]}`, Number(m[2])]);
+    const init = /Initiative: ([+-]\d+)/.exec(sheet);
+    return Object.fromEntries([...skills, ...passives, ["Initiative", Number(init?.[1])]]);
+  };
+  const clean = checks(FIGHTER_5);
+  const plus = (changes: Record<string, number>): Record<string, number> =>
+    Object.fromEntries(Object.entries(clean).map(([k, v]) => [k, v + (changes[k] ?? 0)]));
+  const TRINKET = { id: 9003, entityTypeId: 112130694, name: "Trinket of Lore", filterType: "Wondrous item", magic: true, sources: [{ sourceId: 145 }] };
+  const trinket = (mod: Record<string, unknown>, state: { equipped?: boolean; isAttuned?: boolean; canAttune?: boolean } = {}) => variant(FIGHTER_5, d => {
+    const { canAttune, ...rest } = state;
+    d.inventory = [...(d.inventory ?? []), {
+      id: 9003, equipped: true, isAttuned: true, quantity: 1, ...rest,
+      definition: { ...TRINKET, canAttune: canAttune ?? true },
+    }];
+    d.modifiers.item = [...(d.modifiers.item ?? []), { type: "bonus", componentId: 9003, componentTypeId: 112130694, ...mod }];
+  });
+  const ARCANA_2 = { subType: "arcana", value: 2, fixedValue: 2 };
+  const INIT_2 = { subType: "initiative", value: 2, fixedValue: 2 };
+  const INACTIVE = [
+    ["unequipped", { equipped: false }],
+    ["equipped, needs attunement, not attuned", { isAttuned: false }],
+    ["unequipped but attuned", { equipped: false, isAttuned: true }],
+  ] as const;
+  const ACTIVE_STATES = [
+    ["equipped and attuned", {}],
+    ["equipped, needs no attunement", { canAttune: false, isAttuned: false }],
+  ] as const;
+
+  it("the fixture prints 18 skills, three passives and initiative", () => {
+    expect(Object.keys(clean)).toHaveLength(22);
+    expect(Number.isNaN(clean.Initiative)).toBe(false);
+  });
+
+  it.each(INACTIVE)("an item's skill bonus while %s does not count", (_n, state) => {
+    expect(checks(trinket(ARCANA_2, state))).toEqual(clean);
+  });
+
+  it.each(ACTIVE_STATES)("an item's skill bonus while %s adds to that skill only", (_n, state) => {
+    expect(checks(trinket(ARCANA_2, state))).toEqual(plus({ Arcana: 2 }));
+  });
+
+  it.each(INACTIVE)("an item's initiative bonus while %s does not count", (_n, state) => {
+    expect(checks(trinket(INIT_2, state))).toEqual(clean);
+  });
+
+  it.each(ACTIVE_STATES)("an item's initiative bonus while %s counts", (_n, state) => {
+    expect(checks(trinket(INIT_2, state))).toEqual(plus({ Initiative: 2 }));
+  });
+
+  it("an item's proficiency-bonus initiative bonus (bonusTypes [1], no value) counts only while active", () => {
+    const pb = { subType: "initiative", value: null, fixedValue: null, bonusTypes: [1] };
+    expect(checks(trinket(pb, { equipped: false }))).toEqual(clean);
+    expect(checks(trinket(pb))).toEqual(plus({ Initiative: 3 })); // proficiency bonus +3 at level 5
+  });
+
+  const cf = (id: number, requiredLevel: number) => ({ definition: { id, entityTypeId: 12168134, name: `F${id}`, requiredLevel } });
+  const classMod = (bucket: "class" | "subclass", requiredLevel: number, mod: Record<string, unknown>) => variant(FIGHTER_5, d => {
+    d.classes[0].classFeatures = [...(d.classes[0].classFeatures ?? []), cf(900, requiredLevel)];
+    d.modifiers[bucket] = [...(d.modifiers[bucket] ?? []), { type: "bonus", componentId: 900, componentTypeId: 12168134, ...mod }];
+  });
+
+  it.each(["class", "subclass"] as const)("a %s-bucket skill or initiative bonus of a feature above the class level is skipped; at or below it counts", bucket => {
+    expect(checks(classMod(bucket, 20, ARCANA_2))).toEqual(clean);
+    expect(checks(classMod(bucket, 1, ARCANA_2))).toEqual(plus({ Arcana: 2 }));
+    expect(checks(classMod(bucket, 20, INIT_2))).toEqual(clean);
+    expect(checks(classMod(bucket, 1, INIT_2))).toEqual(plus({ Initiative: 2 }));
+  });
+
+  it("an option's skill bonus follows its parent feature: hidden skips, visible counts", () => {
+    const option = { componentId: 900, componentTypeId: 12168134, definition: { id: 901, entityTypeId: 258900837 } };
+    const hidden = variant(FIGHTER_5, d => {
+      d.classes[0].classFeatures = [...(d.classes[0].classFeatures ?? []), cf(900, 20)];
+      d.options = { ...(d.options ?? {}), class: [...(d.options?.class ?? []), option] };
+      d.modifiers.class = [...(d.modifiers.class ?? []), { type: "bonus", componentId: 901, componentTypeId: 258900837, ...ARCANA_2 }];
+    });
+    expect(checks(hidden)).toEqual(clean);
+    const visible = variant(hidden, d => { d.classes[0].classFeatures[d.classes[0].classFeatures.length - 1] = cf(900, 1); });
+    expect(checks(visible)).toEqual(plus({ Arcana: 2 }));
+  });
+
+  it("a race or feat skill bonus always counts, and a null entry in a list does not throw", () => {
+    for (const bucket of ["race", "feat"] as const) {
+      const data = variant(FIGHTER_5, d => {
+        d.modifiers[bucket] = [...(d.modifiers[bucket] ?? []), null, { type: "bonus", subType: "arcana", value: 1, fixedValue: 1, componentId: 1, componentTypeId: 1 }];
+      });
+      expect(checks(data), bucket).toEqual(plus({ Arcana: 1 }));
+    }
+  });
+
+  it("a class-bucket skill bonus with no value adds its statId's modifier only while its feature is visible (Divine Order: Scholar)", () => {
+    const wis = { subType: "religion", value: null, fixedValue: null, statId: 5 };
+    const wisMod = Math.floor((((FIGHTER_5 as { data: { stats: { id: number; value: number }[] } }).data.stats.find(s => s.id === 5)?.value ?? 10) - 10) / 2);
+    expect(wisMod).not.toBe(0);
+    expect(checks(classMod("class", 1, wis))).toEqual(plus({ Religion: wisMod }));
+    expect(checks(classMod("class", 20, wis))).toEqual(clean);
+  });
+});

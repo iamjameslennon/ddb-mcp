@@ -11,8 +11,9 @@
 
 import { arr, records, capitalize, knownAndCustomLines, hasRemarkableAthlete, isBonusMod, isConditionalMod, isExpertiseMod, isHalfProficiencyMod, isLanguageMod, isProficiencyMod, isSenseMod, isSetBaseMod, isSetMod, num, obj, signed, slugOf, statKeys, statNames, str, weaponWordOrder } from "./helpers.js";
 import type { CharData, CoreStats, InventoryItem, Mod } from "./types.js";
-import { bucketAnyHomebrew, entityKey, grantingEntities, grantingEntityNames, hiddenOptionIds, isVisibleAction, visibleClassFeatureIds } from "./granting.js";
+import { bucketAnyHomebrew, entityKey, grantingEntities, grantingEntityNames } from "./granting.js";
 import { isActiveItemMod } from "./item-gate.js";
+import { activeBucketMods } from "./active-mods.js";
 import { wrapUntrusted } from "../../utils.js";
 import { LANGUAGE_SLUGS, PROFICIENCY_SLUGS } from "./modifier-slugs.js";
 
@@ -73,23 +74,14 @@ function buildAbilityScoreDisplay(statTotals: readonly number[], statMods: reado
  * item's only while it is equipped (and attuned when it requires attunement,
  * `isActiveItemMod`), a class- or subclass-bucket one only while the feature it
  * comes from is visible (`isVisibleAction`, the rule save advantages use; the
- * subclass bucket follows the class bucket). Race, feat and other buckets
- * always count. Saves: carry-over (bc), owner ruling 2026-11-19; ability
- * checks: the item parked by the same round, same rule.
+ * subclass bucket follows the class bucket; `activeBucketMods`). Race, feat
+ * and other buckets always count. Saves: carry-over (bc), owner ruling
+ * 2026-11-19; ability checks: the item parked by the same round, same rule.
  */
 function activeGlobalBonus(core: CoreStats, subType: "saving-throws" | "ability-checks"): number {
-  const { char, classes, inventory } = core;
-  const visibleIds = visibleClassFeatureIds(char, classes);
-  const hiddenOptions = hiddenOptionIds(char, visibleIds);
-  let total = 0;
-  for (const [bucket, list] of Object.entries(obj(char.modifiers))) {
-    for (const m of records<Mod>(list)) {
-      if (!isBonusMod(m) || m.subType !== subType || !isActiveItemMod(m, inventory)) continue;
-      if (!isVisibleAction(bucket === "subclass" ? "class" : bucket, m, visibleIds, hiddenOptions)) continue;
-      total += num(m.value ?? m.fixedValue);
-    }
-  }
-  return total;
+  return activeBucketMods(core)
+    .filter(({ mod }) => isBonusMod(mod) && mod.subType === subType)
+    .reduce((total, { mod }) => total + num(mod.value ?? mod.fixedValue), 0);
 }
 
 // ── Saving throws ────────────────────────────────────────────────────────────
@@ -123,20 +115,20 @@ const RA_STAT_INDICES = new Set([0, 1, 2]);
 function computeSkillBonuses(core: CoreStats): SkillBonus[] {
   const { allMods, inventory, statMods, profBonus, classes } = core;
   // Proficiency, expertise and half-proficiency from an item count only while it is active (G1, 2026-11-19).
-  const active = (m: Mod): boolean => isActiveItemMod(m, inventory);
+  const itemActive = (m: Mod): boolean => isActiveItemMod(m, inventory);
   const skillProfSubTypes = new Set(
-    allMods.filter(isProficiencyMod).filter(active).map(m => m.subType)
+    allMods.filter(isProficiencyMod).filter(itemActive).map(m => m.subType)
   );
   const skillExpertiseSubTypes = new Set(
-    allMods.filter(isExpertiseMod).filter(active).map(m => m.subType)
+    allMods.filter(isExpertiseMod).filter(itemActive).map(m => m.subType)
   );
   // half-proficiency (e.g. Bard's Jack of All Trades applies to all ability
   // checks; floor(prof/2)).
   const hasJackOfAllTrades = allMods.some(
-    m => isHalfProficiencyMod(m) && active(m) && m.subType === "ability-checks"
+    m => isHalfProficiencyMod(m) && itemActive(m) && m.subType === "ability-checks"
   );
   const skillHalfProfSubTypes = new Set(
-    allMods.filter(isHalfProficiencyMod).filter(active)
+    allMods.filter(isHalfProficiencyMod).filter(itemActive)
       .filter(m => m.subType !== "ability-checks")
       .map(m => m.subType)
   );
@@ -148,6 +140,7 @@ function computeSkillBonuses(core: CoreStats): SkillBonus[] {
   // every skill (and therefore every passive), only while its source is active
   // (`activeGlobalBonus`). Source: Stone of Good Luck (Luckstone).
   const globalAbilityCheckBonus = activeGlobalBonus(core, "ability-checks");
+  const active = activeBucketMods(core).map(({ mod }) => mod);
   return SKILLS.map(([skillName, statIdx]) => {
     const slug = slugOf(skillName, true);
     const isProficient = skillProfSubTypes.has(slug);
@@ -163,7 +156,8 @@ function computeSkillBonuses(core: CoreStats): SkillBonus[] {
     else if (isJoatHalf) bonus += Math.floor(profBonus / 2);
     // Flat bonus modifiers on the skill subType (e.g. Divine Order: Scholar adds WIS to Arcana/Religion).
     // When value/fixedValue are null, statId identifies which ability modifier to add instead.
-    const flatBonus = allMods
+    // Only while the source is active (the (bc) rule; parked 2026-11-20).
+    const flatBonus = active
       .filter(m => isBonusMod(m) && m.subType === slug)
       .reduce((s, m) => {
         if (m.value != null) return s + num(m.value);
@@ -474,32 +468,24 @@ interface SaveAdvGroup { kind: string; text: string; all: boolean; abilities: Se
  * nothing when it can't be resolved.
  */
 export function buildSaveAdvantageLines(core: CoreStats): string[] {
-  const { char, classes, inventory } = core;
+  const { char, classes } = core;
   const entities = grantingEntities(char, classes);
   const names = grantingEntityNames(char, classes);
-  const visibleIds = visibleClassFeatureIds(char, classes);
-  const hiddenOptions = hiddenOptionIds(char, visibleIds);
   const groups = new Map<string, SaveAdvGroup>();
-  for (const [bucket, list] of Object.entries(obj(char.modifiers))) {
-    for (const m of arr<Mod>(list)) {
-      if (m == null || typeof m !== "object") continue;
-      const kind = m.type === "advantage" ? "Advantage" : m.type === "disadvantage" ? "Disadvantage" : "";
-      const sub = str(m.subType);
-      const ability = statKeys.findIndex(k => sub === `${k}-saving-throws`);
-      if (!kind || (sub !== "saving-throws" && ability < 0)) continue;
-      if (!isActiveItemMod(m, inventory)) continue;
-      const visibilityBucket = bucket === "subclass" ? "class" : bucket;
-      if (!isVisibleAction(visibilityBucket, m, visibleIds, hiddenOptions)) continue;
-      const key = entityKey(m.componentId, m.componentTypeId);
-      const granted = entities.get(key);
-      const restriction = str(m.restriction).trim();
-      const text = restriction || names.get(key) || "";
-      const gk = `${kind}\u0000${restriction ? "r" : "n"}\u0000${text}`;
-      const g = groups.get(gk) ?? { kind, text, all: false, abilities: new Set<number>(), homebrew: false };
-      if (sub === "saving-throws") g.all = true; else g.abilities.add(ability);
-      g.homebrew ||= granted ? granted.some(Boolean) : bucketAnyHomebrew(char, classes, bucket);
-      groups.set(gk, g);
-    }
+  for (const { bucket, mod: m } of activeBucketMods(core)) {
+    const kind = m.type === "advantage" ? "Advantage" : m.type === "disadvantage" ? "Disadvantage" : "";
+    const sub = str(m.subType);
+    const ability = statKeys.findIndex(k => sub === `${k}-saving-throws`);
+    if (!kind || (sub !== "saving-throws" && ability < 0)) continue;
+    const key = entityKey(m.componentId, m.componentTypeId);
+    const granted = entities.get(key);
+    const restriction = str(m.restriction).trim();
+    const text = restriction || names.get(key) || "";
+    const gk = `${kind}\u0000${restriction ? "r" : "n"}\u0000${text}`;
+    const g = groups.get(gk) ?? { kind, text, all: false, abilities: new Set<number>(), homebrew: false };
+    if (sub === "saving-throws") g.all = true; else g.abilities.add(ability);
+    g.homebrew ||= granted ? granted.some(Boolean) : bucketAnyHomebrew(char, classes, bucket);
+    groups.set(gk, g);
   }
   const out = new Set<string>();
   for (const g of groups.values()) {
