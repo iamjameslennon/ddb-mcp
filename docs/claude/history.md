@@ -97,10 +97,18 @@ Spec [docs/superpowers/specs/2026-11-20-ready-carry-overs-design.md](../superpow
 
 **Verification.** `npm run typecheck && npm run lint && npm test` green after every commit. Whole corpus (`regress-all-characters.mts --baseline 2.10.2`): exit 0 after each sheet change; the 56 × 8 HEAD outputs are byte-identical before and after the bonus gates and after the refactors. Live (the built server over stdio, logged out, a throwaway `HOME`): `ddb_get_monster` "Lich" gives the Lich; "Lihc" gives the Lich with the closest line (a swap is one edit); "Liob" gives the Lion with the closest line (one edit); "Ooga" is not found. `ddb_character_lookup` "Rage" on Karlach 107606626 gives Rage alone (no Age); "Sleep" on Gale 107165979 gives the spell alone (no Speed); "slep" still finds Sleep through the fallback.
 
-**Found for the owner (not fixed):**
+**Carry-overs found by this run** (continuing the lettered list; none blocks anything, neither has a live case on the 56):
+
+- **(cb)** a `speed-<axis>` bonus (Superior Mobility shape) beside a null-valued `set` on an axis the character has no speed for is dropped: `speedCalc`'s `hasSpeed` is false there, so the bonus never applies and the axis just follows the walking speed. Whether D&D Beyond adds it on top of the walking speed is unverified; no test pins either reading.
+- **(cc)** `ddb_read_book`: U+2028 runs *inside* a paragraph come out as a double space (`<p>A\u2028\u2028\u2028B</p>` → `A  B`); between blocks they collapse correctly (pinned by a test).
+
+**Noted for the owner (no change on real data):**
 - `martialArtsFeatures` now reads an explicit Martial Arts `requiredLevel` of 0 as 0 for the STR/DEX rule too, as the die path already did (`hasMartialArts` used to read it as 1). This changes output only on a class at level 0, which no real sheet has; it is listed here because a change to output goes to the owner.
-- A `speed-<axis>` bonus beside a null-valued `set` on an axis the character has no speed for is dropped (`speedCalc`'s `hasSpeed` is false, so the bonus never applies and the axis just follows walking speed). Whether D&D Beyond adds it on top of the walking speed is unverified; no test pins either reading.
-- `ddb_read_book`: U+2028 runs *inside* a paragraph come out as a double space (`<p>A\u2028\u2028\u2028B</p>` → `A  B`); between blocks they collapse correctly.
+
+**Deferred minors (2026-11-20)** (not carry-overs; for a later round):
+
+- Final whole-branch review: `activeBucketMods` runs five times per parse (global save and ability-check bonuses, skills, initiative, save advantages), each time recomputing `visibleClassFeatureIds` and `hiddenOptionIds` and scanning the inventory per modifier. Negligible today; memoise per `core` if it ever matters.
+- Carried from 2026-11-19, not in this round's scope: the Task 12 `;` case in `walkCookieHeader` (a Strict or partitioned value containing `;` fails the `name=value` match; fails closed), and the 2026-11-19 final review's Task 12 rotated-cookie and per-URL-jar tests and its skipped same-site live probe.
 
 ### Carry-overs 2026-11-20
 

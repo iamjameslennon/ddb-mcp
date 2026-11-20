@@ -6,6 +6,9 @@ If you see the same symptom somewhere this list doesn't mention, or it has becom
 
 ## On the character sheet
 
+### (cb) A speed bonus is dropped on an axis that only follows walking speed
+Shows up as: a climb, swim, fly or burrow speed granted as "equal to your walking speed" (a null-valued set, e.g. 2024 Roving) that ignores an extra bonus to that same axis (Superior Mobility shape) and just equals the walking speed. No live case on the test characters; D&D Beyond's own reading is unverified.
+
 ### (be) Some feature dice are omitted
 Shows up as: Martial Arts actions print without their dice: Deflect Missiles (Flemin 112315775, Petit Nuage 40193614), Arms of the Astral Self and some monk Unarmed Strike actions. So do rows whose dice add an ability modifier: Stone's Endurance, the Eldritch Cannon entries and Arms of the Astral Self: Summon (which still prints its save DC). Other feature rows now take their dice from their own text (2014 Second Wind, 2014 Bardic Inspiration), so a missing die on one of those is a new finding. An optional class feature whose text uses `{{scalevalue}}` (Petit Nuage 40193614's Quickened Healing) prints no dice, because the sheet carries no level scale for it.
 
@@ -24,8 +27,6 @@ Shows up as: a sheet whose item spell bonus is listed once per copy would double
 ### (bo) Homebrew and official save advantages with the same wording merge
 Shows up as: one save-advantage line, wrapped as untrusted, that combines an official and a homebrew source.
 
-## Character lookup
-
 ## Monsters
 
 ### (bp) `ddb_get_monster` can miss a monster in a crowded name
@@ -36,6 +37,11 @@ Shows up as: a `ddb_get_monster` stat block from the Open5e SRD fallback, for a 
 
 ### (ca) The sheet hides every `RACIALTRAIT: 0` trait
 Shows up as: `ddb_search_racial_traits` listing a legacy trait that dndbeyond.com's character sheet never shows, such as the 2014 High Elf "Extra Language". Owner decision 2026-11-19: recorded, no change.
+
+## Books
+
+### (cc) A line-separator run inside a paragraph reads as a double space
+Shows up as: `ddb_read_book` text with two spaces between words where the page has U+2028 line separators inside one paragraph. Between paragraphs they collapse correctly. No live case seen.
 
 ## Browser tools
 
