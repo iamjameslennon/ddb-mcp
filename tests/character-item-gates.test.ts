@@ -220,3 +220,81 @@ describe("global save bonus (bc, owner ruling 2026-11-19)", () => {
     expect(saves(ring())["STR"]).toBe(clean["STR"] + 1);
   });
 });
+
+describe("global ability-check bonus (parked 2026-11-19, the (bc) rule applied to checks)", () => {
+  // Skill bonuses and passives as numbers, so the tests do not depend on the fixture's proficiencies.
+  const checks = (data: Record<string, unknown>): Record<string, number> => {
+    const sheet = parseSheet(data, "summary", INDEX);
+    const skills = [...sheet.matchAll(/^ {2}([A-Z][A-Za-z' ]+?) \((?:STR|DEX|CON|INT|WIS|CHA)\)\s+([+-]\d+)/gm)].map(m => [m[1], Number(m[2])]);
+    const passives = [...sheet.matchAll(/Passive (Perception|Investigation|Insight): (\d+)/g)].map(m => [`Passive ${m[1]}`, Number(m[2])]);
+    return Object.fromEntries([...skills, ...passives]);
+  };
+  const clean = checks(FIGHTER_5);
+  const plusOne = (): Record<string, number> => Object.fromEntries(Object.entries(clean).map(([k, v]) => [k, v + 1]));
+  const STONE = { id: 9002, entityTypeId: 112130694, name: "Stone of Good Luck (Luckstone)", filterType: "Wondrous item", canAttune: true, magic: true, sources: [{ sourceId: 145 }] };
+  const stone = (state: { equipped?: boolean; isAttuned?: boolean; canAttune?: boolean } = {}) => variant(FIGHTER_5, d => {
+    const { canAttune, ...rest } = state;
+    d.inventory = [...(d.inventory ?? []), {
+      id: 9002, equipped: true, isAttuned: true, quantity: 1, ...rest,
+      definition: { ...STONE, canAttune: canAttune ?? true },
+    }];
+    d.modifiers.item = [...(d.modifiers.item ?? []), { type: "bonus", subType: "ability-checks", value: 1, fixedValue: 1, componentId: 9002, componentTypeId: 112130694 }];
+  });
+
+  it("the fixture prints all 18 skills and the three passives", () => {
+    expect(Object.keys(clean)).toHaveLength(21);
+  });
+
+  it("an equipped, attuned item's bonus counts on every skill and passive", () => {
+    expect(checks(stone())).toEqual(plusOne());
+  });
+
+  it("an unequipped item's bonus does not count", () => {
+    expect(checks(stone({ equipped: false }))).toEqual(clean);
+  });
+
+  it("an equipped item that needs attunement and is not attuned does not count", () => {
+    expect(checks(stone({ isAttuned: false }))).toEqual(clean);
+  });
+
+  it("an equipped item that needs no attunement counts", () => {
+    expect(checks(stone({ canAttune: false, isAttuned: false }))).toEqual(plusOne());
+  });
+
+  const cf = (id: number, requiredLevel: number) => ({ definition: { id, entityTypeId: 12168134, name: `F${id}`, requiredLevel } });
+  const classMod = (bucket: "class" | "subclass", requiredLevel: number) => variant(FIGHTER_5, d => {
+    d.classes[0].classFeatures = [...(d.classes[0].classFeatures ?? []), cf(900, requiredLevel)];
+    d.modifiers[bucket] = [...(d.modifiers[bucket] ?? []), { type: "bonus", subType: "ability-checks", value: 1, fixedValue: 1, componentId: 900, componentTypeId: 12168134 }];
+  });
+
+  it("a class-bucket bonus of a feature above the class level is skipped; at or below it counts", () => {
+    expect(checks(classMod("class", 20))).toEqual(clean);
+    expect(checks(classMod("class", 1))).toEqual(plusOne());
+  });
+
+  it("a subclass-bucket bonus follows the class rule", () => {
+    expect(checks(classMod("subclass", 20))).toEqual(clean);
+    expect(checks(classMod("subclass", 1))).toEqual(plusOne());
+  });
+
+  it("an option's bonus follows its parent feature: hidden skips, visible counts", () => {
+    const option = { componentId: 900, componentTypeId: 12168134, definition: { id: 901, entityTypeId: 258900837 } };
+    const hidden = variant(FIGHTER_5, d => {
+      d.classes[0].classFeatures = [...(d.classes[0].classFeatures ?? []), cf(900, 20)];
+      d.options = { ...(d.options ?? {}), class: [...(d.options?.class ?? []), option] };
+      d.modifiers.class = [...(d.modifiers.class ?? []), { type: "bonus", subType: "ability-checks", value: 1, fixedValue: 1, componentId: 901, componentTypeId: 258900837 }];
+    });
+    expect(checks(hidden)).toEqual(clean);
+    const visible = variant(hidden, d => { d.classes[0].classFeatures[d.classes[0].classFeatures.length - 1] = cf(900, 1); });
+    expect(checks(visible)).toEqual(plusOne());
+  });
+
+  it("a race or feat bonus always counts, and a null entry in a list does not throw", () => {
+    for (const bucket of ["race", "feat"] as const) {
+      const data = variant(FIGHTER_5, d => {
+        d.modifiers[bucket] = [...(d.modifiers[bucket] ?? []), null, { type: "bonus", subType: "ability-checks", value: 1, fixedValue: 1, componentId: 1, componentTypeId: 1 }];
+      });
+      expect(checks(data), bucket).toEqual(plusOne());
+    }
+  });
+});

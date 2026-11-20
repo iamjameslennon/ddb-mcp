@@ -10,7 +10,7 @@
  */
 
 import { arr, records, capitalize, knownAndCustomLines, hasRemarkableAthlete, isBonusMod, isConditionalMod, isExpertiseMod, isHalfProficiencyMod, isLanguageMod, isProficiencyMod, isSenseMod, isSetBaseMod, isSetMod, num, obj, signed, statKeys, statNames, str, weaponWordOrder } from "./helpers.js";
-import type { CharData, ClassEntry, CoreStats, InventoryItem, Mod } from "./types.js";
+import type { CharData, CoreStats, InventoryItem, Mod } from "./types.js";
 import { bucketAnyHomebrew, entityKey, grantingEntities, grantingEntityNames, hiddenOptionIds, isVisibleAction, visibleClassFeatureIds } from "./actions.js";
 import { isActiveItemMod } from "./item-gate.js";
 import { wrapUntrusted } from "../../utils.js";
@@ -67,9 +67,34 @@ function buildAbilityScoreDisplay(statTotals: readonly number[], statMods: reado
   return statNames.map((n, i) => `${n} ${statTotals[i]} (${signed(statMods[i])})`);
 }
 
+// ── Global bonuses ──────────────────────────────────────────────────────────
+/**
+ * Sum of the `bonus` modifiers with this subType whose source is active: an
+ * item's only while it is equipped (and attuned when it requires attunement,
+ * `isActiveItemMod`), a class- or subclass-bucket one only while the feature it
+ * comes from is visible (`isVisibleAction`, the rule save advantages use; the
+ * subclass bucket follows the class bucket). Race, feat and other buckets
+ * always count. Saves: carry-over (bc), owner ruling 2026-11-19; ability
+ * checks: the item parked by the same round, same rule.
+ */
+function activeGlobalBonus(core: CoreStats, subType: "saving-throws" | "ability-checks"): number {
+  const { char, classes, inventory } = core;
+  const visibleIds = visibleClassFeatureIds(char, classes);
+  const hiddenOptions = hiddenOptionIds(char, visibleIds);
+  let total = 0;
+  for (const [bucket, list] of Object.entries(obj(char.modifiers))) {
+    for (const m of records<Mod>(list)) {
+      if (!isBonusMod(m) || m.subType !== subType || !isActiveItemMod(m, inventory)) continue;
+      if (!isVisibleAction(bucket === "subclass" ? "class" : bucket, m, visibleIds, hiddenOptions)) continue;
+      total += num(m.value ?? m.fixedValue);
+    }
+  }
+  return total;
+}
+
 // ── Saving throws ────────────────────────────────────────────────────────────
 function buildSavingThrows(core: CoreStats): string[] {
-  const { char, classes, allMods, inventory, statMods, profBonus } = core;
+  const { allMods, inventory, statMods, profBonus } = core;
   const saveProfSubTypes = new Set(
     allMods.filter(isProficiencyMod).filter(m => isActiveItemMod(m, inventory))
       .filter(m => m.subType.includes("saving-throws"))
@@ -81,16 +106,7 @@ function buildSavingThrows(core: CoreStats): string[] {
   // feature), etc. An item's bonus counts only while the item is active (bc,
   // owner ruling 2026-11-19); a class- or subclass-bucket one only while the
   // feature it comes from is visible (the rule save advantages use).
-  const visibleIds = visibleClassFeatureIds(char, classes);
-  const hiddenOptions = hiddenOptionIds(char, visibleIds);
-  let globalSaveBonus = 0;
-  for (const [bucket, list] of Object.entries(obj(char.modifiers))) {
-    for (const m of records<Mod>(list)) {
-      if (!isBonusMod(m) || m.subType !== "saving-throws" || !isActiveItemMod(m, inventory)) continue;
-      if (!isVisibleAction(bucket === "subclass" ? "class" : bucket, m, visibleIds, hiddenOptions)) continue;
-      globalSaveBonus += num(m.value ?? m.fixedValue);
-    }
-  }
+  const globalSaveBonus = activeGlobalBonus(core, "saving-throws");
   return statKeys.map((key, i) => {
     const isProficient = saveProfSubTypes.has(`${key}-saving-throws`);
     const total = statMods[i] + (isProficient ? profBonus : 0) + globalSaveBonus;
@@ -104,13 +120,8 @@ interface SkillBonus { bonus: number; isProficient: boolean; isExpertise: boolea
 // STR/DEX/CON stat indices — the abilities that Remarkable Athlete covers.
 const RA_STAT_INDICES = new Set([0, 1, 2]);
 
-function computeSkillBonuses(
-  allMods: readonly Mod[],
-  inventory: readonly InventoryItem[],
-  statMods: readonly number[],
-  profBonus: number,
-  classes: ReadonlyArray<ClassEntry>,
-): SkillBonus[] {
+function computeSkillBonuses(core: CoreStats): SkillBonus[] {
+  const { allMods, inventory, statMods, profBonus, classes } = core;
   // Proficiency, expertise and half-proficiency from an item count only while it is active (G1, 2026-11-19).
   const active = (m: Mod): boolean => isActiveItemMod(m, inventory);
   const skillProfSubTypes = new Set(
@@ -134,11 +145,9 @@ function computeSkillBonuses(
   // modifier for RA, so we must detect it by class + level.
   const ra = hasRemarkableAthlete(classes);
   // Global ability-check bonus — `bonus subType:"ability-checks"` applies to
-  // every skill (and therefore every passive). Sources: Stone of Good Luck
-  // (Luckstone), Headband of Intellect (no — that's a set on INT score), etc.
-  const globalAbilityCheckBonus = allMods
-    .filter(m => isBonusMod(m) && m.subType === "ability-checks")
-    .reduce((s, m) => s + num(m.value ?? m.fixedValue), 0);
+  // every skill (and therefore every passive), only while its source is active
+  // (`activeGlobalBonus`). Source: Stone of Good Luck (Luckstone).
+  const globalAbilityCheckBonus = activeGlobalBonus(core, "ability-checks");
   return SKILLS.map(([skillName, statIdx]) => {
     const slug = skillName.toLowerCase().replace(/ /g, "-").replace(/'/g, "");
     const isProficient = skillProfSubTypes.has(slug);
@@ -507,8 +516,8 @@ export function buildSaveAdvantageLines(core: CoreStats): string[] {
 
 // ── Public API ──────────────────────────────────────────────────────────────
 export function computeStats(core: CoreStats): Stats {
-  const { char, allMods, statMods, statTotals, profBonus, classes, inventory } = core;
-  const skillBonuses = computeSkillBonuses(allMods, inventory, statMods, profBonus, classes);
+  const { char, allMods, statMods, statTotals, inventory } = core;
+  const skillBonuses = computeSkillBonuses(core);
   return {
     abilityScoreDisplay: buildAbilityScoreDisplay(statTotals, statMods),
     savingThrows: buildSavingThrows(core),
