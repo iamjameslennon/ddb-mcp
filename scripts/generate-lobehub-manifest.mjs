@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Generates lhm.plugin.json — the manifest `lhm plugin publish` reads when
+ * Generates lhm.plugin.json — the manifest `lhm plugin update` reads when
  * publishing this server to the LobeHub Marketplace.
  *
  * Usage: node scripts/generate-lobehub-manifest.mjs
@@ -164,4 +164,4 @@ const manifestPath = join(repoRoot, "lhm.plugin.json");
 writeFileSync(manifestPath, JSON.stringify({ ...LISTING_METADATA, tools, version }, null, 2) + "\n");
 
 console.log(`✓ Wrote lhm.plugin.json — ${LISTING_METADATA.identifier}@${version}, ${tools.length} tools`);
-console.log("  Publish with: npx -y @lobehub/market-cli plugin publish --dir .");
+console.log("  Publish with: npx -y @lobehub/market-cli@0.0.46 plugin update --dir .");

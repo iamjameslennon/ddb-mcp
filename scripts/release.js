@@ -283,7 +283,7 @@ const prompt = [
 let releaseNotes;
 if (dryRun) {
   console.log("[dry-run] Skipping Claude release-notes generation (would call `claude -p` with the commit log).");
-  releaseNotes = `[dry-run placeholder release notes for v${"NEW_VERSION_PLACEHOLDER"}]`;
+  releaseNotes = `[dry-run placeholder release notes for v${newVersion}]`;
 } else {
   console.log("\nGenerating release notes with Claude...\n");
   // Pipe the prompt via stdin rather than passing it as an argv. Multi-line
@@ -366,7 +366,7 @@ if (dryRun) {
   console.log(`  git push origin HEAD --follow-tags`);
   console.log(`  gh release create v${newVersion} --title "v${newVersion}" --notes-file -`);
   console.log(`  node scripts/generate-lobehub-manifest.mjs`);
-  console.log(`  npx -y @lobehub/market-cli plugin publish --dir .`);
+  console.log(`  npx -y @lobehub/market-cli@0.0.46 plugin update --dir .`);
   console.log(`\n[dry-run] Inspect the file changes with \`git diff\`, then revert with \`git restore .\``);
   console.log(`[dry-run] ✓ Dry run complete (would release v${newVersion}).`);
   process.exit(0);
@@ -411,7 +411,7 @@ console.log(`\n✓ Released v${newVersion}`);
 
 const lobehubCommands = [
   "  node scripts/generate-lobehub-manifest.mjs",
-  "  npx -y @lobehub/market-cli plugin publish --dir .",
+  "  npx -y @lobehub/market-cli@0.0.46 plugin update --dir .",
 ].join("\n");
 
 console.log("\nPublishing to the LobeHub Marketplace...");
@@ -428,13 +428,13 @@ if (manifestResult.status !== 0) {
 } else {
   const lobehubResult = spawnExecutable(
     "npx",
-    ["-y", "@lobehub/market-cli", "plugin", "publish", "--dir", "."],
+    ["-y", "@lobehub/market-cli@0.0.46", "plugin", "update", "--dir", "."],
     { stdio: "inherit" }
   );
   if (lobehubResult.status !== 0) {
     console.warn(
       `\nWARNING: LobeHub publish failed — the listing still shows the previous version.`,
-      `\nIf this was an auth failure, \`npx -y @lobehub/market-cli login\` needs a human with a browser.`,
+      `\nIf this was an auth failure, \`npx -y @lobehub/market-cli@0.0.46 login\` needs a human with a browser.`,
       `\nThen re-run:\n${lobehubCommands}\n`
     );
   } else {
