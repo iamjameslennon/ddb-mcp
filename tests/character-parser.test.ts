@@ -3451,6 +3451,16 @@ describe("parseCharacterData — null set speed and option modifiers (by)", () =
     });
     expect(speedLine(c)).toBe("40 ft., climb 40 ft.");
   });
+  // Owner ruling 2026-11-24 (cb): an axis that only follows the walking speed copies it, so a
+  // `speed-<axis>` bonus (Superior Mobility) is already in it through `speed-walking` and is not added again.
+  it("a speed-<axis> bonus is not added again on an axis that follows the walking speed (cb, Scout + Roving)", () => {
+    const bonus = (subType: string, v: number) => ({ type: "bonus", subType, value: v, fixedValue: v });
+    const c = withMods({}, [
+      bonus("speed-walking", 5), nullSet("climbing"), nullSet("swimming"),
+      bonus("speed-walking", 10), bonus("speed-climbing", 10), bonus("speed-swimming", 10),
+    ]);
+    expect(speedLine(c)).toBe("45 ft., swim 45 ft., climb 45 ft.");
+  });
   it("a null set speed never lowers a speed the character already has", () => {
     expect(speedLine(withMods({ climb: 45 }, [nullSet("climbing")]))).toBe("30 ft., climb 45 ft.");
   });
