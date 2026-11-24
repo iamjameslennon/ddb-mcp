@@ -240,3 +240,7 @@ Source: tool-notes.md, `ddb_search_rules` / `ddb_get_rules` (`excerptStart`, 202
 ### A renamed item prints its custom name with the stock name, wrapped
 Looks like: Ezra's renamed Dagger, +1 reads `Drake's Tooth Dagger (Dagger, +1)` in ACTIONS between the untrusted tags, and a renamed Sack reads `Sack (Clothes)` under `INVENTORY (homebrew)` (the custom name already holds the stock name, so it shows alone). Xarius's `xDagger*` shows the same way on the site. An unrenamed official item stays plain.
 Source: tool-notes.md, Custom item names (owner-facing plan decision 2026-11-19).
+
+### A speed "equal to your walking speed" takes no extra bonus of its own
+Looks like: a Scout (Superior Mobility, +10 walking, climbing and swimming) who also has 2024 Roving (climb and swim speeds equal to the walking speed) reads `45 ft., swim 45 ft., climb 45 ft.`, not climb and swim 55. The followed axis copies the final walking speed, which already holds the +10, so the axis bonus is not added again. An axis with a speed of its own (race, a numeric set) still takes the bonus.
+Source: tool-notes.md, `parseCharacterData` Speed (owner ruling 2026-11-24).

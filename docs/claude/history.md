@@ -79,6 +79,15 @@ First run (HEAD `45ee0b3` vs 2.10.2, about 13 s): 56/56 characters, 0 crashes, 0
 
 Pilot (2026-11-11, in Claude Code against the fresh build, narrowed scope: batch 1 with one section type per character, the test campaign's party, 5 matrix tools and the 5 gate refusals; no spot-check, real download or logged-out pass): every gate refused with nothing done, and the replies sampled were consistent, labelled and wrapped. Findings: **F1 🟠 confirmed**, carried weapons that aren't equipped appear nowhere on the sheet (INVENTORY skips all weapons, ACTIONS lists equipped ones only; Ethelrede 112314883, Astarion 107164636, Bobby 133053421); F2 ⚪ suspected `Immunities: Magical-sleep` (Mori Yosei 39714283); F3 ⚪ suspected "HalfCover" in the SRD Cover text; improvement: "dragon" in `ddb_rate_encounter` counts a third-party monster named "Dragon". Known (B14) read_book blank lines seen. Skill fixes from the pilot: free-account books named (the library marks giveaways "Owned"); `combat` contains `summary`; `ddb_get_character_raw` allowed as evidence on public characters; matrix "ambiguous" examples use "Red Dragon"; intended-behaviour entries for equipped weapons in ACTIONS and exact-name encounter matches. F1–F3 are open, for the owner.
 
+### Carry-overs (cb) and (cc) 2026-11-24
+
+Both carry-overs opened by "Ready carry-overs 2026-11-20". Run inline, TDD.
+
+- **(cc)** `b2ff011`: `extractArticleMarkdown` (`ddb_read_book`) reads U+2028 and U+2029 as `"\n"` before its blank-line cleanup, as the HTML parser already reads CRLF. Root cause: that cleanup's `^[^\S\n]+$` uses the `m` flag, under which JavaScript treats U+2028/U+2029 as line ends, so a run inside one paragraph lost only its middle separator and the two left read as a double space. `<p>A\u2028\u2028\u2028B</p>` now gives `A\n\nB` (the CRLF case's output), a single separator `A\nB`. U+2029 is included because it has the same mechanism. No live case was seen, so no corpus run.
+- **(cb)** `23f6682`: **owner ruling 2026-11-24**: an axis that only follows the walking speed (a null-valued `set`: Roving, Slippers of Spider Climbing) copies the final walking speed, and a `speed-<axis>` bonus (Superior Mobility) is not added again on it, since the walking speed already holds it through `speed-walking` (Scout + Roving: walk 45, climb and swim 45, not 55). Options put to the owner: keep (chosen; no code change, a test pins it), add the bonus on top (a literal reading of "applies to that speed as well"), or leave open for a website check. Measured impact: none either way (no test character has both shapes). D&D Beyond's own reading stays unverified: Superior Mobility is in Xanathar's, which the free account doesn't own. The pin test fails under the other reading (checked by mutation: climb and swim 55).
+
+**Verification.** `npm run typecheck && npm run lint && npm test` green after each commit.
+
 ### Ready carry-overs 2026-11-20
 
 Spec [docs/superpowers/specs/2026-11-20-ready-carry-overs-design.md](../superpowers/specs/2026-11-20-ready-carry-overs-design.md) (owner-approved 2026-11-20), plan `docs/superpowers/plans/2026-11-20-ready-carry-overs.md`. Every open item that needs no book-owning account, new test character or website check. Run inline, TDD, then adversarial reviews by opencode (Zen DeepSeek), Codex, Cursor (grok-4.7-medium) and `freellmapi/auto:reviewers` (owner request 2026-11-20).
@@ -99,8 +108,8 @@ Spec [docs/superpowers/specs/2026-11-20-ready-carry-overs-design.md](../superpow
 
 **Carry-overs found by this run** (continuing the lettered list; none blocks anything, neither has a live case on the 56):
 
-- **(cb)** a `speed-<axis>` bonus (Superior Mobility shape) beside a null-valued `set` on an axis the character has no speed for is dropped: `speedCalc`'s `hasSpeed` is false there, so the bonus never applies and the axis just follows the walking speed. Whether D&D Beyond adds it on top of the walking speed is unverified; no test pins either reading.
-- **(cc)** `ddb_read_book`: U+2028 runs *inside* a paragraph come out as a double space (`<p>A\u2028\u2028\u2028B</p>` → `A  B`); between blocks they collapse correctly (pinned by a test).
+- **(cb)** ~~a `speed-<axis>` bonus (Superior Mobility shape) beside a null-valued `set` on an axis the character has no speed for is dropped: `speedCalc`'s `hasSpeed` is false there, so the bonus never applies and the axis just follows the walking speed. Whether D&D Beyond adds it on top of the walking speed is unverified; no test pins either reading.~~ **Closed 2026-11-24** by owner ruling (`23f6682`, see "Carry-overs (cb) and (cc) 2026-11-24").
+- **(cc)** ~~`ddb_read_book`: U+2028 runs *inside* a paragraph come out as a double space (`<p>A\u2028\u2028\u2028B</p>` → `A  B`); between blocks they collapse correctly (pinned by a test).~~ **Closed 2026-11-24** (`b2ff011`).
 
 **Noted for the owner (no change on real data):**
 - `martialArtsFeatures` now reads an explicit Martial Arts `requiredLevel` of 0 as 0 for the STR/DEX rule too, as the die path already did (`hasMartialArts` used to read it as 1). This changes output only on a class at level 0, which no real sheet has; it is listed here because a change to output goes to the owner.
