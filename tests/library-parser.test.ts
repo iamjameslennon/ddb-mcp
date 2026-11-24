@@ -102,6 +102,12 @@ describe("extractArticleMarkdown", () => {
     expect(extractArticleMarkdown("<article><p>A\r\n\r\n\r\nB</p></article>")).toBe("A\n\nB");
     expect(extractArticleMarkdown("<article><p>A</p>\u2028\u2028\u2028<p>B</p></article>")).toBe("A\n\nB");
   });
+  it("reads U+2028 and U+2029 inside a paragraph as newlines, like CRLF (cc)", () => {
+    expect(extractArticleMarkdown("<article><p>A\u2028\u2028\u2028B</p></article>")).toBe("A\n\nB");
+    expect(extractArticleMarkdown("<article><p>A\u2028B</p></article>")).toBe("A\nB");
+    expect(extractArticleMarkdown("<article><p>A\u2029\u2029B</p></article>")).toBe("A\n\nB");
+    expect(extractArticleMarkdown("<article><p>A \u2028 B</p></article>")).not.toMatch(/[\u2028\u2029]/);
+  });
   it("treats whitespace-only lines, non-breaking spaces included, as blank", () => {
     const html = "<article><p>A</p><div>&nbsp; </div><div>\t</div><p>B</p></article>";
     expect(extractArticleMarkdown(html)).not.toMatch(/\n{3,}/);

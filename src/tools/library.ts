@@ -397,7 +397,10 @@ export function extractArticleMarkdown(html: string): string {
 
   // Adjacent block elements and empty paragraphs leave runs of newlines and lines holding only
   // whitespace (a non-breaking space included, which \s matches); they would use up max_chars (B14).
+  // U+2028/U+2029 become "\n" first, as the parser already does with CRLF: the `m` flag treats them
+  // as line ends, so a run inside a paragraph lost only its middle one and read as a double space (cc).
   return processNode(root as AnyNode)
+    .replace(/[\u2028\u2029]/g, "\n")
     .replace(/^[^\S\n]+$/gm, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
