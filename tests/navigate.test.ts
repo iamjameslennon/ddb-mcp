@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { isAllowedPageUrl, assertSafeSelector, navigate } from "../src/tools/navigate.js";
+import { isAllowedPageUrl, assertSafeSelector, navigate, getCurrentPageContent } from "../src/tools/navigate.js";
 
 // Stable fs mock so the transition tests below can flip the session file and
 // drive a REAL session-state transition through navigate()'s authority checks.
@@ -432,5 +432,38 @@ describe("navigate() counts a loaded page as a success", () => {
     await expect(
       navigate(context, "https://www.dndbeyond.com/monsters/16762-aboleth"),
     ).rejects.toThrow(/Timeout 30000ms exceeded/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// What the page tools report (regression run 2026-11-27): ddb_navigate names
+// the page it ended on after redirects, as ddb_get_page does, and lines that
+// hold only invisible characters (D&D Beyond's /sources list puts a U+200B
+// line after almost every book) are dropped from the page text.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("page text and the reported URL", () => {
+  const PAGE_TEXT = "Library\n​\nPlayer's Handbook\n ​ \n‌‍⁠﻿\nMonster Manual\n\nDungeon Master's Guide 👨‍👩‍👧";
+  function makeRedirectFake(finalUrl: string) {
+    let currentUrl = "about:blank";
+    const page = {
+      url: () => currentUrl,
+      goto: async () => { currentUrl = finalUrl; },
+      waitForLoadState: async () => {},
+      evaluate: async () => PAGE_TEXT,
+    };
+    const context = { pages: () => [page], newPage: async () => page, route: async () => {} };
+    return context as unknown as Parameters<typeof navigate>[0];
+  }
+
+  it("ddb_navigate reports the final URL after a redirect", async () => {
+    const out = await navigate(makeRedirectFake("https://www.dndbeyond.com/en/library"), "https://www.dndbeyond.com/sources");
+    expect(out).toMatch(/^URL: https:\/\/www\.dndbeyond\.com\/en\/library\n/);
+  });
+
+  it("drops invisible-only lines and keeps the rest, blank lines and emoji joiners included", async () => {
+    const context = makeRedirectFake("https://www.dndbeyond.com/en/library");
+    const expected = "Library\nPlayer's Handbook\nMonster Manual\n\nDungeon Master's Guide 👨‍👩‍👧";
+    expect(await navigate(context, "https://www.dndbeyond.com/sources")).toContain(expected);
+    expect(await getCurrentPageContent(context)).toContain(expected);
   });
 });

@@ -150,6 +150,9 @@ class LoginWatch {
  * by LOGIN_TIMEOUT_MS; closing the last window or cancelling the request ends
  * it at once, with nothing written.
  */
+/** `login()`'s reply when the saved session already signs in (no sign-in window was shown). */
+export const ALREADY_LOGGED_IN = "Already logged in. Session is active.";
+
 export async function login(context: BrowserContext, options: LoginOptions = {}): Promise<string> {
   const { signal } = options;
   const watch = new LoginWatch(context, signal);
@@ -184,7 +187,7 @@ export async function login(context: BrowserContext, options: LoginOptions = {})
       // Not raced: once the storage is read the write is synchronous, and a
       // cancel is checked (through `signal`) just before it.
       await saveVerifiedSession(context, existing, signal);
-      return "Already logged in. Session is active.";
+      return ALREADY_LOGGED_IN;
     }
 
     // The window is non-headless, so the user can complete login manually.

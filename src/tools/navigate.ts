@@ -232,6 +232,16 @@ function withoutHeaders(headers: Record<string, string>, names: string[]): Recor
 // never stays on (and keeps running the JS of) a foreign site after a refusal.
 // Best effort: its own failure is swallowed, never printed, and the caller's
 // refusal or original error is what the client sees.
+/**
+ * Drop lines that hold only whitespace and invisible format characters
+ * (U+200B–U+200D, U+2060, U+FEFF): D&D Beyond's /sources list puts a U+200B
+ * line after almost every book. Real blank lines, and joiners inside text
+ * (emoji sequences), are kept.
+ */
+export function dropInvisibleLines(text: string): string {
+  return text.split("\n").filter(line => !(/[\u200B-\u200D\u2060\uFEFF]/.test(line) && /^[\s\u200B-\u200D\u2060\uFEFF]*$/.test(line))).join("\n");
+}
+
 async function leaveForeignPage(page: Page): Promise<void> {
   const url = page.url();
   if (url === "about:blank" || isAllowedPageUrl(url)) return;
@@ -366,7 +376,8 @@ export async function navigate(context: BrowserContext, url: string, snapshot: S
       return (main as HTMLElement).innerText;
     });
 
-    const truncated = content.length > 8000 ? content.slice(0, 8000) + "\n\n[Content truncated — use ddb_read_book or a more specific URL to get full content]" : content;
+    const text = dropInvisibleLines(content);
+    const truncated = text.length > 8000 ? text.slice(0, 8000) + "\n\n[Content truncated — use ddb_read_book or a more specific URL to get full content]" : text;
 
     // Refresh authority before returning account-derived scraped content.
     assertSessionUnchanged(snapshot);
@@ -375,7 +386,8 @@ export async function navigate(context: BrowserContext, url: string, snapshot: S
     // trusted tool output from untrusted page content (potential prompt-
     // injection surface). The page may contain user-authored text from DMs,
     // forum posts, or campaign notes.
-    return `URL: ${url}\n\n${wrapUntrusted(truncated)}`;
+    // The page it ended on (after redirects), as ddb_get_page reports it.
+    return `URL: ${finalUrl}\n\n${wrapUntrusted(truncated)}`;
   });
 }
 
@@ -487,7 +499,8 @@ export async function getCurrentPageContent(context: BrowserContext, snapshot: S
       return (main as HTMLElement).innerText;
     });
 
-    const truncated = content.length > 8000 ? content.slice(0, 8000) + "\n[truncated]" : content;
+    const text = dropInvisibleLines(content);
+    const truncated = text.length > 8000 ? text.slice(0, 8000) + "\n[truncated]" : text;
     // Refresh authority before returning account-derived scraped content.
     assertSessionUnchanged(snapshot);
     // See note in navigate() — wrap scraped content so untrusted page text is

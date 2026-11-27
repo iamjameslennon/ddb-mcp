@@ -3,7 +3,7 @@ import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 import { getBrowser, getBoundContext, closeBrowser, beginLoginSession, endLoginSession } from "./browser.js";
-import { login, LOGIN_TIMEOUT_MS, LOGIN_PROGRESS_INTERVAL_MS } from "./auth.js";
+import { login, LOGIN_TIMEOUT_MS, LOGIN_PROGRESS_INTERVAL_MS, ALREADY_LOGGED_IN } from "./auth.js";
 import { safeErrorLine } from "./utils.js";
 import { revokeSession } from "./session-state.js";
 import { getCharacterRaw, downloadCharacter, listCharacters, parseCharacter, findCharacterByName, characterNameError, clearCharacterCache } from "./tools/character.js";
@@ -87,7 +87,11 @@ server.tool(
       }
       context = await beginLoginSession();
       const result = await login(context, { signal: extra.signal });
-      return { content: [{ type: "text", text: `${result}\nBrowser closed. Session saved to disk — no browser needed for future requests.` }] };
+      // Only a fresh sign-in showed a window; an existing session gets the plain reply.
+      const text = result === ALREADY_LOGGED_IN
+        ? result
+        : `${result}\nBrowser closed. Session saved to disk — no browser needed for future requests.`;
+      return { content: [{ type: "text", text }] };
     } catch (err) {
       // Only the error's safe first line: a Playwright error's call log can
       // list request headers, the session cookie included.

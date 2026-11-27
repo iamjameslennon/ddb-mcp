@@ -244,3 +244,7 @@ Source: tool-notes.md, Custom item names (owner-facing plan decision 2026-11-19)
 ### A speed "equal to your walking speed" takes no extra bonus of its own
 Looks like: a Scout (Superior Mobility, +10 walking, climbing and swimming) who also has 2024 Roving (climb and swim speeds equal to the walking speed) reads `45 ft., swim 45 ft., climb 45 ft.`, not climb and swim 55. The followed axis copies the final walking speed, which already holds the +10, so the axis bonus is not added again. An axis with a speed of its own (race, a numeric set) still takes the bonus.
 Source: tool-notes.md, `parseCharacterData` Speed (owner ruling 2026-11-24).
+
+### A 2024 species' ability increases count only on a background without them
+Looks like: a 2024 species on a 2014 background (no ability increases of its own) adds the species' chosen "+2 / +1" or "+1 / +1 / +1": Lae'zel (107607297, 2024 Githyanki, 2014 Soldier) reads STR 17, CON 15, as on the website. Beside a 2024 background's increases the species option is ignored, as the website does (152570683, 2024 Elf, 2024 Sage: WIS 14). A score 1–2 below the website on such a character is a finding.
+Source: tool-notes.md, `parseCharacterData` Ability scores (regression run follow-ups 2026-11-27).

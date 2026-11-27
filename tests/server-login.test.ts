@@ -124,6 +124,23 @@ describe("ddb_login ownership: a concurrent call never closes the running login"
   });
 });
 
+describe("ddb_login's reply (regression run 2026-11-27)", () => {
+  it("an existing session gets no mention of a browser closing; a fresh sign-in keeps it", async () => {
+    signedIn = true;
+    const already = await callLogin();
+    expect(already.isError).toBeFalsy();
+    expect(textOf(already)).toBe("Already logged in. Session is active.");
+
+    signedIn = false;
+    const fresh = track(callLogin());
+    await vi.advanceTimersByTimeAsync(4_000);
+    signedIn = true;
+    await vi.advanceTimersByTimeAsync(2_500);
+    const done = (fresh.result as { value: CallToolResult }).value;
+    expect(textOf(done)).toMatch(/^Successfully logged in to D&D Beyond[\s\S]*\nBrowser closed\. Session saved to disk/);
+  });
+});
+
 describe("ddb_login honours the client's cancel (4.1 i)", () => {
   it("closes the window, releases the lock and writes nothing; the next ddb_login can start", async () => {
     const abort = new AbortController();
