@@ -730,8 +730,8 @@ describe("clearing the always-prepared cache", () => {
   });
 
   it.each(["characters", "all"] as const)("ddb_clear_cache %s clears it", async (cache) => {
-    const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
-    const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+    const { Client } = await import("@modelcontextprotocol/client");
+    const { InMemoryTransport } = await import("@modelcontextprotocol/client");
     const { server } = await import("../src/server.js");
     const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
     const client = new Client({ name: "t", version: "0" });
@@ -752,8 +752,8 @@ describe("clearing the always-prepared cache", () => {
   });
 
   it("ddb_clear_cache spells and monsters leave it alone", async () => {
-    const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
-    const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+    const { Client } = await import("@modelcontextprotocol/client");
+    const { InMemoryTransport } = await import("@modelcontextprotocol/client");
     const { server } = await import("../src/server.js");
     const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
     const client = new Client({ name: "t", version: "0" });

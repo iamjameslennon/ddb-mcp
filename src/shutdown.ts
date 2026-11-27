@@ -10,7 +10,7 @@ export interface ShutdownDeps {
   stdin: Pick<EventEmitter, "on">;
   /** The process, for its termination signals. */
   proc: Pick<EventEmitter, "on">;
-  /** The MCP transport; its onclose is set here (the SDK chains its own onto it in connect()). */
+  /** The MCP transport. Its onclose is chained here, after serveStdio() has set its own (which assigns, not chains). */
   transport: { onclose?: () => void };
   /** Close every browser, the login browser included. */
   closeAll: () => Promise<void>;
@@ -60,7 +60,11 @@ export function installShutdownHandlers(deps: ShutdownDeps): void {
 
   deps.stdin.on("end", () => drain("Client disconnected (stdin ended)"));
   deps.stdin.on("close", () => drain("Client disconnected (stdin closed)"));
-  deps.transport.onclose = () => exitNow("Transport closed");
+  const sdkOnClose = deps.transport.onclose;
+  deps.transport.onclose = () => {
+    sdkOnClose?.();
+    exitNow("Transport closed");
+  };
   for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) {
     deps.proc.on(signal, () => exitNow(`Received ${signal}`));
   }

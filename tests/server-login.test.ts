@@ -39,9 +39,8 @@ const fsMock = vi.hoisted(() => ({
 }));
 vi.mock("fs", () => fsMock);
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { CallToolResultSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
+import type { CallToolResult } from "@modelcontextprotocol/client";
 import { server } from "../src/server.js";
 
 let client: Client;
@@ -62,7 +61,7 @@ function track<T>(p: Promise<T>): { readonly result: { ok: true; value: T } | { 
 }
 
 function callLogin(options: Record<string, unknown> = {}) {
-  return client.callTool({ name: "ddb_login", arguments: {} }, CallToolResultSchema, { ...NO_CLIENT_TIMEOUT, ...options }) as Promise<CallToolResult>;
+  return client.callTool({ name: "ddb_login", arguments: {} }, { ...NO_CLIENT_TIMEOUT, ...options }) as Promise<CallToolResult>;
 }
 
 beforeEach(async () => {
@@ -187,7 +186,7 @@ describe("ddb_login progress pings (4.1 ii)", () => {
 
   it("keeps the call alive past the SDK's 60 s client default while pings arrive", async () => {
     const call = track(client.callTool(
-      { name: "ddb_login", arguments: {} }, CallToolResultSchema,
+      { name: "ddb_login", arguments: {} },
       { onprogress: () => {}, resetTimeoutOnProgress: true },
     ));
     await vi.advanceTimersByTimeAsync(90_000);

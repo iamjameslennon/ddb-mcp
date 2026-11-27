@@ -12,8 +12,7 @@ vi.mock("../src/tools/monster.js", async (orig) => {
   return { ...real, searchMonsters: mocks.searchMonsters };
 });
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { server } from "../src/server.js";
 
 let client: Client;

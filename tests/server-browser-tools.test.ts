@@ -46,9 +46,8 @@ vi.mock("../src/browser.js", async (orig) => {
   };
 });
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { CallToolResultSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
+import type { CallToolResult } from "@modelcontextprotocol/client";
 import { server } from "../src/server.js";
 
 let client: Client;
@@ -75,7 +74,7 @@ function textOf(result: CallToolResult): string {
 }
 
 function call(name: string, args: Record<string, unknown>): Promise<CallToolResult> {
-  return client.callTool({ name, arguments: args }, CallToolResultSchema) as Promise<CallToolResult>;
+  return client.callTool({ name, arguments: args }) as Promise<CallToolResult>;
 }
 
 function loggedText(): string {

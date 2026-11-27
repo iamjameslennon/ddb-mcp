@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StdioServerTransport, serveStdio } from "@modelcontextprotocol/server/stdio";
 import { closeAllBrowsers } from "./browser.js";
 import { server } from "./server.js";
 import { installShutdownHandlers } from "./shutdown.js";
@@ -12,6 +12,9 @@ async function main() {
   // transport closes, or a termination signal arrives. Without this, an
   // in-flight ddb_login kept the process and its window alive after a
   // disconnect, and Playwright could leak processes.
+  // One connection, one pinned instance: the factory returns the module server.
+  serveStdio(() => server, { transport });
+  // After serveStdio: it assigns transport.onclose, and the hook chains onto it.
   installShutdownHandlers({
     stdin: process.stdin,
     proc: process,
@@ -20,7 +23,6 @@ async function main() {
     exit: code => process.exit(code),
     log: line => { process.stderr.write(line); },
   });
-  await server.connect(transport);
   process.stderr.write("D&D Beyond MCP server running on stdio\n");
 }
 

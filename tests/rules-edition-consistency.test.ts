@@ -33,8 +33,7 @@ vi.mock("../src/session-fetch.js", async (orig) => {
   };
 });
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { server } from "../src/server.js";
 import { SERVER_INSTRUCTIONS, CHARACTER_RULES_TOOL_NOTE, PARTY_RULES_TOOL_NOTE, CHARACTER_LOOKUP_TOOL_NOTE, LIBRARY_LIST_TOOL_NOTE, READ_BOOK_TOOL_NOTE, open5eSearchHeader, searchHeader } from "../src/edition.js";
 import { clearReferenceCache } from "../src/tools/reference.js";

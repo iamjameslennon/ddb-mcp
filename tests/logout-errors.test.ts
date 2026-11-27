@@ -1,6 +1,5 @@
 import { vi, describe, it, expect, afterEach } from "vitest";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 
 /**
  * Task 12b: ddb_logout never prints a raw cleanup error. A Playwright error
