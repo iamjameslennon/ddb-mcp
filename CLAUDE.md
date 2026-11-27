@@ -47,9 +47,10 @@ Testing through an AI client: [skills/ddb-mcp-regression/](skills/ddb-mcp-regres
 
 ## Architecture
 
-This is an [MCP](https://modelcontextprotocol.io) server exposing D&D Beyond (DDB) data over stdio. `src/index.ts` is the entrypoint (`main()`); it calls `startStdioServer` in `src/start.ts` with the process's streams. `src/server.ts` builds the `McpServer` (MCP TypeScript SDK v2, `@modelcontextprotocol/server`, with `SERVER_INSTRUCTIONS` from `src/edition.ts`) and registers all 36 tools with `registerTool`. The tools delegate to `src/tools/`.
+This is an [MCP](https://modelcontextprotocol.io) server exposing D&D Beyond (DDB) data over stdio. `src/index.ts` is the entrypoint (`main()`); it calls `startStdioServer` in `src/start.ts` with the process's streams. `src/server.ts`'s `createServer()` builds an `McpServer` (MCP TypeScript SDK v2, `@modelcontextprotocol/server`, with `SERVER_INSTRUCTIONS` from `src/edition.ts`) and registers all 36 tools with `registerTool`; it also exports one instance, `server`, for the in-memory tests. The tools delegate to `src/tools/`.
 
-- `startStdioServer` serves with `serveStdio`, which answers both protocol eras (2025-11-25 `initialize` and 2026-07-28 `server/discover`), and installs the shutdown hook **after** it: `serveStdio` assigns `transport.onclose`, so a hook installed before it is dropped.
+- `startStdioServer` serves with `serveStdio(() => createServer(), …)`, which answers both protocol eras (2025-11-25 `initialize` and 2026-07-28 `server/discover`), and installs the shutdown hook **after** it: `serveStdio` assigns `transport.onclose`, so a hook installed before it is dropped.
+- **The factory must build a new server each call.** One connection can get a 2026 probe instance and then a 2025 fallback one, and a probe instance keeps its 2026-only handlers.
 - Tests connect `server` to an in-memory transport with `server.connect()`, which serves the 2025 era only. `tests/protocol-eras.test.ts` covers both eras and the hook order through `startStdioServer`.
 - `src/` imports only `@modelcontextprotocol/server` (a dependency); `@modelcontextprotocol/client` is a dev dependency for tests, and `@modelcontextprotocol/core` is never imported directly (Glama's pnpm).
 

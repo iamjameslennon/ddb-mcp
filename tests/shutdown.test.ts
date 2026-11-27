@@ -101,6 +101,19 @@ describe("installShutdownHandlers (2026-11-19 F3)", () => {
     expect(exit).toHaveBeenCalledWith(0);
   });
 
+  it("still exits when the transport's existing onclose throws", async () => {
+    const stdin = new EventEmitter();
+    const proc = new EventEmitter();
+    const transport: { onclose?: () => void } = { onclose: () => { throw new Error("sdk onclose failed"); } };
+    const closeAll = vi.fn(async () => {});
+    const exit = vi.fn();
+    installShutdownHandlers({ stdin, proc, transport, closeAll, exit, log: vi.fn() });
+    expect(() => transport.onclose!()).not.toThrow();
+    await settle();
+    expect(closeAll).toHaveBeenCalledTimes(1);
+    expect(exit).toHaveBeenCalledWith(0);
+  });
+
   it("several triggers exit once", async () => {
     const s = setup();
     s.stdin.emit("end");

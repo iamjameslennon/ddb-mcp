@@ -1,4 +1,5 @@
 import type { EventEmitter } from "node:events";
+import { safeErrorLine } from "./utils.js";
 
 /** How long an immediate shutdown waits for the browsers to close before exiting anyway. */
 export const SHUTDOWN_GRACE_MS = 5_000;
@@ -65,7 +66,13 @@ export function installShutdownHandlers(deps: ShutdownDeps): void {
   deps.stdin.on("close", () => drain("Client disconnected (stdin closed)"));
   const sdkOnClose = deps.transport.onclose;
   deps.transport.onclose = () => {
-    sdkOnClose?.();
+    // The SDK's handler first (it closes the pinned server), but a throw from it
+    // must not skip the exit.
+    try {
+      sdkOnClose?.();
+    } catch (err) {
+      deps.log(`[ddb-mcp] MCP transport onclose failed: ${safeErrorLine(err)}\n`);
+    }
     exitNow("Transport closed");
   };
   for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) {

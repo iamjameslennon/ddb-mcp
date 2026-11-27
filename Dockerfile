@@ -2,9 +2,9 @@
 #
 # Glama builds from a maintainer-authored Dockerfile when one is checked in and
 # only infers one otherwise. Checking this in takes control of the build:
-# `npm ci` installs from package-lock.json, so the image matches what CI tests
-# and the `overrides` block is honoured. The inferred build ran `pnpm install`,
-# which re-resolves every range on each rebuild and ignores npm-style overrides.
+# `npm ci` installs from package-lock.json, so the image matches what CI tests.
+# The inferred build ran `pnpm install`, which re-resolves every range on each
+# rebuild.
 
 FROM node:24-slim AS build
 

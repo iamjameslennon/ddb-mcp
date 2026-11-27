@@ -3,6 +3,8 @@ import { PassThrough } from "node:stream";
 import { describe, it, expect, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/client";
 import type { Transport, JSONRPCMessage, CallToolResult } from "@modelcontextprotocol/client";
+import { McpServer } from "@modelcontextprotocol/server";
+import { startStdioServer } from "../src/start.js";
 
 /**
  * protocol-eras.test.ts — the real entry-point wiring (startStdioServer), driven
@@ -17,10 +19,11 @@ import type { Transport, JSONRPCMessage, CallToolResult } from "@modelcontextpro
  *   drain. Installed after it, the EOF closes the transport and exits at once
  *   through the chained onclose.
  *
- * Each start imports a fresh module graph, as a new process would: one server
- * instance that served a 2026-era connection answers a later 2025 `initialize`
- * with "Method not found" (seen 2026-11-27). A process serves one connection,
- * so that never happens outside tests.
+ * - A fresh server per factory call: `serveStdio` can call its factory twice on
+ *   one connection (a 2026 `server/discover` probe instance, then a 2025
+ *   `initialize` fallback). The probe instance keeps its 2026-only handlers, so
+ *   reusing it answers the `initialize` with "Method not found" (final review
+ *   2026-11-27, I1).
  *
  * The tools called here read no session, so the process's HOME doesn't matter.
  */
@@ -66,9 +69,7 @@ class StreamClientTransport implements Transport {
   }
 }
 
-async function start() {
-  vi.resetModules();
-  const { startStdioServer } = await import("../src/start.js");
+function start() {
   const stdin = new PassThrough();
   const stdout = new PassThrough();
   const proc = new EventEmitter();
@@ -87,11 +88,39 @@ const canon = (v: unknown): unknown =>
 
 const loggedLines = (log: ReturnType<typeof vi.fn>) => log.mock.calls.map(c => String(c[0]));
 
+/** Raw newline-delimited JSON-RPC on the server's streams, for exchanges the SDK client won't make. */
+function rawPeer(stdin: PassThrough, stdout: PassThrough) {
+  const waiting = new Map<number, (m: Record<string, unknown>) => void>();
+  let buffer = "";
+  stdout.setEncoding("utf8");
+  stdout.on("data", (chunk: string) => {
+    buffer += chunk;
+    let nl: number;
+    while ((nl = buffer.indexOf("\n")) !== -1) {
+      const line = buffer.slice(0, nl);
+      buffer = buffer.slice(nl + 1);
+      if (!line.trim()) continue;
+      const message = JSON.parse(line) as Record<string, unknown>;
+      if (typeof message.id === "number") waiting.get(message.id)?.(message);
+    }
+  });
+  return {
+    request(id: number, method: string, params: Record<string, unknown>) {
+      const reply = new Promise<Record<string, unknown>>(resolve => waiting.set(id, resolve));
+      stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
+      return reply;
+    },
+    notify(method: string) {
+      stdin.write(JSON.stringify({ jsonrpc: "2.0", method }) + "\n");
+    },
+  };
+}
+
 describe("startStdioServer: both protocol eras through the real entry point", () => {
   it("serves the same tools and instructions to a 2025 client and a 2026-pinned client", async () => {
     const seen: { tools: unknown; instructions: string | undefined }[] = [];
     for (const mode of ["legacy", { pin: "2026-07-28" }] as const) {
-      const s = await start();
+      const s = start();
       const client = new Client({ name: "eras-test", version: "0.0.0" }, { versionNegotiation: { mode } });
       await client.connect(new StreamClientTransport(s.stdin, s.stdout));
       try {
@@ -113,8 +142,58 @@ describe("startStdioServer: both protocol eras through the real entry point", ()
     expect(seen[1].tools).toEqual(seen[0].tools);
   });
 
+  it("a 2025 initialize after a 2026 server/discover on the same connection gets a fresh server (in-place probe fallback)", async () => {
+    const s = start();
+    const peer = rawPeer(s.stdin, s.stdout);
+    try {
+      const discover = await peer.request(1, "server/discover", {
+        _meta: {
+          "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+          "io.modelcontextprotocol/clientInfo": { name: "eras-test", version: "0.0.0" },
+          "io.modelcontextprotocol/clientCapabilities": {},
+        },
+      });
+      expect(discover.error).toBeUndefined();
+      // The client gave up on its probe (e.g. a timeout) and falls back to the 2025 handshake.
+      const init = await peer.request(2, "initialize", {
+        protocolVersion: "2025-11-25",
+        capabilities: {},
+        clientInfo: { name: "eras-test", version: "0.0.0" },
+      });
+      expect(init.error).toBeUndefined();
+      expect((init.result as { protocolVersion: string }).protocolVersion).toBe("2025-11-25");
+      peer.notify("notifications/initialized");
+      const list = await peer.request(3, "tools/list", {});
+      expect(list.error).toBeUndefined();
+      expect((list.result as { tools: unknown[] }).tools).toHaveLength(36);
+    } finally {
+      s.stdin.end();
+      await vi.waitFor(() => expect(s.exit).toHaveBeenCalledWith(0), { timeout: 2_000 });
+    }
+  });
+
+  it("logs the SDK's own errors (a JSON line that isn't JSON-RPC) and keeps serving", async () => {
+    const s = start();
+    const peer = rawPeer(s.stdin, s.stdout);
+    try {
+      // A non-JSON line is skipped silently; JSON that isn't a JSON-RPC message is an error.
+      s.stdin.write(JSON.stringify({ not: "jsonrpc" }) + "\n");
+      const init = await peer.request(1, "initialize", {
+        protocolVersion: "2025-11-25",
+        capabilities: {},
+        clientInfo: { name: "eras-test", version: "0.0.0" },
+      });
+      expect(init.error).toBeUndefined();
+      await vi.waitFor(() => expect(loggedLines(s.log).some(l => l.startsWith("[ddb-mcp] MCP stdio error:"))).toBe(true), { timeout: 2_000 });
+    } finally {
+      s.stdin.end();
+      await vi.waitFor(() => expect(s.exit).toHaveBeenCalledWith(0), { timeout: 2_000 });
+    }
+  });
+
   it("stdin EOF closes the transport and exits through the chained onclose", async () => {
-    const s = await start();
+    const closeSpy = vi.spyOn(McpServer.prototype, "close");
+    const s = start();
     const client = new Client({ name: "eras-test", version: "0.0.0" }, { versionNegotiation: { mode: "legacy" } });
     await client.connect(new StreamClientTransport(s.stdin, s.stdout));
     s.stdin.end();
@@ -123,5 +202,8 @@ describe("startStdioServer: both protocol eras through the real entry point", ()
       expect(s.exit).toHaveBeenCalledWith(0);
     }, { timeout: 2_000 });
     expect(s.closeAll).toHaveBeenCalledTimes(1);
+    // The SDK's own onclose (which serveStdio assigned) still ran: it closes the pinned server.
+    expect(closeSpy).toHaveBeenCalled();
+    closeSpy.mockRestore();
   });
 });
