@@ -1,5 +1,7 @@
 # Stateless-Safe ddb-mcp Implementation Plan
 
+> **Superseded 2026-11-27.** Reassessed against the code by the owner: defects 1, 3 and 4 were fixed by later work, defect 2 by deleting the spell buffer (Task 4, without Tasks 3 and 5), and Task 2 is folded into an SDK v2 migration. The browser rework (Group C) awaits an owner decision. See `docs/claude/history.md`, "SDK v2 spike 2026-11-27" and "Spell buffer deleted 2026-11-27". Kept for its reasoning; don't execute it as written.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make every tool's correctness independent of prior tool calls, so the server behaves identically on stdio and on any host that builds a fresh server per request — closing four present-day cross-call-state bugs.

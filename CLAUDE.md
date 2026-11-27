@@ -47,7 +47,7 @@ Testing through an AI client: [skills/ddb-mcp-regression/](skills/ddb-mcp-regres
 
 ## Architecture
 
-This is an [MCP](https://modelcontextprotocol.io) server exposing D&D Beyond (DDB) data over stdio. `src/index.ts` is the entrypoint (transport, signals, `main()`). `src/server.ts` builds the `McpServer` (with `SERVER_INSTRUCTIONS` from `src/edition.ts`) and registers all 36 tools. They are still `server.tool(...)` calls, and the move to `registerTool` is open work. The tools delegate to `src/tools/`. Tests connect `server` to an in-memory transport.
+This is an [MCP](https://modelcontextprotocol.io) server exposing D&D Beyond (DDB) data over stdio. `src/index.ts` is the entrypoint (transport, signals, `main()`). `src/server.ts` builds the `McpServer` (with `SERVER_INSTRUCTIONS` from `src/edition.ts`) and registers all 36 tools. They are still `server.tool(...)` calls; the move to `registerTool` comes with the SDK v2 migration (Open work item 1). The tools delegate to `src/tools/`. Tests connect `server` to an in-memory transport.
 
 ### Browserless by default
 
@@ -155,12 +155,13 @@ Full detail: [docs/claude/architecture.md](docs/claude/architecture.md).
 
 Last updated 2026-11-27. Releases and pushes go straight to `main`. The rules-edition work (phases 1–5) is complete, as are the follow-up rounds of minors A–E, the F-2026-10-20 residuals and the combat section completeness run (I1–I3). The regression remediations of 2026-11-11 (F1–F30), 2026-11-13 (F1–F15, plus Tasks 12b and 12c) and 2026-11-18 (F1–F11) are done. **Everything in items 4–12 shipped in v3.0.0** (2026-11-24, `f7f5c12`; npm and LobeHub at 3.0.0, the LobeHub step fixed afterwards in `594f35f`).
 
-1. **Stateless-safe plan, Task 2 onward**: [docs/superpowers/plans/2026-09-17-stateless-safe-ddb-mcp.md](docs/superpowers/plans/2026-09-17-stateless-safe-ddb-mcp.md). Nothing blocks it. The plan predates some moves, so refresh it first:
-   - the registrations are in `src/server.ts`, not `src/index.ts`;
-   - Task 1 (SDK `^1.30.0`) is already satisfied, with `^1.32.2` installed;
-   - Task 5's disk cache must follow the session-lifecycle future-design rule above.
+1. **SDK v2 migration** (replaces the stateless-safe plan, superseded 2026-11-27): the spike passed (branch `spike/sdk2`, `cb1e6f0`, local only; history.md "SDK v2 spike 2026-11-27"). Today's server fails a client pinned to the 2026-07-28 protocol; the spike serves both eras with an unchanged tool list. Before the plan is written:
+   - **Owner decision:** keep, park or drop the browser rework (spec Group C: per-call browser, `ddb_browse` / `ddb_browse_interact`). It isn't needed for v2 on stdio.
+   - **Owner decision:** accept that v2 aborts requests still running when stdin closes (piped one-shot clients only), or work around it.
+   - **Owner check:** Claude Desktop on the spike build.
+   - In the migration: install the shutdown hook *after* `serveStdio` (it assigns `transport.onclose`), drop the `@hono/node-server` override pair, keep the regression skill's `references/` in step.
 
-   Task 4 (delete `characterSpellBuffer`) is also unblocked.
+   The spell buffer (old Task 4) was deleted 2026-11-27 (history.md "Spell buffer deleted 2026-11-27").
 2. **Open carry-overs that need a book-owning or homebrew account**: (b) owner-only subclass renames; (aa) slug joins for paid books; (ah) a feature-level homebrew flag on optional features; (ay) item- and background-granted action entries (wrapping is covered by synthetic tests only); (br) pact or hex weapons using CHA (no test character has one, so no data shape is verified).
 3. **Regression handover (I5)**: I5 needs new test characters on D&D Beyond, see docs/superpowers/specs/2026-11-06-regression-report.md. I4 closed 2026-11-11 (`scripts/regress-all-characters.mts`; first run vs 2.10.2 found no regressions, history.md "Whole-corpus regression script 2026-11-11"). The rest of the 2026-11-06 run is done (history.md "Regression run 2026-11-06"); B11 (monster search quality) and B12 (Critical Role books) closed 2026-11-10 (history.md "Monster search quality and Critical Role books 2026-11-10"; carry-overs (bp), (bq) are listed there; the four questions the final reviews raised were decided by the owner, recorded there as owner rulings 2026-11-10); I1–I3 closed 2026-11-09, and their carry-overs (ba)–(bo) are listed ((bg) and (bh) closed; (ba), (bc), (bd), (bf), (bj) and (bl) closed 2026-11-19, see item 9; (bm) closed 2026-11-20, see item 10) under history.md "Combat section completeness 2026-11-09".
 4. **Regression remediation 2026-11-11 (F1–F30)**: done, with the final fix wave of 2026-11-13; findings, commits, rulings and carry-overs (br)–(bv) are in history.md "Regression remediation 2026-11-11".
