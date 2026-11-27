@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { McpServer, type ToolAnnotations } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
@@ -32,9 +33,15 @@ import { RULES_EDITION_TOOL_NOTE, CHARACTER_RULES_TOOL_NOTE, PARTY_RULES_TOOL_NO
  * review 2026-11-27, I1). Module state (caches, the browser, the session) is
  * shared by every instance.
  */
+/**
+ * The installed package's version, for serverInfo. package.json sits one level
+ * above both dist/ and src/, and ships in the npm package and the Docker image.
+ */
+const PACKAGE_VERSION = (createRequire(import.meta.url)("../package.json") as { version: string }).version;
+
 export function createServer(): McpServer {
   const server = new McpServer(
-    { name: "dndbeyond", version: "1.0.0" },
+    { name: "dndbeyond", version: PACKAGE_VERSION },
     { instructions: SERVER_INSTRUCTIONS },
   );
   registerTools(server);
