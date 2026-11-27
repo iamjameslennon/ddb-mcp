@@ -156,9 +156,9 @@ Full detail: [docs/claude/architecture.md](docs/claude/architecture.md).
 Last updated 2026-11-27. Releases and pushes go straight to `main`. The rules-edition work (phases 1–5) is complete, as are the follow-up rounds of minors A–E, the F-2026-10-20 residuals and the combat section completeness run (I1–I3). The regression remediations of 2026-11-11 (F1–F30), 2026-11-13 (F1–F15, plus Tasks 12b and 12c) and 2026-11-18 (F1–F11) are done. **Everything in items 4–12 shipped in v3.0.0** (2026-11-24, `f7f5c12`; npm and LobeHub at 3.0.0, the LobeHub step fixed afterwards in `594f35f`).
 
 1. **SDK v2 migration** (replaces the stateless-safe plan, superseded 2026-11-27): the spike passed (branch `spike/sdk2`, `cb1e6f0`, local only; history.md "SDK v2 spike 2026-11-27"). Today's server fails a client pinned to the 2026-07-28 protocol; the spike serves both eras with an unchanged tool list. Before the plan is written:
-   - **Owner decision:** keep, park or drop the browser rework (spec Group C: per-call browser, `ddb_browse` / `ddb_browse_interact`). It isn't needed for v2 on stdio.
-   - **Owner decision:** accept that v2 aborts requests still running when stdin closes (piped one-shot clients only), or work around it.
-   - **Owner check:** Claude Desktop on the spike build.
+   - **Owner ruling 2026-11-27:** the browser rework (spec Group C: per-call browser, `ddb_browse` / `ddb_browse_interact`) is parked until there is a need (e.g. HTTP hosting). The migration keeps the four browser tools as they are.
+   - **Owner ruling 2026-11-27:** accept that v2 aborts requests still running when stdin closes (piped one-shot clients only); no workaround.
+   - **Owner check (open):** Claude Desktop on the spike build. Then write the migration plan.
    - In the migration: install the shutdown hook *after* `serveStdio` (it assigns `transport.onclose`), drop the `@hono/node-server` override pair, keep the regression skill's `references/` in step.
 
    The spell buffer (old Task 4) was deleted 2026-11-27 (history.md "Spell buffer deleted 2026-11-27").
