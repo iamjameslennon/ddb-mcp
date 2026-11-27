@@ -3,11 +3,16 @@ import { describe, it, expect, vi } from "vitest";
 import { installShutdownHandlers, SHUTDOWN_DRAIN_MS } from "../src/shutdown.js";
 
 /**
- * shutdown.test.ts — regression 2026-11-19 F3. The MCP SDK's stdio transport
- * never closes on stdin EOF, so a client that went away (a disconnect, or a
- * client restarting the server) left this server running with its login
- * window open until the 3-minute deadline. Every way the process is told to
- * stop must close every browser, the login browser included, exactly once.
+ * shutdown.test.ts — regression 2026-11-19 F3. Under SDK v1 the stdio
+ * transport never closed on stdin EOF, so a client that went away (a
+ * disconnect, or a client restarting the server) left this server running
+ * with its login window open until the 3-minute deadline. Under SDK v2 the
+ * transport closes on EOF and aborts requests still running (owner ruling
+ * 2026-11-27: accepted), and the hook's chained onclose exits after
+ * closeAll(); the stdin drain stays for a transport that doesn't close by
+ * itself. Every way the process is told to stop must close every browser,
+ * the login browser included, exactly once. The real entry-point wiring is
+ * covered by tests/protocol-eras.test.ts.
  */
 
 function setup(closeAll = vi.fn(async () => {})) {
@@ -78,6 +83,22 @@ describe("installShutdownHandlers (2026-11-19 F3)", () => {
     await settle();
     expect(s.closeAll).toHaveBeenCalledTimes(1);
     expect(s.exit).toHaveBeenCalledWith(0);
+  });
+
+  it("chains the transport's existing onclose and still exits", async () => {
+    // serveStdio() assigns transport.onclose before the hook is installed: the hook must keep it.
+    const stdin = new EventEmitter();
+    const proc = new EventEmitter();
+    const sdkOnClose = vi.fn();
+    const transport: { onclose?: () => void } = { onclose: sdkOnClose };
+    const closeAll = vi.fn(async () => {});
+    const exit = vi.fn();
+    installShutdownHandlers({ stdin, proc, transport, closeAll, exit, log: vi.fn() });
+    transport.onclose!();
+    await settle();
+    expect(sdkOnClose).toHaveBeenCalledTimes(1);
+    expect(closeAll).toHaveBeenCalledTimes(1);
+    expect(exit).toHaveBeenCalledWith(0);
   });
 
   it("several triggers exit once", async () => {

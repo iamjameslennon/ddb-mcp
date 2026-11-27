@@ -25,11 +25,14 @@ export interface ShutdownDeps {
  *   piped its requests and closed its end): every browser closes at once, the
  *   login window included, and the process is left to exit by itself once the
  *   replies already in flight are sent, or at SHUTDOWN_DRAIN_MS (an unref'd
- *   timer, so it never holds the process open by itself). The MCP SDK's
- *   StdioServerTransport listens only for stdin data and errors, never its
- *   end, so without this a ddb_login waiting for a sign-in kept this process
- *   and its login window alive for up to 3 minutes after the client had gone
- *   (regression 2026-11-19 F3).
+ *   timer, so it never holds the process open by itself). Under SDK v1 the
+ *   stdio transport never noticed stdin EOF, so without this a ddb_login
+ *   waiting for a sign-in kept this process and its login window alive for up
+ *   to 3 minutes after the client had gone (regression 2026-11-19 F3). Under
+ *   SDK v2 the transport closes on EOF itself and aborts requests still
+ *   running (owner ruling 2026-11-27: accepted), so the chained onclose below
+ *   exits after closeAll(). The drain stays for a transport that doesn't
+ *   close by itself.
  * - **SIGTERM / SIGINT / SIGHUP, or the transport closing:** close every
  *   browser (at most SHUTDOWN_GRACE_MS, so a hung close can't keep the
  *   process alive), then exit 0, once, also in the middle of a drain.
