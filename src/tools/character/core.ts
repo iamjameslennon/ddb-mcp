@@ -13,7 +13,7 @@
 
 import type { SourceIndex } from "../../edition.js";
 import { computeCharacterEditions } from "./editions.js";
-import { arr, records, featureDefinition, isBonusMod, isSetMod, num, modOf, obj, statKeys, statNames } from "./helpers.js";
+import { arr, records, featureDefinition, hasTag, isBonusMod, isSetMod, num, modOf, obj, statKeys, statNames } from "./helpers.js";
 import { isActiveItemMod } from "./item-gate.js";
 import { makeResolveTemplates } from "./templates.js";
 import type { CharData, ClassEntry, CoreStats, InventoryItem, Mod } from "./types.js";
@@ -69,9 +69,9 @@ export function computeCoreStats(char: CharData, index: SourceIndex): CoreStats 
   // gate race-sourced bonuses on `isGranted`. In the 2024 rules ability
   // score increases come from the character's background (origin feat),
   // not from race — DDB still emits the race-categorized ASI modifiers in
-  // the JSON, but they carry `isGranted: false` and the website ignores
-  // them. We must too, or the race ASI gets double-counted against
-  // char.stats (which already includes it).
+  // the JSON, but they carry `isGranted: false` and, beside a 2024
+  // background's increases, the website ignores them. We must too, or the
+  // ASI is counted twice (2026-05-16 fix). The exceptions follow.
   //
   // EXCEPTION: 2014 Half-Elf grants +2 CHA fixed plus two player-chosen +1s.
   // The chosen ones are ALSO emitted as race mods with `isGranted: false` —
@@ -99,6 +99,21 @@ export function computeCoreStats(char: CharData, index: SourceIndex): CoreStats 
     return true;
   };
 
+  // 2024 species "Ability Score Increases" option (+2/+1 or +1/+1/+1): the
+  // player picks it with a type-8 `choices.race` entry, and its mods carry the
+  // option's id as `componentId`, also with `isGranted: false`. D&D Beyond
+  // applies them only when the background grants no ability increases (no
+  // `__INITIAL_ASI` feat), i.e. on a 2014 background; beside a 2024
+  // background's increases it ignores them. Website-checked 2026-11-27
+  // (107607297 and 148860315 count them; 152570649/675/683 don't).
+  const backgroundGrantsScores = records(char.feats).some(f => hasTag(f, "__INITIAL_ASI"));
+  const chosenSpeciesOptions = new Set<number>();
+  if (!backgroundGrantsScores) {
+    for (const ch of records(obj(char.choices).race)) {
+      if (num(ch.type) === 8 && num(ch.optionValue) > 0) chosenSpeciesOptions.add(num(ch.optionValue));
+    }
+  }
+
   const scoreBonuses: Record<number, number> = {};
   for (const [source, list] of Object.entries(obj(char.modifiers))) {
     for (const m of records<Mod>(list)) {
@@ -109,9 +124,11 @@ export function computeCoreStats(char: CharData, index: SourceIndex): CoreStats 
       // An item's score bonus counts only while the item is active (G2, 2026-11-19).
       if (!isActiveItemMod(m, inventory)) continue;
       if (source === "race" && m.isGranted === false) {
-        // Allow through only if the player has a matching race-ability pick
-        // (2014 Half-Elf shape). Otherwise this is a declined 2024-style ASI.
-        if (!consumeMatchingRacePick(num(m.componentId), idx)) continue;
+        // Allow through only for a chosen 2024 species option on a background
+        // without ability increases, or a matching race-ability pick (2014
+        // Half-Elf shape). Otherwise this is a declined 2024-style ASI.
+        if (!chosenSpeciesOptions.has(num(m.componentId)) &&
+            !consumeMatchingRacePick(num(m.componentId), idx)) continue;
       }
       scoreBonuses[idx + 1] = (scoreBonuses[idx + 1] ?? 0) + num(m.fixedValue);
     }

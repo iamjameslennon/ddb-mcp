@@ -2551,6 +2551,57 @@ describe("parseCharacterData — 2014 Half-Elf chosen ability bonuses", () => {
   });
 });
 
+// ── 2024 species "Ability Score Increases" option ────────────────────────────
+// A 2024 species carries an "Ability Score Increases" trait whose option
+// ("Increase two scores (+2 / +1)" or "+1 / +1 / +1") the player picks with a
+// type-8 `choices.race` entry; the resulting race mods carry the option's id as
+// `componentId` and `isGranted: false`. D&D Beyond applies them only when the
+// background grants no ability increases (no `__INITIAL_ASI` feat), i.e. on a
+// 2014 background. Checked on the website 2026-11-27: Lae'zel (107607297, 2014
+// Soldier) STR 17 / CON 15 and Barakas (148860315, 2014 Sage) WIS 16 / CHA 16
+// count them; the 2024-background characters of the 2026-05-16 fix
+// (152570649, 152570675, 152570683) ignore them.
+describe("parseCharacterData — 2024 species ability-increase option", () => {
+  const FIGHTER_BASE = (FIGHTER_5.data) as Record<string, unknown>;
+  // FIGHTER_5 base stats: STR 16, DEX 12, CON 14, INT 10, WIS 13, CHA 8.
+  const speciesOption = (feats: unknown[]): Record<string, unknown> => ({
+    data: {
+      ...FIGHTER_BASE,
+      race: { fullName: "Githyanki", baseName: "Githyanki", isLegacy: false, weightSpeeds: { normal: { walk: 30 } }, racialTraits: [] },
+      feats,
+      modifiers: {
+        ...(FIGHTER_BASE.modifiers as Record<string, unknown>),
+        race: [
+          { type: "bonus", subType: "strength-score",     fixedValue: 2, value: 2, isGranted: false, componentId: 1978624, componentTypeId: 306912077 },
+          { type: "bonus", subType: "constitution-score", fixedValue: 1, value: 1, isGranted: false, componentId: 1978624, componentTypeId: 306912077 },
+        ],
+      },
+      choices: {
+        race: [
+          { type: 8, componentId: 500, optionValue: 1978624 },
+          { type: 2, subType: 5, componentId: 500, optionValue: 5686, label: "Choose an Ability Score to increase by 2" },
+          { type: 2, subType: 5, componentId: 500, optionValue: 5682, label: "Choose an Ability Score to increase by 1" },
+        ],
+      },
+    },
+  });
+
+  it("applies the chosen option when the background grants no ability increases (2014 background)", () => {
+    const out = parseCharacterData(speciesOption([]));
+    expect(out).toContain("STR 18 (+4)"); // 16 + 2
+    expect(out).toContain("CON 15 (+2)"); // 14 + 1
+  });
+
+  it("ignores the chosen option when a 2024 background grants ability increases", () => {
+    const out = parseCharacterData(speciesOption([{
+      componentId: 11, componentTypeId: 1,
+      definition: { id: 9001, name: "Soldier Ability Score Improvements", categories: [{ tagName: "__INITIAL_ASI" }] },
+    }]));
+    expect(out).toContain("STR 16 (+3)");
+    expect(out).toContain("CON 14 (+2)");
+  });
+});
+
 // ── Multiclass: save proficiencies come only from the starting class ────────
 // PHB Multiclass table: only your *first* class grants saving-throw
 // proficiencies. Additional classes contribute armor/weapons/tools/skills only.
