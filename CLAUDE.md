@@ -154,6 +154,7 @@ Full detail: [docs/claude/architecture.md](docs/claude/architecture.md).
 - **Glama builds with pnpm**:
   - Every non-builtin import needs its own `package.json` dependency (`domhandler` broke it once).
   - The `overrides` and `pnpm.overrides` blocks **must stay in sync** when present (none since the SDK v2 migration).
+  - A dependency with a build script needs an `allowBuilds` entry in `pnpm-workspace.yaml` (only esbuild today), or pnpm 11's install fails with `ERR_PNPM_IGNORED_BUILDS`.
 - **`@types/node` stays `^22`** to match `engines.node >=22` and the CI matrix. Bump all three together when Node 22 reaches end of life (2027-04-30).
 - There is no postinstall. `getBrowser()` tries system Chrome, then lazily installs bundled Chromium, with its progress sent to **stderr** so it can't corrupt the JSON-RPC stream. `DDB_USE_BUNDLED_CHROMIUM=1` skips the system Chrome.
 

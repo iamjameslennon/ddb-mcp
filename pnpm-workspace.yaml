@@ -1,0 +1,6 @@
+# pnpm settings for a from-source `pnpm install` (npm ignores this file; the
+# Dockerfile and CI use npm ci). pnpm 10+ blocks dependency build scripts, and
+# pnpm 11 fails the install (ERR_PNPM_IGNORED_BUILDS) for any it wasn't told
+# about. esbuild (a dev dependency of tsx and vitest) is allowed, as npm does.
+allowBuilds:
+  esbuild: true

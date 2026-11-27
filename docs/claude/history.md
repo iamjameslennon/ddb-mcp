@@ -79,6 +79,13 @@ First run (HEAD `45ee0b3` vs 2.10.2, about 13 s): 56/56 characters, 0 crashes, 0
 
 Pilot (2026-11-11, in Claude Code against the fresh build, narrowed scope: batch 1 with one section type per character, the test campaign's party, 5 matrix tools and the 5 gate refusals; no spot-check, real download or logged-out pass): every gate refused with nothing done, and the replies sampled were consistent, labelled and wrapped. Findings: **F1 🟠 confirmed**, carried weapons that aren't equipped appear nowhere on the sheet (INVENTORY skips all weapons, ACTIONS lists equipped ones only; Ethelrede 112314883, Astarion 107164636, Bobby 133053421); F2 ⚪ suspected `Immunities: Magical-sleep` (Mori Yosei 39714283); F3 ⚪ suspected "HalfCover" in the SRD Cover text; improvement: "dragon" in `ddb_rate_encounter` counts a third-party monster named "Dragon". Known (B14) read_book blank lines seen. Skill fixes from the pilot: free-account books named (the library marks giveaways "Owned"); `combat` contains `summary`; `ddb_get_character_raw` allowed as evidence on public characters; matrix "ambiguous" examples use "Red Dragon"; intended-behaviour entries for equipped weapons in ACTIONS and exact-name encounter matches. F1–F3 are open, for the owner.
 
+### serverInfo version and pnpm build scripts 2026-11-27
+
+Two issues already in v3.0.0, found during the SDK v2 migration's verification; owner decision 2026-11-27: fix both, ship with the next release.
+
+- **`serverInfo.version`** was hard-coded "1.0.0" since the first commit, so every client saw 1.0.0 whatever was installed. `server.ts` now reads `version` from `package.json` (`createRequire`, `../package.json` from both `dist/` and `src/`; it ships in the npm package and the Docker image). Test `tests/server-info.test.ts` (red first: got 1.0.0, expected 3.1.0); the built server reports 3.1.0.
+- **A from-source `pnpm install` exited 1** (pnpm 11.8.0: `ERR_PNPM_IGNORED_BUILDS`, esbuild), though the `prepare` build still ran. Glama builds from the Dockerfile (`npm ci`) and npm users never install esbuild (a dev dependency), so only from-source pnpm installs were affected. New `pnpm-workspace.yaml` with `allowBuilds: { esbuild: true }` (pnpm 11 removed `onlyBuiltDependencies`); a clean pnpm install now exits 0, runs esbuild's postinstall and the build, and the server answers `initialize` (version 3.1.0). release-and-ops.md's stale "both override blocks are present" line corrected at the same time.
+
 ### SDK v2 migration 2026-11-27
 
 Plan: `docs/superpowers/plans/2026-11-27-sdk-v2-migration.md`. Spec: "SDK v2 spike 2026-11-27" and "SDK v2 regression run follow-ups 2026-11-27" below.

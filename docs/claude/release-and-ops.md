@@ -40,10 +40,11 @@ Listed as **`iamjameslennon-ddb-mcp`** ([lobehub.com/mcp/iamjameslennon-ddb-mcp]
 
 `Dockerfile` at the repo root exists for MCP directories (Glama et al.), which build from a maintainer-authored Dockerfile when one is checked in and otherwise infer one with an LLM. Two-stage: stage 1 runs `npm ci` (whose `prepare` hook is the `tsc` build), stage 2 runs `npm ci --omit=dev --ignore-scripts` and copies `dist/` across. Runs as the unprivileged `node` user with `DDB_NO_SANDBOX=1`; `CMD` is the plain stdio server (`node dist/index.js`) — hosts needing HTTP/SSE wrap it themselves.
 
-Two traps this exists to avoid, both from Glama's inferred build using **pnpm**:
+Three traps from Glama's inferred build using **pnpm** (the Dockerfile avoids them; a from-source pnpm install still meets the first and third):
 
 1. **Undeclared transitive imports.** npm's flat `node_modules` resolves them; pnpm's strict layout does not. `domhandler` (a cheerio dep, imported by [src/tools/library.ts](../../src/tools/library.ts)) was undeclared and broke the build while `npm ci` and CI stayed green. Every non-builtin import needs its own `package.json` entry.
-2. **`overrides` is npm-only.** pnpm reads `pnpm.overrides`, so the production-audit pins silently vanish under pnpm. Both blocks are present and **must be kept in sync**.
+2. **`overrides` is npm-only.** pnpm reads `pnpm.overrides`, so the production-audit pins silently vanish under pnpm. When a pin is needed, add it to both blocks and **keep them in sync**. There are none since the SDK v2 migration (2026-11-27), which dropped the `@hono/node-server` pair.
+3. **Dependency build scripts.** pnpm 10+ blocks them, and pnpm 11 fails the install (`ERR_PNPM_IGNORED_BUILDS`) for any it wasn't told about. `pnpm-workspace.yaml` sets `allowBuilds: { esbuild: true }` (esbuild, a dev dependency of tsx and vitest, runs its postinstall under npm too). A new dependency with a build script needs an entry there.
 
 `.dockerignore` keeps `dist/` and `node_modules/` out of the context so the image's `dist/` always comes from its own `tsc` run. `glama.json` (`maintainers`) claims the directory listing.
 
