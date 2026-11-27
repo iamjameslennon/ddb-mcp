@@ -213,37 +213,21 @@ export function getCompendiumSource(): CompendiumSource | null {
   return compendiumSource;
 }
 
-/**
- * Wipe the spell/items/reference cache and ALL in-memory compendium state.
- *
- * This clears `characterSpellBuffer` and `itemCompendium` in addition to the
- * reference cache + spell compendium. TEMPORARY: the buffer reset here exists
- * only because `characterSpellBuffer` is module-level mutable state seeded from
- * a specific character's JSON. When the future stateless compendium design
- * removes the buffer, delete its reset from this function (and from the
- * invalidation hook below).
- */
+/** Wipe the spell/items/reference cache and ALL in-memory compendium state. */
 export function clearReferenceCache(): void {
   referenceCache.clear();
   spellStore = null;
   compendiumSource = null;
-  characterSpellBuffer.clear();
   itemCompendium = null;
 }
 
 // Retire all account-derived compendium state on every session transition
-// (logout, account replacement, revoke). The item compendium and the
-// character-seeded spell buffer are account-scoped (game-data endpoints are
-// gated by the cobalt token / character JSON), so they must not survive into a
-// new generation. Registered once per module lifetime.
+// (logout, account replacement, revoke). The spell and item compendia are
+// account-scoped (game-data endpoints are gated by the cobalt token), so they
+// must not survive into a new generation. Registered once per module lifetime.
 onSessionInvalidated(() => {
   clearReferenceCache();
 });
-
-// Spells extracted from character JSON (Warlock invocations, racial cantrip
-// grants, etc.) that may not appear in the per-class game-data spell lists.
-// Keyed by definition id, so both editions of a name can sit in it.
-const characterSpellBuffer = new Map<number, DdbSpell>();
 
 async function loadSpellCompendium(): Promise<SpellStore> {
   // Observe the on-disk authority BEFORE any early singleton/cache return, so a
@@ -334,11 +318,6 @@ async function loadSpellCompendium(): Promise<SpellStore> {
     );
   }
 
-  // Merge character-sourced spells (Warlock-style invocations, racial cantrip
-  // grants, etc.). The per-class game-data lists cover the canonical class
-  // spell lists; characterSpellBuffer fills in anything else a character knows.
-  addSpells(store, characterSpellBuffer.values());
-
   spellStore = store;
   // If any DDB task failed, the compendium is missing one or more class spell
   // lists. Short-TTL so the build is retried after ~5 min instead of being
@@ -351,50 +330,12 @@ async function loadSpellCompendium(): Promise<SpellStore> {
 }
 
 /**
- * Supplements the spell compendium with spells from a parsed character's
- * classSpells array. Captures cantrips and chosen spells absent from the
- * per-class game-data spell lists. Called from parseCharacterData().
- */
-export function addCharacterSpellsToCompendium(char: Record<string, unknown>): void {
-  const objOf = (v: unknown): Record<string, unknown> =>
-    v != null && typeof v === "object" && !Array.isArray(v)
-      ? (v as Record<string, unknown>)
-      : {};
-  // A null or non-object entry (malformed data) is skipped.
-  const arrOf = (v: unknown): Record<string, unknown>[] =>
-    Array.isArray(v) ? v.filter(e => e !== null && typeof e === "object" && !Array.isArray(e)) : [];
-
-  const added: DdbSpell[] = [];
-  for (const cs of arrOf(char.classSpells)) {
-    for (const spell of arrOf(cs.spells)) {
-      const id = objOf(spell.definition).id;
-      if (typeof id === "number" && Number.isFinite(id) && !characterSpellBuffer.has(id)) {
-        characterSpellBuffer.set(id, spell as unknown as DdbSpell);
-        added.push(spell as unknown as DdbSpell);
-      }
-    }
-  }
-
-  // Merge immediately into the live compendium if already loaded
-  if (added.length && spellStore) {
-    addSpells(spellStore, added);
-    // Preserve provenance and use the matching TTL. If we somehow re-merge
-    // before the source was set (unlikely — the compendium can't be loaded
-    // without going through loadSpellCompendium), default to "ddb-partial"
-    // / short TTL to err on the side of retrying sooner.
-    const source = compendiumSource ?? "ddb-partial";
-    const ttl = source === "ddb-authoritative" ? AUTHORITATIVE_TTL_MS : FALLBACK_TTL_MS;
-    const cacheValue: CachedCompendium = { source, spells: spellList(spellStore) };
-    referenceCache.set("spell-compendium-v2", JSON.stringify(cacheValue), ttl);
-  }
-}
-
-/**
  * Whether a spell definition needs concentration; null if unknown.
  * Precedence: (1) the definition's own boolean; (2) the same definition id in
- * the character buffer or the compendium; (3) the entry of the definition's
- * twin group for its own edition (2024 when its edition isn't stated);
- * (4) null. Call after addCharacterSpellsToCompendium() has run.
+ * the compendium; (3) the entry of the definition's twin group in the
+ * compendium for its own edition (2024 when its edition isn't stated);
+ * (4) null. The compendium is built only from the class spell lists, never
+ * from a parsed character (stateless-safe, owner decision 2026-11-27).
  */
 export function isConcentrationSpell(def: Record<string, unknown>): boolean | null {
   if (typeof def.concentration === "boolean") return def.concentration;
@@ -405,7 +346,7 @@ export function isConcentrationSpell(def: Record<string, unknown>): boolean | nu
   };
 
   if (typeof def.id === "number") {
-    const byId = characterSpellBuffer.get(def.id) ?? spellStore?.byId.get(def.id);
+    const byId = spellStore?.byId.get(def.id);
     if (byId) return concOf(byId);
   }
 
@@ -415,9 +356,6 @@ export function isConcentrationSpell(def: Record<string, unknown>): boolean | nu
     for (const id of spellStore?.byTwin.get(key) ?? []) {
       const spell = spellStore?.byId.get(id);
       if (spell) group.set(id, spell);
-    }
-    for (const [id, spell] of characterSpellBuffer) {
-      if (!group.has(id) && twinNames.spell(spell.definition?.name ?? "") === key) group.set(id, spell);
     }
     if (group.size > 0) {
       const index = peekSourceIndex();

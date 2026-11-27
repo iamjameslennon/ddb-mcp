@@ -126,7 +126,6 @@ Most modules become `(core: CoreStats) → DomainResult` pure functions.
 // src/tools/character/parse.ts
 export function parseCharacterData(raw: CharData, sections: ParseSection = "full"): string {
   const char = (raw?.data ?? raw) as CharData;
-  addCharacterSpellsToCompendium(char);
 
   const core = computeCoreStats(char, index);
   const want = SECTION_INCLUDES[sections];
@@ -279,8 +278,9 @@ glitches and unbalanced wrappers, and checks that every line of the
 summary/combat/spells/inventory/features/notes sections appears in `full`. It
 exits 1 on a HEAD crash, an inconsistency or an anomaly the baseline lacks;
 differences alone don't fail it, since most are intended: read `report.md`.
-Characters run in the same order on both sides because the parser's spell
-buffer carries spells across characters (stateless plan Task 4 removes it).
+Characters run in the same order on both sides. HEAD's parser no longer
+carries spells across characters (the spell buffer was deleted 2026-11-27),
+but a baseline from v3.0.0 or earlier still does.
 Output defaults to `<os tmpdir>/ddb-mcp-regress` and is never committed
 (other people's characters, PHB text).
 

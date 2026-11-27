@@ -688,9 +688,9 @@ describe("monster cache across a session transition", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Item compendium + character-seeded spell buffer + ddb_clear_cache behaviour.
+// Item and spell compendia + ddb_clear_cache behaviour.
 // ─────────────────────────────────────────────────────────────────────────────
-describe("item compendium + character-seeded spell buffer", () => {
+describe("item and spell compendia", () => {
   function itemFetchMock() {
     fetchMock.mockImplementation(async (url: string, opts?: RequestInit) => {
       const cookie = ((opts?.headers ?? {}) as Record<string, string>).Cookie ?? "";
@@ -699,6 +699,10 @@ describe("item compendium + character-seeded spell buffer", () => {
         const name = cookie.includes("SECRET_B") ? "ItemB" : "ItemA";
         return jsonResponse({ data: [{ id: 1, name, type: "Wondrous", filterType: "Wondrous", rarity: "Rare", requiresAttunement: false, attunementDescription: "", description: "d", snippet: "", weight: 0, damage: null, properties: null, armorClass: null, magic: true }] });
       }
+      if (url.includes("/game-data/spells?classId=8")) {
+        return jsonResponse({ data: [{ definition: { id: 900, name: "Hex", level: 1, school: "Enchantment", description: "d", concentration: true, ritual: false } }] });
+      }
+      if (url.includes("/game-data/")) return jsonResponse({ data: [] });
       if (url.includes("api.open5e.com")) return jsonResponse({ count: 0, results: [] });
       return jsonResponse({});
     });
@@ -716,35 +720,31 @@ describe("item compendium + character-seeded spell buffer", () => {
     expect(b).not.toContain("ItemA");
   });
 
-  it("drops the character-seeded spell buffer on a session transition", async () => {
+  it("drops the spell compendium on a session transition", async () => {
     setSessionFile(sessionJson("SECRET_A"));
     observeTransition(); // establish account A as the observed baseline
-    reference.addCharacterSpellsToCompendium({
-      classSpells: [{ spells: [{ definition: { id: 900, name: "Hex", concentration: true } }] }],
-    });
+    itemFetchMock();
+    await reference.searchSpells({});
     expect(reference.isConcentrationSpell({ id: 900, name: "Hex" })).toBe(true);
 
     setSessionFile(null);
     observeTransition();
-    // Hook cleared the buffer: the character-sourced spell is gone.
+    // The hook cleared the compendium: the spell is no longer known.
     expect(reference.isConcentrationSpell({ id: 900, name: "Hex" })).toBeNull();
   });
 
-  it("clearReferenceCache() also wipes the character spell buffer and item compendium (ddb_clear_cache)", async () => {
+  it("clearReferenceCache() wipes the spell and item compendia (ddb_clear_cache)", async () => {
     setSessionFile(sessionJson("SECRET_A"));
     itemFetchMock();
 
-    // Seed both the item compendium and the character spell buffer.
     await reference.searchItems({ name: "item" });
-    reference.addCharacterSpellsToCompendium({
-      classSpells: [{ spells: [{ definition: { id: 901, name: "Bless", concentration: true } }] }],
-    });
-    expect(reference.isConcentrationSpell({ id: 901, name: "Bless" })).toBe(true);
+    await reference.searchSpells({});
+    expect(reference.isConcentrationSpell({ id: 900, name: "Hex" })).toBe(true);
 
     reference.clearReferenceCache();
 
-    // Buffer cleared: spell is gone.
-    expect(reference.isConcentrationSpell({ id: 901, name: "Bless" })).toBeNull();
+    // Spell compendium cleared: the spell is no longer known.
+    expect(reference.isConcentrationSpell({ id: 900, name: "Hex" })).toBeNull();
     // Item compendium cleared: the next search re-fetches (fetch count grows).
     const before = fetchMock.mock.calls.length;
     await reference.searchItems({ name: "item" });

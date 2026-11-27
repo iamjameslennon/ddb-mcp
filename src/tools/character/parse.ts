@@ -12,7 +12,6 @@
  * the parser stays synchronous; callers that can await pass getSourceIndex().
  */
 
-import { addCharacterSpellsToCompendium } from "../reference.js";
 import type { SourceIndex } from "../../edition.js";
 import { peekSourceIndex } from "../../game-config.js";
 import { computeCoreStats } from "./core.js";
@@ -35,9 +34,6 @@ export function parseCharacterData(
   index: SourceIndex = peekSourceIndex(),
 ): string {
   const char = (raw?.data ?? raw) as CharData;
-
-  // Supplement spell compendium with this character's chosen spells (cantrips etc.)
-  addCharacterSpellsToCompendium(char);
 
   // computeCoreStats produces every value used across multiple sections.
   // After phases 3–8 every domain consumes `core` directly; only profBonus

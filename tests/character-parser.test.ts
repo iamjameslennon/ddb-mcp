@@ -2115,8 +2115,8 @@ describe("parseCharacterData — overrideHitPoints", () => {
 });
 
 // ── Concentration spell section ───────────────────────────────────────────────
-// Spell definitions include `concentration` directly in definition so
-// addCharacterSpellsToCompendium seeds the buffer before parsing.
+// Each spell definition carries its own `concentration` boolean, which
+// isConcentrationSpell reads first.
 
 const makeClassSpells = (classDef: Record<string, unknown>, spells: Array<{ name: string; level: number; concentration: boolean; prepared?: boolean; ritual?: boolean }>) => ({
   characterClassId: (classDef as Record<string, unknown>).id ?? 1,
