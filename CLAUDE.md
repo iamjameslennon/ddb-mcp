@@ -47,7 +47,11 @@ Testing through an AI client: [skills/ddb-mcp-regression/](skills/ddb-mcp-regres
 
 ## Architecture
 
-This is an [MCP](https://modelcontextprotocol.io) server exposing D&D Beyond (DDB) data over stdio. `src/index.ts` is the entrypoint (transport, signals, `main()`). `src/server.ts` builds the `McpServer` (with `SERVER_INSTRUCTIONS` from `src/edition.ts`) and registers all 36 tools. They are still `server.tool(...)` calls; the move to `registerTool` comes with the SDK v2 migration (Open work item 1). The tools delegate to `src/tools/`. Tests connect `server` to an in-memory transport.
+This is an [MCP](https://modelcontextprotocol.io) server exposing D&D Beyond (DDB) data over stdio. `src/index.ts` is the entrypoint (`main()`); it calls `startStdioServer` in `src/start.ts` with the process's streams. `src/server.ts` builds the `McpServer` (MCP TypeScript SDK v2, `@modelcontextprotocol/server`, with `SERVER_INSTRUCTIONS` from `src/edition.ts`) and registers all 36 tools with `registerTool`. The tools delegate to `src/tools/`.
+
+- `startStdioServer` serves with `serveStdio`, which answers both protocol eras (2025-11-25 `initialize` and 2026-07-28 `server/discover`), and installs the shutdown hook **after** it: `serveStdio` assigns `transport.onclose`, so a hook installed before it is dropped.
+- Tests connect `server` to an in-memory transport with `server.connect()`, which serves the 2025 era only. `tests/protocol-eras.test.ts` covers both eras and the hook order through `startStdioServer`.
+- `src/` imports only `@modelcontextprotocol/server` (a dependency); `@modelcontextprotocol/client` is a dev dependency for tests, and `@modelcontextprotocol/core` is never imported directly (Glama's pnpm).
 
 ### Browserless by default
 
@@ -89,6 +93,7 @@ Full detail: [docs/claude/architecture.md](docs/claude/architecture.md).
 
 | File | Role |
 |------|------|
+| `src/start.ts`, `src/shutdown.ts` | `startStdioServer`: `serveStdio`, then the shutdown hook (chains the SDK's `onclose`; closes every browser on stdin EOF, transport close or a signal) |
 | `src/session-state.ts` / `src/session-fetch.ts` | Session authority (above); cookie/JWT fetch with retry. Typed errors `SessionLayerError`, `NoSessionError` |
 | `src/browser.ts`, `src/auth.ts`, `src/tools/navigate.ts` | Playwright lifecycle, login flow, browser tools |
 | `src/edition.ts` | Pure rules-edition foundation: `classifyEdition`, `classifyForEdition` (dual-edition items), `twinNames[kind]`, `selectByEdition` / `lookupByName` / `groupAndSelect`, tiebreaks, and **every** edition label string |
@@ -147,7 +152,7 @@ Full detail: [docs/claude/architecture.md](docs/claude/architecture.md).
   - Actions are pinned by SHA.
 - **Glama builds with pnpm**:
   - Every non-builtin import needs its own `package.json` dependency (`domhandler` broke it once).
-  - The `overrides` and `pnpm.overrides` blocks **must stay in sync**.
+  - The `overrides` and `pnpm.overrides` blocks **must stay in sync** when present (none since the SDK v2 migration).
 - **`@types/node` stays `^22`** to match `engines.node >=22` and the CI matrix. Bump all three together when Node 22 reaches end of life (2027-04-30).
 - There is no postinstall. `getBrowser()` tries system Chrome, then lazily installs bundled Chromium, with its progress sent to **stderr** so it can't corrupt the JSON-RPC stream. `DDB_USE_BUNDLED_CHROMIUM=1` skips the system Chrome.
 
@@ -155,13 +160,11 @@ Full detail: [docs/claude/architecture.md](docs/claude/architecture.md).
 
 Last updated 2026-11-27. Releases and pushes go straight to `main`. The rules-edition work (phases 1–5) is complete, as are the follow-up rounds of minors A–E, the F-2026-10-20 residuals and the combat section completeness run (I1–I3). The regression remediations of 2026-11-11 (F1–F30), 2026-11-13 (F1–F15, plus Tasks 12b and 12c) and 2026-11-18 (F1–F11) are done. **Everything in items 4–12 shipped in v3.0.0** (2026-11-24, `f7f5c12`; npm and LobeHub at 3.0.0, the LobeHub step fixed afterwards in `594f35f`).
 
-1. **SDK v2 migration** (replaces the stateless-safe plan, superseded 2026-11-27): the spike passed (branch `spike/sdk2`, `cb1e6f0`, local only; history.md "SDK v2 spike 2026-11-27"). Today's server fails a client pinned to the 2026-07-28 protocol; the spike serves both eras with an unchanged tool list. Before the plan is written:
-   - **Owner ruling 2026-11-27:** the browser rework (spec Group C: per-call browser, `ddb_browse` / `ddb_browse_interact`) is parked until there is a need (e.g. HTTP hosting). The migration keeps the four browser tools as they are.
+1. **SDK v2 migration**: done 2026-11-27 (`@modelcontextprotocol/server` 2.4.0; both protocol eras; the tool list unchanged apart from `$schema` 2020-12 and no `execution` field; history.md "SDK v2 migration 2026-11-27"). Its owner rulings stand:
+   - **Owner ruling 2026-11-27:** the browser rework (spec Group C: per-call browser, `ddb_browse` / `ddb_browse_interact`) is parked until there is a need (e.g. HTTP hosting). The four browser tools stay as they are.
    - **Owner ruling 2026-11-27:** accept that v2 aborts requests still running when stdin closes (piped one-shot clients only); no workaround.
-   - **Owner check (open):** Claude Desktop on the spike build. Then write the migration plan.
-   - In the migration: install the shutdown hook *after* `serveStdio` (it assigns `transport.onclose`), drop the `@hono/node-server` override pair, keep the regression skill's `references/` in step.
 
-   The spell buffer (old Task 4) was deleted 2026-11-27 (history.md "Spell buffer deleted 2026-11-27").
+   The spell buffer was deleted 2026-11-27 (history.md "Spell buffer deleted 2026-11-27").
 2. **Open carry-overs that need a book-owning or homebrew account**: (b) owner-only subclass renames; (aa) slug joins for paid books; (ah) a feature-level homebrew flag on optional features; (ay) item- and background-granted action entries (wrapping is covered by synthetic tests only); (br) pact or hex weapons using CHA (no test character has one, so no data shape is verified).
 3. **Regression handover (I5)**: I5 needs new test characters on D&D Beyond, see docs/superpowers/specs/2026-11-06-regression-report.md. I4 closed 2026-11-11 (`scripts/regress-all-characters.mts`; first run vs 2.10.2 found no regressions, history.md "Whole-corpus regression script 2026-11-11"). The rest of the 2026-11-06 run is done (history.md "Regression run 2026-11-06"); B11 (monster search quality) and B12 (Critical Role books) closed 2026-11-10 (history.md "Monster search quality and Critical Role books 2026-11-10"; carry-overs (bp), (bq) are listed there; the four questions the final reviews raised were decided by the owner, recorded there as owner rulings 2026-11-10); I1–I3 closed 2026-11-09, and their carry-overs (ba)–(bo) are listed ((bg) and (bh) closed; (ba), (bc), (bd), (bf), (bj) and (bl) closed 2026-11-19, see item 9; (bm) closed 2026-11-20, see item 10) under history.md "Combat section completeness 2026-11-09".
 4. **Regression remediation 2026-11-11 (F1–F30)**: done, with the final fix wave of 2026-11-13; findings, commits, rulings and carry-overs (br)–(bv) are in history.md "Regression remediation 2026-11-11".

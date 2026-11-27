@@ -38,9 +38,6 @@
     "playwright": "^1.49.0",
     "zod": "^4.6.6"
   },
-  "overrides": {
-    "@hono/node-server": "^2.1.6"
-  },
   "devDependencies": {
     "@modelcontextprotocol/client": "^2.4.0",
     "@types/node": "^22.20.1",
@@ -50,10 +47,5 @@
     "tsx": "^4.19.0",
     "typescript": "^6.0.3",
     "vitest": "^5.0.5"
-  },
-  "pnpm": {
-    "overrides": {
-      "@hono/node-server": "^2.1.6"
-    }
   }
 }
